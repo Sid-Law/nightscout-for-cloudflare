@@ -37,7 +37,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | Workstream | Status | Next acceptance checkpoint |
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
-| 1. Compatibility inventory | In progress | Map every v1/v2/v3 route and all 111 upstream test files to pass/adapt/exclude/unresolved. |
+| 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
 | 2. Official browser assets/pages | Partial | Profile save/close is now verified; add food, admin, report, clock, split and live-update workflows. |
 | 3. SQLite collection compatibility | In progress | General collection contract for ObjectId/UUID, indexes, query operators, upsert, API v3 timestamps/tombstones and atomic change events. |
 | 4. API v1 | In progress | Complete entries utilities/types/errors and all document routes; activity CRUD is the latest completed increment. |
@@ -48,7 +48,32 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 9. Real-time storage updates | Not started | Persist-then-broadcast mutation log and reconnect/eviction tests. |
 | 10. Alarms/background tasks | Not started | One-alarm SQLite task scheduler for heartbeat, cleanup, API v3 pruning and server-plugin evaluation. |
 | 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
-| 12. Upstream regression suite | Not started | Run or adapt each applicable upstream suite against the DO repository and Worker transport. |
+| 12. Upstream regression suite | Tracked, execution not started | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; 106 files remain unresolved and five are fixed-scope exclusions. |
+
+## Generated dispatch map
+
+`npm run upstream:audit` builds `upstream/contract-manifest.json` and
+`docs/UPSTREAM_TEST_MANIFEST.md` from the locked route registration modules and
+all 111 upstream test files. `npm run upstream:audit:check` is deterministic and
+fails on duplicate routes, missing sources, count/status drift, unstable order,
+or stale generated output. `npm test` runs this check and the generator's own
+Node tests before the Workers-runtime suite.
+
+Dispatch upstream compatibility work in the generated numeric workstream order:
+
+1. storage/query/identity foundations;
+2. authorization;
+3. API v1/v2;
+4. plugins and calculations that can proceed on the collection contract;
+5. API v3;
+6. real-time transport;
+7. background behavior and fixed-scope integrations;
+8. UI and process-boundary workflows.
+
+The manifest's five `excluded-fixed-scope` files cover only real-CGM bridges or
+external push delivery. Mongo-to-SQLite, Express-to-Worker, process-lifecycle,
+Socket.IO, notification-state and browser adaptations remain required work and
+must not be relabeled as scope exclusions.
 
 ## Current verified baseline
 

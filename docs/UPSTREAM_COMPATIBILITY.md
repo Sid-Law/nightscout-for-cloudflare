@@ -22,6 +22,47 @@ upstream has 111 `*.test.js` files and approximately 873 `it(...)` cases. Those
 numbers are not directly comparable, but they make clear why the current suite
 does not prove full compatibility.
 
+## Generated route and test inventory
+
+`upstream/contract-manifest.json` is the version-controlled source of truth for
+the route/test audit. It is generated from the locked Express/API v1/v2
+registration modules, the API v3 registration code, and every
+`vendor/nightscout/tests/**/*.test.js` file. The generated
+`docs/UPSTREAM_TEST_MANIFEST.md` presents the same 111-file status set in
+dependency order for dispatch.
+
+The current manifest contains 161 HTTP registrations: one API version-discovery
+route, 45 v1 routes, 62 v2 routes (including the upstream v1 router inherited by
+v2), and 53 v3 routes. API v3 accounts for the only reviewed dynamic expansion:
+six names read from the locked `enabledCollections` setting multiplied by eight
+generic route templates in `lib/api3/generic/collection.js`, plus four specific
+API routes and the documentation prefix redirect. The collection/template
+expansion and its source files remain explicit in
+`upstream/contract-overrides.json`; it is not presented as a fully general
+JavaScript static analysis result.
+
+Run the generator after changing the vendor lock or a manual dynamic override,
+and run its check in CI and before commits:
+
+```sh
+npm run upstream:audit
+npm run upstream:audit:check
+npm run test:upstream-audit
+```
+
+The checker enforces stable ordering, unique API-version/method/path keys,
+source-file existence, exactly 111 upstream test files, known status values,
+non-empty reasons, and byte-for-byte freshness of both generated outputs. The
+default test-file status is `unresolved`. At this audit point, 106 files are
+`unresolved`, five integration-specific files are `excluded-fixed-scope`, and
+zero files are claimed as `pass` or `adapted`.
+
+The five exclusions are limited to the real-CGM bridge modules (`bridge`,
+`mmconnect`) and external push delivery (`maker`, `pushnotify`, `pushover`).
+This does **not** exclude storage, simulated entry ingestion, notifications
+state, authorization, API behavior, server calculations, real-time transport,
+or browser workflows. Those contracts remain required and unresolved.
+
 ## What cannot run unchanged, and what only needs adaptation
 
 | Upstream dependency | Evidence in v15.0.7 | Classification | Cloudflare path |
@@ -68,7 +109,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
 | Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Profile Editor loads, its authenticated Save persists a current profile, and closing it returns to a homepage that consumes that profile without the basal missing-profile redirect. The polling adapter is content-addressed so the upstream service worker cannot retain an older payload contract. The remaining page workflows are not proven by HTTP 200. | Browser scenarios for profile delete, food, admin, report, clock, split and live updates, with console/network assertions. |
-| Upstream test tracking | `tests/**`, `package.json` test scripts | **Partial.** 19 adapter tests pass; the upstream Mongo-backed suite has not been made green against the DO adapter. | Maintain a test manifest: pass, adapted pass, intentionally excluded by fixed scope, or unresolved—with a reason for every upstream test file. |
+| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; compatibility unresolved.** All 111 files are tracked with a strict status/reason and route associations, but no whole upstream file is yet claimed green against the DO adapter. | Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
 
@@ -135,7 +176,8 @@ completion claim.
 
 ## Contract-testing and delivery order
 
-1. Inventory every upstream Express and API v3 route and map it to a fixture.
+1. Use the generated route/test manifest as the dispatch list; keep its static
+   extraction and reviewed dynamic overlays current as implementation lands.
 2. Build one SQLite collection contract that covers ObjectId/UUID, indexes,
    query operators, upsert, tombstones and last-modified fields.
 3. Complete JWT authorization before secured API v3 operations.

@@ -1,0 +1,343 @@
+{
+  "schema_version": 1,
+  "expected_test_count": 111,
+  "version_prefixes": {
+    "root": "/api",
+    "v1": "/api/v1",
+    "v2": "/api/v2",
+    "v3": "/api/v3"
+  },
+  "route_modules": [
+    {
+      "api_versions": ["root"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/root.js",
+      "registered_by": "vendor/nightscout/lib/server/app.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/entries/index.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/treatments/index.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/profile/index.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/devicestatus/index.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/notifications-api.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/activity/index.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/verifyauth.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/adminnotifiesapi.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/food/index.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/status.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "/experiments",
+      "source_file": "vendor/nightscout/lib/api/experiments/index.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js",
+      "condition": "api-enabled"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/alexa/index.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js",
+      "condition": "alexa-context-enabled"
+    },
+    {
+      "api_versions": ["v1", "v2"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api/googlehome/index.js",
+      "registered_by": "vendor/nightscout/lib/api/index.js",
+      "condition": "google-home-context-enabled"
+    },
+    {
+      "api_versions": ["v2"],
+      "mount_path": "/properties",
+      "source_file": "vendor/nightscout/lib/api2/properties.js",
+      "registered_by": "vendor/nightscout/lib/api2/index.js"
+    },
+    {
+      "api_versions": ["v2"],
+      "mount_path": "/authorization",
+      "source_file": "vendor/nightscout/lib/authorization/endpoints.js",
+      "registered_by": "vendor/nightscout/lib/api2/index.js"
+    },
+    {
+      "api_versions": ["v2"],
+      "mount_path": "/ddata",
+      "source_file": "vendor/nightscout/lib/data/endpoints.js",
+      "registered_by": "vendor/nightscout/lib/api2/index.js"
+    },
+    {
+      "api_versions": ["v2"],
+      "mount_path": "/notifications",
+      "source_file": "vendor/nightscout/lib/api2/notifications-v2.js",
+      "registered_by": "vendor/nightscout/lib/api2/index.js"
+    },
+    {
+      "api_versions": ["v2"],
+      "mount_path": "/summary",
+      "source_file": "vendor/nightscout/lib/api2/summary/index.js",
+      "registered_by": "vendor/nightscout/lib/api2/index.js"
+    },
+    {
+      "api_versions": ["v3"],
+      "mount_path": "",
+      "source_file": "vendor/nightscout/lib/api3/index.js",
+      "registered_by": "vendor/nightscout/lib/server/app.js",
+      "only_paths": ["/version", "/test", "/lastModified", "/status", "/swagger-ui-dist"]
+    }
+  ],
+  "dynamic_route_groups": [
+    {
+      "name": "api3-generic-collections",
+      "api_version": "v3",
+      "collections_source": "vendor/nightscout/lib/api3/index.js",
+      "collections_setting": "enabledCollections",
+      "registration_file": "vendor/nightscout/lib/api3/generic/collection.js",
+      "risk": "Collection names and route prefixes are assembled at runtime. The generator reads the locked enabledCollections setting and expands the manually reviewed route templates below.",
+      "routes": [
+        {
+          "method": "GET",
+          "suffix": "",
+          "source_file": "vendor/nightscout/lib/api3/generic/search/operation.js",
+          "permission": "api:{collection}:read",
+          "auth_note": "Requests for invalid records require api:{collection}:admin."
+        },
+        {
+          "method": "POST",
+          "suffix": "",
+          "source_file": "vendor/nightscout/lib/api3/generic/create/operation.js",
+          "permission": "api:{collection}:create",
+          "auth_note": "Deduplicating POST may additionally require api:{collection}:update."
+        },
+        {
+          "method": "GET",
+          "suffix": "/history",
+          "source_file": "vendor/nightscout/lib/api3/generic/history/operation.js",
+          "permission": "api:{collection}:read",
+          "auth_note": "Requests for invalid records require api:{collection}:admin."
+        },
+        {
+          "method": "GET",
+          "suffix": "/history/:lastModified",
+          "source_file": "vendor/nightscout/lib/api3/generic/history/operation.js",
+          "permission": "api:{collection}:read",
+          "auth_note": "Requests for invalid records require api:{collection}:admin."
+        },
+        {
+          "method": "GET",
+          "suffix": "/:identifier",
+          "source_file": "vendor/nightscout/lib/api3/generic/read/operation.js",
+          "permission": "api:{collection}:read"
+        },
+        {
+          "method": "PUT",
+          "suffix": "/:identifier",
+          "source_file": "vendor/nightscout/lib/api3/generic/update/operation.js",
+          "permission": "api:{collection}:update"
+        },
+        {
+          "method": "PATCH",
+          "suffix": "/:identifier",
+          "source_file": "vendor/nightscout/lib/api3/generic/patch/operation.js",
+          "permission": "api:{collection}:update"
+        },
+        {
+          "method": "DELETE",
+          "suffix": "/:identifier",
+          "source_file": "vendor/nightscout/lib/api3/generic/delete/operation.js",
+          "permission": "api:{collection}:delete"
+        }
+      ]
+    }
+  ],
+  "auth_overrides": {
+    "root GET /api/versions": {
+      "mode": "public",
+      "credential_required": false,
+      "permissions": [],
+      "note": "Version discovery is public."
+    },
+    "v1 GET /api/v1/verifyauth": {
+      "mode": "optional-nightscout-credentials",
+      "credential_required": false,
+      "permissions": [],
+      "note": "The route reports the permissions resolved from optional request credentials."
+    },
+    "v2 GET /api/v2/verifyauth": {
+      "mode": "optional-nightscout-credentials",
+      "credential_required": false,
+      "permissions": [],
+      "note": "Inherited from API v1; the route reports the permissions resolved from optional request credentials."
+    },
+    "v1 GET /api/v1/adminnotifies": {
+      "mode": "optional-admin-credentials",
+      "credential_required": false,
+      "permissions": ["*:*:admin"],
+      "note": "Anonymous callers receive the count; notification contents are filtered to full admins."
+    },
+    "v2 GET /api/v2/adminnotifies": {
+      "mode": "optional-admin-credentials",
+      "credential_required": false,
+      "permissions": ["*:*:admin"],
+      "note": "Inherited from API v1; notification contents are filtered to full admins."
+    },
+    "v2 GET /api/v2/authorization/request/:accessToken": {
+      "mode": "access-token-exchange",
+      "credential_required": true,
+      "permissions": [],
+      "note": "The access token is supplied as a path parameter and exchanged for authorization data/JWT state."
+    },
+    "v2 GET /api/v2/authorization/debug/check/:permission": {
+      "mode": "dynamic-nightscout-permission",
+      "credential_required": true,
+      "permissions": ["path-parameter:permission"],
+      "note": "Development/debug endpoint; the required permission is read from the path."
+    },
+    "v3 GET /api/v3/version": {
+      "mode": "public",
+      "credential_required": false,
+      "permissions": [],
+      "note": "API v3 version information is public."
+    },
+    "v3 GET /api/v3/test": {
+      "mode": "jwt",
+      "credential_required": true,
+      "permissions": ["api:entries:read"],
+      "note": "Registered only in development, test, or CI environments."
+    },
+    "v3 GET /api/v3/lastModified": {
+      "mode": "jwt",
+      "credential_required": true,
+      "permissions": ["api:{collection}:read"],
+      "note": "Only readable collections are included in the response."
+    },
+    "v3 GET /api/v3/status": {
+      "mode": "jwt",
+      "credential_required": true,
+      "permissions": [],
+      "note": "Authentication is mandatory; the response derives per-collection permissions from the JWT."
+    },
+    "v3 ALL /api/v3/swagger-ui-dist/*": {
+      "mode": "public",
+      "credential_required": false,
+      "permissions": [],
+      "note": "Public prefix redirect to the API v3 documentation UI."
+    }
+  },
+  "condition_overrides": {
+    "v1 POST /api/v1/entries": "api-enabled",
+    "v1 DELETE /api/v1/entries/:spec": "api-enabled",
+    "v1 DELETE /api/v1/entries": "api-enabled",
+    "v2 POST /api/v2/entries": "api-enabled",
+    "v2 DELETE /api/v2/entries/:spec": "api-enabled",
+    "v2 DELETE /api/v2/entries": "api-enabled",
+    "v1 POST /api/v1/treatments": "api-enabled-and-careportal-enabled",
+    "v1 PUT /api/v1/treatments": "api-enabled-and-careportal-enabled",
+    "v1 DELETE /api/v1/treatments/:id": "api-enabled-and-careportal-enabled",
+    "v1 DELETE /api/v1/treatments": "api-enabled-and-careportal-enabled",
+    "v2 POST /api/v2/treatments": "api-enabled-and-careportal-enabled",
+    "v2 PUT /api/v2/treatments": "api-enabled-and-careportal-enabled",
+    "v2 DELETE /api/v2/treatments/:id": "api-enabled-and-careportal-enabled",
+    "v2 DELETE /api/v2/treatments": "api-enabled-and-careportal-enabled",
+    "v1 POST /api/v1/profile": "api-enabled",
+    "v1 PUT /api/v1/profile": "api-enabled",
+    "v1 DELETE /api/v1/profile/:_id": "api-enabled",
+    "v2 POST /api/v2/profile": "api-enabled",
+    "v2 PUT /api/v2/profile": "api-enabled",
+    "v2 DELETE /api/v2/profile/:_id": "api-enabled",
+    "v1 POST /api/v1/devicestatus": "api-enabled",
+    "v1 DELETE /api/v1/devicestatus/:id": "api-enabled",
+    "v1 DELETE /api/v1/devicestatus": "api-enabled",
+    "v2 POST /api/v2/devicestatus": "api-enabled",
+    "v2 DELETE /api/v2/devicestatus/:id": "api-enabled",
+    "v2 DELETE /api/v2/devicestatus": "api-enabled",
+    "v1 GET /api/v1/notifications/ack": "api-enabled",
+    "v2 GET /api/v2/notifications/ack": "api-enabled",
+    "v1 POST /api/v1/activity": "api-enabled-and-careportal-enabled",
+    "v1 PUT /api/v1/activity": "api-enabled-and-careportal-enabled",
+    "v1 DELETE /api/v1/activity/:_id": "api-enabled-and-careportal-enabled",
+    "v2 POST /api/v2/activity": "api-enabled-and-careportal-enabled",
+    "v2 PUT /api/v2/activity": "api-enabled-and-careportal-enabled",
+    "v2 DELETE /api/v2/activity/:_id": "api-enabled-and-careportal-enabled",
+    "v1 POST /api/v1/food": "api-enabled",
+    "v1 PUT /api/v1/food": "api-enabled",
+    "v1 DELETE /api/v1/food/:_id": "api-enabled",
+    "v2 POST /api/v2/food": "api-enabled",
+    "v2 PUT /api/v2/food": "api-enabled",
+    "v2 DELETE /api/v2/food/:_id": "api-enabled",
+    "v3 GET /api/v3/test": "development-test-or-ci"
+  },
+  "test_defaults": {
+    "status": "unresolved",
+    "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
+  },
+  "test_status_overrides": {
+    "vendor/nightscout/tests/bridge.test.js": {
+      "status": "excluded-fixed-scope",
+      "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope permits only simulated data."
+    },
+    "vendor/nightscout/tests/mmconnect.test.js": {
+      "status": "excluded-fixed-scope",
+      "reason": "Fixed-scope exclusion: MiniMed CareLink ingestion is an external real-CGM bridge and is disabled in the simulated-data port."
+    },
+    "vendor/nightscout/tests/maker.test.js": {
+      "status": "excluded-fixed-scope",
+      "reason": "Fixed-scope exclusion: Maker/IFTTT outbound notification delivery is an external push integration, not part of the simulated-data Cloudflare port."
+    },
+    "vendor/nightscout/tests/pushnotify.test.js": {
+      "status": "excluded-fixed-scope",
+      "reason": "Fixed-scope exclusion: this file exercises orchestration for external Pushover delivery, which remains disabled by scope."
+    },
+    "vendor/nightscout/tests/pushover.test.js": {
+      "status": "excluded-fixed-scope",
+      "reason": "Fixed-scope exclusion: Pushover is an external push provider and no real provider credentials or delivery calls are permitted."
+    }
+  }
+}
