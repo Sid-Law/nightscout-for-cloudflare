@@ -1,4 +1,5 @@
 import type { DocumentCollection, JsonDocument } from "./entry-store";
+import type { DocumentFilter, DocumentQuery } from "./document-repository";
 import { ApiError } from "./model";
 
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
@@ -8,6 +9,9 @@ const RESERVED_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const MAX_DOCUMENTS = 100;
 const MAX_DEPTH = 16;
 const MAX_STRING_LENGTH = 64 * 1024;
+const SQLITE_MAX_BINDINGS = 100;
+const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000;
+const TREATMENT_NUMERIC_QUERY_FIELDS = new Set(["insulin", "carbs", "glucose"]);
 
 function assertJsonValue(value: unknown, depth = 0): void {
   if (depth > MAX_DEPTH) {
@@ -55,10 +59,13 @@ function normalizeDocument(
   assertJsonValue(value);
   const document = { ...(value as JsonDocument) };
   if (document._id !== undefined && document._id !== "") {
-    if (typeof document._id !== "string" || !OBJECT_ID.test(document._id)) {
+    if (typeof document._id !== "string") {
+      throw new ApiError(400, "invalid_document", "_id must be a string");
+    }
+    if (collection !== "treatments" && !OBJECT_ID.test(document._id)) {
       throw new ApiError(400, "invalid_document", "_id must be a 24-character hexadecimal string");
     }
-    document._id = document._id.toLowerCase();
+    if (OBJECT_ID.test(document._id)) document._id = document._id.toLowerCase();
   } else {
     delete document._id;
     if (requireId) {
@@ -179,13 +186,160 @@ export function filterDocuments(
       return (leftValue! < rightValue! ? -1 : 1) * selectedSort.direction;
     });
   }
-  return filtered
-    .slice(0, count)
-    .map((document) => {
-      if (document.carbs === undefined && document.insulin === undefined) return document;
-      const normalized = { ...document };
-      if (document.carbs !== undefined) normalized.carbs = Number(document.carbs);
-      if (document.insulin !== undefined) normalized.insulin = Number(document.insulin);
-      return normalized;
+  return normalizeTreatmentNumbers(filtered.slice(0, count));
+}
+
+export function normalizeTreatmentNumbers(documents: JsonDocument[]): JsonDocument[] {
+  return documents.map((document) => {
+    const normalized = { ...document };
+    normalized.carbs = Number(document.carbs);
+    normalized.insulin = Number(document.insulin);
+    return normalized;
+  });
+}
+
+function treatmentQueryScalar(field: string, value: string): string | number {
+  if (TREATMENT_NUMERIC_QUERY_FIELDS.has(field)) {
+    const numeric = Number.parseInt(value, 10);
+    if (!Number.isFinite(numeric)) {
+      throw new ApiError(400, "invalid_query", `find[${field}] must be numeric`);
+    }
+    return numeric;
+  }
+  if (field === "created_at" && /[-T:]/.test(value)) {
+    const parsed = Date.parse(value.replace(" ", "+"));
+    if (!Number.isFinite(parsed)) {
+      throw new ApiError(400, "invalid_query", `find[${field}] must be a valid ISO-8601 date`);
+    }
+    return new Date(parsed).toISOString();
+  }
+  return value;
+}
+
+function legacyExpressionBindings(field: string): number {
+  return field === "_id" || field === "identifier" ? 0 : 1;
+}
+
+function assertTreatmentQueryBindings(query: DocumentQuery): void {
+  let bindings = 3; // collection + LIMIT + OFFSET
+  for (const filter of query.filters ?? []) {
+    const expression = legacyExpressionBindings(filter.field);
+    switch (filter.operator) {
+      case "eq":
+        bindings += expression + (filter.value === null ? 0 : 1);
+        break;
+      case "ne":
+        bindings += filter.value === null ? expression : expression * 2 + 1;
+        break;
+      case "in":
+      case "nin":
+        bindings += expression + (Array.isArray(filter.value) ? filter.value.length : 1);
+        break;
+      case "exists":
+        bindings += filter.field === "identifier" || filter.field === "_id" ? 0 : 1;
+        break;
+      default:
+        bindings += expression + 1;
+    }
+  }
+  if (query.sort !== undefined) bindings += legacyExpressionBindings(query.sort.field);
+  if (bindings > SQLITE_MAX_BINDINGS) {
+    throw new ApiError(
+      400,
+      "invalid_query",
+      `treatments query exceeds SQLite's ${SQLITE_MAX_BINDINGS} bound-parameter limit`,
+    );
+  }
+}
+
+/** Translate the currently supported v1 treatments query surface before LIMIT. */
+export function parseTreatmentQuery(url: URL, defaultCount: number): DocumentQuery {
+  const rawCount = url.searchParams.get("count") ?? String(defaultCount);
+  const count = Number(rawCount);
+  if (!Number.isInteger(count) || count < 1 || count > 10000) {
+    throw new ApiError(400, "invalid_query", "count must be an integer from 1 to 10000");
+  }
+
+  const filters: DocumentFilter[] = [];
+  let sort: DocumentQuery["sort"];
+  for (const [name, expected] of url.searchParams) {
+    const match = FIND_PARAMETER.exec(name);
+    if (name.startsWith("find[") && match === null) {
+      throw new ApiError(400, "invalid_query", `unsupported treatments query operator in ${name}`);
+    }
+    if (match !== null) {
+      const field = match[1]!;
+      const operator = match[2];
+      if (field.includes(".")) {
+        throw new ApiError(
+          400,
+          "invalid_query",
+          `nested treatments query field ${field} is not yet supported by the SQLite adapter`,
+        );
+      }
+      if (operator === "$exists") {
+        filters.push({
+          field,
+          operator: "exists",
+          value: expected !== "false" && expected !== "0",
+        });
+      } else if (operator === "$in") {
+        filters.push({
+          field,
+          operator: "in",
+          value: expected.split(",").map((value) => treatmentQueryScalar(field, value.trim())),
+        });
+      } else if (operator !== undefined) {
+        const mapped = {
+          $gt: "gt",
+          $gte: "gte",
+          $lt: "lt",
+          $lte: "lte",
+          $ne: "ne",
+        } as const;
+        filters.push({
+          field,
+          operator: mapped[operator as keyof typeof mapped],
+          value: treatmentQueryScalar(field, expected),
+        });
+      } else if (expected.startsWith("/") && expected.lastIndexOf("/") > 0) {
+        throw new ApiError(
+          400,
+          "invalid_query",
+          `regex treatments query for find[${field}] is not supported by the SQLite adapter`,
+        );
+      } else {
+        filters.push({ field, operator: "eq", value: treatmentQueryScalar(field, expected) });
+      }
+    }
+
+    const sortMatch = SORT_PARAMETER.exec(name);
+    if (sortMatch !== null && (expected === "1" || expected === "-1")) {
+      const field = sortMatch[1]!;
+      if (field.includes(".")) {
+        throw new ApiError(
+          400,
+          "invalid_query",
+          `nested treatments sort field ${field} is not yet supported by the SQLite adapter`,
+        );
+      }
+      sort = { field, direction: expected === "1" ? "asc" : "desc" };
+    }
+  }
+
+  const skipsDefaultDateWindow = filters.some(
+    (filter) => filter.field === "_id" || filter.field === "created_at" || filter.field === "dateString",
+  );
+  if (!skipsDefaultDateWindow) {
+    filters.push({
+      field: "created_at",
+      operator: "gte",
+      value: new Date(Date.now() - FOUR_DAYS_MS).toISOString(),
     });
+  }
+
+  const query: DocumentQuery = { filters, limit: count, includeDeleted: true };
+  if (sort !== undefined) query.sort = sort;
+  assertTreatmentQueryBindings(query);
+  return query;
 }

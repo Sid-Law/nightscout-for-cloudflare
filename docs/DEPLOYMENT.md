@@ -46,14 +46,15 @@ The public instance is for simulated data only.
 | Official UI build | Upstream Webpack production bundle completed |
 | Type generation | `wrangler types` completed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 1 file, 19/19 passed |
+| Workers integration tests (historical deployment gate) | 1 file, 19/19 passed |
 | Static Assets dry run | 248 entries read |
 | Worker dry run | 68.82 KiB raw / 16.80 KiB gzip |
 | Worker startup | Cloudflare reported 6 ms |
 
 The locked upstream contains 111 JavaScript test files and approximately 873
-test cases. The 19 adapter tests are a deployment gate for the implemented
-subset, not evidence of complete compatibility.
+test cases. At that recorded deployment, 19 adapter tests formed the gate for
+the implemented subset; the current local suite count is maintained in the
+README and compatibility matrix. Neither count proves complete compatibility.
 
 ## Post-deployment evidence
 

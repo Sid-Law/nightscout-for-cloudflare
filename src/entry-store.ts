@@ -170,8 +170,11 @@ export class EntryStore extends DurableObject<Env> {
         `);
       }
 
+      // Schema v4 is also checked after its marker exists so partial installs
+      // and the identifier-presence metadata added to the same contract are
+      // repaired idempotently on activation.
+      migrateDocumentsV4(this.ctx.storage.sql);
       if (version < 4) {
-        migrateDocumentsV4(this.ctx.storage.sql);
         this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (4)");
       }
     });
@@ -338,7 +341,7 @@ export class EntryStore extends DurableObject<Env> {
   async listDocuments(collection: DocumentCollection, limit = 5000): Promise<string> {
     const boundedLimit = Math.max(1, Math.min(10000, Math.trunc(limit)));
     if (collection === "treatments") {
-      return JSON.stringify(this.documentRepository().queryTreatments({ limit: boundedLimit }));
+      return JSON.stringify(this.documentRepository().queryLegacyTreatments({ limit: boundedLimit }));
     }
     const documents = this.ctx.storage.sql
       .exec<DbDocument>(
@@ -498,6 +501,11 @@ export class EntryStore extends DurableObject<Env> {
     return JSON.stringify(this.documentRepository().queryTreatments(query));
   }
 
+  async queryLegacyTreatments(queryJson = "{}"): Promise<string> {
+    const query = JSON.parse(queryJson) as DocumentQuery;
+    return JSON.stringify(this.documentRepository().queryLegacyTreatments(query));
+  }
+
   async upsertTreatment(documentJson: string): Promise<string> {
     const document = JSON.parse(documentJson) as JsonDocument;
     return JSON.stringify(this.documentRepository().upsertTreatment(document));
@@ -527,6 +535,10 @@ export class EntryStore extends DurableObject<Env> {
 
   async deleteTreatment(identity: string, permanent = false): Promise<DocumentDeleteResult> {
     return this.documentRepository().deleteTreatment(identity, permanent);
+  }
+
+  async deleteLegacyTreatment(identity: string): Promise<boolean> {
+    return this.documentRepository().deleteLegacyTreatment(identity);
   }
 
   async treatmentsLastModified(): Promise<number | null> {

@@ -196,29 +196,60 @@ Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The first treatments-focused vertical slice is now implemented in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
-with `identifier`, `srv_created`, `srv_modified`, `is_valid`, `fallback_key`
-and `revision`; adds `collection_clocks` and `document_changes`; and adds
-non-unique lookup/history indexes. `identifier` and the treatments fallback
-identity are deliberately **not** unique because the locked Mongo adapter only
-creates ordinary indexes and resolves legacy duplicates at lookup time.
+with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
+`is_valid`, `fallback_key` and `revision`; adds `collection_clocks` and
+`document_changes`; and adds non-unique lookup/history indexes.
+`identifier_present` preserves the Mongo distinction between a missing field
+and an explicitly stored `null` or empty string. API v3 fallback dedupe may
+therefore require a genuinely absent identifier without conflating those
+three states. `identifier` and the treatments fallback identity are
+deliberately **not** unique because the locked Mongo adapter only creates
+ordinary indexes and resolves legacy duplicates at lookup time.
 
 The v4 migration runs in `DurableObjectStorage.transactionSync()`. It leaves the
 legacy `body` and `_id` untouched, derives indexed metadata, snapshots each old
-document once, and records a per-collection clock. The migration record,
-metadata backfill and new tables commit together. Re-activation is a no-op; an
-interrupted or deliberately replayed migration also checks existing columns and
-change revisions before writing, so it does not duplicate history.
+document once, and records a per-collection allocation clock. The migration
+record, metadata backfill and new tables commit together. Every activation
+checks structural completeness even when marker 4 exists, so an older v4
+installation receives `identifier_present` safely. Complete rows and existing
+change revisions are not replayed. The regression fixture reconstructs the
+exact six-column v3 `documents` DDL with no v4 tables or indexes, migrates it,
+then repeats activation to prove idempotence. A separate older-v4 fixture
+proves structural repair with marker 4 already present and recomputes legacy
+offset-bearing fallback keys without rewriting their preserved bodies.
 
 Treatments now have an internal SQLite repository and DO RPC boundary for:
 
 - lookup by server `_id`, client `identifier`, or `created_at + eventType`;
 - v1 treatments upsert selector priority (`identifier`, then `_id`, then
-  `created_at + eventType`) plus API v3 create dedupe against legacy
-  no-identifier documents;
+  `created_at + eventType`) after the locked `prepareData` time normalization,
+  numeric coercion and cleanup, plus API v3 create dedupe against genuinely
+  identifier-absent legacy documents;
 - create/upsert, replace, patch, soft delete and permanent delete;
-- strictly increasing server modification times persisted across eviction;
-- last-modified and ascending, field-projected history with tombstones;
-- SQL filtering before sort/limit rather than loading 5,000 documents first.
+- strictly increasing server modification-time allocation persisted across
+  eviction, while observable last-modified is recalculated from current
+  documents and falls back after permanent deletion;
+- ascending, field-projected history with tombstones;
+- live v1 treatments filtering in SQL before sort/limit rather than loading
+  5,000 documents first. Scalar equality/comparison, `$in` and `$exists` are
+  pushed down with the locked four-day default window and `created_at` order.
+  Regex, nested and unsupported operator forms return a stable HTTP 400 rather
+  than being approximated or silently truncated.
+
+Legacy and API v3 policies are separate. API v1 mutations store and return the
+locked legacy body (including normalized `created_at`, `utcOffset`, and removed
+`eventTime`), accept UUID/identifier/fallback PUT identity, and do not
+synthesize `srvCreated`/`srvModified`, hide
+`isValid:false`, or enforce API v3 read-only rules. API v3 repository methods
+materialize server metadata, hide tombstones in ordinary reads, enforce the 11
+locked immutable fields and preserve the identifier-only dedupe and tombstone
+resurrection exceptions. `/api/v2/ddata` consumes the same legacy treatment
+shape as v1.
+
+The locked v1 two-document `preBolus` carb fan-out is not implemented in this
+slice. Until that operation can be atomic, the adapter deliberately retains
+carbs on the original treatment instead of applying only the destructive half
+of upstream `prepareData`.
 
 Every create, replace, patch and soft delete writes its current document and a
 `document_changes` snapshot in one synchronous storage transaction. History
@@ -233,6 +264,32 @@ conditional headers, exact envelopes/renderers and authorization before these
 RPCs can be exposed as `/api/v3/treatments/**`. Other document collections also
 remain on the v3-era generic path until they receive collection-specific
 contract slices.
+
+### SQLite limits and change-retention risk
+
+Repository queries enforce the current Durable Objects SQLite limits of 100
+bound parameters per query and a 50-byte final `LIKE`/`GLOB` pattern; final SQL
+statement size is also checked against exactly 100,000 bytes. These checks use
+final binding counts and UTF-8 bytes, including JSON paths, sort expressions,
+limit and offset. See [Durable Objects limits](https://developers.cloudflare.com/durable-objects/platform/limits/).
+
+The current Free-plan allowances include 100,000 Durable Object requests,
+5,000,000 SQL rows read and 100,000 SQL rows written per day, plus 5 GB of
+SQLite data across the account; exhausted daily categories fail until their
+UTC reset. Index maintenance also counts toward row writes. See
+[Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/).
+The idempotent activation repair and clock seeding still scan current document
+metadata, so frequent eviction can consume rows-read allowance even when no
+row needs repair and the guarded clock upsert performs no write.
+
+`document_changes` currently retains a complete JSON body for migration and
+for every create, replace, patch and soft delete. This is deliberate contract
+evidence for history and atomicity, but it creates unbounded write/storage
+amplification proportional to body size times revision count, with additional
+index cost. There is no history retention or pruning policy yet; only permanent
+deletion removes all snapshots for that document. This slice must therefore
+not be described as suitable for indefinite Free-plan retention until a
+locked-compatible history cursor and pruning policy are defined and tested.
 
 ### Real-time transport
 

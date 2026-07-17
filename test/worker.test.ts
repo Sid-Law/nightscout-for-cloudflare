@@ -314,6 +314,291 @@ describe("Nightscout compatibility API", () => {
     expect(await removed.json()).toMatchObject({ n: 1, ok: 1 });
   });
 
+  it("keeps v1 and ddata treatment bodies legacy-shaped and permits legacy read-only writes", async () => {
+    const name = tenant("legacy-treatment-shape");
+    const createdDate = new Date(Date.now() - 60_000);
+    createdDate.setMilliseconds(0);
+    const createdAt = createdDate.toISOString();
+    const createdResponse = await writeApi(name, "POST", "/api/v1/treatments/", {
+      eventType: "Note",
+      created_at: createdAt,
+      notes: "legacy tombstone",
+      isValid: false,
+      isReadOnly: true,
+    });
+    expect(createdResponse.status).toBe(200);
+    const [created] = await createdResponse.json<Array<Record<string, unknown>>>();
+    expect(created).toMatchObject({
+      eventType: "Note",
+      created_at: createdAt,
+      isValid: false,
+      isReadOnly: true,
+    });
+    expect(created).not.toHaveProperty("srvCreated");
+    expect(created).not.toHaveProperty("srvModified");
+
+    const listedResponse = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}`,
+    );
+    expect(listedResponse.status).toBe(200);
+    const listed = await listedResponse.json<Array<Record<string, unknown>>>();
+    expect(listed).toMatchObject([{
+      _id: created?._id,
+      isValid: false,
+      carbs: null,
+      insulin: null,
+    }]);
+    expect(listed[0]).not.toHaveProperty("srvCreated");
+    expect(listed[0]).not.toHaveProperty("srvModified");
+    expect(listedResponse.headers.get("Last-Modified")).toBe(createdDate.toUTCString());
+
+    const conditional = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}`,
+      { headers: { "If-Modified-Since": createdDate.toUTCString() } },
+    );
+    expect(conditional.status).toBe(304);
+
+    const ddata = await (
+      await SELF.fetch(`https://example.test/api/v2/ddata/at?tenant=${name}`)
+    ).json<Record<string, any>>();
+    expect(ddata.treatments).toMatchObject([{ _id: created?._id, isValid: false }]);
+    expect(ddata.treatments[0]).not.toHaveProperty("srvCreated");
+    expect(ddata.treatments[0]).not.toHaveProperty("srvModified");
+    expect(ddata.treatments[0]).not.toHaveProperty("carbs");
+    expect(ddata.treatments[0]).not.toHaveProperty("insulin");
+
+    const updatedResponse = await writeApi(name, "PUT", "/api/v1/treatments/", {
+      ...created,
+      notes: "legacy update allowed",
+    });
+    expect(updatedResponse.status).toBe(200);
+    expect(await updatedResponse.json()).toMatchObject({
+      _id: created?._id,
+      notes: "legacy update allowed",
+      isReadOnly: true,
+    });
+
+    const removed = await writeApi(name, "DELETE", `/api/v1/treatments/${created?._id}`);
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toEqual({ n: 1, ok: 1 });
+  });
+
+  it("supports v1 UUID retransmission plus identifier and fallback PUT identities", async () => {
+    const name = tenant("legacy-treatment-uuid");
+    const createdAt = new Date(Date.now() - 90_000).toISOString();
+    const uuid = crypto.randomUUID();
+
+    const firstResponse = await writeApi(name, "POST", "/api/v1/treatments/", {
+      _id: uuid,
+      eventType: "Note",
+      created_at: createdAt,
+      notes: "uuid create",
+    });
+    expect(firstResponse.status).toBe(200);
+    const [first] = await firstResponse.json<Array<Record<string, unknown>>>();
+    expect(first).toMatchObject({ identifier: uuid, notes: "uuid create" });
+    expect(first?._id).toMatch(/^[0-9a-f]{24}$/);
+
+    const retransmitResponse = await writeApi(name, "POST", "/api/v1/treatments/", {
+      _id: uuid,
+      eventType: "Note",
+      created_at: createdAt,
+      notes: "uuid retransmit",
+    });
+    const [retransmitted] = await retransmitResponse.json<Array<Record<string, unknown>>>();
+    expect(retransmitted).toMatchObject({ _id: first?._id, identifier: uuid });
+
+    const identifierPut = await writeApi(name, "PUT", "/api/v1/treatments/", {
+      identifier: uuid,
+      eventType: "Note",
+      created_at: createdAt,
+      notes: "identifier-only PUT",
+    });
+    expect(identifierPut.status).toBe(200);
+    expect(await identifierPut.json()).toMatchObject({
+      _id: first?._id,
+      identifier: uuid,
+      notes: "identifier-only PUT",
+    });
+
+    const fallbackCreatedAt = new Date(Date.now() - 30_000).toISOString();
+    const fallbackCreate = await writeApi(name, "POST", "/api/v1/treatments/", {
+      eventType: "Meal Bolus",
+      created_at: fallbackCreatedAt,
+      carbs: 10,
+    });
+    const [fallbackFirst] = await fallbackCreate.json<Array<Record<string, unknown>>>();
+    const fallbackPut = await writeApi(name, "PUT", "/api/v1/treatments/", {
+      eventType: "Meal Bolus",
+      created_at: fallbackCreatedAt,
+      carbs: 11,
+    });
+    expect(await fallbackPut.json()).toMatchObject({
+      _id: fallbackFirst?._id,
+      carbs: 11,
+    });
+
+    const removed = await writeApi(name, "DELETE", `/api/v1/treatments/${uuid}`);
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toEqual({ n: 1, ok: 1 });
+  });
+
+  it("normalizes v1 numeric predicates and orders treatments by created_at", async () => {
+    const name = tenant("legacy-treatment-query-shape");
+    const numericCreatedAt = new Date(Date.now() - 3 * 60_000).toISOString();
+    await writeApi(name, "POST", "/api/v1/treatments/", {
+      eventType: "Meal Bolus",
+      created_at: numericCreatedAt,
+      carbs: "99",
+    });
+    const numericResponse = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}&find[carbs]=99`,
+    );
+    expect(numericResponse.status).toBe(200);
+    expect(await numericResponse.json()).toMatchObject([{
+      created_at: numericCreatedAt,
+      carbs: 99,
+    }]);
+
+    const olderCreatedAt = new Date(Date.now() - 2 * 60_000).toISOString();
+    const newerCreatedAt = new Date(Date.now() - 60_000).toISOString();
+    const olderResponse = await writeApi(name, "POST", "/api/v1/treatments/", {
+      eventType: "Ordering Fixture",
+      created_at: olderCreatedAt,
+      date: Date.now() + 24 * 60 * 60 * 1000,
+      notes: "older created_at",
+    });
+    const newerResponse = await writeApi(name, "POST", "/api/v1/treatments/", {
+      eventType: "Ordering Fixture",
+      created_at: newerCreatedAt,
+      date: 1,
+      notes: "newer created_at",
+    });
+    const [older] = await olderResponse.json<Array<Record<string, unknown>>>();
+    const [newer] = await newerResponse.json<Array<Record<string, unknown>>>();
+
+    const ordered = await (
+      await SELF.fetch(
+        `https://example.test/api/v1/treatments.json?tenant=${name}`
+          + "&find[eventType]=Ordering%20Fixture&count=2",
+      )
+    ).json<Array<Record<string, unknown>>>();
+    expect(ordered.map((document) => document._id)).toEqual([newer?._id, older?._id]);
+  });
+
+  it("pushes v1 treatment filters before limit and controls unsupported queries", async () => {
+    const name = tenant("treatment-tail-query");
+    const stub = env.ENTRY_STORE.getByName(name);
+    const recentBaseDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    recentBaseDate.setMilliseconds(0);
+    const recentBase = recentBaseDate.toISOString();
+    await stub.treatmentsLastModified();
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      state.storage.sql.exec(`
+        WITH digits(n) AS (
+          VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)
+        ), raw_numbers(n) AS (
+          SELECT a.n + b.n * 10 + c.n * 100 + d.n * 1000
+          FROM digits a CROSS JOIN digits b CROSS JOIN digits c CROSS JOIN digits d
+        ), numbers(n) AS (
+          SELECT n FROM raw_numbers WHERE n <= 5000
+        )
+        INSERT INTO documents
+          (collection, id, body, sort_time, created_at, updated_at, identifier,
+           identifier_present, srv_created, srv_modified, is_valid, fallback_key, revision)
+        SELECT
+          'treatments',
+          printf('%024x', n + 1),
+          json_object(
+            '_id', printf('%024x', n + 1),
+            'identifier', printf('seed-%d', n),
+            'eventType', 'Note',
+            'created_at', strftime('%Y-%m-%dT%H:%M:%fZ', ?, '+' || n || ' seconds'),
+            'notes', CASE WHEN n = 0 THEN 'needle' ELSE 'haystack' END
+          ),
+          n,
+          n,
+          n,
+          printf('seed-%d', n),
+          1,
+          1000000 + n,
+          1000000 + n,
+          1,
+          NULL,
+          1
+        FROM numbers
+      `, recentBase);
+    });
+
+    const response = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}&find[notes]=needle&count=1`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([{
+      _id: "000000000000000000000001",
+      identifier: "seed-0",
+      eventType: "Note",
+      created_at: recentBase,
+      notes: "needle",
+      carbs: null,
+      insulin: null,
+    }]);
+
+    const literalRegex = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}`
+        + `&find[notes]=${encodeURIComponent("/^needle$/i")}`,
+    );
+    expect(literalRegex.status).toBe(400);
+    expect(await literalRegex.json()).toMatchObject({
+      error: {
+        code: "invalid_query",
+        message: "regex treatments query for find[notes] is not supported by the SQLite adapter",
+      },
+    });
+
+    const unsupported = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}&find[notes][$regex]=needle`,
+    );
+    expect(unsupported.status).toBe(400);
+    expect(await unsupported.json()).toEqual({
+      error: {
+        code: "invalid_query",
+        message: "unsupported treatments query operator in find[notes][$regex]",
+      },
+    });
+
+    const tooMany = Array.from({ length: 98 }, (_, index) => `id-${index}`).join(",");
+    const bounded = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}`
+        + `&find[identifier][$in]=${encodeURIComponent(tooMany)}&count=1`,
+    );
+    expect(bounded.status).toBe(400);
+    expect(await bounded.json()).toMatchObject({
+      error: { code: "invalid_query", message: expect.stringContaining("100 bound-parameter limit") },
+    });
+
+    const oldCreatedAt = "2020-01-01T00:00:00.000Z";
+    await writeApi(name, "POST", "/api/v1/treatments/", {
+      eventType: "Note",
+      created_at: oldCreatedAt,
+      notes: "outside-default-window",
+    });
+    const defaultWindow = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}`
+        + "&find[notes]=outside-default-window",
+    );
+    expect(await defaultWindow.json()).toEqual([]);
+    const explicitWindow = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}`
+        + `&find[created_at][$gte]=${encodeURIComponent(oldCreatedAt)}`
+        + "&find[notes]=outside-default-window",
+    );
+    expect(await explicitWindow.json()).toMatchObject([{
+      created_at: oldCreatedAt,
+      notes: "outside-default-window",
+    }]);
+  });
+
   it("matches the upstream activity create, query, conditional GET, update and delete contract", async () => {
     const name = tenant("activity");
     const createdAt = new Date(Date.now() - 60_000).toISOString();

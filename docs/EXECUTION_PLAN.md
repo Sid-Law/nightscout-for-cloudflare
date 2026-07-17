@@ -131,7 +131,7 @@ The next authorization increment is also deployed and verified:
 - JWT-only API v3 `/status`, while preserving the locked v15.0.7
   permission-loop bug (`api:undefined:<action>` is checked for every registered
   collection) rather than silently changing release behavior;
-- 19/19 Workers-runtime tests, a successful deployment dry-run, public remote
+- the then-current 19/19 Workers-runtime tests, a successful deployment dry-run, public remote
   API smoke, and a real Chrome homepage check with no dialog, redirect or
   console warning.
 

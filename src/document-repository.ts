@@ -2,10 +2,48 @@ import type { JsonDocument, JsonValue } from "./entry-store";
 
 const TREATMENTS = "treatments";
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FIELD_NAME = /^[A-Za-z0-9_.-]+$/;
 const MAX_LIMIT = 10_000;
+const MAX_SQL_BINDINGS = 100;
+const MAX_SQL_STATEMENT_BYTES = 100_000;
+const MAX_LIKE_PATTERN_BYTES = 50;
 
-type FilterOperator = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "nin" | "re";
+type FilterOperator =
+  | "eq"
+  | "ne"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "in"
+  | "nin"
+  | "re"
+  | "exists";
+
+type MaterializationPolicy = "api3" | "legacy";
+type MutationPolicy = "api3" | "legacy";
+
+const API3_IMMUTABLE_FIELDS = [
+  "identifier",
+  "date",
+  "utcOffset",
+  "eventType",
+  "device",
+  "app",
+  "srvCreated",
+  "subject",
+  "srvModified",
+  "modifiedBy",
+  "isValid",
+] as const;
+
+export class DocumentQueryError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = "DocumentQueryError";
+  }
+}
 
 export interface DocumentFilter {
   field: string;
@@ -53,6 +91,7 @@ interface DbDocumentV4 {
   created_at: number;
   updated_at: number;
   identifier: string | null;
+  identifier_present: number | null;
   srv_created: number | null;
   srv_modified: number | null;
   is_valid: number | null;
@@ -65,6 +104,7 @@ interface DbChange {
   change_id: number;
   id: string;
   identifier: string | null;
+  identifier_present: number;
   body: string;
   srv_created: number;
   srv_modified: number;
@@ -75,6 +115,17 @@ interface DbChange {
 interface ClockRow {
   [key: string]: SqlStorageValue;
   last_srv_modified: number;
+}
+
+interface MaxModifiedRow {
+  [key: string]: SqlStorageValue;
+  srv_modified: number | null;
+  created_at_number: number | null;
+}
+
+interface TextModifiedRow {
+  [key: string]: SqlStorageValue;
+  created_at_text: string;
 }
 
 interface CountRow {
@@ -116,8 +167,14 @@ function sortTime(document: JsonDocument, fallback: number): number {
   return fallback;
 }
 
+function canonicalCreatedAt(value: JsonValue | undefined): JsonValue | undefined {
+  if (typeof value !== "string") return value;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value;
+}
+
 function fallbackKey(document: JsonDocument): string | null {
-  const createdAt = document.created_at;
+  const createdAt = canonicalCreatedAt(document.created_at);
   const eventType = document.eventType;
   if (
     (typeof createdAt !== "string" && typeof createdAt !== "number") ||
@@ -126,6 +183,21 @@ function fallbackKey(document: JsonDocument): string | null {
     return null;
   }
   return JSON.stringify([createdAt, eventType]);
+}
+
+function hasOwn(document: JsonDocument, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(document, field);
+}
+
+function identifierMetadata(document: JsonDocument): {
+  identifier: string | null;
+  present: 0 | 1;
+} {
+  if (!hasOwn(document, "identifier")) return { identifier: null, present: 0 };
+  return {
+    identifier: typeof document.identifier === "string" ? document.identifier : null,
+    present: 1,
+  };
 }
 
 function requestedIdentifier(document: JsonDocument): string | null {
@@ -151,22 +223,106 @@ function normalizeTreatmentIdentity(document: JsonDocument): JsonDocument {
   return normalized;
 }
 
-function materialize(row: Pick<DbDocumentV4, "id" | "body" | "identifier" | "srv_created" | "srv_modified" | "is_valid">): JsonDocument {
+function utcOffsetMinutes(value: JsonValue | undefined): number {
+  if (typeof value !== "string") return 0;
+  if (/[zZ]$/.test(value)) return 0;
+  const match = /([+-])(\d{2}):?(\d{2})$/.exec(value);
+  if (match === null) return 0;
+  const minutes = Number(match[2]) * 60 + Number(match[3]);
+  return match[1] === "-" ? -minutes : minutes;
+}
+
+/**
+ * The single-document part of locked v15.0.7 treatments.prepareData(). It
+ * intentionally runs before the v1 upsert selector: created_at is UTC,
+ * eventTime overrides it, numeric fields are normalized, and utcOffset still
+ * comes from the original created_at value. The preBolus fan-out is documented
+ * separately below.
+ */
+function normalizeLegacyTreatment(document: JsonDocument): JsonDocument {
+  const normalized = { ...document };
+  const originalCreatedAt = normalized.created_at;
+  const parsed = typeof originalCreatedAt === "number"
+    ? originalCreatedAt
+    : typeof originalCreatedAt === "string"
+      ? Date.parse(originalCreatedAt)
+      : Number.NaN;
+  const createdAt = Number.isFinite(parsed) ? new Date(parsed) : new Date();
+  normalized.created_at = createdAt.toISOString();
+  normalized.utcOffset = utcOffsetMinutes(originalCreatedAt);
+
+  if (normalized.eventTime) {
+    const eventTime = new Date(normalized.eventTime as string | number);
+    normalized.created_at = eventTime.toISOString();
+  }
+
+  // Keep the query-relevant body representation aligned with the locked
+  // treatments.prepareData implementation. It eagerly coerces all numeric
+  // fields before applying its historical empty/NaN cleanup rules.
+  const numericFields = [
+    "glucose",
+    "targetTop",
+    "targetBottom",
+    "carbs",
+    "insulin",
+    "duration",
+    "percent",
+    "absolute",
+    "relative",
+    "preBolus",
+  ] as const;
+  for (const field of numericFields) normalized[field] = Number(normalized[field]);
+
+  // The locked implementation moves carbs to a second, shifted treatment for
+  // preBolus. That fan-out is outside this vertical slice, so keep carbs on the
+  // original record rather than silently losing them.
+  if (normalized.eventType === "Announcement") normalized.isAnnouncement = true;
+  delete normalized.eventTime;
+
+  for (const field of [
+    "targetTop",
+    "targetBottom",
+    "carbs",
+    "insulin",
+    "percent",
+    "relative",
+    "notes",
+    "preBolus",
+  ] as const) {
+    if (!normalized[field] || normalized[field] === 0) delete normalized[field];
+  }
+  for (const field of ["absolute", "duration"] as const) {
+    if (Number.isNaN(normalized[field])) delete normalized[field];
+  }
+  if (normalized.glucose === 0 || Number.isNaN(normalized.glucose)) {
+    delete normalized.glucose;
+    delete normalized.glucoseType;
+    delete normalized.units;
+  }
+  return normalized;
+}
+
+function materializeApi3(row: Pick<DbDocumentV4, "id" | "body" | "identifier" | "srv_created" | "srv_modified" | "is_valid">): JsonDocument {
   if (row.srv_created === null || row.srv_modified === null || row.is_valid === null) {
     throw new Error("document metadata is incomplete");
   }
   const document = parseBody(row.body);
   document._id = row.id;
-  if (row.identifier === null) delete document.identifier;
-  else document.identifier = row.identifier;
+  document.identifier = row.identifier || row.id;
   document.srvCreated = row.srv_created;
   document.srvModified = row.srv_modified;
   if (row.is_valid === 0) document.isValid = false;
   return document;
 }
 
+function materializeLegacy(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument {
+  const document = parseBody(row.body);
+  document._id = row.id;
+  return document;
+}
+
 function materializeChange(row: DbChange): JsonDocument {
-  return materialize({
+  return materializeApi3({
     id: row.id,
     body: row.body,
     identifier: row.identifier,
@@ -209,22 +365,49 @@ function sqlValue(value: JsonValue): SqlStorageValue {
   return JSON.stringify(value);
 }
 
-function fieldExpression(field: string): { sql: string; bindings: SqlStorageValue[] } {
-  if (!FIELD_NAME.test(field)) throw new Error(`invalid query field ${field}`);
+interface FieldExpression {
+  sql: string;
+  bindings: SqlStorageValue[];
+  existsSql: string;
+  existsBindings: SqlStorageValue[];
+}
+
+function fieldExpression(field: string, policy: MaterializationPolicy): FieldExpression {
+  if (!FIELD_NAME.test(field)) {
+    throw new DocumentQueryError("QUERY_FIELD_INVALID", `invalid query field ${field}`);
+  }
   switch (field) {
     case "_id":
-      return { sql: "id", bindings: [] };
+      return { sql: "id", bindings: [], existsSql: "1", existsBindings: [] };
     case "identifier":
-      return { sql: "identifier", bindings: [] };
+      return {
+        sql: "identifier",
+        bindings: [],
+        existsSql: "identifier_present != 0",
+        existsBindings: [],
+      };
     case "srvCreated":
-      return { sql: "srv_created", bindings: [] };
+      if (policy === "api3") {
+        return { sql: "srv_created", bindings: [], existsSql: "1", existsBindings: [] };
+      }
+      break;
     case "srvModified":
-      return { sql: "srv_modified", bindings: [] };
+      if (policy === "api3") {
+        return { sql: "srv_modified", bindings: [], existsSql: "1", existsBindings: [] };
+      }
+      break;
     case "isValid":
-      return { sql: "is_valid", bindings: [] };
-    default:
-      return { sql: "json_extract(body, ?)", bindings: [`$.${field}`] };
+      if (policy === "api3") {
+        return { sql: "is_valid", bindings: [], existsSql: "1", existsBindings: [] };
+      }
+      break;
   }
+  return {
+    sql: "json_extract(body, ?)",
+    bindings: [`$.${field}`],
+    existsSql: "json_type(body, ?) IS NOT NULL",
+    existsBindings: [`$.${field}`],
+  };
 }
 
 function escapeLike(value: string): string {
@@ -235,8 +418,9 @@ function appendFilter(
   clauses: string[],
   bindings: SqlStorageValue[],
   filter: DocumentFilter,
+  policy: MaterializationPolicy,
 ): void {
-  const expression = fieldExpression(filter.field);
+  const expression = fieldExpression(filter.field, policy);
   const addExpression = (): void => {
     bindings.push(...expression.bindings);
   };
@@ -274,22 +458,96 @@ function appendFilter(
         clauses.push(filter.operator === "in" ? "0" : "1");
         return;
       }
-      addExpression();
-      const placeholders = values.map(() => "?").join(", ");
-      clauses.push(`${expression.sql} ${filter.operator === "in" ? "IN" : "NOT IN"} (${placeholders})`);
-      bindings.push(...values.map(sqlValue));
+      if (values.length > MAX_SQL_BINDINGS) {
+        throw new DocumentQueryError(
+          "QUERY_BINDING_LIMIT",
+          `document query exceeds SQLite's ${MAX_SQL_BINDINGS} bound-parameter limit`,
+        );
+      }
+      const hasNull = values.some((value) => value === null);
+      const nonNullValues = values.filter((value) => value !== null);
+      const placeholders = nonNullValues.map(() => "?").join(", ");
+      if (filter.operator === "in") {
+        if (hasNull) {
+          clauses.push(nonNullValues.length === 0
+            ? `(NOT (${expression.existsSql}) OR ${expression.sql} IS NULL)`
+            : `(NOT (${expression.existsSql}) OR ${expression.sql} IS NULL OR ${expression.sql} IN (${placeholders}))`);
+          bindings.push(
+            ...expression.existsBindings,
+            ...expression.bindings,
+            ...(nonNullValues.length === 0 ? [] : expression.bindings),
+            ...nonNullValues.map(sqlValue),
+          );
+        } else {
+          addExpression();
+          clauses.push(`${expression.sql} IN (${placeholders})`);
+          bindings.push(...nonNullValues.map(sqlValue));
+        }
+      } else if (hasNull) {
+        clauses.push(nonNullValues.length === 0
+          ? `(NOT (${expression.existsSql}) OR ${expression.sql} IS NOT NULL)`
+          : `(NOT (${expression.existsSql}) OR (${expression.sql} IS NOT NULL AND ${expression.sql} NOT IN (${placeholders})))`);
+        bindings.push(
+          ...expression.existsBindings,
+          ...expression.bindings,
+          ...(nonNullValues.length === 0 ? [] : expression.bindings),
+          ...nonNullValues.map(sqlValue),
+        );
+      } else {
+        addExpression();
+        clauses.push(`(${expression.sql} IS NULL OR ${expression.sql} NOT IN (${placeholders}))`);
+        bindings.push(...expression.bindings, ...nonNullValues.map(sqlValue));
+      }
       return;
     }
-    case "re":
+    case "re": {
       addExpression();
+      const pattern = `%${escapeLike(String(filter.value))}%`;
+      if (new TextEncoder().encode(pattern).byteLength > MAX_LIKE_PATTERN_BYTES) {
+        throw new DocumentQueryError(
+          "QUERY_LIKE_PATTERN_LIMIT",
+          `LIKE pattern exceeds SQLite's ${MAX_LIKE_PATTERN_BYTES}-byte limit`,
+        );
+      }
       clauses.push(`CAST(${expression.sql} AS TEXT) LIKE ? ESCAPE '\\'`);
-      bindings.push(`%${escapeLike(String(filter.value))}%`);
+      bindings.push(pattern);
+      return;
+    }
+    case "exists": {
+      const exists = filter.value !== false
+        && filter.value !== 0
+        && filter.value !== "false"
+        && filter.value !== "0";
+      clauses.push(exists ? expression.existsSql : `NOT (${expression.existsSql})`);
+      bindings.push(...expression.existsBindings);
+      return;
+    }
+    default:
+      throw new DocumentQueryError(
+        "QUERY_OPERATOR_UNSUPPORTED",
+        `unsupported document query operator ${String(filter.operator)}`,
+      );
   }
 }
 
-function columnNames(sql: SqlStorage): Set<string> {
+function assertSqlQueryWithinLimits(statement: string, bindings: SqlStorageValue[]): void {
+  if (bindings.length > MAX_SQL_BINDINGS) {
+    throw new DocumentQueryError(
+      "QUERY_BINDING_LIMIT",
+      `document query exceeds SQLite's ${MAX_SQL_BINDINGS} bound-parameter limit`,
+    );
+  }
+  if (new TextEncoder().encode(statement).byteLength > MAX_SQL_STATEMENT_BYTES) {
+    throw new DocumentQueryError(
+      "QUERY_STATEMENT_LIMIT",
+      `document query exceeds SQLite's ${MAX_SQL_STATEMENT_BYTES}-byte statement limit`,
+    );
+  }
+}
+
+function tableColumnNames(sql: SqlStorage, table: "documents" | "document_changes"): Set<string> {
   return new Set(
-    sql.exec<{ name: string }>("PRAGMA table_info(documents)").toArray().map((column) => column.name),
+    sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray().map((column) => column.name),
   );
 }
 
@@ -309,8 +567,9 @@ function migrationCandidate(row: DbDocumentV4, document: JsonDocument): number {
 }
 
 export function migrateDocumentsV4(sql: SqlStorage): void {
-  const columns = columnNames(sql);
+  const columns = tableColumnNames(sql, "documents");
   addColumn(sql, columns, "identifier", "TEXT");
+  addColumn(sql, columns, "identifier_present", "INTEGER");
   addColumn(sql, columns, "srv_created", "INTEGER");
   addColumn(sql, columns, "srv_modified", "INTEGER");
   addColumn(sql, columns, "is_valid", "INTEGER");
@@ -327,6 +586,7 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       collection TEXT NOT NULL,
       id TEXT NOT NULL,
       identifier TEXT,
+      identifier_present INTEGER NOT NULL,
       body TEXT NOT NULL,
       srv_created INTEGER NOT NULL,
       srv_modified INTEGER NOT NULL,
@@ -334,8 +594,12 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       revision INTEGER NOT NULL,
       operation TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS documents_collection_sort
+      ON documents(collection, sort_time DESC);
     CREATE INDEX IF NOT EXISTS documents_collection_identifier
       ON documents(collection, identifier);
+    CREATE INDEX IF NOT EXISTS documents_collection_identifier_presence
+      ON documents(collection, identifier_present, identifier);
     CREATE INDEX IF NOT EXISTS documents_collection_fallback
       ON documents(collection, fallback_key);
     CREATE INDEX IF NOT EXISTS documents_collection_valid_sort
@@ -348,10 +612,24 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       ON document_changes(collection, id, revision);
   `);
 
+  const changeColumns = tableColumnNames(sql, "document_changes");
+  const changePresenceWasMissing = !changeColumns.has("identifier_present");
+  if (changePresenceWasMissing) {
+    sql.exec("ALTER TABLE document_changes ADD COLUMN identifier_present INTEGER");
+  }
+
   const rows = sql.exec<DbDocumentV4>(`
     SELECT collection, id, body, sort_time, created_at, updated_at,
-           identifier, srv_created, srv_modified, is_valid, fallback_key, revision
+           identifier, identifier_present, srv_created, srv_modified, is_valid, fallback_key, revision
     FROM documents
+    WHERE identifier_present IS NULL OR srv_created IS NULL OR srv_modified IS NULL
+       OR is_valid IS NULL OR revision IS NULL
+       OR NOT EXISTS (
+         SELECT 1 FROM document_changes
+         WHERE document_changes.collection = documents.collection
+           AND document_changes.id = documents.id
+           AND document_changes.revision = documents.revision
+       )
     ORDER BY collection ASC, updated_at ASC, id ASC
   `).toArray();
   const clocks = new Map<string, number>();
@@ -371,20 +649,27 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       ?? timestamp(document.srvCreated)
       ?? Math.min(candidate, srvModified);
     const isValid = row.is_valid ?? (document.isValid === false ? 0 : 1);
-    const identifier = row.identifier ?? requestedIdentifier(document);
-    const documentFallback = row.fallback_key
-      ?? (collection === TREATMENTS ? fallbackKey(document) : null);
+    const identity = identifierMetadata(document);
+    const identifierPresent = identity.present;
+    const identifier = identity.identifier;
+    // Older v4 builds stored the literal created_at offset in fallback_key.
+    // Recompute treatment metadata from the preserved body so equivalent
+    // -05:00 and Z retransmissions converge after upgrade.
+    const documentFallback = collection === TREATMENTS
+      ? fallbackKey(document)
+      : row.fallback_key;
     const revision = row.revision ?? 1;
 
     sql.exec(
       `UPDATE documents
        SET identifier = ?, srv_created = ?, srv_modified = ?, is_valid = ?,
-           fallback_key = ?, revision = ?
+           identifier_present = ?, fallback_key = ?, revision = ?
        WHERE collection = ? AND id = ?`,
       identifier,
       srvCreated,
       srvModified,
       isValid,
+      identifierPresent,
       documentFallback,
       revision,
       collection,
@@ -401,11 +686,13 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     if (changeCount === 0) {
       sql.exec(
         `INSERT INTO document_changes
-          (collection, id, identifier, body, srv_created, srv_modified, is_valid, revision, operation)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'migrate')`,
+          (collection, id, identifier, identifier_present, body, srv_created, srv_modified,
+           is_valid, revision, operation)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'migrate')`,
         collection,
         row.id,
         identifier,
+        identifierPresent,
         row.body,
         srvCreated,
         srvModified,
@@ -416,16 +703,42 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     clocks.set(collection, Math.max(priorClock, srvModified));
   }
 
+  if (changePresenceWasMissing) {
+    const changes = sql.exec<{ change_id: number; body: string }>(
+      "SELECT change_id, body FROM document_changes WHERE identifier_present IS NULL",
+    ).toArray();
+    for (const change of changes) {
+      const identity = identifierMetadata(parseBody(change.body));
+      sql.exec(
+        "UPDATE document_changes SET identifier_present = ? WHERE change_id = ?",
+        identity.present,
+        change.change_id,
+      );
+    }
+  }
+
   for (const [collection, lastModified] of clocks) {
     sql.exec(
       `INSERT INTO collection_clocks (collection, last_srv_modified)
        VALUES (?, ?)
        ON CONFLICT(collection) DO UPDATE SET
-         last_srv_modified = MAX(collection_clocks.last_srv_modified, excluded.last_srv_modified)`,
+         last_srv_modified = excluded.last_srv_modified
+       WHERE excluded.last_srv_modified > collection_clocks.last_srv_modified`,
       collection,
       lastModified,
     );
   }
+
+  sql.exec(`
+    INSERT INTO collection_clocks (collection, last_srv_modified)
+    SELECT collection, MAX(srv_modified)
+    FROM documents
+    WHERE srv_modified IS NOT NULL
+    GROUP BY collection
+    ON CONFLICT(collection) DO UPDATE SET
+      last_srv_modified = excluded.last_srv_modified
+    WHERE excluded.last_srv_modified > collection_clocks.last_srv_modified
+  `);
 }
 
 export class SqliteDocumentRepository {
@@ -454,10 +767,20 @@ export class SqliteDocumentRepository {
     ).toArray()[0];
   }
 
+  private findLegacyByIdRow(id: string): DbDocumentV4 | undefined {
+    return this.sql.exec<DbDocumentV4>(
+      `SELECT * FROM documents
+       WHERE collection = ? AND id = ? AND identifier_present = 0
+       LIMIT 1`,
+      TREATMENTS,
+      id,
+    ).toArray()[0];
+  }
+
   private findByFallbackRow(key: string, legacyOnly: boolean): DbDocumentV4 | undefined {
     return this.sql.exec<DbDocumentV4>(
       `SELECT * FROM documents
-       WHERE collection = ? AND fallback_key = ? ${legacyOnly ? "AND identifier IS NULL" : ""}
+       WHERE collection = ? AND fallback_key = ? ${legacyOnly ? "AND identifier_present = 0" : ""}
        ORDER BY srv_modified DESC, updated_at DESC, id ASC
        LIMIT 1`,
       TREATMENTS,
@@ -472,7 +795,8 @@ export class SqliteDocumentRepository {
   private findApi3CreateCandidate(document: JsonDocument): DbDocumentV4 | undefined {
     const identifier = requestedIdentifier(document);
     if (identifier !== null) {
-      const identified = this.findByIdentifierRow(identifier) ?? this.findByIdRow(identifier);
+      const identified = this.findByIdentifierRow(identifier)
+        ?? (OBJECT_ID.test(identifier) ? this.findLegacyByIdRow(identifier.toLowerCase()) : undefined);
       if (identified !== undefined) return identified;
     }
     const id = requestedId(document);
@@ -512,9 +836,26 @@ export class SqliteDocumentRepository {
   }
 
   private assertWritable(row: DbDocumentV4): void {
-    const document = materialize(row);
+    const document = materializeLegacy(row);
     if (document.isReadOnly === true || document.readOnly === true || document.readonly === true) {
       throw new Error("Trying to modify read-only document");
+    }
+  }
+
+  private assertApi3ImmutableFields(
+    row: DbDocumentV4,
+    document: JsonDocument,
+    isDeduplication = false,
+  ): void {
+    this.assertWritable(row);
+    if (row.is_valid === 0) return;
+    const stored = materializeLegacy(row);
+    stored.identifier = row.identifier || row.id;
+    for (const field of API3_IMMUTABLE_FIELDS) {
+      if (field === "identifier" && isDeduplication) continue;
+      if (document[field] !== undefined && document[field] !== stored[field]) {
+        throw new Error(`Field ${field} cannot be modified by the client`);
+      }
     }
   }
 
@@ -523,19 +864,21 @@ export class SqliteDocumentRepository {
     document: JsonDocument,
     existing: DbDocumentV4 | undefined,
     operation: "create" | "replace" | "patch" | "delete",
+    policy: MutationPolicy,
   ): DocumentMutationResult {
     const srvModified = this.nextSrvModified(Date.now());
     const srvCreated = existing?.srv_created ?? srvModified;
     if (srvCreated === null) throw new Error("existing document has no srvCreated metadata");
     const revision = (existing?.revision ?? 0) + 1;
-    const identifier = requestedIdentifier(document);
+    const identity = identifierMetadata(document);
+    const identifier = identity.identifier;
     const isValid = document.isValid === false ? 0 : 1;
     const stored = { ...document };
     stored._id = id;
-    if (identifier === null) delete stored.identifier;
-    else stored.identifier = identifier;
-    stored.srvCreated = srvCreated;
-    stored.srvModified = srvModified;
+    if (policy === "api3") {
+      stored.srvCreated = srvCreated;
+      stored.srvModified = srvModified;
+    }
     if (isValid === 0) stored.isValid = false;
     const body = JSON.stringify(stored);
     const now = Date.now();
@@ -543,13 +886,14 @@ export class SqliteDocumentRepository {
     this.sql.exec(
       `INSERT INTO documents
         (collection, id, body, sort_time, created_at, updated_at, identifier,
-         srv_created, srv_modified, is_valid, fallback_key, revision)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         identifier_present, srv_created, srv_modified, is_valid, fallback_key, revision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(collection, id) DO UPDATE SET
          body = excluded.body,
          sort_time = excluded.sort_time,
          updated_at = excluded.updated_at,
          identifier = excluded.identifier,
+         identifier_present = excluded.identifier_present,
          srv_created = excluded.srv_created,
          srv_modified = excluded.srv_modified,
          is_valid = excluded.is_valid,
@@ -562,6 +906,7 @@ export class SqliteDocumentRepository {
       existing?.created_at ?? now,
       now,
       identifier,
+      identity.present,
       srvCreated,
       srvModified,
       isValid,
@@ -570,11 +915,13 @@ export class SqliteDocumentRepository {
     );
     this.sql.exec(
       `INSERT INTO document_changes
-        (collection, id, identifier, body, srv_created, srv_modified, is_valid, revision, operation)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (collection, id, identifier, identifier_present, body, srv_created, srv_modified,
+         is_valid, revision, operation)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       TREATMENTS,
       id,
       identifier,
+      identity.present,
       body,
       srvCreated,
       srvModified,
@@ -584,13 +931,22 @@ export class SqliteDocumentRepository {
     );
 
     const result: DocumentMutationResult = {
-      document: stored,
+      document: policy === "api3"
+        ? materializeApi3({
+          id,
+          body,
+          identifier,
+          srv_created: srvCreated,
+          srv_modified: srvModified,
+          is_valid: isValid,
+        })
+        : stored,
       created: existing === undefined,
       deduplicated: existing !== undefined,
       revision,
       srvModified,
     };
-    const oldIdentifier = existing?.identifier ?? (existing === undefined ? null : existing.id);
+    const oldIdentifier = existing === undefined ? null : existing.identifier || existing.id;
     if (existing !== undefined && oldIdentifier !== identifier && oldIdentifier !== null) {
       result.deduplicatedIdentifier = oldIdentifier;
     }
@@ -600,55 +956,73 @@ export class SqliteDocumentRepository {
   findTreatmentById(id: string, includeDeleted = false): JsonDocument | null {
     const row = this.findByIdRow(id);
     if (row === undefined || (!includeDeleted && row.is_valid === 0)) return null;
-    return materialize(row);
+    return materializeApi3(row);
   }
 
   findTreatmentByIdentifier(identifier: string, includeDeleted = false): JsonDocument | null {
     const row = this.findByIdentifierRow(identifier) ?? this.findByIdRow(identifier);
     if (row === undefined || (!includeDeleted && row.is_valid === 0)) return null;
-    return materialize(row);
+    return materializeApi3(row);
   }
 
   findTreatmentByFallback(createdAt: JsonValue, eventType: JsonValue, includeDeleted = false): JsonDocument | null {
     const key = fallbackKey({ created_at: createdAt, eventType });
-    const row = key === null ? undefined : this.findByFallbackRow(key, false);
+    const row = key === null ? undefined : this.findByFallbackRow(key, true);
     if (row === undefined || (!includeDeleted && row.is_valid === 0)) return null;
-    return materialize(row);
+    return materializeApi3(row);
   }
 
-  queryTreatments(query: DocumentQuery = {}): JsonDocument[] {
+  private queryTreatmentRows(
+    query: DocumentQuery,
+    policy: MaterializationPolicy,
+  ): DbDocumentV4[] {
     const clauses = ["collection = ?"];
     const bindings: SqlStorageValue[] = [TREATMENTS];
-    if (query.includeDeleted !== true) clauses.push("is_valid != 0");
-    for (const filter of query.filters ?? []) appendFilter(clauses, bindings, filter);
+    if (policy === "api3" && query.includeDeleted !== true) clauses.push("is_valid != 0");
+    for (const filter of query.filters ?? []) appendFilter(clauses, bindings, filter, policy);
 
-    let order = "sort_time DESC, srv_modified DESC, id ASC";
+    let order = policy === "legacy"
+      ? "json_extract(body, '$.created_at') DESC, id ASC"
+      : "sort_time DESC, srv_modified DESC, id ASC";
     if (query.sort !== undefined) {
-      const expression = fieldExpression(query.sort.field);
+      const expression = fieldExpression(query.sort.field, policy);
       order = `${expression.sql} ${query.sort.direction === "asc" ? "ASC" : "DESC"}, id ASC`;
       bindings.push(...expression.bindings);
     }
     bindings.push(boundedLimit(query.limit), boundedSkip(query.skip));
-    const rows = this.sql.exec<DbDocumentV4>(
-      `SELECT * FROM documents
+    const statement = `SELECT * FROM documents
        WHERE ${clauses.join(" AND ")}
        ORDER BY ${order}
-       LIMIT ? OFFSET ?`,
-      ...bindings,
-    ).toArray();
-    return rows.map(materialize).map((document) => project(document, query.fields));
+       LIMIT ? OFFSET ?`;
+    assertSqlQueryWithinLimits(statement, bindings);
+    return this.sql.exec<DbDocumentV4>(statement, ...bindings).toArray();
+  }
+
+  queryTreatments(query: DocumentQuery = {}): JsonDocument[] {
+    return this.queryTreatmentRows(query, "api3")
+      .map(materializeApi3)
+      .map((document) => project(document, query.fields));
+  }
+
+  queryLegacyTreatments(query: DocumentQuery = {}): JsonDocument[] {
+    return this.queryTreatmentRows(query, "legacy")
+      .map(materializeLegacy)
+      .map((document) => project(document, query.fields));
   }
 
   upsertTreatment(input: JsonDocument): DocumentMutationResult {
     return this.storage.transactionSync(() => {
-      const document = normalizeTreatmentIdentity(input);
+      const document = normalizeLegacyTreatment(normalizeTreatmentIdentity(input));
       const existing = this.findTreatmentUpsertCandidate(document);
-      if (existing !== undefined) this.assertWritable(existing);
+      if (requestedIdentifier(document) !== null) delete document._id;
       const id = existing?.id ?? requestedId(document) ?? randomObjectId();
-      if (existing !== undefined && existing.is_valid === 0 && document.isValid === undefined) {
-        delete document.isValid;
-      }
-      return this.writeSnapshot(id, document, existing, existing === undefined ? "create" : "replace");
+      return this.writeSnapshot(
+        id,
+        document,
+        existing,
+        existing === undefined ? "create" : "replace",
+        "legacy",
+      );
     });
   }
 
@@ -656,12 +1030,15 @@ export class SqliteDocumentRepository {
     return this.storage.transactionSync(() => {
       const document = normalizeTreatmentIdentity(input);
       const existing = this.findApi3CreateCandidate(document);
-      if (existing !== undefined) this.assertWritable(existing);
+      if (existing !== undefined) this.assertApi3ImmutableFields(existing, document, true);
       const id = existing?.id ?? requestedId(document) ?? randomObjectId();
-      if (existing !== undefined && existing.is_valid === 0 && document.isValid === undefined) {
-        delete document.isValid;
-      }
-      return this.writeSnapshot(id, document, existing, existing === undefined ? "create" : "replace");
+      return this.writeSnapshot(
+        id,
+        document,
+        existing,
+        existing === undefined ? "create" : "replace",
+        "api3",
+      );
     });
   }
 
@@ -670,15 +1047,20 @@ export class SqliteDocumentRepository {
       const existing = this.findByIdentity(identity);
       if (existing === undefined) {
         const document = normalizeTreatmentIdentity({ ...input, identifier: identity });
-        return this.writeSnapshot(requestedId(document) ?? randomObjectId(), document, undefined, "create");
+        return this.writeSnapshot(
+          requestedId(document) ?? randomObjectId(),
+          document,
+          undefined,
+          "create",
+          "api3",
+        );
       }
-      this.assertWritable(existing);
       if (existing.is_valid === 0) throw new Error("document is deleted");
       const document = normalizeTreatmentIdentity({ ...input });
       document._id = existing.id;
-      document.identifier = existing.identifier ?? identity;
-      delete document.isValid;
-      return this.writeSnapshot(existing.id, document, existing, "replace");
+      document.identifier = identity;
+      this.assertApi3ImmutableFields(existing, document);
+      return this.writeSnapshot(existing.id, document, existing, "replace", "api3");
     });
   }
 
@@ -686,17 +1068,11 @@ export class SqliteDocumentRepository {
     return this.storage.transactionSync(() => {
       const existing = this.findByIdentity(identity);
       if (existing === undefined) return null;
-      this.assertWritable(existing);
       if (existing.is_valid === 0) throw new Error("document is deleted");
-      const original = materialize(existing);
-      for (const field of ["_id", "identifier", "srvCreated", "srvModified", "isValid"]) {
-        if (patch[field] !== undefined && patch[field] !== original[field]) {
-          throw new Error(`Field ${field} cannot be modified by the client`);
-        }
-      }
+      this.assertApi3ImmutableFields(existing, patch);
+      const original = materializeLegacy(existing);
       const document = { ...original, ...patch };
-      delete document.isValid;
-      return this.writeSnapshot(existing.id, document, existing, "patch");
+      return this.writeSnapshot(existing.id, document, existing, "patch", "api3");
     });
   }
 
@@ -718,9 +1094,9 @@ export class SqliteDocumentRepository {
         );
         return { deleted: true, permanent: true };
       }
-      const document = materialize(existing);
+      const document = materializeLegacy(existing);
       document.isValid = false;
-      const mutation = this.writeSnapshot(existing.id, document, existing, "delete");
+      const mutation = this.writeSnapshot(existing.id, document, existing, "delete", "api3");
       return {
         deleted: true,
         permanent: false,
@@ -734,18 +1110,66 @@ export class SqliteDocumentRepository {
     return this.storage.transactionSync(() => {
       const existing = this.findByIdRow(id);
       if (existing === undefined) return false;
-      this.assertWritable(existing);
       this.sql.exec("DELETE FROM document_changes WHERE collection = ? AND id = ?", TREATMENTS, id);
       this.sql.exec("DELETE FROM documents WHERE collection = ? AND id = ?", TREATMENTS, id);
       return true;
     });
   }
 
+  deleteLegacyTreatment(identity: string): boolean {
+    return this.storage.transactionSync(() => {
+      const existing = OBJECT_ID.test(identity)
+        ? this.findByIdRow(identity.toLowerCase())
+        : UUID.test(identity)
+          ? this.findByIdentifierRow(identity) ?? this.findByIdRow(identity)
+          : undefined;
+      if (existing === undefined) return false;
+      this.sql.exec(
+        "DELETE FROM document_changes WHERE collection = ? AND id = ?",
+        TREATMENTS,
+        existing.id,
+      );
+      this.sql.exec(
+        "DELETE FROM documents WHERE collection = ? AND id = ?",
+        TREATMENTS,
+        existing.id,
+      );
+      return true;
+    });
+  }
+
   treatmentsLastModified(): number | null {
-    return this.sql.exec<ClockRow>(
-      "SELECT last_srv_modified FROM collection_clocks WHERE collection = ? LIMIT 1",
+    const row = this.sql.exec<MaxModifiedRow>(
+      `SELECT MAX(CASE
+                    WHEN json_type(body, '$.srvModified') IN ('integer', 'real')
+                      THEN CAST(json_extract(body, '$.srvModified') AS INTEGER)
+                    ELSE NULL
+                  END) AS srv_modified,
+              MAX(CASE
+                    WHEN json_type(body, '$.created_at') IN ('integer', 'real')
+                      THEN CAST(json_extract(body, '$.created_at') AS INTEGER)
+                    ELSE NULL
+                  END) AS created_at_number
+       FROM documents
+       WHERE collection = ?`,
       TREATMENTS,
-    ).toArray()[0]?.last_srv_modified ?? null;
+    ).one();
+    const textCreatedAt = this.sql.exec<TextModifiedRow>(
+      `SELECT json_extract(body, '$.created_at') AS created_at_text
+       FROM documents
+       WHERE collection = ?
+         AND json_type(body, '$.created_at') = 'text'
+         AND julianday(json_extract(body, '$.created_at')) IS NOT NULL
+       ORDER BY julianday(json_extract(body, '$.created_at')) DESC
+       LIMIT 1`,
+      TREATMENTS,
+    ).toArray()[0]?.created_at_text;
+    const candidates = [
+      row.srv_modified,
+      row.created_at_number,
+      textCreatedAt === undefined ? null : timestamp(textCreatedAt),
+    ].filter((value): value is number => value !== null);
+    return candidates.length === 0 ? null : Math.max(...candidates);
   }
 
   treatmentHistory(query: DocumentHistoryQuery): JsonDocument[] {
@@ -753,14 +1177,16 @@ export class SqliteDocumentRepository {
     const comparison = query.inclusive === true ? ">=" : ">";
     const rows = this.sql.exec<DbChange>(
       `WITH ranked AS (
-         SELECT change_id, id, identifier, body, srv_created, srv_modified, is_valid, revision,
+         SELECT change_id, id, identifier, identifier_present, body, srv_created, srv_modified,
+                is_valid, revision,
                 ROW_NUMBER() OVER (
                   PARTITION BY id ORDER BY srv_modified DESC, change_id DESC
                 ) AS latest_rank
          FROM document_changes
          WHERE collection = ? AND srv_modified ${comparison} ?
        )
-       SELECT change_id, id, identifier, body, srv_created, srv_modified, is_valid, revision
+       SELECT change_id, id, identifier, identifier_present, body, srv_created, srv_modified,
+              is_valid, revision
        FROM ranked
        WHERE latest_rank = 1
        ORDER BY srv_modified ASC, change_id ASC

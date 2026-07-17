@@ -1,6 +1,11 @@
 import { EntryStore } from "./entry-store";
 import type { DocumentCollection, JsonDocument } from "./entry-store";
-import { filterDocuments, parseDocumentPayload } from "./documents";
+import {
+  filterDocuments,
+  normalizeTreatmentNumbers,
+  parseDocumentPayload,
+  parseTreatmentQuery,
+} from "./documents";
 import { ApiError, parseEntryPayload, parseHistoryQuery } from "./model";
 import type { PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
@@ -11,6 +16,7 @@ export { EntryStore };
 const MAX_BODY_BYTES = 512 * 1024;
 const TENANT = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const OBJECT_ID = /^[0-9a-f]{24}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UTF8_CONTENT_TYPES = [
   "text/",
   "application/javascript",
@@ -642,7 +648,11 @@ async function handleCollectionApi(
   const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
 
   if (request.method === "GET") {
-    const all = parseDocuments(await store.listDocuments(collection));
+    const all = collection === "treatments"
+      ? normalizeTreatmentNumbers(parseDocuments(await store.queryLegacyTreatments(
+        JSON.stringify(parseTreatmentQuery(url, defaultDocumentCount(collection, url))),
+      )))
+      : parseDocuments(await store.listDocuments(collection));
     if (collection === "profile" && segment === "current") return json(all[0] ?? null);
     const requiredType =
       collection === "food" && segment === "quickpicks"
@@ -650,8 +660,10 @@ async function handleCollectionApi(
         : collection === "food" && segment === "regular"
           ? "food"
           : undefined;
-    const filtered = filterDocuments(all, url, defaultDocumentCount(collection, url), requiredType);
-    if (collection === "activity") {
+    const filtered = collection === "treatments"
+      ? all
+      : filterDocuments(all, url, defaultDocumentCount(collection, url), requiredType);
+    if (collection === "activity" || collection === "treatments") {
       const lastModified = latestDocumentTime(filtered);
       if (lastModified !== null) {
         const ifModifiedSince = request.headers.get("If-Modified-Since");
@@ -685,7 +697,7 @@ async function handleCollectionApi(
     const parsed = parseDocumentPayload(
       await readBoundedBody(request),
       collection,
-      collection !== "activity" && collection !== "profile",
+      collection !== "activity" && collection !== "profile" && collection !== "treatments",
     );
     const existing = parsed.documents.filter((document) => typeof document._id === "string");
     const fresh = parsed.documents.filter((document) => typeof document._id !== "string");
@@ -704,6 +716,10 @@ async function handleCollectionApi(
     await requirePermission(request, env, url, `api:${collection}:delete`);
     let selected: JsonDocument[];
     if (segment !== undefined && segment !== "*") {
+      if (collection === "treatments" && (OBJECT_ID.test(segment) || UUID.test(segment))) {
+        const deleted = await store.deleteLegacyTreatment(segment);
+        return json({ n: deleted ? 1 : 0, ok: 1 });
+      }
       if (!OBJECT_ID.test(segment)) {
         throw new ApiError(400, "invalid_document", "document id must be a 24-character hexadecimal string");
       }
