@@ -46,7 +46,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 5. API v2 | Partial | JWT issuance/refresh is implemented; complete body credentials, delay-list behavior, summary, notifications and full ddata/properties behavior. |
 | 6. API v3 | Started | Public `/version` and JWT-protected `/status` are implemented; generic CRUD, lastModified, history and formats remain. |
 | 7. Authentication/admin | Partial | Tenant JWT keys, eight-hour HS256 tokens, live subject/role lookup, Shiro matching and `verifyauth` are implemented; port derived access-token and persistent IP delay-list behavior. |
-| 8. Engine.IO/Socket.IO | Not started | EIO3 polling handshake, WebSocket upgrade, namespaces, authorization, acknowledgements and database mutation messages on a tenant DO. |
+| 8. Engine.IO/Socket.IO | Protocol core only | EIO4/SIO5 official-path and EIO3/SIO4 legacy codecs are isolated and tested; polling sessions, WebSocket upgrade, namespaces, authorization, acknowledgements and database mutation messages on a tenant DO remain unimplemented. |
 | 9. Real-time storage updates | Not started | Persist-then-broadcast mutation log and reconnect/eviction tests. |
 | 10. Alarms/background tasks | Not started | One-alarm SQLite task scheduler for heartbeat, cleanup, API v3 pruning and server-plugin evaluation. |
 | 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
@@ -174,7 +174,7 @@ error logs.
 ### Milestone D — real-time transport
 
 1. Route `/socket.io/` requests to the tenant DO.
-2. Implement EIO3 polling sessions and ping/pong.
+2. Implement EIO4/SIO5 polling sessions and server-ping/client-pong as the official path; retain EIO3/SIO4 client-ping/server-pong as explicit legacy compatibility.
 3. Add hibernatable WebSocket upgrade and reconnect.
 4. Implement Socket.IO packets, acknowledgements, rooms and `/`, `/storage`,
    `/alarm` namespaces.

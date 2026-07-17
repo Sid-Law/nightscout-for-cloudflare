@@ -1,143 +1,178 @@
-# Engine.IO 3 / Socket.IO protocol core
+# Engine.IO / Socket.IO protocol core
 
-Status: protocol codec and contract tests only. This module is not connected to
-`src/index.ts`, does not replace the polling shim, and does not implement a
-session lifecycle, WebSocket upgrade, namespace membership, or broadcasts.
+Status: protocol codecs, explicit version negotiation, and contract tests only.
+Nothing in this module is connected to `src/index.ts`; it does not replace the
+existing polling shim, modify `EntryStore`, implement a session lifecycle,
+upgrade a connection, persist namespace membership, or broadcast live data.
+
+## Supported stacks
+
+| Role | Engine.IO | Socket.IO parser | Polling framing | Heartbeat |
+| --- | ---: | ---: | --- | --- |
+| Official Nightscout v15.0.7 browser path | 4 | 5 | raw RS (`0x1e`) between packets | server ping, client pong |
+| Legacy compatibility (`allowEIO3`) | 3 | 4 | `<UTF-16 length>:<packet>` | client ping, server pong |
+
+`negotiateProtocolStack()` accepts only an exact `EIO=3` or `EIO=4` value and
+binds it to the matching complete stack. Missing, coerced, and unknown versions
+are rejected. The former ambiguous `SOCKET_IO_PROTOCOL` export no longer
+exists; the public constants are `SOCKET_IO_V4_PROTOCOL` and
+`SOCKET_IO_V5_PROTOCOL`, and stack-aware dispatchers prevent a caller from
+silently pairing EIO4 with the legacy Socket.IO codec.
 
 ## Locked evidence
 
-The implementation is based on the repository's immutable Nightscout
-v15.0.7 / `7e0e77f88fc113a76fe363504125f5b36b8a3fe3` snapshot and the dependency
-versions resolved by that snapshot:
+The source baseline is Nightscout v15.0.7 /
+`7e0e77f88fc113a76fe363504125f5b36b8a3fe3`:
 
-- `vendor/nightscout/lib/server/websocket.js` creates Socket.IO with
-  `allowEIO3: true` and enables both `polling` and `websocket` transports.
-- `vendor/nightscout/lib/client/index.js` opens the root namespace and
-  `/alarm` with `transports: ["polling"]`.
+- `vendor/nightscout/views/index.html` loads `/socket.io/socket.io.js`. The
+  installed `socket.io/client-dist/socket.io.js` banner identifies Socket.IO
+  4.5.4, sets the Engine.IO protocol to 4, writes that value to the `EIO`
+  transport query, and declares Socket.IO parser protocol 5.
+- `vendor/nightscout/lib/server/websocket.js` enables polling and WebSocket and
+  sets `allowEIO3: true`. That flag is the legacy compatibility path; it does
+  not make EIO3 the official browser default.
 - `vendor/nightscout/package-lock.json` resolves server `socket.io` 4.5.4,
   `engine.io` 6.2.1, `engine.io-parser` 5.0.7, and `socket.io-parser` 4.2.5.
-- Engine.IO 6.2.1 contains its own `build/parser-v3`, imported from the
-  `engine.io-parser` 2.2.x branch. It defines protocol 3 packet codes and the
-  HTTP polling format as `<packet string length>:<packet>`. The length is
-  JavaScript string length (UTF-16 code units), not UTF-8 byte length.
-- Engine.IO 6.2.1 selects that parser for `EIO=3`. Its v3 heartbeat branch
-  expects the client to send an Engine.IO ping and the server to answer with a
-  pong. This differs from the EIO4 heartbeat direction.
-- Socket.IO 4.5.4 checks `conn.protocol === 3`: a successful namespace
-  connection is encoded without the newer `{ "sid": ... }` Socket.IO connect
-  payload, and namespace query parameters are taken from the namespace string.
-- The compatible Socket.IO 2.5 client line uses `engine.io-client` 3.5.x,
-  `engine.io-parser` 2.2.x and `socket.io-parser` 3.3.x (Socket.IO protocol 4).
-  Its polling transport passes packet arrays to the EIO3 payload encoder, and
-  event acknowledgements are decimal ids between namespace and JSON payload.
-- `vendor/nightscout/tests/websocket.shape-handling.test.js` supplies the
-  upstream event/ack usage evidence. The new local tests deliberately use only
-  synthetic protocol values, not real health data or credentials.
+  The separately declared `socket.io-client ^4.5.4` currently resolves to
+  4.8.3, so the upstream websocket test also uses EIO4/SIO5 but must not be
+  mislabeled as the official 4.5.4 static browser bundle.
+- `engine.io-parser` 5.0.7 joins and splits EIO4 polling frames with raw ASCII
+  Record Separator. Engine.IO 6.2.1 sends the EIO4 ping from the server and
+  expects the client's pong.
+- `socket.io-parser` 4.2.5 encodes non-binary data as packet type, optional
+  namespace plus comma, optional decimal ack id, then `JSON.stringify(data)`.
+  Socket.IO 4.5.4 sends an EIO4 namespace CONNECT reply with `{ "sid": ... }`;
+  only its EIO3 branch sends the legacy payload-free reply.
+- `vendor/nightscout/tests/websocket.shape-handling.test.js` supplies event and
+  acknowledgement shape evidence and does not force EIO3.
 
-The dependency sources were inspected at the exact versions above. No runtime
-dependency on those Node packages was added; the Cloudflare-compatible core is
-pure TypeScript and uses Web-standard APIs only.
+The exact reference package bytes were measured locally from those locked
+dependencies. The production core has no runtime dependency on them and uses
+Web-standard APIs only.
 
-## Module boundary
+## Official EIO4 / SIO5 wire contract
 
-`src/protocol/engine-io-v3.ts` provides:
+The initial polling exchange is directional; open and client CONNECT are not
+pretended to be one server payload:
 
-- Engine.IO packet encode/decode for open, close, ping, pong, message, upgrade,
-  and noop packet types;
-- EIO3 HTTP polling payload encode/decode with the v3 length-prefix format;
-- typed handshake creation/validation for required `sid`, `upgrades`,
-  `pingInterval`, and `pingTimeout` fields;
-- optional `maxPayload`, because locked Engine.IO 6.2.1 includes it in the
-  open packet even when serving an EIO3 connection.
+1. server polling GET response: `0{"sid":"engine123",...}`;
+2. client polling POST: `40` (root SIO5 CONNECT without auth);
+3. server polling GET response: `40{"sid":"socket123"}`;
+4. later server heartbeat payload: `2`;
+5. client heartbeat POST: `3`.
 
-`src/protocol/socket-io.ts` provides non-binary Socket.IO protocol-4
-connect, disconnect, event, ack, and error packet encode/decode, including
-custom namespaces, namespace query strings, ack ids, and JSON payloads. Wrapper
-helpers explicitly place Socket.IO packets inside Engine.IO message packets.
+Multiple packets sent in the same direction use a raw `\x1e` separator. JSON
+stringification escapes a U+001E inside event data as the six printable
+characters `\\u001e`, so it cannot become a polling delimiter. Raw RS in an
+arbitrary Engine.IO packet is rejected to preserve a one-to-one packet round
+trip and prevent separator injection.
 
-Binary Engine.IO packets and Socket.IO binary event/ack attachment sequences
-are rejected. They are outside this increment and cannot be safely accepted
-without an attachment state machine and aggregate size accounting.
+`src/protocol/engine-io-v4.ts` provides:
+
+- open, close, ping, pong, message, upgrade, and noop packet codecs;
+- RS-framed HTTP polling payload codecs;
+- a required EIO4 handshake shape containing `sid`, `upgrades`,
+  `pingInterval`, `pingTimeout`, and `maxPayload`;
+- an explicit server-ping/client-pong heartbeat descriptor.
+
+`src/protocol/socket-io-v5.ts` provides non-binary CONNECT, DISCONNECT, EVENT,
+ACK, CONNECT_ERROR, namespace, and ack-id codecs. Client CONNECT auth and the
+server `{ "sid": ... }` reply are both represented; the server helper makes
+the sid-bearing reply explicit.
+
+Binary Engine.IO frames and Socket.IO binary event/ack attachment sequences
+are rejected. Supporting them requires a separate attachment state machine and
+aggregate byte accounting.
+
+## JSON compatibility boundary
+
+The SIO5 encoder deliberately follows the locked parser's native
+`JSON.stringify` behavior:
+
+- `Date` becomes its ISO string;
+- deterministic `toJSON()` is honored;
+- `NaN` and infinities become `null`;
+- `undefined` in an array becomes `null`;
+- an object property whose value is `undefined` is omitted;
+- bigint, circular graphs, and binary values are rejected with stable protocol
+  errors.
+
+A bounded parser-style prewalk detects ArrayBuffer/view/Blob binary values
+before `toJSON()` can disguise them. The native stringify traversal then
+applies explicit depth, node, string, aggregate, and final-frame character
+budgets, and the normalized JSON is parsed and shape-validated before the frame
+is returned. `JSON.rawJSON()` values are rejected because their contents bypass
+replacer traversal. Because binary attachment handling is not implemented,
+`toJSON()` must be deterministic and return non-binary data; its call count is
+not an application API. This boundary produces the same non-binary broadcast
+bytes as the official parser without accepting an unbounded object graph.
+
+The legacy SIO4 codec retains its stricter pre-existing JSON-value boundary.
+It is not the codec to use for official Nightscout browser broadcasts.
 
 ## Resource limits and rejection rules
 
-All entry points apply `DEFAULT_PROTOCOL_LIMITS`, and tests can lower any limit
-through an override. Defaults are:
+These are project codec defaults, not Cloudflare platform quotas:
 
 | Boundary | Default |
 | --- | ---: |
 | Polling payload | 1,000,000 UTF-8 bytes |
 | Individual Engine.IO or Socket.IO packet | 1,000,000 UTF-8 bytes |
-| EIO3 packet length | 1,000,000 UTF-16 code units |
+| Packet text | 1,000,000 UTF-16 code units |
 | Packets per polling payload | 128 |
-| Length-prefix digits | 10 |
+| EIO3 length-prefix digits | 10 |
 | Namespace | 256 UTF-16 code units |
 | Session id | 128 UTF-16 code units |
 | JSON nesting | 32 levels |
-| JSON value graph | 10,000 nodes |
+| JSON traversal | 10,000 nodes |
 | Individual JSON string/key | 262,144 UTF-16 code units |
 
-The decoder rejects empty packets, non-decimal or oversized polling length
-headers, truncated frames, unknown packet types, missing custom-namespace comma
-delimiters, unsafe ack ids, malformed JSON, reserved event names, wrong payload
-shapes, excessive nesting/complexity, and binary frames. The encoder rejects
-values that JSON would silently coerce or drop, including `undefined`,
-non-finite numbers, bigint, accessors, class instances, symbols, and cycles.
+Decoders reject empty or malformed payload segments, truncated EIO3 frames,
+unknown packet types, raw/binary frames outside the supported subset, invalid
+namespace delimiters, unsafe ack ids, malformed JSON, reserved event names,
+wrong payload shapes, and excessive size/depth/complexity.
 
-These limits protect the future Worker/DO adapter in addition to Cloudflare's
-outer request limits. Cloudflare's current Workers guidance requires a maximum
-before consuming a body that will be buffered, because an isolate has a shared
-128 MB memory limit. A future HTTP adapter must therefore check `Content-Length`
-when present, stream/count when absent, and only then pass a bounded string to
-this codec. The codec alone cannot make an already-unbounded `request.text()`
-safe.
+Cloudflare's current Workers limit is 128 MB memory per isolate. A future HTTP
+adapter must therefore establish a body-size maximum before buffering, check
+`Content-Length` when present, and stream/count when it is absent. Passing an
+already-unbounded `request.text()` result into a bounded codec is not safe.
 
 ## Future tenant Durable Object integration (not implemented)
 
-The tenant remains the coordination atom: resolve the tenant in the stateless
-Worker and use one deterministic tenant DO. A later, separately reviewed
-increment should add a dedicated session/queue schema rather than modifying the
+The tenant remains the coordination atom: a stateless Worker can resolve the
+tenant and address one deterministic tenant Durable Object. A later increment
+should add dedicated session and queue storage rather than modifying the
 existing `EntryStore` schema implicitly.
 
-Suggested persisted records:
+Suggested authoritative records include:
 
-- Engine.IO session: `sid`, protocol version, transport, state, creation and
-  expiry timestamps, heartbeat deadline, and monotonic inbound/outbound
-  sequence numbers;
-- outbound polling queue: `sid`, sequence, encoded packet, byte length, and
-  expiry, with both per-session bytes and packet counts bounded;
-- namespace membership: `sid`, namespace, authorization state, and any room
-  membership required by the locked Nightscout server contract.
+- Engine.IO session: sid, negotiated stack, transport, state, timestamps,
+  heartbeat deadline, and monotonic inbound/outbound sequence numbers;
+- bounded outbound polling queue: sid, sequence, encoded packet, byte length,
+  and expiry;
+- namespace membership and authorization state keyed by sid and namespace.
 
-State-changing input should be validated, persisted, and assigned a sequence
-before an acknowledgement or broadcast is queued. In-memory maps may cache
-state but are not authoritative across eviction. Poll GET/POST handling needs
-an explicit session state machine, single outstanding poll policy, retry and
-expiry behavior, and tests for duplicate/reordered requests.
-
-For WebSockets, use the Durable Objects Hibernation API, not `ws.accept()`:
+For WebSockets, use the Durable Objects WebSocket Hibernation API:
 
 1. create a `WebSocketPair` and call `this.ctx.acceptWebSocket(server)`;
-2. store only a small bounded connection locator in `serializeAttachment`
-   (for example `sid`, protocol version, and a storage key);
-3. reconstruct live connection indexes from `this.ctx.getWebSockets()` and
+2. put only a small connection locator in `serializeAttachment()` (for
+   example sid, protocol version, and a SQLite storage key);
+3. rebuild live indexes from `this.ctx.getWebSockets()` and
    `deserializeAttachment()` after constructor re-entry;
-4. keep durable session, queue, namespace, and authorization state in DO
-   storage because attachments disappear when the WebSocket closes and are
-   limited to 16,384 bytes;
-5. handle Engine.IO data-frame heartbeat separately from WebSocket control
-   ping/pong. Cloudflare handles WebSocket control frames automatically, but
-   EIO3 uses text data packets `2` and `3`; upgrade probing also uses dynamic
-   `2probe` / `3probe` packets;
-6. prove hibernation with eviction tests before enabling an upgrade path.
+4. keep authoritative session, queue, namespace, and authorization state in
+   Durable Object SQLite storage. Cloudflare's current documented maximum for
+   a serialized attachment is **2,048 bytes**, and the attachment disappears
+   when its WebSocket closes;
+5. keep Engine.IO text-frame heartbeat separate from WebSocket control
+   ping/pong and prove hibernation through eviction tests before enabling an
+   upgrade path.
 
-Current Cloudflare references:
+Cloudflare numerical facts above were rechecked on 2026-07-18 against:
 
-- <https://developers.cloudflare.com/durable-objects/best-practices/websockets/>
-- <https://developers.cloudflare.com/durable-objects/examples/websocket-hibernation-server/>
-- <https://developers.cloudflare.com/durable-objects/api/state/>
-- <https://developers.cloudflare.com/workers/best-practices/workers-best-practices/>
+- <https://developers.cloudflare.com/durable-objects/best-practices/websockets/#websocketserializeattachment>
+- <https://developers.cloudflare.com/workers/platform/limits/#memory>
 
-This document is a handoff design, not a completion claim. Routing, HTTP body
-handling, session persistence, polling concurrency, WebSocket Hibernation,
-authorization, namespaces at runtime, and real-time broadcasts remain undone.
+This remains a handoff design, not a lifecycle completion claim. Routing, HTTP
+body handling, persisted sessions and queues, polling concurrency, WebSocket
+Hibernation, runtime authorization and namespace membership, upgrades, and
+real-time broadcasts are all still unimplemented.

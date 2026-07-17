@@ -10,7 +10,8 @@ import {
 } from "./limits";
 import { encodeEngineIoPacket, type EngineIoPacket } from "./engine-io-v3";
 
-export const SOCKET_IO_PROTOCOL = 4;
+/** Socket.IO protocol 4, retained only for the EIO3 legacy stack. */
+export const SOCKET_IO_V4_PROTOCOL = 4;
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };

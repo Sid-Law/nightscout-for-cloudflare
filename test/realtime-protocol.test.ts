@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   ENGINE_IO_V3_PROTOCOL,
-  SOCKET_IO_PROTOCOL,
+  SOCKET_IO_V4_PROTOCOL,
   ProtocolError,
   createEngineIoHandshakePacket,
   decodeEngineIoHandshake,
   decodeEngineIoPacket,
   decodeEngineIoPollingPayload,
-  decodeSocketIoPacket,
+  decodeSocketIoV4Packet,
   encodeEngineIoPacket,
   encodeEngineIoPollingPayload,
-  encodeSocketIoPacket,
-  unwrapSocketIoPacket,
-  wrapSocketIoPacket,
+  encodeSocketIoV4Packet,
+  unwrapSocketIoV4Packet,
+  wrapSocketIoV4Packet,
   type EngineIoHandshake,
   type EngineIoPacket,
-  type SocketIoPacket,
+  type SocketIoV4Packet,
 } from "../src/protocol";
 
 function expectProtocolError(operation: () => unknown, code: string): void {
@@ -59,7 +59,7 @@ describe("Engine.IO 3 packet codec", () => {
   it("encodes the EIO3 polling handshake and root Socket.IO connect sequence", () => {
     const payload = encodeEngineIoPollingPayload([
       createEngineIoHandshakePacket(HANDSHAKE),
-      wrapSocketIoPacket({ type: "connect", namespace: "/" }),
+      wrapSocketIoV4Packet({ type: "connect", namespace: "/" }),
     ]);
 
     expect(payload).toBe(
@@ -70,7 +70,7 @@ describe("Engine.IO 3 packet codec", () => {
     const packets = decodeEngineIoPollingPayload(payload);
     expect(packets).toHaveLength(2);
     expect(decodeEngineIoHandshake(packets[0] as EngineIoPacket)).toEqual(HANDSHAKE);
-    expect(unwrapSocketIoPacket(packets[1] as EngineIoPacket)).toEqual({
+    expect(unwrapSocketIoV4Packet(packets[1] as EngineIoPacket)).toEqual({
       type: "connect",
       namespace: "/",
     });
@@ -84,7 +84,7 @@ describe("Engine.IO 3 packet codec", () => {
   });
 
   it("matches an upstream polling event with an acknowledgement id", () => {
-    const event = wrapSocketIoPacket({
+    const event = wrapSocketIoV4Packet({
       type: "event",
       namespace: "/",
       id: 0,
@@ -96,7 +96,7 @@ describe("Engine.IO 3 packet codec", () => {
     const [decoded] = decodeEngineIoPollingPayload(
       '44:420["subscribe",{"collections":["entries"]}]',
     );
-    expect(unwrapSocketIoPacket(decoded as EngineIoPacket)).toEqual({
+    expect(unwrapSocketIoV4Packet(decoded as EngineIoPacket)).toEqual({
       type: "event",
       namespace: "/",
       id: 0,
@@ -114,7 +114,7 @@ describe("Engine.IO 3 packet codec", () => {
   it("round-trips Unicode and multiple packets in one polling payload", () => {
     const packets: EngineIoPacket[] = [
       { type: "ping" },
-      wrapSocketIoPacket({
+      wrapSocketIoV4Packet({
         type: "event",
         namespace: "/",
         data: ["dataUpdate", { message: "血糖🙂" }],
@@ -220,13 +220,13 @@ describe("Engine.IO 3 handshake contract", () => {
   });
 });
 
-describe("Socket.IO protocol codec", () => {
-  it("uses the Socket.IO v2-compatible protocol number", () => {
-    expect(SOCKET_IO_PROTOCOL).toBe(4);
+describe("legacy Socket.IO protocol 4 codec", () => {
+  it("uses the EIO3-compatible parser protocol number", () => {
+    expect(SOCKET_IO_V4_PROTOCOL).toBe(4);
   });
 
   it("encodes connect, event, ack, error and disconnect packets exactly", () => {
-    const cases: Array<[SocketIoPacket, string]> = [
+    const cases: Array<[SocketIoV4Packet, string]> = [
       [{ type: "connect", namespace: "/" }, "0"],
       [{ type: "connect", namespace: "/alarm" }, "0/alarm,"],
       [{ type: "connect", namespace: "/storage?token=test" }, "0/storage?token=test,"],
@@ -247,13 +247,13 @@ describe("Socket.IO protocol codec", () => {
     ];
 
     for (const [packet, encoded] of cases) {
-      expect(encodeSocketIoPacket(packet)).toBe(encoded);
-      expect(decodeSocketIoPacket(encoded)).toEqual(packet);
+      expect(encodeSocketIoV4Packet(packet)).toBe(encoded);
+      expect(decodeSocketIoV4Packet(encoded)).toEqual(packet);
     }
   });
 
   it("round-trips namespace, ack id and nested JSON payloads", () => {
-    const packet: SocketIoPacket = {
+    const packet: SocketIoV4Packet = {
       type: "event",
       namespace: "/storage",
       id: Number.MAX_SAFE_INTEGER,
@@ -265,32 +265,32 @@ describe("Socket.IO protocol codec", () => {
         },
       ],
     };
-    expect(decodeSocketIoPacket(encodeSocketIoPacket(packet))).toEqual(packet);
-    expect(unwrapSocketIoPacket(wrapSocketIoPacket(packet))).toEqual(packet);
+    expect(decodeSocketIoV4Packet(encodeSocketIoV4Packet(packet))).toEqual(packet);
+    expect(unwrapSocketIoV4Packet(wrapSocketIoV4Packet(packet))).toEqual(packet);
   });
 
   it("rejects unknown, binary and structurally invalid Socket.IO frames", () => {
-    expectProtocolError(() => decodeSocketIoPacket(""), "invalid_socket_packet");
-    expectProtocolError(() => decodeSocketIoPacket("9"), "unknown_socket_packet");
-    expectProtocolError(() => decodeSocketIoPacket('51-["event",{"_placeholder":true,"num":0}]'), "unsupported_binary_packet");
-    expectProtocolError(() => decodeSocketIoPacket("0/admin"), "invalid_namespace");
-    expectProtocolError(() => decodeSocketIoPacket('2["connect"]'), "invalid_event_name");
-    expectProtocolError(() => decodeSocketIoPacket("2[]"), "invalid_socket_payload");
-    expectProtocolError(() => decodeSocketIoPacket('2{"event":"x"}'), "invalid_socket_payload");
-    expectProtocolError(() => decodeSocketIoPacket("3{}"), "invalid_socket_payload");
-    expectProtocolError(() => decodeSocketIoPacket("4[]"), "invalid_socket_payload");
-    expectProtocolError(() => decodeSocketIoPacket('1["unexpected"]'), "invalid_socket_payload");
-    expectProtocolError(() => decodeSocketIoPacket("0[]"), "invalid_socket_payload");
-    expectProtocolError(() => decodeSocketIoPacket('2["event",]'), "invalid_socket_payload");
+    expectProtocolError(() => decodeSocketIoV4Packet(""), "invalid_socket_packet");
+    expectProtocolError(() => decodeSocketIoV4Packet("9"), "unknown_socket_packet");
+    expectProtocolError(() => decodeSocketIoV4Packet('51-["event",{"_placeholder":true,"num":0}]'), "unsupported_binary_packet");
+    expectProtocolError(() => decodeSocketIoV4Packet("0/admin"), "invalid_namespace");
+    expectProtocolError(() => decodeSocketIoV4Packet('2["connect"]'), "invalid_event_name");
+    expectProtocolError(() => decodeSocketIoV4Packet("2[]"), "invalid_socket_payload");
+    expectProtocolError(() => decodeSocketIoV4Packet('2{"event":"x"}'), "invalid_socket_payload");
+    expectProtocolError(() => decodeSocketIoV4Packet("3{}"), "invalid_socket_payload");
+    expectProtocolError(() => decodeSocketIoV4Packet("4[]"), "invalid_socket_payload");
+    expectProtocolError(() => decodeSocketIoV4Packet('1["unexpected"]'), "invalid_socket_payload");
+    expectProtocolError(() => decodeSocketIoV4Packet("0[]"), "invalid_socket_payload");
+    expectProtocolError(() => decodeSocketIoV4Packet('2["event",]'), "invalid_socket_payload");
     expectProtocolError(
-      () => decodeSocketIoPacket('29007199254740992["event"]'),
+      () => decodeSocketIoV4Packet('29007199254740992["event"]'),
       "invalid_ack_id",
     );
   });
 
   it("rejects invalid encoder inputs instead of lossy JSON coercion", () => {
     expectProtocolError(
-      () => encodeSocketIoPacket({
+      () => encodeSocketIoV4Packet({
         type: "event",
         namespace: "/",
         data: ["event", Number.NaN],
@@ -298,65 +298,65 @@ describe("Socket.IO protocol codec", () => {
       "invalid_json_value",
     );
     expectProtocolError(
-      () => encodeSocketIoPacket({
+      () => encodeSocketIoV4Packet({
         type: "event",
         namespace: "/",
         data: ["event", undefined],
-      } as unknown as SocketIoPacket),
+      } as unknown as SocketIoV4Packet),
       "invalid_json_value",
     );
     expectProtocolError(
-      () => encodeSocketIoPacket({
+      () => encodeSocketIoV4Packet({
         type: "event",
         namespace: "/",
         data: ["event", 1n],
-      } as unknown as SocketIoPacket),
+      } as unknown as SocketIoV4Packet),
       "invalid_json_value",
     );
 
     const circular: Record<string, unknown> = {};
     circular.self = circular;
     expectProtocolError(
-      () => encodeSocketIoPacket({
+      () => encodeSocketIoV4Packet({
         type: "event",
         namespace: "/",
         data: ["event", circular],
-      } as unknown as SocketIoPacket),
+      } as unknown as SocketIoV4Packet),
       "circular_json",
     );
 
     const accessor = Object.defineProperty({}, "value", { enumerable: true, get: () => 1 });
     expectProtocolError(
-      () => encodeSocketIoPacket({
+      () => encodeSocketIoV4Packet({
         type: "event",
         namespace: "/",
         data: ["event", accessor],
-      } as unknown as SocketIoPacket),
+      } as unknown as SocketIoV4Packet),
       "invalid_json_value",
     );
 
     const hidden = Object.defineProperty({}, "value", { enumerable: false, value: 1 });
     expectProtocolError(
-      () => encodeSocketIoPacket({
+      () => encodeSocketIoV4Packet({
         type: "event",
         namespace: "/",
         data: ["event", hidden],
-      } as unknown as SocketIoPacket),
+      } as unknown as SocketIoV4Packet),
       "invalid_json_value",
     );
   });
 
   it("enforces namespace, ack, byte, JSON depth and complexity limits", () => {
     expectProtocolError(
-      () => encodeSocketIoPacket({ type: "connect", namespace: "alarm" }),
+      () => encodeSocketIoV4Packet({ type: "connect", namespace: "alarm" }),
       "invalid_namespace",
     );
     expectProtocolError(
-      () => encodeSocketIoPacket({ type: "connect", namespace: "/bad,name" }),
+      () => encodeSocketIoV4Packet({ type: "connect", namespace: "/bad,name" }),
       "invalid_namespace",
     );
     expectProtocolError(
-      () => encodeSocketIoPacket({
+      () => encodeSocketIoV4Packet({
         type: "event",
         namespace: "/",
         id: -1,
@@ -365,22 +365,22 @@ describe("Socket.IO protocol codec", () => {
       "invalid_ack_id",
     );
     expectProtocolError(
-      () => decodeSocketIoPacket('2["event",[[[]]]]', { maxJsonDepth: 2 }),
+      () => decodeSocketIoV4Packet('2["event",[[[]]]]', { maxJsonDepth: 2 }),
       "json_too_deep",
     );
     expectProtocolError(
-      () => decodeSocketIoPacket('2["x",1,2]', { maxJsonNodes: 3 }),
+      () => decodeSocketIoV4Packet('2["x",1,2]', { maxJsonNodes: 3 }),
       "json_too_complex",
     );
     expectProtocolError(
-      () => encodeSocketIoPacket(
+      () => encodeSocketIoV4Packet(
         { type: "event", namespace: "/", data: ["x", "12345"] },
         { maxJsonStringCharacters: 4 },
       ),
       "json_string_too_large",
     );
     expectProtocolError(
-      () => encodeSocketIoPacket(
+      () => encodeSocketIoV4Packet(
         { type: "event", namespace: "/", data: ["event", "payload"] },
         { maxPacketBytes: 12 },
       ),
@@ -389,9 +389,9 @@ describe("Socket.IO protocol codec", () => {
   });
 
   it("requires an Engine.IO message envelope", () => {
-    expectProtocolError(() => unwrapSocketIoPacket({ type: "ping" }), "invalid_socket_envelope");
+    expectProtocolError(() => unwrapSocketIoV4Packet({ type: "ping" }), "invalid_socket_envelope");
     expectProtocolError(
-      () => unwrapSocketIoPacket({ type: "message" }),
+      () => unwrapSocketIoV4Packet({ type: "message" }),
       "invalid_socket_envelope",
     );
   });
