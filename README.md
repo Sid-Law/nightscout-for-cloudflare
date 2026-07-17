@@ -20,6 +20,8 @@ medical decisions.
 - The official Nightscout v15.0.7 homepage and official chart bundle, built from
   the unmodified source snapshot in `vendor/nightscout`.
 - A transport-only polling shim for the upstream client's Socket.IO surface.
+- A response-header adapter that preserves upstream asset bytes while supplying
+  the UTF-8 charset normally added by Nightscout's Express server.
 - Workers-runtime and browser tests for API, SQLite, persistence, isolation and
   official-page rendering.
 - No D1, R2, KV, Queues, custom domain or CGM credentials.
@@ -98,7 +100,12 @@ npm run deploy
 `wrangler.jsonc` creates only Worker `nscf-phase1`, its Workers Static Assets,
 and the `EntryStore` SQLite Durable Object namespace. A normal Wrangler deploy
 requires an authenticated Cloudflare session and a verified Cloudflare account
-email. The current deployment attempt and evidence are documented in
+email.
+
+The phase-one simulated-data lab is deployed at
+<https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally
+unauthenticated and must not receive real health data. Deployment resources,
+remote smoke evidence, CPU measurements and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 Rollback is limited to deleting this Worker, Static Assets deployment and its

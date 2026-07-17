@@ -7,6 +7,13 @@ export { EntryStore };
 const MAX_BODY_BYTES = 64 * 1024;
 const TENANT = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const API_PATHS = new Set(["/api/v1/entries", "/api/v1/entries.json"]);
+const UTF8_CONTENT_TYPES = [
+  "text/",
+  "application/javascript",
+  "application/json",
+  "application/xml",
+  "image/svg+xml",
+];
 
 function corsHeaders(): Record<string, string> {
   return {
@@ -22,6 +29,25 @@ function json(data: unknown, init: ResponseInit = {}): Response {
   headers.set("Cache-Control", "no-store");
   for (const [name, value] of Object.entries(corsHeaders())) headers.set(name, value);
   return new Response(JSON.stringify(data), { ...init, headers });
+}
+
+function withUtf8Charset(response: Response): Response {
+  const contentType = response.headers.get("Content-Type");
+  if (
+    contentType === null ||
+    /(?:^|;)\s*charset=/i.test(contentType) ||
+    !UTF8_CONTENT_TYPES.some((prefix) => contentType.toLowerCase().startsWith(prefix))
+  ) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.set("Content-Type", `${contentType}; charset=utf-8`);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function resolveTenant(request: Request, url: URL): string {
@@ -131,7 +157,7 @@ export default {
       if (url.pathname.startsWith("/api/")) {
         return await handleApi(request, env, url);
       }
-      return await env.ASSETS.fetch(request);
+      return withUtf8Charset(await env.ASSETS.fetch(request));
     } catch (error) {
       if (error instanceof ApiError) {
         return json({ error: { code: error.code, message: error.message } }, { status: error.status });

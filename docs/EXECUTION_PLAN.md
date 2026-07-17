@@ -18,7 +18,7 @@ charts, plugins, translations and calculations remain upstream code.
 ## Steps and completion evidence
 
 1. Initialize the account `workers.dev` subdomain through the Cloudflare API.
-   Result: `nscf-lab`.
+   Result: `nscf-lab-20260717` (`nscf-lab` was unavailable).
 2. Lock the latest official release. Result: `v15.0.7` at commit
    `7e0e77f88fc113a76fe363504125f5b36b8a3fe3`; record archive provenance.
 3. Vendor the unmodified release and build its official Webpack bundle, EJS
@@ -34,20 +34,19 @@ charts, plugins, translations and calculations remain upstream code.
 
 ## Current execution status
 
-Steps 1–6 are complete. `npm run build`, TypeScript validation, all eight
-Workers-runtime integration tests, the Wrangler deployment dry run, and a real
-browser rendering test have passed. The browser test wrote 12 simulated SGVs to
-local SQLite Durable Object storage and the untouched official Nightscout page
-rendered current value `124`, delta `-3`, direction `→`, age and chart history.
+All eight steps are complete. `npm run build`, TypeScript validation, all eight
+Workers-runtime integration tests, the Wrangler deployment dry run, and local
+and remote real-browser tests have passed. The public Worker is
+`nscf-phase1`; its official Nightscout page reads simulated SGVs from the
+SQLite-backed `EntryStore` namespace and renders the upstream SVG chart.
 
-Step 7 was attempted through the authorized Cloudflare API on 2026-07-17. The
-platform rejected the first Worker upload with API error `10034`: the new
-Cloudflare user's email address must be verified before Workers can be used.
-There is no public API endpoint for completing account-email verification; the
-mailbox owner must open Cloudflare's verification message. No Worker or Durable
-Object namespace was created by the rejected upload. Step 7 and the remote part
-of step 8 remain pending only on that account prerequisite. See
-`docs/DEPLOYMENT.md` for exact evidence and the resume procedure.
+Remote browser testing exposed one Cloudflare coupling that the local Express-
+like test environment did not: Static Assets served HTML and JavaScript without
+a charset, while the upstream page relies on the Express response header rather
+than a `<meta charset>`. The adapter now streams text assets through the Worker
+and adds `charset=utf-8` without modifying a byte of upstream UI code. A test
+locks this behavior. See `docs/DEPLOYMENT.md` for resource IDs, remote timings,
+CPU telemetry and screenshots.
 
 ## Completion standard
 
@@ -66,8 +65,10 @@ of step 8 remain pending only on that account prerequisite. See
 
 - **Public unauthenticated writes:** deployment is explicitly a simulated-data lab;
   never send real data. Authentication is a phase-two blocker for personal use.
-- **10ms CPU ceiling:** bound POST batches to 100, GET to 1,000, use indexed SQLite
-  queries, keep UI work in static assets, and avoid server-side frameworks.
+- **10ms CPU ceiling:** bound POST batches to 100, GET to 1,000, use indexed
+  SQLite queries, stream the small text-header adaptation, and avoid server-side
+  frameworks. Cloudflare telemetry over 129 phase-one invocations measured 1 ms
+  median, 2 ms p95 and 4 ms maximum CPU.
 - **Compatibility drift:** pin contracts in tests and compare upstream README,
   shipped Swagger/OpenAPI, releases and endpoint tests on each update.
 - **Upstream provenance drift:** never edit `vendor/nightscout` in place; update
@@ -85,6 +86,6 @@ The Cloudflare footprint consists only of Worker `nscf-phase1`, its Static
 Assets deployment, and the `EntryStore` SQLite Durable Object namespace created
 by its `v1` migration. Delete that Worker through Wrangler or the Workers API to
 remove the active route; delete the associated namespace separately if the
-platform retains it. The account-wide `nscf-lab.workers.dev` subdomain can be
-retained for later workers or deleted through the account subdomain API. No
-D1/R2/Queue/custom-domain cleanup is needed because none is created.
+platform retains it. The account-wide `nscf-lab-20260717.workers.dev` subdomain
+can be retained for later workers or deleted through the account subdomain API.
+No D1/R2/Queue/custom-domain cleanup is needed because none is created.

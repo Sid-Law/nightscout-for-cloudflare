@@ -30,6 +30,14 @@ Workers Static Assets serves a build of upstream `views/index.html`,
 service worker. NSCF contains no alternative page, chart, component, CSS theme,
 plugin implementation, translation, or medical calculation.
 
+Nightscout's Express server supplies UTF-8 in response headers, while the
+upstream homepage itself has no `<meta charset>`. Cloudflare Static Assets
+normalizes stored HTML and JavaScript media types without that charset. Text
+asset paths therefore run through the Worker first; it streams the unchanged
+asset response and appends `charset=utf-8` to text, JavaScript, JSON, XML and SVG
+media types. Binary assets continue to use the direct Static Assets path. This
+is a platform response-header adaptation, not a source or UI fork.
+
 The official client expects Socket.IO and consumes a `dataUpdate` runtime shape
 rather than loading entries directly. At `/socket.io/socket.io.js`, a thin NSCF
 transport adapter implements only the homepage-used `connect`, `authorize`,
@@ -72,3 +80,5 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
 - No secrets are present because phase 1 has no real data or production auth.
 - The polling shim is transport-only, runs every 15 seconds and has no medical or
   display logic.
+- Text asset responses are streamed rather than buffered when UTF-8 headers are
+  adapted, keeping the extra Worker CPU and memory work constant.

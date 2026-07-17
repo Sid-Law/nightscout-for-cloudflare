@@ -11,7 +11,16 @@
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "none",
-    "run_worker_first": ["/api/*", "/healthz"]
+    "run_worker_first": [
+      "/",
+      "/*.html",
+      "/*.js",
+      "/*.css",
+      "/*.json",
+      "/*.xml",
+      "/api/*",
+      "/healthz"
+    ]
   },
   "durable_objects": {
     "bindings": [
@@ -27,9 +36,6 @@
       "new_sqlite_classes": ["EntryStore"]
     }
   ],
-  "limits": {
-    "cpu_ms": 10
-  },
   "observability": {
     "enabled": true,
     "logs": {

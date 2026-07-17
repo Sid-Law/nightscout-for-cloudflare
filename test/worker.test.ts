@@ -24,11 +24,16 @@ describe("official Nightscout UI assets", () => {
   it("serves the upstream homepage and provenance instead of an NSCF UI", async () => {
     const page = await SELF.fetch("https://example.test/");
     expect(page.status).toBe(200);
+    expect(page.headers.get("Content-Type")).toMatch(/charset=utf-8/i);
     const html = await page.text();
     expect(html).toContain("<title>Nightscout</title>");
     expect(html).toContain('id="chartContainer"');
     expect(html).toContain('/bundle/js/bundle.app.js');
     expect(html).toContain('src="socket.io/socket.io.js"');
+
+    const bundle = await SELF.fetch("https://example.test/bundle/js/bundle.app.js");
+    expect(bundle.status).toBe(200);
+    expect(bundle.headers.get("Content-Type")).toMatch(/charset=utf-8/i);
 
     const provenanceResponse = await SELF.fetch("https://example.test/nscf-upstream.json");
     const provenance = await provenanceResponse.json<Record<string, string>>();

@@ -9,6 +9,9 @@ worker-configuration.d.ts
 .env
 *.log
 .DS_Store
-outputs/
+outputs/*
+!outputs/PHASE1_REPORT.md
+!outputs/local-official-nightscout.png
+!outputs/remote-official-nightscout.png
 work/
 vendor/nightscout/node_modules/

@@ -32,6 +32,11 @@ The official `webpack/webpack.config.js` builds `bundle/bundle.source.js` to
 partials and publishes `static/**`, `translations/**`, and the official service
 worker through Workers Static Assets.
 
+Cloudflare's platform adapter adds the UTF-8 response charset normally supplied
+by the upstream Express server. Remote and local `bundle.app.js` SHA-256 values
+are identical; this adaptation changes response headers only and is covered by
+an integration test.
+
 ## Phase 1 compatible surface
 
 | Route | Implemented behavior |
