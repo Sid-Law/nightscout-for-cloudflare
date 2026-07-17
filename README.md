@@ -30,6 +30,18 @@ The API contract and current gaps are in
 [`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md). The storage
 and UI flow are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+## Intended one-click setup
+
+The release deployment flow has one user-facing setting:
+
+> Set a family access password (at least 12 characters), then enter the same
+> password in the phone's Nightscout data-source settings.
+
+The Deploy to Cloudflare form obtains this value from `.dev.vars.example` and
+the human-readable binding description in `package.json`. Users do not need to
+run a CLI command, visit the Worker settings page, or calculate a hash. The
+internal binding remains `API_SECRET` for Nightscout compatibility.
+
 ## Local setup
 
 Requires Node.js and npm. Node 22 LTS or newer is recommended.
@@ -47,12 +59,22 @@ Open `http://localhost:8787/`. The page is the upstream Nightscout homepage,
 not an NSCF-designed frontend. Local Durable Object state is maintained by
 Wrangler under `.wrangler/` and ignored by Git.
 
+Before starting Wrangler, create an ignored `.dev.vars` file containing a
+Nightscout API secret of at least 12 characters:
+
+```dotenv
+API_SECRET=replace-with-your-own-long-passphrase
+```
+
 Insert simulated data:
 
 ```sh
+export NSCF_API_SECRET='replace-with-the-same-long-passphrase'
+NSCF_API_HASH=$(node -p "require('crypto').createHash('sha1').update(process.env.NSCF_API_SECRET).digest('hex')")
 NSCF_NOW_MS=$(node -p 'Date.now()')
 curl -X POST http://localhost:8787/api/v1/entries \
   -H 'Content-Type: application/json' \
+  -H "api-secret: ${NSCF_API_HASH}" \
   -H 'X-NSCF-Tenant: demo' \
   --data "{\"sgv\":123,\"date\":${NSCF_NOW_MS},\"direction\":\"Flat\",\"device\":\"nscf-simulator\"}"
 ```
@@ -71,13 +93,28 @@ is not access control.
 ## Prototype security notice
 
 Phase 1 is a public simulated-data lab, not a personal Nightscout deployment.
-Writes are unauthenticated and the tenant selector is not authorization. The
-root NSCF adapter dependency audit is clean, while `npm ci` for the locked
-upstream v15.0.7 tree currently reports 66 inherited findings (9 low, 18
-moderate, 37 high, 2 critical). They are recorded rather than silently changed
-because `npm audit fix` would mutate the official release dependency graph.
-Authentication and an explicit upstream dependency remediation review are
-required before any use beyond synthetic test data.
+All writes require Nightscout-compatible API-secret authentication; the tenant
+selector provides storage routing, not authorization. Missing or shorter-than-
+12-character `API_SECRET` configuration fails closed with HTTP 503. A request
+must carry the SHA-1 or SHA-512 hexadecimal digest in `api-secret` (or
+`?secret=`); the raw passphrase is deliberately rejected on the wire. The root
+NSCF adapter dependency audit is clean, while `npm ci` for the locked upstream
+v15.0.7 tree currently reports 66 inherited findings (9 low, 18 moderate, 37
+high, 2 critical). They are recorded rather than silently changed because
+`npm audit fix` would mutate the official release dependency graph.
+
+## Configure API_SECRET on Cloudflare
+
+Open **Workers & Pages → `nscf-phase1` → Settings → Variables and Secrets**,
+click **Add**, select a plain-text variable, name it exactly `API_SECRET`, enter
+a passphrase of at least 12 characters, then save/deploy. Its value is the raw
+passphrase. A compatible Nightscout uploader normally asks for that same raw
+passphrase and hashes it before sending. Secret storage
+(`npx wrangler secret put API_SECRET`) is optional; both forms appear to Worker
+code as `env.API_SECRET`.
+
+Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
+into an issue. GET endpoints remain publicly readable in this phase.
 
 ## Upstream source policy
 
@@ -104,8 +141,8 @@ email.
 
 The phase-one simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally
-unauthenticated and must not receive real health data. Deployment resources,
-remote smoke evidence, CPU measurements and rollback details are documented in
+limited and must not receive real health data. Deployment resources, remote
+smoke evidence, CPU measurements and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 Rollback is limited to deleting this Worker, Static Assets deployment and its

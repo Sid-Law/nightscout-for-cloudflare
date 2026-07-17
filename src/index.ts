@@ -14,6 +14,9 @@ const UTF8_CONTENT_TYPES = [
   "application/xml",
   "image/svg+xml",
 ];
+const MIN_API_SECRET_LENGTH = 12;
+
+type AppEnv = Env & { API_SECRET?: string };
 
 function corsHeaders(): Record<string, string> {
   return {
@@ -58,6 +61,54 @@ function resolveTenant(request: Request, url: URL): string {
   return tenant;
 }
 
+function apiSecretCredential(request: Request, url: URL): string | null {
+  return request.headers.get("api-secret") ?? url.searchParams.get("secret");
+}
+
+async function digestHex(algorithm: "SHA-1" | "SHA-512", value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(algorithm, new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeHexEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
+function configuredApiSecret(env: AppEnv): string | null {
+  const secret = env.API_SECRET;
+  return secret !== undefined && secret.length >= MIN_API_SECRET_LENGTH ? secret : null;
+}
+
+async function hasWriteAccess(request: Request, env: AppEnv, url: URL): Promise<boolean> {
+  const secret = configuredApiSecret(env);
+  const provided = apiSecretCredential(request, url)?.toLowerCase();
+  if (secret === null || provided === undefined || provided === null) return false;
+
+  const [sha1, sha512] = await Promise.all([
+    digestHex("SHA-1", secret),
+    digestHex("SHA-512", secret),
+  ]);
+  return timingSafeHexEqual(provided, sha1) || timingSafeHexEqual(provided, sha512);
+}
+
+async function requireWriteAccess(request: Request, env: AppEnv, url: URL): Promise<void> {
+  if (configuredApiSecret(env) === null) {
+    throw new ApiError(
+      503,
+      "api_secret_not_configured",
+      "API_SECRET must be configured as a Cloudflare variable before writes are enabled",
+    );
+  }
+  if (!(await hasWriteAccess(request, env, url))) {
+    throw new ApiError(401, "unauthorized", "valid hashed api-secret is required");
+  }
+}
+
 async function readBoundedJson(request: Request): Promise<unknown> {
   const declared = request.headers.get("Content-Length");
   if (declared !== null && Number(declared) > MAX_BODY_BYTES) {
@@ -94,7 +145,7 @@ async function readBoundedJson(request: Request): Promise<unknown> {
   }
 }
 
-async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
+async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Response> {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
 
   if (request.method === "GET" && url.pathname === "/api/v1/status.json") {
@@ -102,14 +153,15 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   }
 
   if (request.method === "GET" && url.pathname === "/api/v1/verifyauth") {
+    const canWrite = await hasWriteAccess(request, env, url);
     return json({
       message: {
         canRead: true,
-        canWrite: false,
-        isAdmin: false,
-        permissions: "READABLE",
+        canWrite,
+        isAdmin: canWrite,
+        permissions: canWrite ? "ROLE" : "DEFAULT",
         rolefound: "NOTFOUND",
-        message: "Reads enabled in default permissions",
+        message: canWrite ? "OK" : "UNAUTHORIZED",
       },
     });
   }
@@ -120,9 +172,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
   if (API_PATHS.has(url.pathname)) {
     const tenant = resolveTenant(request, url);
-    const store = env.ENTRY_STORE.getByName(tenant);
 
     if (request.method === "POST") {
+      await requireWriteAccess(request, env, url);
+      const store = env.ENTRY_STORE.getByName(tenant);
       const entries = parseEntryPayload(await readBoundedJson(request));
       const result = await store.putEntries(entries);
       return json([], {
@@ -135,6 +188,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     }
 
     if (request.method === "GET") {
+      const store = env.ENTRY_STORE.getByName(tenant);
       return json(await store.getEntries(parseHistoryQuery(url)));
     }
   }
@@ -148,7 +202,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: AppEnv): Promise<Response> {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/healthz") {
@@ -172,4 +226,4 @@ export default {
       return json({ error: { code: "internal_error", message: "Internal server error" } }, { status: 500 });
     }
   },
-} satisfies ExportedHandler<Env>;
+} satisfies ExportedHandler<AppEnv>;

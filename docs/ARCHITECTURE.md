@@ -9,7 +9,7 @@ Official Nightscout v15.0.7 browser bundle / compatible uploader
         v
 Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream page/assets
-  - bounded API parsing and tenant routing
+  - API_SECRET write authentication, bounded parsing and tenant routing
   - Socket.IO client-surface polling adapter
         |
         | ENTRY_STORE.getByName(tenant), typed RPC
@@ -46,6 +46,13 @@ maps stored `{sgv,date}` rows to upstream `{mgdl,mills}` runtime records, and th
 hands control to the untouched upstream client/chart/plugin code. This is the
 phase-one replacement for the long-lived Node Socket.IO server, not a UI fork.
 
+Before a POST can reach storage, the Worker requires `API_SECRET` to be present
+as a Cloudflare environment binding and at least 12 characters long. It hashes
+the configured raw passphrase with SHA-1 and SHA-512 through Web Crypto and
+compares the supplied `api-secret` header (or `secret` query parameter) with
+the hexadecimal digests. Raw passphrases on the request wire are rejected.
+Missing configuration fails closed; phase-one GET routes remain public.
+
 The Worker is otherwise stateless. `X-NSCF-Tenant` (or the `tenant` query
 parameter) is validated and passed to `ENTRY_STORE.getByName()`. The default is
 `demo`. A deterministic name always routes one tenant to the same strongly
@@ -77,7 +84,9 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
 - SGV range accepted by this prototype: integer 20–600 mg/dL.
 - History count defaults to 10 and is capped at 1,000.
 - Official UI and calculations are not changed; no NSCF dosing logic exists.
-- No secrets are present because phase 1 has no real data or production auth.
+- `API_SECRET` is the only application credential. It is a Cloudflare binding,
+  never a committed Wrangler variable; the current lab uses a plain-text
+  dashboard variable at the owner's request.
 - The polling shim is transport-only, runs every 15 seconds and has no medical or
   display logic.
 - Text asset responses are streamed rather than buffered when UTF-8 headers are

@@ -41,12 +41,12 @@ an integration test.
 
 | Route | Implemented behavior |
 | --- | --- |
-| `POST /api/v1/entries` | One SGV object or an array; success is HTTP 200 with `[]`, matching the upstream empty-rejected-list convention. |
+| `POST /api/v1/entries` | One SGV object or an array; requires a SHA-1/SHA-512 `api-secret`; success is HTTP 200 with `[]`, matching the upstream empty-rejected-list convention. |
 | `POST /api/v1/entries.json` | Same as above. |
 | `GET /api/v1/entries.json` | Descending SGV array; `count`; millisecond `find[date][$gt/$gte/$lt/$lte]`; convenience `from`/`to`. |
 | `GET /api/v1/entries/current.json` | Array containing the newest SGV, or `[]`. |
 | `GET /api/v1/status.json` | Startup settings/capabilities with `runtimeState: loaded`. |
-| `GET /api/v1/verifyauth` | Readable default-role response required by official client startup. |
+| `GET /api/v1/verifyauth` | Upstream `OK`/`UNAUTHORIZED` response contract; a valid API-secret digest reports admin/write capability. |
 | `GET /api/v1/adminnotifies` | Empty notification queue required by official client startup. |
 | `/socket.io/socket.io.js` | Transport-only compatibility shim: v1 polling to upstream `dataUpdate`; no replacement UI. |
 
@@ -57,9 +57,16 @@ either `date` or `dateString`. Object and array POST bodies are supported.
 NSCF adds `X-NSCF-Tenant` or `tenant` solely for phase-one tenant routing. If
 omitted, the stable `demo` tenant is used. Upstream does not define this selector.
 
+`API_SECRET` follows the upstream minimum of 12 characters. Cloudflare stores
+the raw passphrase in the environment binding; clients transmit its 40-character
+SHA-1 or 128-character SHA-512 hexadecimal digest through `api-secret` or
+`secret`. Body-carried secrets and token/role authentication are not yet
+implemented.
+
 ## Known incompatibilities and omissions
 
-- No API secret, access tokens, writable roles, admin, or production auth yet.
+- API-secret write authentication exists; access tokens, named roles and the
+  full upstream authorization model do not.
 - No treatments, profiles, devicestatus, food, activity, properties, full
   websocket, API v2/v3, Swagger UI, count, delete, or query-by-id endpoints.
 - No MongoDB query grammar beyond the listed date operators; no SGV/type/device
@@ -86,7 +93,8 @@ At each NSCF release:
    client transport calls, storage normalization, tests and release notes.
 4. Rebase explicit compatibility patches and add fixtures before expanding routes.
 5. Keep Cloudflare-specific behavior namespaced and documented.
-6. Treat auth and write compatibility as blockers before real personal use.
+6. Expand API-secret fixtures into the complete upstream role/token model before
+   claiming full authorization compatibility.
 
 Phase-one research baseline is the precise release/commit above and its shipped
 Swagger/tests, as observed on 2026-07-17.

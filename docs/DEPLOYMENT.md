@@ -10,18 +10,18 @@ Phase 1 is deployed and the local and remote closure tests pass.
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Account workers.dev subdomain: `nscf-lab-20260717`
 - Worker: `nscf-phase1`
-- Final deployment ID: `fec355cd8ae2490aafa91b18a544e876`
-- Final Worker ETag: `0b940d3d8381b4e023a55975b00be24eb8fe493b8ecc04653caa26a9ebc94d60`
+- Final deployment ID: `79b37cb29a194f0786cd4782f6c08f8a`
+- Final Worker ETag: `4ddb53213e84e3f726bd0b6c5e899c0f63b2df94ef5b838ae5f494dfcc58723c`
 - Worker bundle SHA-256:
-  `ba9d15d1cb4e5f177726085e269d91591c5fbdf822f04eb989ead0ee3f384c57`
+  `98c5d1c7e4c34458f3991536afecdfd786d0b3cd44269aff48fda8ac4094d0e3`
 - Durable Object namespace: `nscf-phase1_EntryStore`
 - Durable Object namespace ID: `65a3ccc862724ddaaf1e3d8efdc0ef8b`
 - Durable Object class/backend: `EntryStore`, SQLite, migration tag `v1`
 - Script route: enabled; preview URLs disabled
 - Observability and invocation logs: enabled at sampling rate 1
 
-The public URL is a synthetic-data lab. It is intentionally unauthenticated and
-must not receive real health data.
+The public URL is a synthetic-data lab. Writes require a Nightscout-compatible
+`API_SECRET`; reads remain public, so it must not receive real health data.
 
 ## Created Cloudflare footprint
 
@@ -47,11 +47,11 @@ the Worker was replaced with the final code.
 | Check | Result |
 | --- | --- |
 | TypeScript | `wrangler types` and `tsc --noEmit` passed |
-| Workers integration tests | 1 file, 8/8 tests passed |
+| Workers integration tests | 1 file, 9/9 tests passed, including API_SECRET fail-closed/auth cases |
 | Official UI build | Nightscout v15.0.7 Webpack build passed |
 | Vendor integrity | 655 files identical to the re-hashed official release archive |
 | Static Assets dry run | 201 entries read from `public/` |
-| Final Worker dry run | 16.98 KiB raw / 5.40 KiB gzip |
+| Final Worker dry run | 19.07 KiB raw / 5.96 KiB gzip |
 | Local page closure | 12 simulated SGVs persisted; official page title/chart rendered |
 | UTF-8 platform adapter | HTML and JS charset assertions pass without changing upstream bytes |
 
@@ -67,6 +67,7 @@ The remote smoke test used simulated SGVs only.
 | Idempotent retry | HTTP 200; 0 inserted, 1 duplicate | recorded |
 | Status | HTTP 200; `Nightscout` / `15.0.7-nscf.1` / `loaded` | 1,255.6 ms |
 | Health | HTTP 200; SQLite Durable Object | 258.7 ms |
+| API_SECRET browser auth | HTTP 200; `canWrite: true`, `isAdmin: true`, upstream `message: OK` | passed |
 | Current | HTTP 200; one row, SGV 124, `Flat` | 226.8 ms |
 | History | HTTP 200; 12 rows, newest 124, oldest 108 | 223.2 ms |
 | Date/count filter | HTTP 200; two expected rows | 652.2 ms |
@@ -127,7 +128,8 @@ by network, static asset delivery, DO placement and first-use initialization.
 
 ## Known limitations
 
-- Public writes and tenant selection are unauthenticated; synthetic data only.
+- Writes require API_SECRET, but reads and tenant selection remain public;
+  synthetic data only.
 - Only the documented phase-one v1 SGV/status/auth startup subset exists.
 - The transport adapter uses 15-second REST polling, not full Engine.IO or
   WebSocket semantics.

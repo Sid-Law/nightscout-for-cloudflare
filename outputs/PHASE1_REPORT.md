@@ -26,7 +26,8 @@ Public synthetic-data lab:
 ## Verification evidence
 
 - TypeScript and generated Cloudflare binding checks: passed.
-- Workers runtime tests: 8/8 passed.
+- Workers runtime tests: 9/9 passed, including API_SECRET SHA-1/SHA-512,
+  rejection and fail-closed coverage.
 - Tested: API, SQLite persistence/eviction, tenant isolation, idempotence,
   invalid input, current/history, upstream assets and UTF-8 response headers.
 - Wrangler dry run: 201 Static Assets entries; Worker 16.98 KiB raw / 5.40 KiB
@@ -44,7 +45,7 @@ Public synthetic-data lab:
 
 - Account subdomain: `nscf-lab-20260717.workers.dev`.
 - Worker: `nscf-phase1`.
-- Deployment: `fec355cd8ae2490aafa91b18a544e876`.
+- Deployment: `79b37cb29a194f0786cd4782f6c08f8a`.
 - SQLite Durable Object namespace: `nscf-phase1_EntryStore`
   (`65a3ccc862724ddaaf1e3d8efdc0ef8b`).
 - Workers Static Assets: 177 files, 169 unique content hashes.
@@ -63,11 +64,12 @@ Public synthetic-data lab:
 
 ## Known limitations and next phase
 
-- The lab is unauthenticated and accepts only synthetic test use.
+- Writes require Nightscout-compatible API_SECRET authentication; reads remain
+  public and the lab accepts only synthetic test use.
 - The API and Socket.IO surfaces are intentionally partial.
 - Upstream audit findings require a compatibility-aware remediation review.
-- Before real personal use, add Nightscout-compatible authentication and secret
-  handling, expand API/Engine.IO coverage from actual upstream client tests,
+- Before real personal use, expand API_SECRET into the complete upstream
+  role/token authorization model, expand API/Engine.IO coverage from actual upstream client tests,
   add rollback/upgrade fixtures for DO schema evolution, and repeat load/CPU
   measurements with a longer representative synthetic workload.
 - No dosing, insulin recommendation or medical decision functionality should be

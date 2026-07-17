@@ -1,8 +1,16 @@
 import { env } from "cloudflare:workers";
 import { SELF, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import worker from "../src/index";
 import type { EntryStore } from "../src/entry-store";
 import type { PublicEntry } from "../src/model";
+
+const TEST_API_SECRET = "nscf-test-secret-20260717";
+
+async function secretDigest(algorithm: "SHA-1" | "SHA-512" = "SHA-1"): Promise<string> {
+  const digest = await crypto.subtle.digest(algorithm, new TextEncoder().encode(TEST_API_SECRET));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 function tenant(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
@@ -15,7 +23,7 @@ function entry(sgv: number, date: number, direction = "Flat"): Record<string, un
 async function post(tenantName: string, payload: unknown, path = "/api/v1/entries"): Promise<Response> {
   return SELF.fetch(`https://example.test${path}?tenant=${tenantName}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "api-secret": await secretDigest() },
     body: JSON.stringify(payload),
   });
 }
@@ -56,7 +64,28 @@ describe("Nightscout phase-one API", () => {
     });
 
     const auth = await SELF.fetch("https://example.test/api/v1/verifyauth");
-    expect(await auth.json()).toMatchObject({ message: { canRead: true, canWrite: false } });
+    expect(await auth.json()).toMatchObject({
+      message: {
+        canRead: true,
+        canWrite: false,
+        isAdmin: false,
+        permissions: "DEFAULT",
+        message: "UNAUTHORIZED",
+      },
+    });
+
+    const writableAuth = await SELF.fetch("https://example.test/api/v1/verifyauth", {
+      headers: { "api-secret": await secretDigest("SHA-512") },
+    });
+    expect(await writableAuth.json()).toMatchObject({
+      message: {
+        canRead: true,
+        canWrite: true,
+        isAdmin: true,
+        permissions: "ROLE",
+        message: "OK",
+      },
+    });
 
     const notifies = await SELF.fetch("https://example.test/api/v1/adminnotifies");
     expect(await notifies.json()).toEqual({ message: { notifies: [], notifyCount: 0 } });
@@ -159,6 +188,7 @@ describe("Nightscout phase-one API", () => {
 
     const malformed = await SELF.fetch(`https://example.test/api/v1/entries?tenant=${name}`, {
       method: "POST",
+      headers: { "api-secret": await secretDigest() },
       body: "{",
     });
     expect(malformed.status).toBe(400);
@@ -168,5 +198,29 @@ describe("Nightscout phase-one API", () => {
 
     const badTenant = await SELF.fetch("https://example.test/api/v1/entries.json?tenant=Not%20Safe");
     expect(badTenant.status).toBe(400);
+  });
+
+  it("requires a hashed Nightscout API_SECRET and fails closed when it is absent", async () => {
+    const name = tenant("auth");
+    const target = `https://example.test/api/v1/entries?tenant=${name}`;
+    const body = JSON.stringify(entry(123, Date.now() - 60_000));
+
+    expect((await SELF.fetch(target, { method: "POST", body })).status).toBe(401);
+    expect(
+      (await SELF.fetch(target, { method: "POST", headers: { "api-secret": TEST_API_SECRET }, body })).status,
+    ).toBe(401);
+    expect(
+      (await SELF.fetch(target, { method: "POST", headers: { "api-secret": "0".repeat(40) }, body })).status,
+    ).toBe(401);
+    expect(
+      (await SELF.fetch(`${target}&secret=${await secretDigest("SHA-512")}`, { method: "POST", body })).status,
+    ).toBe(200);
+
+    const missingBinding = await worker.fetch(
+      new Request(target, { method: "POST", body }),
+      {} as Env,
+    );
+    expect(missingBinding.status).toBe(503);
+    expect(await missingBinding.json()).toMatchObject({ error: { code: "api_secret_not_configured" } });
   });
 });

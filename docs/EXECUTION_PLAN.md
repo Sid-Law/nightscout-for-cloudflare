@@ -10,8 +10,8 @@ one SQLite-backed Durable Object class, the minimum status/auth/entries and
 polling transport required by that homepage, local runtime/browser tests, and a
 remote smoke test. Only simulated SGV data is allowed.
 
-Out of scope: real CGM credentials or health data, production authentication,
-write-capable treatments/profiles, D1, R2, KV, Queues, custom domains, and a
+Out of scope: real CGM credentials or health data, access-token/role
+authentication, write-capable treatments/profiles, D1, R2, KV, Queues, custom domains, and a
 GitHub repository. NSCF must not design a replacement UI; the upstream UI,
 charts, plugins, translations and calculations remain upstream code.
 
@@ -24,7 +24,8 @@ charts, plugins, translations and calculations remain upstream code.
 3. Vendor the unmodified release and build its official Webpack bundle, EJS
    homepage, static files, translations and service worker.
 4. Implement a tenant-sharded `EntryStore` Durable Object using embedded SQLite.
-5. Implement the minimum v1 status/auth/entries routes and a transport-only
+5. Implement the minimum v1 status/auth/entries routes, Nightscout-compatible
+   API_SECRET protection for writes, and a transport-only
    Socket.IO surface shim that polls entries and emits upstream `dataUpdate`.
 6. Run generated-binding checks, Workers-runtime tests, and a real-browser test
    proving the official page draws simulated SGV data.
@@ -34,7 +35,7 @@ charts, plugins, translations and calculations remain upstream code.
 
 ## Current execution status
 
-All eight steps are complete. `npm run build`, TypeScript validation, all eight
+All eight steps are complete. `npm run build`, TypeScript validation, all nine
 Workers-runtime integration tests, the Wrangler deployment dry run, and local
 and remote real-browser tests have passed. The public Worker is
 `nscf-phase1`; its official Nightscout page reads simulated SGVs from the
@@ -63,8 +64,9 @@ CPU telemetry and screenshots.
 
 ## Risks and controls
 
-- **Public unauthenticated writes:** deployment is explicitly a simulated-data lab;
-  never send real data. Authentication is a phase-two blocker for personal use.
+- **Write authentication:** every POST requires a SHA-1/SHA-512 digest of the
+  configured `API_SECRET`; missing configuration fails closed. Reads remain
+  public, so the deployment is still limited to simulated-data validation.
 - **10ms CPU ceiling:** bound POST batches to 100, GET to 1,000, use indexed
   SQLite queries, stream the small text-header adaptation, and avoid server-side
   frameworks. Cloudflare telemetry over 129 phase-one invocations measured 1 ms

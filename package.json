@@ -5,6 +5,13 @@
   "description": "NSCF — an independent, unofficial Nightscout downstream prototype for Cloudflare Workers",
   "license": "AGPL-3.0-only",
   "type": "module",
+  "cloudflare": {
+    "bindings": {
+      "API_SECRET": {
+        "description": "家庭访问密码（至少 12 个字符）。部署完成后，在手机 Nightscout 数据源中填写同一个密码；不需要处理哈希。"
+      }
+    }
+  },
   "scripts": {
     "upstream:install": "npm --prefix vendor/nightscout ci --ignore-scripts",
     "upstream:bundle": "npm --prefix vendor/nightscout run bundle",
