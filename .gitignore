@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+.playwright-cli/
+dist/
+public/
+coverage/
+worker-configuration.d.ts
+.dev.vars
+.env
+*.log
+.DS_Store
+outputs/
+work/
+vendor/nightscout/node_modules/
