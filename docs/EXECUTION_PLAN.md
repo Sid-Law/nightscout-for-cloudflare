@@ -1,108 +1,189 @@
-# Phase 1 execution plan
+# Complete Nightscout port execution plan
 
-Last synchronized: 2026-07-17
+Last synchronized: 2026-07-18
 
 ## Goal and fixed scope
 
-Phase 1 delivers a vertically complete public test port on Workers Free: every
-official Nightscout v15.0.7 page route, the official Webpack bundle and static
-assets, one ES-module Worker, one SQLite-backed Durable Object class, page-backed
-CRUD, API-secret plus role/subject authentication, aggregate polling, local
-runtime tests and remote page/API smoke tests. Only simulated data is allowed.
+The goal is the cleanest practical port of official Nightscout v15.0.7 to
+Cloudflare Workers Free, SQLite Durable Objects and Workers Static Assets.
+Official UI, layout, charts, interactions, client/server plugins, translations,
+calculations and version identifiers are preserved wherever the runtime allows.
+NSCF code belongs at platform boundaries.
 
-Out of scope: real CGM credentials or health data, D1, R2, KV, Queues, custom
-domains, a GitHub repository, complete historical API v1/v2/v3 coverage, and a
-full Engine.IO/WebSocket server. NSCF must not design a replacement UI; the
-upstream UI, charts, plugins, translations and calculations remain upstream
-code.
+Fixed exclusions:
 
-## Steps and completion evidence
+- no D1, R2, KV, Queues or custom domain;
+- no real CGM, pump or medical credentials and no real health data;
+- no replacement UI or downstream branding in the Nightscout surface;
+- no new medical algorithm, dosing logic or treatment recommendation;
+- external bridge/push integrations remain disabled in the simulated-data lab.
 
-1. Initialize the account `workers.dev` subdomain through the Cloudflare API.
-   Result: `nscf-lab-20260717` (`nscf-lab` was unavailable).
-2. Lock the latest official release. Result: `v15.0.7` at commit
-   `7e0e77f88fc113a76fe363504125f5b36b8a3fe3`; record archive provenance.
-3. Vendor the unmodified release and build its official Webpack bundle, EJS
-   homepage and secondary pages, Swagger pages, static files, translations and
-   service worker.
-4. Implement a tenant-sharded `EntryStore` Durable Object using embedded SQLite.
-5. Implement entries and generic SQLite document storage for food, profiles,
-   treatments, device status, roles and subjects; add Nightscout-compatible
-   API_SECRET and access-token authorization.
-6. Implement status, properties, aggregate live-data and the page-used query
-   subset; add a transport-only Socket.IO surface shim that polls the aggregate
-   endpoint and emits upstream `dataUpdate`.
-7. Run generated-binding checks, Workers-runtime tests, and real-browser tests
-   proving the official page draws simulated SGV data.
-8. Upload the Worker plus Workers Static Assets and enable its `workers.dev` route.
-9. Run remote page/API/write/read smoke tests, record timings and
-   resources in `docs/DEPLOYMENT.md`, then commit the verified local repository.
+## Evidence standard
 
-## Current execution status
+A module is complete only when:
 
-All implementation and deployment steps are complete. `npm run build`,
-TypeScript validation, all 15 Workers-runtime integration tests and the Wrangler
-deployment dry run passed. The public Worker is `nscf-phase1`; every official
-page route returns the locked upstream page, including Admin, Profile, Food,
-Reporting, Split, clock faces and both Swagger pages.
+1. its upstream v15.0.7 files and tests are mapped;
+2. runtime conflicts and platform adaptations are explicitly separated;
+3. request, response, storage, authorization, error and real-time contracts are
+   represented by Workers-runtime tests;
+4. the complete local suite and deployment dry-run pass before deployment;
+5. remote API smoke and a real-browser workflow pass after deployment;
+6. the compatibility matrix and deployment record match the code.
 
-The final remote page/read smoke passed. The current dashboard `API_SECRET` is
-present—an invalid digest returns HTTP 401 rather than the missing-binding
-HTTP 503—but it no longer matches the earlier test value, so the final
-credentialed remote CRUD rerun correctly stopped at 401. The same deployed
-build's write paths are covered by the 15 local Workers/SQLite tests, while an
-earlier authorized remote closure proved Worker-to-DO persistence and official
-chart rendering. No credential was read, replaced or logged during final
-verification.
+Opening a page or serving an official asset does not satisfy this standard.
 
-Remote browser testing exposed two Cloudflare-specific routing couplings:
-Static Assets needed the UTF-8 response charset normally supplied by Express,
-and clean page URLs needed explicit no-slash/with-slash routing through the
-Worker. Both are platform adaptations with tests; upstream UI bytes remain
-unchanged. See `docs/DEPLOYMENT.md` for resource IDs and verification evidence.
+## Workstreams and status
 
-## Completion standard
+| Workstream | Status | Next acceptance checkpoint |
+| --- | --- | --- |
+| 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
+| 1. Compatibility inventory | In progress | Map every v1/v2/v3 route and all 111 upstream test files to pass/adapt/exclude/unresolved. |
+| 2. Official browser assets/pages | Partial | Profile save/close is now verified; add food, admin, report, clock, split and live-update workflows. |
+| 3. SQLite collection compatibility | In progress | General collection contract for ObjectId/UUID, indexes, query operators, upsert, API v3 timestamps/tombstones and atomic change events. |
+| 4. API v1 | In progress | Complete entries utilities/types/errors and all document routes; activity CRUD is the latest completed increment. |
+| 5. API v2 | Partial | Complete authorization/JWT, summary, notifications and full ddata/properties behavior. |
+| 6. API v3 | Started | Public `/version` is implemented; generic CRUD, status, lastModified, history, formats and security remain. |
+| 7. Authentication/admin | Partial | Persist tenant JWT signing material and port authorization, Shiro permissions, expiry and delay-list tests. |
+| 8. Engine.IO/Socket.IO | Not started | EIO3 polling handshake, WebSocket upgrade, namespaces, authorization, acknowledgements and database mutation messages on a tenant DO. |
+| 9. Real-time storage updates | Not started | Persist-then-broadcast mutation log and reconnect/eviction tests. |
+| 10. Alarms/background tasks | Not started | One-alarm SQLite task scheduler for heartbeat, cleanup, API v3 pruning and server-plugin evaluation. |
+| 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
+| 12. Upstream regression suite | Not started | Run or adapt each applicable upstream suite against the DO repository and Worker transport. |
 
-- `workers.dev` initialized and recorded.
-- Worker, Workers Static Assets and SQLite Durable Object deployed.
-- Entries, food, profile, treatments, device-status, roles, subjects, status,
-  properties, live-data and startup auth helpers behave as documented.
-- Tests cover HTTP behavior, SQLite persistence, tenant isolation, idempotence,
-  invalid input, current selection, time/count filtering, CRUD, access tokens
-  and UI provenance.
-- The official Nightscout homepage renders current SGV, direction, age and its
-  official chart from data persisted in the Cloudflare adapter.
-- README, architecture, compatibility, deployment evidence, and this plan match
-  the code and deployed state.
+## Current verified baseline
 
-## Risks and controls
+Repository baseline before this increment:
 
-- **Write authentication:** every write requires a SHA-1/SHA-512 digest of the
-  configured `API_SECRET` or an authorized subject access token; missing
-  API_SECRET configuration fails closed for API-secret writes. Reads remain
-  public, so the deployment is still limited to simulated-data validation.
-- **10ms CPU ceiling:** bound POST batches to 100, GET to 1,000, use indexed
-  SQLite queries, stream the small text-header adaptation, and avoid server-side
-  frameworks. Cloudflare telemetry over 129 phase-one invocations measured 1 ms
-  median, 2 ms p95 and 4 ms maximum CPU.
-- **Compatibility drift:** pin contracts in tests and compare upstream README,
-  shipped Swagger/OpenAPI, releases and endpoint tests on each update.
-- **Upstream provenance drift:** never edit `vendor/nightscout` in place; update
-  the manifest/archive hash, then rebase an explicit patch queue if needed.
-- **Node Socket.IO coupling:** phase 1 supplies only the page-used client surface
-  and aggregate REST polling. Full Engine.IO/WebSocket compatibility remains
-  later.
-- **Tenant header is not authorization:** tenant names select a DO only; they do
-  not prove identity or provide access control.
-- **Fresh platform behavior:** validate Wrangler metadata against its bundled
-  schema and use official API responses as deployment evidence.
+- official v15.0.7 Webpack/UI build and secondary pages;
+- one tenant-sharded SQLite Durable Object;
+- page-used SGV/document CRUD, API-secret and opaque subject-token subset;
+- aggregate REST polling through a browser-side Socket.IO-shaped shim;
+- 15 Workers integration tests.
+
+The 2026-07-18 audit established:
+
+- upstream Express and `node:fs` are no longer automatic blockers on current
+  Workers; the permanent Node process model remains incompatible;
+- the remote deployment returned 404 for API v3 version, activity and a real
+  Engine.IO polling handshake;
+- the official Profile Editor loaded in a real browser with no JavaScript
+  errors, after the empty-data homepage redirected there;
+- the shim's “connected” event was synthetic and not Socket.IO evidence.
+
+This increment is deployed and verified:
+
+- v1 activity create/list/filter/conditional GET/update/delete, including the
+  upstream empty-array create behavior;
+- the public API v3 `/version` envelope with SQLite adapter metadata;
+- two new Workers integration tests, bringing the local suite to 17;
+- remote public API smoke and a real-browser Profile Editor save;
+- a Profile/homepage compatibility fix: the first aggregate `dataUpdate`
+  follows upstream authorization ordering, and the Cloudflare adapter uses a
+  content-addressed URL that cannot be shadowed by the old upstream
+  service-worker cache;
+- a real Chrome save/close workflow that remained on the official homepage,
+  had no JavaScript dialog or redirect, and rendered the persisted basal value.
+
+## Ordered implementation milestones
+
+### Milestone A — collection contract
+
+1. Define a neutral collection repository interface from upstream Mongo calls.
+2. Add SQLite schemas/indexes for every enabled collection.
+3. Port ObjectId/UUID, type conversion, nested query, projection, sort, limit,
+   upsert, dedupe and failure semantics.
+4. Add `srvCreated`, monotonic `srvModified`, soft-delete tombstones and history.
+5. Persist a change event in the same mutation turn.
+
+This milestone is the dependency for the rest of API v3 and real-time updates.
+
+### Milestone B — authorization parity
+
+1. Store a random tenant JWT signing key in SQLite; never expose it.
+2. Make `/api/v2/authorization/request/<accessToken>` issue an upstream-shaped
+   signed JWT.
+3. Verify JWT expiry/signature and reconstruct Shiro permission groups.
+4. Port default roles, admin semantics, failure delay-list and status contracts.
+5. Keep API_SECRET only as the bootstrap/admin credential and never log it.
+
+### Milestone C — API completion
+
+1. Finish v1 entries and document routes from Express registration and Swagger.
+2. Finish v2 properties, ddata, summary, notifications and authorization.
+3. Implement API v3 generic search/create/read/update/patch/delete/history,
+   version/status/lastModified, conditional headers and JSON/CSV/XML formats.
+4. Port upstream API tests in module order and record any fixed-scope exclusion.
+
+### Milestone D — real-time transport
+
+1. Route `/socket.io/` requests to the tenant DO.
+2. Implement EIO3 polling sessions and ping/pong.
+3. Add hibernatable WebSocket upgrade and reconnect.
+4. Implement Socket.IO packets, acknowledgements, rooms and `/`, `/storage`,
+   `/alarm` namespaces.
+5. Implement authorize/loadRetro/dbAdd/dbUpdate/dbUpdateUnset/dbRemove.
+6. Broadcast persisted collection changes immediately.
+7. Remove the browser polling shim only after official client protocol tests and
+   browser workflows pass.
+
+### Milestone E — background/server behavior
+
+1. Add a SQLite task table and one-alarm scheduler.
+2. Port heartbeat, admin-notify cleanup and API v3 auto-prune.
+3. Generate the official server plugin registry at build time.
+4. Execute official dataloader/sandbox/plugin/notification modules through a
+   persisted tenant context.
+5. Keep external integrations disabled unless separately authorized and within
+   the fixed simulated-data scope.
+
+### Milestone F — page and upstream closure
+
+1. Browser-test profile, food, admin, report, split and clock workflows.
+2. Verify homepage charts/plugins update from a pushed real-time event.
+3. Classify every upstream test file and make every applicable contract green.
+4. Rebuild from the clean vendor snapshot and verify asset provenance.
+5. Run full local checks, dry-run, deploy, remote API smoke and browser checks.
+
+## Free-plan controls
+
+- Keep ordinary HTTP work bounded for the Workers Free CPU budget; move
+  coordination and stateful work to the tenant DO.
+- Use indexed SQLite queries and explicit request/body/result limits.
+- Use WebSocket Hibernation, not a permanently active connection loop.
+- Schedule alarms only when persisted work is due.
+- Preserve one DO per tenant rather than one global application bottleneck.
+- Monitor `SQLITE_FULL`, overloaded DO and CPU-limit outcomes explicitly.
+
+Current limits are verified from
+[Workers limits](https://developers.cloudflare.com/workers/platform/limits/) and
+[Durable Objects limits](https://developers.cloudflare.com/durable-objects/platform/limits/)
+before changing resource assumptions.
+
+## Deployment gate
+
+Every deployment must run, in this order:
+
+```sh
+npm run build
+npm run check
+npm test
+npm run deploy:dry
+npm run deploy -- --keep-vars
+```
+
+After deployment:
+
+1. smoke public status, the newly changed routes and known unsupported routes;
+2. perform only simulated-data authenticated CRUD when the user-provided secret
+   is available to the caller—never read or print the configured value;
+3. use a real browser to check official UI network/console state and the changed
+   workflow;
+4. update `docs/DEPLOYMENT.md` and this plan with exact observed results.
 
 ## Rollback
 
-The Cloudflare footprint consists only of Worker `nscf-phase1`, its Static
-Assets deployment, and the `EntryStore` SQLite Durable Object namespace created
-by its `v1` migration. Delete that Worker through Wrangler or the Workers API to
-remove the active route; delete the associated namespace separately if the
-platform retains it. The account-wide `nscf-lab-20260717.workers.dev` subdomain
-can be retained for later workers or deleted through the account subdomain API.
-No D1/R2/Queue/custom-domain cleanup is needed because none is created.
+The footprint remains one Worker, Workers Static Assets and the `EntryStore`
+SQLite Durable Object namespace. Wrangler version rollback can restore Worker
+code and assets. SQLite schema changes require forward-compatible migrations;
+never use destructive schema rollback on user data. No D1/R2/Queue/custom-domain
+cleanup is needed because those resources are not created.

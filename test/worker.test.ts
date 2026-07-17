@@ -54,11 +54,36 @@ describe("official Nightscout UI assets", () => {
     expect(html).toContain("<title>Nightscout</title>");
     expect(html).toContain('id="chartContainer"');
     expect(html).toContain('/bundle/js/bundle.app.js');
-    expect(html).toContain('src="socket.io/socket.io.js"');
-
     const bundle = await SELF.fetch("https://example.test/bundle/js/bundle.app.js");
     expect(bundle.status).toBe(200);
     expect(bundle.headers.get("Content-Type")).toMatch(/charset=utf-8/i);
+
+    const socketAdapter = await SELF.fetch("https://example.test/socket.io/socket.io.js");
+    expect(socketAdapter.status).toBe(200);
+    const socketAdapterSource = await socketAdapter.text();
+    expect(socketAdapterSource).toContain("/api/v2/ddata/at?");
+    expect(socketAdapterSource).toContain("this.poll(true, function afterInitialData()");
+
+    const adapterDigest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(socketAdapterSource),
+    );
+    const adapterCachebuster = Array.from(
+      new Uint8Array(adapterDigest),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("").slice(0, 12);
+    expect(html).toContain(`src="/socket.io/socket.io.js?${adapterCachebuster}"`);
+    expect(html).toContain(
+      `navigator.serviceWorker.register('/sw.js?v15.0.7-7e0e77f88fc1-${adapterCachebuster}'`,
+    );
+
+    const serviceWorker = await SELF.fetch("https://example.test/sw.js");
+    expect(serviceWorker.status).toBe(200);
+    const serviceWorkerSource = await serviceWorker.text();
+    expect(serviceWorkerSource).toContain(
+      `var CACHE = 'v15.0.7-7e0e77f88fc1-${adapterCachebuster}'`,
+    );
+    expect(serviceWorkerSource).not.toContain("'/socket.io/socket.io.js'");
 
     const downstreamArtifact = await SELF.fetch("https://example.test/nscf-upstream.json");
     expect(downstreamArtifact.status).toBe(404);
@@ -87,7 +112,7 @@ describe("official Nightscout UI assets", () => {
   });
 });
 
-describe("Nightscout phase-one API", () => {
+describe("Nightscout compatibility API", () => {
   it("returns the official client startup contract", async () => {
     const response = await SELF.fetch("https://example.test/api/v1/status.json");
     expect(response.status).toBe(200);
@@ -256,6 +281,88 @@ describe("Nightscout phase-one API", () => {
 
     const removed = await writeApi(name, "DELETE", `/api/v1/treatments/${treatment?._id}`);
     expect(await removed.json()).toMatchObject({ n: 1, ok: 1 });
+  });
+
+  it("matches the upstream activity create, query, conditional GET, update and delete contract", async () => {
+    const name = tenant("activity");
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const createdResponse = await writeApi(name, "POST", "/api/v1/activity/", {
+      created_at: createdAt,
+      heartrate: 85,
+      steps: 1500,
+      activitylevel: "moderate",
+    });
+    expect(createdResponse.status).toBe(200);
+    const created = await createdResponse.json<Array<Record<string, unknown>>>();
+    expect(created).toMatchObject([
+      {
+        created_at: createdAt,
+        heartrate: 85,
+        steps: 1500,
+        activitylevel: "moderate",
+      },
+    ]);
+    expect(created[0]?._id).toMatch(/^[0-9a-f]{24}$/);
+
+    const listed = await SELF.fetch(
+      `https://example.test/api/v1/activity?tenant=${name}&find[created_at][$gte]=${encodeURIComponent(
+        new Date(Date.now() - 120_000).toISOString(),
+      )}`,
+    );
+    expect(listed.status).toBe(200);
+    expect(listed.headers.get("Last-Modified")).not.toBeNull();
+    expect(await listed.json()).toMatchObject([{ _id: created[0]?._id }]);
+
+    const conditional = await SELF.fetch(
+      `https://example.test/api/v1/activity?tenant=${name}`,
+      { headers: { "If-Modified-Since": new Date().toUTCString() } },
+    );
+    expect(conditional.status).toBe(304);
+
+    const updated = { ...created[0], heartrate: 92 };
+    const updateResponse = await writeApi(name, "PUT", "/api/v1/activity/", updated);
+    expect(await updateResponse.json()).toMatchObject({ _id: created[0]?._id, heartrate: 92 });
+
+    const putCreatedResponse = await writeApi(name, "PUT", "/api/v1/activity/", {
+      created_at: new Date(Date.now() - 30_000).toISOString(),
+      heartrate: 78,
+      steps: 750,
+    });
+    expect(putCreatedResponse.status).toBe(200);
+    const putCreated = await putCreatedResponse.json<Record<string, unknown>>();
+    expect(putCreated).toMatchObject({ heartrate: 78, steps: 750 });
+    expect(putCreated._id).toMatch(/^[0-9a-f]{24}$/);
+
+    const removed = await writeApi(name, "DELETE", `/api/v1/activity/${created[0]?._id}`);
+    expect(await removed.json()).toEqual({});
+    const removedPut = await writeApi(name, "DELETE", `/api/v1/activity/${putCreated._id}`);
+    expect(await removedPut.json()).toEqual({});
+    expect(
+      await (
+        await SELF.fetch(`https://example.test/api/v1/activity?tenant=${name}`)
+      ).json(),
+    ).toEqual([]);
+
+    const empty = await writeApi(name, "POST", "/api/v1/activity/", []);
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toEqual([]);
+  });
+
+  it("serves the public upstream API v3 version envelope with SQLite storage metadata", async () => {
+    const response = await SELF.fetch("https://example.test/api/v3/version");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      status: 200,
+      result: {
+        version: "15.0.7",
+        apiVersion: "3.0.3-alpha",
+        srvDate: expect.any(Number),
+        storage: {
+          storage: "sqlite-durable-object",
+          version: expect.any(String),
+        },
+      },
+    });
   });
 
   it("persists admin roles and subjects and authorizes their access tokens", async () => {

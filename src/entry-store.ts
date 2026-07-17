@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
 
 export type DocumentCollection =
+  | "activity"
   | "food"
   | "profile"
   | "treatments"

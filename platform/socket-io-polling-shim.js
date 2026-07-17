@@ -2,7 +2,7 @@
  * Cloudflare polling transport adapter for the unmodified Nightscout UI.
  *
  * The upstream browser calls the Socket.IO client surface exposed at this URL.
- * Workers Free does not run the upstream Node Socket.IO server, so phase 1 maps
+ * Workers Free does not run the upstream Node Socket.IO server, so this adapter maps
  * the small subset used by the homepage to bounded REST polling. This file has
  * no visual, chart, plugin, translation, or medical logic.
  */
@@ -49,8 +49,13 @@
     }
 
     if (name === "authorize") {
-      if (callback) callback({ read: true, write: false, write_treatment: false });
-      this.poll(true);
+      var authorization = { read: true, write: false, write_treatment: false };
+      // Upstream websocket.js sends the initial dataUpdate before invoking the
+      // authorize callback. Preserve that ordering because the official client
+      // initializes profile-dependent plugins from that first data payload.
+      this.poll(true, function afterInitialData() {
+        if (callback) callback(authorization);
+      });
     } else if (name === "loadRetro") {
       if (callback) callback({ result: "success" });
       this.dispatch("retroUpdate", { devicestatus: [] });
@@ -60,9 +65,16 @@
     return this;
   };
 
-  Emitter.prototype.poll = function poll(runNow) {
+  Emitter.prototype.poll = function poll(runNow, firstLoadDone) {
     var self = this;
     if (this.closed) return;
+    var firstLoadPending = typeof firstLoadDone === "function";
+
+    function completeFirstLoad() {
+      if (!firstLoadPending) return;
+      firstLoadPending = false;
+      firstLoadDone();
+    }
 
     function schedule() {
       global.clearTimeout(self.pollTimer);
@@ -82,7 +94,7 @@
         self.dispatch("dataUpdate", data);
       }).catch(function failed(error) {
         console.error("Nightscout polling adapter", error);
-      }).finally(schedule);
+      }).finally(completeFirstLoad).finally(schedule);
     }
 
     if (runNow) load();

@@ -6,31 +6,45 @@ It is not an official Nightscout release and is not endorsed by or affiliated
 with the Nightscout Foundation. Sugar AI may provide initiator or maintenance
 support, but NSCF does not depend on or require Sugar AI.
 
-This repository is a phase-one Cloudflare port. It directly builds and serves
-the official Nightscout v15.0.7 homepage, charts, plugins and translations; NSCF
-does not provide a redesigned or substitute UI. It uses simulated glucose values
-only. It is not a medical device and must not be used for diagnosis, dosing, or
-medical decisions.
+This repository is an active, incomplete Cloudflare port. It directly builds
+and serves the official Nightscout v15.0.7 homepage, charts, client plugins and
+translations; NSCF does not provide a redesigned or substitute UI. The complete
+Node/Mongo/Socket.IO/server-plugin behavior is not yet compatible. It uses
+simulated glucose values only. It is not a medical device and must not be used
+for diagnosis, dosing, or medical decisions.
 
-## What phase 1 contains
+## What is implemented
 
 - A TypeScript Cloudflare Worker on `workers.dev`.
 - One SQLite-backed Durable Object class, sharded one instance per tenant.
-- Nightscout-compatible entries, food, profile, treatments, device-status,
-  roles, subjects, status, authorization and live-data endpoints required by
-  the shipped pages.
+- A tested subset of Nightscout entries, food, profile, treatments,
+  device-status, activity, roles, subjects, status, authorization and
+  page-data endpoints.
+- The public API v3 version envelope; the rest of API v3 is not implemented.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
 - A transport-only polling shim for the upstream client's Socket.IO surface;
   it loads one aggregate data payload and emits the upstream `dataUpdate`.
+- Content-addressed loading for that platform shim, so an older upstream
+  service worker cannot keep serving an obsolete adapter after deployment.
 - A response-header adapter that preserves upstream asset bytes while supplying
   the UTF-8 charset normally added by Nightscout's Express server.
-- Workers-runtime and browser tests for API, SQLite, persistence, isolation and
-  official-page rendering.
+- Workers-runtime tests plus real-browser verification for API, SQLite,
+  persistence, isolation and official-page rendering.
 - No D1, R2, KV, Queues, custom domain or CGM credentials.
 
-The API contract and current gaps are in
+## What is not complete
+
+This is not yet a drop-in Nightscout server. Important missing work includes
+the complete v1/v2/v3 route and error surface, JWT-compatible authorization,
+Mongo query/collection parity, Engine.IO/Socket.IO polling and WebSocket
+protocols, real-time write broadcasts, Durable Object alarms, server plugin
+execution, notification/summary persistence and end-to-end verification of
+every official page workflow. The polling shim only keeps the official browser
+bundle supplied with aggregate data; it is not a Socket.IO implementation.
+
+The evidence-based compatibility matrix and acceptance criteria are in
 [`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md). The storage
 and UI flow are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -92,9 +106,10 @@ Tenant names are lowercase letters/numbers followed by up to 63 lowercase
 letters, numbers, `_` or `-`. The selector provides storage isolation only; it
 is not access control.
 
-## Prototype security notice
+## Current security boundary
 
-Phase 1 is a public simulated-data lab, not a personal Nightscout deployment.
+The current deployment is a public simulated-data lab, not a personal
+Nightscout deployment.
 All writes require a Nightscout-compatible API-secret digest or an authorized
 subject access token; the tenant selector provides storage routing, not
 authorization. Missing or shorter-than-12-character `API_SECRET` configuration
@@ -117,7 +132,7 @@ passphrase and hashes it before sending. Secret storage
 code as `env.API_SECRET`.
 
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
-into an issue. GET endpoints remain publicly readable in this phase.
+into an issue. Current GET endpoints remain publicly readable.
 
 If Nightscout says `Wrong API secret`, verify that the Worker setting has no
 leading/trailing spaces, save it, wait for the deployment to finish, then enter
@@ -141,10 +156,10 @@ downstream disclaimer live only in repository documentation.
 
 ```sh
 npm run build
-npm test
 npm run check
+npm test
 npm run deploy:dry
-npm run deploy
+npm run deploy -- --keep-vars
 ```
 
 `wrangler.jsonc` creates only Worker `nscf-phase1`, its Workers Static Assets,
@@ -152,20 +167,24 @@ and the `EntryStore` SQLite Durable Object namespace. A normal Wrangler deploy
 requires an authenticated Cloudflare session and a verified Cloudflare account
 email.
 
-The automated suite currently contains 15 Workers-runtime integration tests.
-It covers every shipped page route, the dynamic clock template, status and
-live-data contracts, API-secret failure modes, entries, food, profile,
-treatments, device status, roles/subjects, access tokens, SQLite persistence
-across eviction, tenant isolation, invalid input and cleanup.
+The automated suite currently contains 17 Workers-runtime integration tests.
+It covers the shipped page routes, dynamic clock template, polling-adapter
+asset/version contracts, implemented status and page-data contracts, API-secret
+failure modes, the implemented entries and document CRUD subset, activity
+conditional requests, the API v3 version envelope, SQLite persistence across
+eviction, tenant isolation and invalid input. The locked upstream has 111
+JavaScript test files and about 873 test cases; the 17 adapter tests do not
+prove complete Nightscout compatibility.
 
-The phase-one simulated-data lab is deployed at
+The current simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally
 limited and must not receive real health data. Deployment resources, remote
 smoke evidence, CPU measurements and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Rollback is limited to deleting this Worker, Static Assets deployment and its
-Durable Object namespace; see `docs/EXECUTION_PLAN.md`.
+Rollback can restore a prior Worker version; removing the entire lab deletes
+the Worker, Static Assets deployment and Durable Object namespace. See
+`docs/EXECUTION_PLAN.md`.
 
 ## License and attribution
 

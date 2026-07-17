@@ -141,7 +141,7 @@ function validateEntry(value: unknown): ValidatedEntry {
   const date = parseDate(value);
   const type = boundedString(value.type, "type", "sgv", 16);
   if (type !== "sgv") {
-    throw new ApiError(400, "invalid_entry", "phase 1 accepts only type=sgv");
+    throw new ApiError(400, "invalid_entry", "the current adapter accepts only type=sgv");
   }
   const direction = boundedString(value.direction, "direction", "NONE", 32);
   if (!DIRECTIONS.includes(direction as (typeof DIRECTIONS)[number])) {

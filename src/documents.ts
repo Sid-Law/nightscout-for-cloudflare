@@ -66,7 +66,7 @@ function normalizeDocument(
     }
   }
 
-  if (collection === "treatments" && !document.created_at) {
+  if ((collection === "activity" || collection === "treatments") && !document.created_at) {
     document.created_at = new Date().toISOString();
   }
   if (collection === "subjects" && !document.accessToken) {

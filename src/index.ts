@@ -162,11 +162,27 @@ async function digestHex(algorithm: "SHA-1" | "SHA-512", value: string): Promise
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function timingSafeHexEqual(left: string, right: string): boolean {
-  if (left.length !== right.length) return false;
+async function timingSafeTextEqual(left: string, right: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [leftDigest, rightDigest] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(left)),
+    crypto.subtle.digest("SHA-256", encoder.encode(right)),
+  ]);
+  const subtle = crypto.subtle as SubtleCrypto & {
+    timingSafeEqual?: (
+      leftValue: ArrayBuffer | ArrayBufferView,
+      rightValue: ArrayBuffer | ArrayBufferView,
+    ) => boolean;
+  };
+  if (typeof subtle.timingSafeEqual === "function") {
+    return subtle.timingSafeEqual(leftDigest, rightDigest);
+  }
+
+  const leftBytes = new Uint8Array(leftDigest);
+  const rightBytes = new Uint8Array(rightDigest);
   let difference = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  for (let index = 0; index < leftBytes.length; index += 1) {
+    difference |= leftBytes[index]! ^ rightBytes[index]!;
   }
   return difference === 0;
 }
@@ -185,7 +201,11 @@ async function hasWriteAccess(request: Request, env: AppEnv, url: URL): Promise<
     digestHex("SHA-1", secret),
     digestHex("SHA-512", secret),
   ]);
-  return timingSafeHexEqual(provided, sha1) || timingSafeHexEqual(provided, sha512);
+  const [matchesSha1, matchesSha512] = await Promise.all([
+    timingSafeTextEqual(provided, sha1),
+    timingSafeTextEqual(provided, sha512),
+  ]);
+  return matchesSha1 || matchesSha512;
 }
 
 interface AuthorizedSubject {
@@ -386,6 +406,30 @@ function entryDeleteBoundary(url: URL, name: string): number | null {
   return Math.trunc(parsed);
 }
 
+function latestDocumentTime(documents: JsonDocument[]): number | null {
+  let latest: number | null = null;
+  for (const document of documents) {
+    const value = document.created_at ?? document.timestamp;
+    const timestamp =
+      typeof value === "number"
+        ? value
+        : typeof value === "string"
+          ? Date.parse(value)
+          : Number.NaN;
+    if (Number.isFinite(timestamp) && (latest === null || timestamp > latest)) {
+      latest = timestamp;
+    }
+  }
+  return latest;
+}
+
+function notModified(lastModified: number): Response {
+  const headers = new Headers(corsHeaders());
+  headers.set("Cache-Control", "no-store");
+  headers.set("Last-Modified", new Date(lastModified).toUTCString());
+  return new Response(null, { status: 304, headers });
+}
+
 function hasFindQuery(url: URL): boolean {
   return Array.from(url.searchParams.keys()).some((name) => name.startsWith("find["));
 }
@@ -447,7 +491,7 @@ interface CollectionRoute {
 }
 
 function collectionRoute(pathname: string): CollectionRoute | null {
-  const match = /^\/api\/v1\/(food|profile|profiles|treatments|devicestatus)(?:\.json)?(?:\/([^/]+))?\/?$/.exec(
+  const match = /^\/api\/v1\/(activity|food|profile|profiles|treatments|devicestatus)(?:\.json)?(?:\/([^/]+))?\/?$/.exec(
     pathname,
   );
   if (match === null) return null;
@@ -459,6 +503,7 @@ function collectionRoute(pathname: string): CollectionRoute | null {
 }
 
 function defaultDocumentCount(collection: DocumentCollection, url: URL): number {
+  if (collection === "activity") return 5000;
   if (collection === "food") return 5000;
   if (collection === "profile") return 10;
   if (collection === "treatments") return hasFindQuery(url) ? 1000 : 100;
@@ -484,12 +529,33 @@ async function handleCollectionApi(
         : collection === "food" && segment === "regular"
           ? "food"
           : undefined;
-    return json(filterDocuments(all, url, defaultDocumentCount(collection, url), requiredType));
+    const filtered = filterDocuments(all, url, defaultDocumentCount(collection, url), requiredType);
+    if (collection === "activity") {
+      const lastModified = latestDocumentTime(filtered);
+      if (lastModified !== null) {
+        const ifModifiedSince = request.headers.get("If-Modified-Since");
+        if (
+          ifModifiedSince !== null &&
+          Number.isFinite(Date.parse(ifModifiedSince)) &&
+          lastModified <= Date.parse(ifModifiedSince)
+        ) {
+          return notModified(lastModified);
+        }
+        return json(filtered, {
+          headers: { "Last-Modified": new Date(lastModified).toUTCString() },
+        });
+      }
+    }
+    return json(filtered);
   }
 
   if (request.method === "POST" && segment === undefined) {
     await requirePermission(request, env, url, `api:${collection}:create`);
-    const parsed = parseDocumentPayload(await readBoundedBody(request), collection, false);
+    const payload = await readBoundedBody(request);
+    if (collection === "activity" && Array.isArray(payload) && payload.length === 0) {
+      return json([]);
+    }
+    const parsed = parseDocumentPayload(payload, collection, false);
     return json(parseDocuments(await store.createDocuments(collection, JSON.stringify(parsed.documents))));
   }
 
@@ -498,7 +564,7 @@ async function handleCollectionApi(
     const parsed = parseDocumentPayload(
       await readBoundedBody(request),
       collection,
-      collection !== "profile",
+      collection !== "activity" && collection !== "profile",
     );
     const existing = parsed.documents.filter((document) => typeof document._id === "string");
     const fresh = parsed.documents.filter((document) => typeof document._id !== "string");
@@ -535,6 +601,7 @@ async function handleCollectionApi(
       .map((document) => document._id)
       .filter((id): id is string => typeof id === "string" && OBJECT_ID.test(id));
     const deleted = await store.deleteDocuments(collection, ids);
+    if (collection === "activity") return json({});
     return json({ n: deleted, ok: 1 });
   }
 
@@ -637,6 +704,22 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     ]);
   }
 
+  if (request.method === "GET" && url.pathname === "/api/v3/version") {
+    resolveTenant(request, url);
+    return json({
+      status: 200,
+      result: {
+        version: "15.0.7",
+        apiVersion: "3.0.3-alpha",
+        srvDate: Date.now(),
+        storage: {
+          storage: "sqlite-durable-object",
+          version: "managed",
+        },
+      },
+    });
+  }
+
   if (
     request.method === "GET" &&
     /^\/api\/v2\/ddata\/at(?:\/[^/]+)?\/?$/.test(url.pathname)
@@ -722,7 +805,15 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   const authorizationResponse = await handleAuthorizationApi(request, env, url);
   if (authorizationResponse !== null) return authorizationResponse;
 
-  return json({ error: { code: "not_found", message: "API route not implemented in phase 1" } }, { status: 404 });
+  return json(
+    {
+      error: {
+        code: "not_found",
+        message: "API route not implemented by the current compatibility adapter",
+      },
+    },
+    { status: 404 },
+  );
 }
 
 export default {
