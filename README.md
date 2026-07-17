@@ -16,10 +16,14 @@ medical decisions.
 
 - A TypeScript Cloudflare Worker on `workers.dev`.
 - One SQLite-backed Durable Object class, sharded one instance per tenant.
-- Minimal Nightscout v1 entries/current/status/auth startup endpoints.
-- The official Nightscout v15.0.7 homepage and official chart bundle, built from
+- Nightscout-compatible entries, food, profile, treatments, device-status,
+  roles, subjects, status, authorization and live-data endpoints required by
+  the shipped pages.
+- The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
+  Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
-- A transport-only polling shim for the upstream client's Socket.IO surface.
+- A transport-only polling shim for the upstream client's Socket.IO surface;
+  it loads one aggregate data payload and emits the upstream `dataUpdate`.
 - A response-header adapter that preserves upstream asset bytes while supplying
   the UTF-8 charset normally added by Nightscout's Express server.
 - Workers-runtime and browser tests for API, SQLite, persistence, isolation and
@@ -75,15 +79,13 @@ NSCF_NOW_MS=$(node -p 'Date.now()')
 curl -X POST http://localhost:8787/api/v1/entries \
   -H 'Content-Type: application/json' \
   -H "api-secret: ${NSCF_API_HASH}" \
-  -H 'X-NSCF-Tenant: demo' \
-  --data "{\"sgv\":123,\"date\":${NSCF_NOW_MS},\"direction\":\"Flat\",\"device\":\"nscf-simulator\"}"
+  --data "{\"sgv\":123,\"date\":${NSCF_NOW_MS},\"direction\":\"Flat\",\"device\":\"simulator\"}"
 ```
 
 Read it back:
 
 ```sh
-curl 'http://localhost:8787/api/v1/entries.json?count=10' \
-  -H 'X-NSCF-Tenant: demo'
+curl 'http://localhost:8787/api/v1/entries.json?count=10&tenant=demo'
 ```
 
 Tenant names are lowercase letters/numbers followed by up to 63 lowercase
@@ -93,15 +95,16 @@ is not access control.
 ## Prototype security notice
 
 Phase 1 is a public simulated-data lab, not a personal Nightscout deployment.
-All writes require Nightscout-compatible API-secret authentication; the tenant
-selector provides storage routing, not authorization. Missing or shorter-than-
-12-character `API_SECRET` configuration fails closed with HTTP 503. A request
-must carry the SHA-1 or SHA-512 hexadecimal digest in `api-secret` (or
-`?secret=`); the raw passphrase is deliberately rejected on the wire. The root
-NSCF adapter dependency audit is clean, while `npm ci` for the locked upstream
-v15.0.7 tree currently reports 66 inherited findings (9 low, 18 moderate, 37
-high, 2 critical). They are recorded rather than silently changed because
-`npm audit fix` would mutate the official release dependency graph.
+All writes require a Nightscout-compatible API-secret digest or an authorized
+subject access token; the tenant selector provides storage routing, not
+authorization. Missing or shorter-than-12-character `API_SECRET` configuration
+fails closed with HTTP 503 for API-secret writes. A request must carry the
+SHA-1 or SHA-512 hexadecimal digest in `api-secret` (or `?secret=`); the raw
+passphrase is deliberately rejected on the wire. The root adapter dependency
+audit is clean, while `npm ci` for the locked upstream v15.0.7 tree currently
+reports 66 inherited findings (9 low, 18 moderate, 37 high, 2 critical). They
+are recorded rather than silently changed because `npm audit fix` would mutate
+the official release dependency graph.
 
 ## Configure API_SECRET on Cloudflare
 
@@ -116,6 +119,12 @@ code as `env.API_SECRET`.
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
 into an issue. GET endpoints remain publicly readable in this phase.
 
+If Nightscout says `Wrong API secret`, verify that the Worker setting has no
+leading/trailing spaces, save it, wait for the deployment to finish, then enter
+that exact raw passphrase in Nightscout. A direct API client normally sends its
+SHA-1/SHA-512 digest; the official web authentication dialog performs the
+conversion for the user.
+
 ## Upstream source policy
 
 `upstream/manifest.json` pins official release `v15.0.7`, full commit
@@ -123,6 +132,10 @@ into an issue. GET endpoints remain publicly readable in this phase.
 `vendor/nightscout` is an unmodified snapshot. Cloudflare-specific work stays in
 `src/`, `platform/`, and `scripts/`; future unavoidable upstream changes belong
 in the explicit `patches/nightscout` queue.
+
+The deployed Nightscout UI and status contract contain no NSCF branding or
+downstream version suffix. Project identity, attribution and the unofficial
+downstream disclaimer live only in repository documentation.
 
 ## Test and deploy
 
@@ -138,6 +151,12 @@ npm run deploy
 and the `EntryStore` SQLite Durable Object namespace. A normal Wrangler deploy
 requires an authenticated Cloudflare session and a verified Cloudflare account
 email.
+
+The automated suite currently contains 15 Workers-runtime integration tests.
+It covers every shipped page route, the dynamic clock template, status and
+live-data contracts, API-secret failure modes, entries, food, profile,
+treatments, device status, roles/subjects, access tokens, SQLite persistence
+across eviction, tenant isolation, invalid input and cleanup.
 
 The phase-one simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally

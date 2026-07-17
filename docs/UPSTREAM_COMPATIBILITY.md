@@ -28,9 +28,10 @@ fixture, not an NSCF or Cloudflare credential. It is retained only because the
 vendor snapshot is deliberately unmodified.
 
 The official `webpack/webpack.config.js` builds `bundle/bundle.source.js` to
-`bundle.app.js`. The NSCF build EJS-renders `views/index.html` with its official
-partials and publishes `static/**`, `translations/**`, and the official service
-worker through Workers Static Assets.
+`bundle.app.js`. The NSCF build EJS-renders the official index, Admin, Profile,
+Food, Reporting, Split and clock views with their upstream partials; publishes
+`static/**`, `translations/**`, the service worker, Swagger UI assets and both
+shipped API specifications through Workers Static Assets.
 
 Cloudflare's platform adapter adds the UTF-8 response charset normally supplied
 by the upstream Express server. Remote and local `bundle.app.js` SHA-256 values
@@ -46,36 +47,60 @@ an integration test.
 | `GET /api/v1/entries.json` | Descending SGV array; `count`; millisecond `find[date][$gt/$gte/$lt/$lte]`; convenience `from`/`to`. |
 | `GET /api/v1/entries/current.json` | Array containing the newest SGV, or `[]`. |
 | `GET /api/v1/status.json` | Startup settings/capabilities with `runtimeState: loaded`. |
+| `GET /api/v1/status.js` | Official JavaScript status bootstrap used by clock/profile pages. |
+| `GET /api/v2/properties` | Phase-one `bgnow`/delta property shape used by official clock views. |
+| `GET /api/v2/ddata/at[/<at>]` | Aggregate page polling payload containing SGVs, treatments, food, profiles and device status. |
 | `GET /api/v1/verifyauth` | Upstream `OK`/`UNAUTHORIZED` response contract; a valid API-secret digest reports admin/write capability. |
 | `GET /api/v1/adminnotifies` | Empty notification queue required by official client startup. |
-| `/socket.io/socket.io.js` | Transport-only compatibility shim: v1 polling to upstream `dataUpdate`; no replacement UI. |
+| `GET /api/versions` | Version discovery used by upstream tooling. |
+| `GET/POST/PUT/DELETE /api/v1/food[...]` | Food Editor create/update/filter/delete, including regular and quick-pick routes. |
+| `GET/POST/PUT/DELETE /api/v1/profile[...]` | Profile Editor first-save, current, list, update and delete. |
+| `GET/POST/PUT/DELETE /api/v1/treatments[...]` | Report/careportal treatment CRUD with bounded filters. |
+| `GET/POST/PUT/DELETE /api/v1/devicestatus[...]` | Device-status CRUD and live aggregation. |
+| `/api/v2/authorization/roles[...]` | Default plus persisted role CRUD. |
+| `/api/v2/authorization/subjects[...]` | Subject CRUD and access-token generation. |
+| `/api/v2/authorization/request/<token>` | Persisted subject/role permission lookup. |
+| `/socket.io/socket.io.js` | Transport-only compatibility shim: aggregate REST polling to upstream `dataUpdate`; no replacement UI. |
+
+The upstream `/admin`, `/profile`, `/food`, `/report`, `/split`, arbitrary safe
+`/clock/<face>`, `/api-docs` and `/api3-docs` pages are rendered or copied
+directly from the locked release. NSCF does not rename or restyle them. Both
+with-slash and without-slash page URLs are accepted by the platform adapter.
+The deployed Nightscout surface has no downstream branding or public provenance
+payload, and its status version is the exact upstream `15.0.7`.
+Independent-project provenance remains in `upstream/manifest.json`, README and
+NOTICE rather than the running UI/API.
 
 Returned entry fields are `_id`, optional `identifier`, `sgv`, `date`,
 `dateString`, `direction`, `device`, and `type`. Minimum input is `sgv` plus
 either `date` or `dateString`. Object and array POST bodies are supported.
 
-NSCF adds `X-NSCF-Tenant` or `tenant` solely for phase-one tenant routing. If
-omitted, the stable `demo` tenant is used. Upstream does not define this selector.
+The Cloudflare storage adapter accepts an optional, unbranded `tenant` query
+parameter solely for phase-one routing. If omitted, the stable `demo` tenant is
+used. Upstream does not define this selector.
 
 `API_SECRET` follows the upstream minimum of 12 characters. Cloudflare stores
 the raw passphrase in the environment binding; clients transmit its 40-character
 SHA-1 or 128-character SHA-512 hexadecimal digest through `api-secret` or
-`secret`. Body-carried secrets and token/role authentication are not yet
-implemented.
+`secret`. Persisted role/subject access tokens are implemented for the page-used
+authorization flow.
 
 ## Known incompatibilities and omissions
 
-- API-secret write authentication exists; access tokens, named roles and the
-  full upstream authorization model do not.
-- No treatments, profiles, devicestatus, food, activity, properties, full
-  websocket, API v2/v3, Swagger UI, count, delete, or query-by-id endpoints.
-- No MongoDB query grammar beyond the listed date operators; no SGV/type/device
-  filters and no two-day implicit window.
-- Invalid writes return structured HTTP 400 rather than upstream's historical
-  405 behavior. Successful writes expose counts in diagnostic response headers.
+- The page-used role/subject/token flow exists, but the complete upstream
+  authorization UI semantics and every historical permission edge case are not
+  claimed.
+- API v3 Swagger documentation is shipped unchanged, but the generic API v3
+  runtime is not implemented. Historical v1/v2 routes not used by the shipped
+  pages may also be absent.
+- The bounded Mongo-style query subset supports equality, nested paths,
+  `$gt/$gte/$lt/$lte/$ne/$exists/$in`, sort and report literal search; arbitrary
+  Mongo operators, aggregations and server-side regular expressions do not.
+- Invalid writes return structured HTTP 400 rather than every historical
+  upstream error/status variant.
 - Generated IDs are 24-character hexadecimal strings but are not Mongo ObjectIds.
-- The official UI/plugin/calculation code is present, but phase-one server data
-  and write capabilities are limited. NSCF does not rewrite these modules.
+- Summary/activity persistence, notifications, plugin-specific background jobs,
+  alarms and Mongo change streams are not implemented.
 - The Socket.IO compatibility surface uses 15-second REST polling; it is not yet
   a complete Engine.IO, WebSocket, alarm, or database-write transport.
 - Installing the exact upstream v15.0.7 lockfile currently reports 66 inherited
@@ -93,8 +118,8 @@ At each NSCF release:
    client transport calls, storage normalization, tests and release notes.
 4. Rebase explicit compatibility patches and add fixtures before expanding routes.
 5. Keep Cloudflare-specific behavior namespaced and documented.
-6. Expand API-secret fixtures into the complete upstream role/token model before
-   claiming full authorization compatibility.
+6. Expand fixtures route-by-route before claiming complete historical
+   authorization, API v3, plugin or real-time compatibility.
 
 Phase-one research baseline is the precise release/commit above and its shipped
 Swagger/tests, as observed on 2026-07-17.

@@ -1,16 +1,12 @@
-const UPSTREAM_COMMIT = "7e0e77f88fc113a76fe363504125f5b36b8a3fe3";
-
 export function nightscoutStatus(now = new Date()): Record<string, unknown> {
   return {
     status: "ok",
     name: "Nightscout",
-    version: "15.0.7-nscf.1",
-    versionNum: 150007,
-    head: UPSTREAM_COMMIT,
+    version: "15.0.7",
     serverTime: now.toISOString(),
     serverTimeEpoch: now.getTime(),
     apiEnabled: true,
-    careportalEnabled: false,
+    careportalEnabled: true,
     boluscalcEnabled: false,
     runtimeState: "loaded",
     settings: {
@@ -25,7 +21,7 @@ export function nightscoutStatus(now = new Date()): Record<string, unknown> {
       theme: "default",
       language: "en",
       scaleY: "log",
-      showPlugins: "delta direction timeago",
+      showPlugins: "bgnow delta direction timeago devicestatus upbat errorcodes profile bolus dbsize runtimestate basal careportal",
       showForecast: "ar2",
       focusHours: 3,
       heartbeat: 60,
@@ -48,14 +44,23 @@ export function nightscoutStatus(now = new Date()): Record<string, unknown> {
         bgTargetBottom: 80,
         bgLow: 55,
       },
-      enable: ["bgnow", "delta", "direction", "timeago", "ar2"],
+      enable: [
+        "bgnow",
+        "delta",
+        "direction",
+        "timeago",
+        "devicestatus",
+        "upbat",
+        "errorcodes",
+        "profile",
+        "bolus",
+        "dbsize",
+        "runtimestate",
+        "basal",
+        "careportal",
+        "ar2",
+      ],
     },
     extendedSettings: {},
-    nscf: {
-      phase: 1,
-      transport: "rest-polling-socket-shim",
-      dataPolicy: "simulated-only",
-      upstreamRelease: "v15.0.7",
-    },
   };
 }

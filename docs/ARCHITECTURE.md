@@ -3,13 +3,14 @@
 ## Request and data flow
 
 ```text
-Official Nightscout v15.0.7 browser bundle / compatible uploader
+Official Nightscout v15.0.7 pages and browser bundle / compatible uploader
         |
-        | static HTML/CSS/JS, v1 API, transport polling
+        | static HTML/CSS/JS, v1/v2 page API, transport polling
         v
 Cloudflare Worker (nscf-phase1) + Workers Static Assets
-  - official upstream page/assets
-  - API_SECRET write authentication, bounded parsing and tenant routing
+  - official upstream pages/assets/Swagger specifications
+  - API_SECRET and access-token authorization
+  - bounded parsing, upstream query subset and tenant routing
   - Socket.IO client-surface polling adapter
         |
         | ENTRY_STORE.getByName(tenant), typed RPC
@@ -22,13 +23,19 @@ Embedded SQLite
   - entries table
   - unique server id / upstream-style date+type dedupe
   - descending date index
+  - generic documents table keyed by collection + id
+  - food, profile, treatments, devicestatus, roles and subjects
+  - per-collection sort and lookup indexes
   - local schema migration table
 ```
 
-Workers Static Assets serves a build of upstream `views/index.html`,
-`bundle/bundle.source.js`, `static/**`, `translations/**`, and the upstream
-service worker. NSCF contains no alternative page, chart, component, CSS theme,
-plugin implementation, translation, or medical calculation.
+Workers Static Assets serves EJS-rendered upstream index, Admin Tools, Profile
+Editor, Food Editor, Reporting, Split/multiframe and clock views; the official
+Webpack bundle, Swagger UIs/specifications, `static/**`, `translations/**`, and
+the upstream service worker are copied from the locked release. Dynamic clock
+face names are inserted into the upstream clock template at request time. NSCF
+contains no alternative page, chart, component, CSS theme, plugin
+implementation, translation, or medical calculation.
 
 Nightscout's Express server supplies UTF-8 in response headers, while the
 upstream homepage itself has no `<meta charset>`. Cloudflare Static Assets
@@ -39,31 +46,38 @@ media types. Binary assets continue to use the direct Static Assets path. This
 is a platform response-header adaptation, not a source or UI fork.
 
 The official client expects Socket.IO and consumes a `dataUpdate` runtime shape
-rather than loading entries directly. At `/socket.io/socket.io.js`, a thin NSCF
-transport adapter implements only the homepage-used `connect`, `authorize`,
-`subscribe`, `loadRetro`, and `dataUpdate` surface. It polls the v1 entries API,
-maps stored `{sgv,date}` rows to upstream `{mgdl,mills}` runtime records, and then
-hands control to the untouched upstream client/chart/plugin code. This is the
-phase-one replacement for the long-lived Node Socket.IO server, not a UI fork.
+rather than loading entries directly. At `/socket.io/socket.io.js`, a thin
+transport adapter implements only the page-used `connect`, `authorize`,
+`subscribe`, `loadRetro`, and `dataUpdate` surface. It polls
+`/api/v2/ddata/at` every 15 seconds, receives SGVs, treatments, food, profiles
+and device status in one aggregate response, and hands control to the untouched
+upstream client/chart/plugin code. This replaces the long-lived Node Socket.IO
+server for phase 1; it is not a UI fork.
 
-Before a POST can reach storage, the Worker requires `API_SECRET` to be present
-as a Cloudflare environment binding and at least 12 characters long. It hashes
-the configured raw passphrase with SHA-1 and SHA-512 through Web Crypto and
-compares the supplied `api-secret` header (or `secret` query parameter) with
-the hexadecimal digests. Raw passphrases on the request wire are rejected.
-Missing configuration fails closed; phase-one GET routes remain public.
+Before an API-secret write can reach storage, the Worker requires `API_SECRET`
+to be present as a Cloudflare environment binding and at least 12 characters
+long. It hashes the configured raw passphrase with SHA-1 and SHA-512 through
+Web Crypto and compares the supplied `api-secret` header (or `secret` query
+parameter) with the hexadecimal digests. Raw passphrases on the request wire
+are rejected. Missing configuration fails closed. Admin-created subjects,
+roles, permissions and random access tokens are stored in the same tenant's
+SQLite documents table; authorized subject tokens may be used according to
+their persisted permissions. Phase-one GET routes remain public.
 
-The Worker is otherwise stateless. `X-NSCF-Tenant` (or the `tenant` query
-parameter) is validated and passed to `ENTRY_STORE.getByName()`. The default is
-`demo`. A deterministic name always routes one tenant to the same strongly
+The Worker is otherwise stateless. An optional `tenant` query parameter is
+validated and passed to `ENTRY_STORE.getByName()`. The default is `demo`. A
+deterministic name always routes one tenant to the same strongly
 consistent DO; different names route to separate DO instances and separate
 SQLite databases. This is isolation by storage shard, not authentication.
 
-`EntryStore` uses RPC rather than an internal HTTP hop. Its constructor uses
-`blockConcurrencyWhile()` only for idempotent schema setup. Critical data is
-written synchronously before returning. The upstream v15.0.7 rule of one SGV per
-normalized timestamp/type is represented by a unique dedupe key; client UUIDs
-are preserved as `identifier`, while valid 24-hex IDs may be retained as `_id`.
+`EntryStore` uses RPC rather than an internal HTTP hop. JSON strings cross the
+RPC boundary to avoid recursive generic values unsupported by the generated
+Cloudflare RPC types. Its constructor uses `blockConcurrencyWhile()` only for
+idempotent schema setup. Critical data is written synchronously before
+returning. The upstream v15.0.7 rule of one SGV per normalized timestamp/type
+is represented by a unique dedupe key; client UUIDs are preserved as
+`identifier`, while valid 24-hex IDs may be retained as `_id`. Generic document
+records store bounded JSON plus normalized sort/create/update timestamps.
 
 ## Why no D1 or R2 in phase 1
 
@@ -80,13 +94,14 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
 
 ## Runtime and safety boundaries
 
-- Maximum request body: 64 KiB; maximum POST batch: 100 entries.
+- Maximum request body: 512 KiB; maximum POST batch: 100 records.
 - SGV range accepted by this prototype: integer 20–600 mg/dL.
 - History count defaults to 10 and is capped at 1,000.
 - Official UI and calculations are not changed; no NSCF dosing logic exists.
-- `API_SECRET` is the only application credential. It is a Cloudflare binding,
-  never a committed Wrangler variable; the current lab uses a plain-text
-  dashboard variable at the owner's request.
+- `API_SECRET` is the bootstrap application credential; subject access tokens
+  and role documents are tenant-local SQLite records. The API_SECRET value is a
+  Cloudflare binding, never a committed Wrangler variable; the current lab uses
+  a plain-text dashboard variable at the owner's request.
 - The polling shim is transport-only, runs every 15 seconds and has no medical or
   display logic.
 - Text asset responses are streamed rather than buffered when UTF-8 headers are

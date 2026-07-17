@@ -18,6 +18,18 @@
       "/*.css",
       "/*.json",
       "/*.xml",
+      "/admin*",
+      "/profile*",
+      "/food*",
+      "/report*",
+      "/split*",
+      "/clock/*",
+      "/api-docs*",
+      "/api3-docs*",
+      "/swagger-ui-dist/*",
+      "/swagger.json",
+      "/swagger.yaml",
+      "/api3-swagger.json",
       "/api/*",
       "/healthz"
     ]

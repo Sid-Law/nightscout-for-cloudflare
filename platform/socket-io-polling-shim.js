@@ -1,16 +1,15 @@
 /*
- * NSCF Cloudflare transport adapter for the unmodified Nightscout v15.0.7 UI.
+ * Cloudflare polling transport adapter for the unmodified Nightscout UI.
  *
  * The upstream browser calls the Socket.IO client surface exposed at this URL.
  * Workers Free does not run the upstream Node Socket.IO server, so phase 1 maps
  * the small subset used by the homepage to bounded REST polling. This file has
  * no visual, chart, plugin, translation, or medical logic.
  */
-(function installNSCFTransport(global) {
+(function installCloudflareTransport(global) {
   "use strict";
 
   var POLL_INTERVAL_MS = 15000;
-  var HISTORY_COUNT = 576;
 
   function tenant() {
     var selected = new URLSearchParams(global.location.search).get("tenant");
@@ -71,42 +70,18 @@
     }
 
     function load() {
-      var query = new URLSearchParams({
-        count: String(HISTORY_COUNT),
-        tenant: tenant(),
-      });
-      global.fetch("/api/v1/entries.json?" + query.toString(), {
+      var query = new URLSearchParams({ tenant: tenant() });
+      global.fetch("/api/v2/ddata/at?" + query.toString(), {
         headers: { Accept: "application/json" },
         cache: "no-store",
       }).then(function parse(response) {
-        if (!response.ok) throw new Error("entries request failed: " + response.status);
+        if (!response.ok) throw new Error("data request failed: " + response.status);
         return response.json();
-      }).then(function deliver(entries) {
-        var sgvs = entries.map(function toRuntimeEntry(entry) {
-          return {
-            _id: entry._id,
-            mgdl: Number(entry.sgv),
-            mills: Number(entry.date),
-            device: entry.device,
-            direction: entry.direction,
-            type: "sgv",
-          };
-        }).sort(function byTime(a, b) {
-          return a.mills - b.mills;
-        });
-
-        self.dispatch("dataUpdate", {
-          delta: false,
-          sgvs: sgvs,
-          mbgs: [],
-          cals: [],
-          treatments: [],
-          food: [],
-          devicestatus: [],
-          dbstats: {},
-        });
+      }).then(function deliver(data) {
+        data.delta = false;
+        self.dispatch("dataUpdate", data);
       }).catch(function failed(error) {
-        console.error("NSCF polling adapter", error);
+        console.error("Nightscout polling adapter", error);
       }).finally(schedule);
     }
 

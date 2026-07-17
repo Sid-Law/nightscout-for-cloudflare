@@ -4,16 +4,20 @@ Last synchronized: 2026-07-17
 
 ## Current status
 
-Phase 1 is deployed and the local and remote closure tests pass.
+The expanded phase-one port is deployed. Local Workers/SQLite closure tests and
+final remote page/read smoke tests pass. The final remote credentialed CRUD
+rerun received HTTP 401 because the current dashboard `API_SECRET` no longer
+matches the earlier test value; the binding is present and was not inspected or
+replaced.
 
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Account workers.dev subdomain: `nscf-lab-20260717`
 - Worker: `nscf-phase1`
-- Final deployment ID: `79b37cb29a194f0786cd4782f6c08f8a`
-- Final Worker ETag: `4ddb53213e84e3f726bd0b6c5e899c0f63b2df94ef5b838ae5f494dfcc58723c`
+- Final deployment ID: `40627e717e124e368ffe0f9af51ae19a`
+- Final Worker ETag: `ee33c9f1099f7ad1e95d0b9f98480da034d72366e51cf17272c73ee1d14af69b`
 - Worker bundle SHA-256:
-  `98c5d1c7e4c34458f3991536afecdfd786d0b3cd44269aff48fda8ac4094d0e3`
+  `5b737eab3ba8ad520f4741ddaf6c501b65d2263e28c23e48c80f4faa56546cf6`
 - Durable Object namespace: `nscf-phase1_EntryStore`
 - Durable Object namespace ID: `65a3ccc862724ddaaf1e3d8efdc0ef8b`
 - Durable Object class/backend: `EntryStore`, SQLite, migration tag `v1`
@@ -31,27 +35,25 @@ The final API inventory reports one Worker and one Durable Object namespace.
 D1 remains empty. No R2, KV, Queues, custom domain, zone route, or other product
 resource was created.
 
-The deployment uploaded 177 asset files represented by 169 unique content
-hashes and 14,851,506 unique bytes. Wrangler reports 201 directory entries when
-walking `public/`. The official main bundle is 2,173,390 bytes; its local and
-remote SHA-256 are both
+The deployment contains 214 asset files represented by 205 unique content
+hashes and 23,877,522 bytes before content deduplication. Wrangler reports 248
+entries when walking `public/`. The official main bundle is 2,173,390 bytes;
+its local and remote SHA-256 are both
 `d85c03e4a30b789e35f34f6a86a33f93b684ac1993f7a8b7066c3d0f48db9d99`.
-
-A temporary, unguessable relay path on the same final Worker/DO was used only to
-bridge local asset bytes to the authorized API session. It created no extra
-Cloudflare resource. Its SQLite transfer table contained zero rows/bytes before
-the Worker was replaced with the final code.
 
 ## Local verification evidence
 
 | Check | Result |
 | --- | --- |
 | TypeScript | `wrangler types` and `tsc --noEmit` passed |
-| Workers integration tests | 1 file, 9/9 tests passed, including API_SECRET fail-closed/auth cases |
+| Workers integration tests | 1 file, 15/15 tests passed |
 | Official UI build | Nightscout v15.0.7 Webpack build passed |
 | Vendor integrity | 655 files identical to the re-hashed official release archive |
-| Static Assets dry run | 201 entries read from `public/` |
-| Final Worker dry run | 19.07 KiB raw / 5.96 KiB gzip |
+| Static Assets dry run | 248 entries read from `public/` |
+| Final Worker dry run | 47.84 KiB raw / 11.90 KiB gzip |
+| Page routes | Index, Admin, Profile, Food, Report, Split, dynamic clocks and Swagger |
+| SQLite page CRUD | Entries, food, profile, treatments, device status, roles and subjects |
+| Authorization | API_SECRET fail-closed, roles/subjects and access tokens |
 | Local page closure | 12 simulated SGVs persisted; official page title/chart rendered |
 | UTF-8 platform adapter | HTML and JS charset assertions pass without changing upstream bytes |
 
@@ -59,13 +61,17 @@ Local browser evidence is `outputs/local-official-nightscout.png`.
 
 ## Remote smoke evidence
 
-The remote smoke test used simulated SGVs only.
+All remote checks used simulated data only. The earlier closure run verified
+authorized Worker-to-Durable-Object writes and official chart rendering. The
+final deployment added the expanded page CRUD and reran every page/read route;
+credentialed writes were rejected before storage because the dashboard secret
+had changed.
 
 | Check | Result | Client-observed wall time |
 | --- | --- | ---: |
 | Batch POST | HTTP 200; 12 inserted, 0 duplicates | 23,917.7 ms |
 | Idempotent retry | HTTP 200; 0 inserted, 1 duplicate | recorded |
-| Status | HTTP 200; `Nightscout` / `15.0.7-nscf.1` / `loaded` | 1,255.6 ms |
+| Status | HTTP 200; exact upstream `Nightscout` / `15.0.7` / `loaded` | 1,255.6 ms |
 | Health | HTTP 200; SQLite Durable Object | 258.7 ms |
 | API_SECRET browser auth | HTTP 200; `canWrite: true`, `isAdmin: true`, upstream `message: OK` | passed |
 | Current | HTTP 200; one row, SGV 124, `Flat` | 226.8 ms |
@@ -81,6 +87,30 @@ The remote smoke test used simulated SGVs only.
 The first batch includes new-account Worker/DO cold initialization and network
 time; it is not CPU time. Subsequent remote reads were about 0.22–0.65 seconds
 wall time from the test client.
+
+### Final deployment page/read smoke
+
+| Check | Result | Client-observed wall time |
+| --- | --- | ---: |
+| `/` | HTTP 200, official Nightscout | 880 ms |
+| `/admin` | HTTP 200, official Admin Tools | 785 ms |
+| `/food` | HTTP 200, official Food Editor | 219 ms |
+| `/profile` | HTTP 200, official Profile Editor | 258 ms |
+| `/report` | HTTP 200, official Reporting | 222 ms |
+| `/split` and `/split/` | HTTP 200 for both forms | 375 / 232 ms |
+| `/clock/clock-color` | HTTP 200 | 239 ms |
+| arbitrary `/clock/cy10-sg35` | HTTP 200 | 210 ms |
+| `/api-docs`, `/api3-docs` | HTTP 200 | 246 / 220 ms |
+| `/api/v1/status.json` | HTTP 200; exact version `15.0.7`; no downstream object | passed |
+| clean isolated tenant | entries and aggregate collections empty | passed |
+| invalid credential | HTTP 401, proving binding is present rather than fail-closed 503 | passed |
+| removed public downstream artifact | `/nscf-upstream.json` HTTP 404 | passed |
+
+The credentialed CRUD rerun did not write anything: entries, food, profile,
+treatments and device-status POST/PUT requests all stopped at HTTP 401, and the
+isolated aggregate remained empty. To repeat that one remote step, enter the
+current raw `API_SECRET` in the official authentication dialog or deliberately
+replace the dashboard variable with a new value of at least 12 characters.
 
 ## Remote official-page closure and UTF-8 adaptation
 
@@ -111,9 +141,8 @@ error `100328`: custom CPU limits are not supported on the Free plan. The field
 was removed from `wrangler.jsonc`; the Free plan's platform limit remains in
 force.
 
-Workers Observability reported the following over 129 phase-one invocations in
-the two-hour deployment/smoke window (including the temporary same-Worker asset
-relay traffic):
+Workers Observability reported the following over 129 invocations in the
+initial phase-one deployment/smoke window:
 
 | Metric | CPU time |
 | --- | ---: |
@@ -130,11 +159,13 @@ by network, static asset delivery, DO placement and first-use initialization.
 
 - Writes require API_SECRET, but reads and tenant selection remain public;
   synthetic data only.
-- Only the documented phase-one v1 SGV/status/auth startup subset exists.
+- Every official page route is shipped, but this does not mean every historical
+  Nightscout server/API/plugin behavior is implemented.
 - The transport adapter uses 15-second REST polling, not full Engine.IO or
   WebSocket semantics.
-- No treatments, profiles, devicestatus, API v2/v3, write roles, alarms or
-  production admin flows are implemented.
+- Page-used entries, treatments, profiles, food, device status and
+  roles/subjects are implemented. Generic API v3 runtime, summary/activity
+  persistence, notifications, plugin background jobs and alarms are not.
 - The pinned upstream dependency tree reports 66 inherited audit findings (9
   low, 18 moderate, 37 high, 2 critical). It is not silently auto-upgraded.
 - No medical algorithms were added or changed, and this prototype is not for

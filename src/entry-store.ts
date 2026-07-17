@@ -1,6 +1,26 @@
 import { DurableObject } from "cloudflare:workers";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
 
+export type DocumentCollection =
+  | "food"
+  | "profile"
+  | "treatments"
+  | "devicestatus"
+  | "subjects"
+  | "roles";
+
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+export interface JsonDocument {
+  [key: string]: JsonValue;
+}
+
 interface DbEntry {
   [key: string]: SqlStorageValue;
   id: string;
@@ -12,6 +32,13 @@ interface DbEntry {
   direction: string;
   device: string;
   type: "sgv";
+}
+
+interface DbDocument {
+  [key: string]: SqlStorageValue;
+  id: string;
+  body: string;
+  sort_time: number;
 }
 
 export interface WriteResult {
@@ -38,6 +65,22 @@ function toPublicEntry(row: DbEntry): PublicEntry {
   };
   if (row.identifier !== null) entry.identifier = row.identifier;
   return entry;
+}
+
+function documentSortTime(document: JsonDocument): number {
+  for (const field of ["date", "mills", "created_at", "timestamp", "startDate"]) {
+    const value = document[field];
+    if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+    if (typeof value === "string") {
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return Date.now();
+}
+
+function toDocument(row: DbDocument): JsonDocument {
+  return JSON.parse(row.body) as JsonDocument;
 }
 
 export class EntryStore extends DurableObject<Env> {
@@ -77,6 +120,23 @@ export class EntryStore extends DurableObject<Env> {
         );
         CREATE INDEX IF NOT EXISTS entries_date_desc ON entries(date DESC);
         INSERT INTO _sql_schema_migrations (id) VALUES (1);
+      `);
+    }
+
+    if (version < 2) {
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS documents (
+          collection TEXT NOT NULL,
+          id TEXT NOT NULL,
+          body TEXT NOT NULL,
+          sort_time INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (collection, id)
+        );
+        CREATE INDEX IF NOT EXISTS documents_collection_sort
+          ON documents(collection, sort_time DESC);
+        INSERT INTO _sql_schema_migrations (id) VALUES (2);
       `);
     }
   }
@@ -177,5 +237,118 @@ export class EntryStore extends DurableObject<Env> {
       )
       .toArray()[0];
     return row === undefined ? [] : [toPublicEntry(row)];
+  }
+
+  async deleteEntries(
+    ids: string[],
+    lte: number | null = null,
+    gte: number | null = null,
+  ): Promise<number> {
+    let deleted = 0;
+    for (const id of ids) {
+      deleted += this.ctx.storage.sql.exec("DELETE FROM entries WHERE id = ?", id).rowsWritten;
+    }
+    if (ids.length === 0 && (lte !== null || gte !== null)) {
+      const conditions: string[] = [];
+      const bindings: number[] = [];
+      if (lte !== null) {
+        conditions.push("date <= ?");
+        bindings.push(lte);
+      }
+      if (gte !== null) {
+        conditions.push("date >= ?");
+        bindings.push(gte);
+      }
+      deleted += this.ctx.storage.sql
+        .exec(`DELETE FROM entries WHERE ${conditions.join(" AND ")}`, ...bindings).rowsWritten;
+    }
+    return deleted;
+  }
+
+  async listDocuments(collection: DocumentCollection, limit = 5000): Promise<string> {
+    const boundedLimit = Math.max(1, Math.min(10000, Math.trunc(limit)));
+    const documents = this.ctx.storage.sql
+      .exec<DbDocument>(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = ?
+         ORDER BY sort_time DESC, updated_at DESC
+         LIMIT ?`,
+        collection,
+        boundedLimit,
+      )
+      .toArray()
+      .map(toDocument);
+    return JSON.stringify(documents);
+  }
+
+  async createDocuments(
+    collection: DocumentCollection,
+    documentsJson: string,
+  ): Promise<string> {
+    const documents = JSON.parse(documentsJson) as JsonDocument[];
+    const now = Date.now();
+    const stored: JsonDocument[] = [];
+    for (const document of documents) {
+      const id = typeof document._id === "string" ? document._id : randomObjectId();
+      const normalized = { ...document, _id: id };
+      this.ctx.storage.sql.exec(
+        `INSERT INTO documents (collection, id, body, sort_time, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        collection,
+        id,
+        JSON.stringify(normalized),
+        documentSortTime(normalized),
+        now,
+        now,
+      );
+      stored.push(normalized);
+    }
+    return JSON.stringify(stored);
+  }
+
+  async saveDocuments(
+    collection: DocumentCollection,
+    documentsJson: string,
+  ): Promise<string> {
+    const documents = JSON.parse(documentsJson) as JsonDocument[];
+    const now = Date.now();
+    for (const document of documents) {
+      const id = document._id as string;
+      this.ctx.storage.sql.exec(
+        `INSERT INTO documents (collection, id, body, sort_time, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(collection, id) DO UPDATE SET
+           body = excluded.body,
+           sort_time = excluded.sort_time,
+           updated_at = excluded.updated_at`,
+        collection,
+        id,
+        JSON.stringify(document),
+        documentSortTime(document),
+        now,
+        now,
+      );
+    }
+    return JSON.stringify(documents);
+  }
+
+  async deleteDocuments(collection: DocumentCollection, ids: string[]): Promise<number> {
+    let deleted = 0;
+    for (const id of ids) {
+      deleted += this.ctx.storage.sql
+        .exec("DELETE FROM documents WHERE collection = ? AND id = ?", collection, id).rowsWritten;
+    }
+    return deleted;
+  }
+
+  async findDocumentByField(
+    collection: DocumentCollection,
+    field: string,
+    expected: string,
+  ): Promise<string | null> {
+    const documents = JSON.parse(await this.listDocuments(collection)) as JsonDocument[];
+    const found = documents.find((document) => document[field] === expected);
+    return found === undefined ? null : JSON.stringify(found);
   }
 }

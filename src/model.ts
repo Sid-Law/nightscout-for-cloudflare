@@ -147,7 +147,7 @@ function validateEntry(value: unknown): ValidatedEntry {
   if (!DIRECTIONS.includes(direction as (typeof DIRECTIONS)[number])) {
     throw new ApiError(400, "invalid_entry", "direction is not a known Nightscout direction");
   }
-  const device = boundedString(value.device, "device", "nscf-simulator", 80);
+  const device = boundedString(value.device, "device", "unknown", 80);
   const identity = parseIdentity(value);
 
   return {
@@ -183,8 +183,8 @@ function parseTime(value: string | null, name: string): number | null {
 export function parseHistoryQuery(url: URL): HistoryQuery {
   const rawCount = url.searchParams.get("count") ?? "10";
   const count = Number(rawCount);
-  if (!Number.isInteger(count) || count < 1 || count > 1000) {
-    throw new ApiError(400, "invalid_query", "count must be an integer from 1 to 1000");
+  if (!Number.isInteger(count) || count < 1 || count > 10000) {
+    throw new ApiError(400, "invalid_query", "count must be an integer from 1 to 10000");
   }
 
   return {
