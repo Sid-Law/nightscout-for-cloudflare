@@ -41,9 +41,9 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 2. Official browser assets/pages | Partial | Profile save/close is now verified; add food, admin, report, clock, split and live-update workflows. |
 | 3. SQLite collection compatibility | In progress | General collection contract for ObjectId/UUID, indexes, query operators, upsert, API v3 timestamps/tombstones and atomic change events. |
 | 4. API v1 | In progress | Complete entries utilities/types/errors and all document routes; activity CRUD is the latest completed increment. |
-| 5. API v2 | Partial | Complete authorization/JWT, summary, notifications and full ddata/properties behavior. |
-| 6. API v3 | Started | Public `/version` is implemented; generic CRUD, status, lastModified, history, formats and security remain. |
-| 7. Authentication/admin | Partial | Persist tenant JWT signing material and port authorization, Shiro permissions, expiry and delay-list tests. |
+| 5. API v2 | Partial | JWT issuance/refresh is implemented; complete body credentials, delay-list behavior, summary, notifications and full ddata/properties behavior. |
+| 6. API v3 | Started | Public `/version` and JWT-protected `/status` are implemented; generic CRUD, lastModified, history and formats remain. |
+| 7. Authentication/admin | Partial | Tenant JWT keys, eight-hour HS256 tokens, live subject/role lookup, Shiro matching and `verifyauth` are implemented; port derived access-token and persistent IP delay-list behavior. |
 | 8. Engine.IO/Socket.IO | Not started | EIO3 polling handshake, WebSocket upgrade, namespaces, authorization, acknowledgements and database mutation messages on a tenant DO. |
 | 9. Real-time storage updates | Not started | Persist-then-broadcast mutation log and reconnect/eviction tests. |
 | 10. Alarms/background tasks | Not started | One-alarm SQLite task scheduler for heartbeat, cleanup, API v3 pruning and server-plugin evaluation. |
@@ -84,6 +84,22 @@ This increment is deployed and verified:
 - a real Chrome save/close workflow that remained on the official homepage,
   had no JavaScript dialog or redirect, and rendered the persisted basal value.
 
+The next authorization increment is also deployed and verified:
+
+- a random JWT signing key stored separately in every tenant's DO SQLite
+  database and retained across DO eviction;
+- upstream-shaped eight-hour HS256 JWT issuance and refresh, Web Crypto
+  signature/expiry validation, cross-tenant isolation and live subject/role
+  lookup;
+- the exact locked `shiro-trie` 0.4.10 permission matcher and corrected
+  `verifyauth`/authorization failure response shapes;
+- JWT-only API v3 `/status`, while preserving the locked v15.0.7
+  permission-loop bug (`api:undefined:<action>` is checked for every registered
+  collection) rather than silently changing release behavior;
+- 19/19 Workers-runtime tests, a successful deployment dry-run, public remote
+  API smoke, and a real Chrome homepage check with no dialog, redirect or
+  console warning.
+
 ## Ordered implementation milestones
 
 ### Milestone A — collection contract
@@ -105,6 +121,12 @@ This milestone is the dependency for the rest of API v3 and real-time updates.
 3. Verify JWT expiry/signature and reconstruct Shiro permission groups.
 4. Port default roles, admin semantics, failure delay-list and status contracts.
 5. Keep API_SECRET only as the bootstrap/admin credential and never log it.
+
+Items 1–3 and the core of item 4 are complete. Remaining work is the upstream
+API-secret-derived long-token format and prefix lookup, credentials carried in
+request bodies, the persistent per-IP failure delay list, and its shared DO
+alarm cleanup. Token-bearing authorization paths are redacted from adapter
+error logs.
 
 ### Milestone C — API completion
 

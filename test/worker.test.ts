@@ -3,7 +3,9 @@ import { SELF, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { EntryStore } from "../src/entry-store";
+import { createJwtSecret, issueJwt, verifyJwt } from "../src/jwt";
 import type { PublicEntry } from "../src/model";
+import { permissionGroupsAllow } from "../src/permissions";
 
 const TEST_API_SECRET = "nscf-test-secret-20260717";
 
@@ -18,6 +20,16 @@ function tenant(prefix: string): string {
 
 function entry(sgv: number, date: number, direction = "Flat"): Record<string, unknown> {
   return { sgv, date, direction, device: "simulator", type: "sgv" };
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const encoded = token.split(".")[1];
+  if (encoded === undefined) throw new Error("JWT payload is missing");
+  const padded = encoded.replaceAll("-", "+").replaceAll("_", "/").padEnd(
+    encoded.length + ((4 - (encoded.length % 4)) % 4),
+    "=",
+  );
+  return JSON.parse(atob(padded)) as Record<string, unknown>;
 }
 
 async function post(tenantName: string, payload: unknown, path = "/api/v1/entries"): Promise<Response> {
@@ -128,12 +140,14 @@ describe("Nightscout compatibility API", () => {
     expect(status.version).toBe("15.0.7");
 
     const auth = await SELF.fetch("https://example.test/api/v1/verifyauth");
-    expect(await auth.json()).toMatchObject({
+    expect(await auth.json()).toEqual({
+      status: 200,
       message: {
         canRead: true,
         canWrite: false,
         isAdmin: false,
         permissions: "DEFAULT",
+        rolefound: "NOTFOUND",
         message: "UNAUTHORIZED",
       },
     });
@@ -141,13 +155,30 @@ describe("Nightscout compatibility API", () => {
     const writableAuth = await SELF.fetch("https://example.test/api/v1/verifyauth", {
       headers: { "api-secret": await secretDigest("SHA-512") },
     });
-    expect(await writableAuth.json()).toMatchObject({
+    expect(await writableAuth.json()).toEqual({
+      status: 200,
       message: {
         canRead: true,
         canWrite: true,
         isAdmin: true,
         permissions: "ROLE",
+        rolefound: "NOTFOUND",
         message: "OK",
+      },
+    });
+
+    const rejectedAuth = await SELF.fetch("https://example.test/api/v1/verifyauth", {
+      headers: { "api-secret": "not-a-valid-credential" },
+    });
+    expect(await rejectedAuth.json()).toEqual({
+      status: 200,
+      message: {
+        canRead: false,
+        canWrite: false,
+        isAdmin: false,
+        permissions: "ROLE",
+        rolefound: "NOTFOUND",
+        message: "UNAUTHORIZED",
       },
     });
 
@@ -383,17 +414,186 @@ describe("Nightscout compatibility API", () => {
     const authorized = await SELF.fetch(
       `https://example.test/api/v2/authorization/request/${subject.accessToken}?tenant=${name}`,
     );
-    expect(await authorized.json()).toMatchObject({
+    const authorization = await authorized.json<Record<string, unknown>>();
+    expect(authorization).toMatchObject({
+      token: expect.stringMatching(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/),
       sub: "Phone",
       permissionGroups: [["api:entries:create"], ["*:*:read"]],
+      iat: expect.any(Number),
+      exp: expect.any(Number),
+    });
+    const jwt = String(authorization.token);
+    expect(decodeJwtPayload(jwt)).toMatchObject({
+      accessToken: subject.accessToken,
+      iat: authorization.iat,
+      exp: authorization.exp,
+    });
+    expect(Number(authorization.exp) - Number(authorization.iat)).toBe(8 * 60 * 60);
+
+    const refreshed = await SELF.fetch(
+      `https://example.test/api/v2/authorization/request/${encodeURIComponent(jwt)}?tenant=${name}`,
+    );
+    expect(refreshed.status).toBe(200);
+    expect(await refreshed.json()).toMatchObject({
+      token: expect.stringMatching(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/),
+      sub: "Phone",
+      permissionGroups: [["api:entries:create"], ["*:*:read"]],
+    });
+
+    const rejectedIssuance = await SELF.fetch(
+      `https://example.test/api/v2/authorization/request/not-a-subject?tenant=${name}`,
+    );
+    expect(rejectedIssuance.status).toBe(401);
+    expect(await rejectedIssuance.json()).toEqual({
+      status: 401,
+      message: "Unauthorized",
+      description: "Invalid/Missing",
     });
 
     const tokenAuth = await SELF.fetch(
       `https://example.test/api/v1/verifyauth?tenant=${name}&token=${subject.accessToken}`,
     );
-    expect(await tokenAuth.json()).toMatchObject({
-      message: { rolefound: "FOUND", canRead: true, canWrite: true },
+    expect(await tokenAuth.json()).toEqual({
+      status: 200,
+      message: {
+        canRead: true,
+        canWrite: false,
+        isAdmin: false,
+        permissions: "ROLE",
+        rolefound: "FOUND",
+        message: "OK",
+      },
     });
+
+    const bearerAuth = await SELF.fetch(
+      `https://example.test/api/v1/verifyauth?tenant=${name}`,
+      { headers: { Authorization: `Bearer ${jwt}` } },
+    );
+    expect(await bearerAuth.json()).toEqual({
+      status: 200,
+      message: {
+        canRead: true,
+        canWrite: false,
+        isAdmin: false,
+        permissions: "ROLE",
+        rolefound: "FOUND",
+        message: "OK",
+      },
+    });
+
+    const rawBearer = await SELF.fetch(
+      `https://example.test/api/v3/status?tenant=${name}`,
+      { headers: { Authorization: `Bearer ${subject.accessToken}` } },
+    );
+    expect(rawBearer.status).toBe(401);
+
+    const missingV3Token = await SELF.fetch(
+      `https://example.test/api/v3/status?tenant=${name}`,
+    );
+    expect(missingV3Token.status).toBe(401);
+    expect(await missingV3Token.json()).toEqual({
+      status: 401,
+      message: "Missing or bad access token or JWT",
+    });
+
+    const invalidV3Token = await SELF.fetch(
+      `https://example.test/api/v3/status?tenant=${name}`,
+      { headers: { Authorization: "Bearer invalid-token" } },
+    );
+    expect(invalidV3Token.status).toBe(401);
+    expect(await invalidV3Token.json()).toEqual({
+      status: 401,
+      message: "Bad access token or JWT",
+    });
+
+    const malformedV3Header = await SELF.fetch(
+      `https://example.test/api/v3/status?tenant=${name}`,
+      { headers: { Authorization: "Bearer  invalid-token" } },
+    );
+    expect(await malformedV3Header.json()).toEqual({
+      status: 401,
+      message: "Missing or bad access token or JWT",
+    });
+
+    const status = await SELF.fetch(
+      `https://example.test/api/v3/status?tenant=${name}`,
+      { headers: { Authorization: `bearer ${jwt}` } },
+    );
+    expect(status.status).toBe(200);
+    expect(await status.json()).toMatchObject({
+      status: 200,
+      result: {
+        version: "15.0.7",
+        apiVersion: "3.0.3-alpha",
+        srvDate: expect.any(Number),
+        apiPermissions: {
+          devicestatus: "r",
+          entries: "r",
+          food: "r",
+          profile: "r",
+          settings: "r",
+          treatments: "r",
+        },
+      },
+    });
+
+    await evictDurableObject(env.ENTRY_STORE.getByName(name));
+    expect(
+      (
+        await SELF.fetch(`https://example.test/api/v3/status?tenant=${name}`, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        })
+      ).status,
+    ).toBe(200);
+
+    const otherTenant = tenant("admin-other");
+    expect(
+      (
+        await SELF.fetch(`https://example.test/api/v3/status?tenant=${otherTenant}`, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        })
+      ).status,
+    ).toBe(401);
+
+    const jwtWrite = await SELF.fetch(
+      `https://example.test/api/v1/entries?tenant=${name}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(entry(144, Date.now() - 120_000)),
+      },
+    );
+    expect(jwtWrite.status).toBe(200);
+
+    const opaqueTokenWrite = await SELF.fetch(
+      `https://example.test/api/v1/entries?tenant=${name}`,
+      {
+        method: "POST",
+        headers: {
+          "api-secret": String(subject.accessToken),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(entry(145, Date.now() - 60_000)),
+      },
+    );
+    expect(opaqueTokenWrite.status).toBe(200);
+
+    const deleted = await writeApi(
+      name,
+      "DELETE",
+      `/api/v2/authorization/subjects/${String(subject._id)}`,
+    );
+    expect(deleted.status).toBe(200);
+    expect(
+      (
+        await SELF.fetch(`https://example.test/api/v3/status?tenant=${name}`, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        })
+      ).status,
+    ).toBe(401);
   });
 
   it("writes an object or array and preserves upstream empty-rejection success", async () => {
@@ -524,5 +724,58 @@ describe("Nightscout compatibility API", () => {
     );
     expect(missingBinding.status).toBe(503);
     expect(await missingBinding.json()).toMatchObject({ error: { code: "api_secret_not_configured" } });
+  });
+});
+
+describe("upstream Shiro permission adapter", () => {
+  it("preserves implicit suffixes, wildcard segments, and comma branches", () => {
+    expect(permissionGroupsAllow([["api:entries"]], "api:entries:create")).toBe(true);
+    expect(
+      permissionGroupsAllow(
+        [["api:food,treatments:create"]],
+        "api:treatments:create",
+      ),
+    ).toBe(true);
+    expect(
+      permissionGroupsAllow(
+        [["api:*:create,update,delete"]],
+        "api:entries:update",
+      ),
+    ).toBe(true);
+    expect(
+      permissionGroupsAllow(
+        [["api:*:create,update,delete"]],
+        "api:entries:read",
+      ),
+    ).toBe(false);
+    expect(
+      permissionGroupsAllow(
+        [["newsletter:view,create,edit,delete"]],
+        "newsletter:view,create,any,edit,delete",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("tenant JWT adapter", () => {
+  it("signs HS256 claims and rejects tampering and expiration", async () => {
+    const secret = createJwtSecret();
+    const issued = await issueJwt(secret, "subject-access-token", 1_000_000);
+    expect(await verifyJwt(secret, issued.token, 1_000_001)).toEqual({
+      accessToken: "subject-access-token",
+      iat: 1_000_000,
+      exp: 1_000_000 + 8 * 60 * 60,
+    });
+
+    const [header, payload, signature] = issued.token.split(".");
+    expect(header).toBeDefined();
+    expect(payload).toBeDefined();
+    expect(signature).toBeDefined();
+    const tamperedSignature = `${signature![0] === "A" ? "B" : "A"}${signature!.slice(1)}`;
+    expect(
+      await verifyJwt(secret, `${header}.${payload}.${tamperedSignature}`, 1_000_001),
+    ).toBeNull();
+    expect(await verifyJwt(secret, issued.token, issued.exp)).toBeNull();
+    expect(await verifyJwt(createJwtSecret(), issued.token, 1_000_001)).toBeNull();
   });
 });

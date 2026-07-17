@@ -17,7 +17,7 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-The current local suite has 17 Workers-runtime integration tests. The locked
+The current local suite has 19 Workers-runtime integration tests. The locked
 upstream has 111 `*.test.js` files and approximately 873 `it(...)` cases. Those
 numbers are not directly comparable, but they make clear why the current suite
 does not prove full compatibility.
@@ -57,10 +57,10 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v1 activity | `lib/api/activity/index.js`, `lib/server/activity.js`, `tests/api.activity.test.js` | **Compatible subset implemented locally.** Create/list/filter/conditional GET/update/delete and empty-array create now follow the upstream shapes. | Remote authenticated create/read/update/delete smoke after deployment; expand remaining upstream shape tests. |
 | Remaining API v1 | notifications, Alexa, Google Home and entries utility routes | **Missing or partial.** `adminnotifies` is a hard-coded empty response. | Route inventory from Express registration plus contract tests for each enabled/scope-allowed route. External integrations remain disabled in the simulated-data deployment. |
 | API v2 properties and ddata | `lib/api2/index.js`, `lib/data/endpoints.js`, `lib/api2/properties.js` | **Partial.** Clock properties and one aggregate page payload exist; the complete data transformation/delta contract does not. | Compare official client fixtures and all ddata/property fields, retro behavior and errors. |
-| API v2 authorization | `lib/authorization/**` | **Partial and not JWT-compatible.** Role/subject CRUD and opaque access tokens exist, but `/authorization/request` does not yet issue upstream JWTs and historical permission/delay-list behavior is absent. | Deterministic tenant signing-key storage, JWT issue/verify/expiry tests, complete Shiro permission and failure-delay fixtures. |
+| API v2 authorization | `lib/authorization/**`, `lib/api/verifyauth.js` | **Partial JWT-compatible core.** Role/subject CRUD, per-tenant persisted signing keys, eight-hour HS256 issuance/refresh, signature/expiry verification, live subject/role lookup, upstream `shiro-trie` 0.4.10 matching and `verifyauth` shapes are implemented. Access-token derivation/prefix matching, body credentials and the IP delay list remain missing. | Port `storage.js` token-format fixtures and `delaylist.js` persistence/alarm behavior; add body-token/body-secret contracts. |
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/api2/notifications-v2.js` | **Missing.** | Reuse upstream processors without adding medical logic; add notification acknowledgement/persistence tests. |
-| API v3 version | `lib/api3/specific/version.js`, `lib/api3/shared/storageTools.js`, `tests/api3.basic.test.js` | **Compatible envelope implemented locally.** Returns Nightscout/API version, server time and SQLite adapter metadata. | Remote GET smoke after deployment. |
-| API v3 generic/status/history | `lib/api3/generic/**`, `specific/status.js`, `specific/lastModified.js` | **Missing.** Swagger is present but runtime CRUD, patch, history, tombstones, formats, JWT security and conditional headers are not. | Port all upstream `api3.*.test.js` workflows before claiming v3 support. |
+| API v3 version/status | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.basic.test.js` | **Compatible named subset.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. | Local valid/missing/bad/eviction/cross-tenant JWT contracts plus remote missing/bad-token smoke; do not infer generic API support from this endpoint. |
+| API v3 generic/lastModified/history | `lib/api3/generic/**`, `specific/lastModified.js` | **Missing.** Swagger is present but runtime CRUD, patch, lastModified, history, tombstones, formats and conditional headers are not. | First add indexed `identifier/srvCreated/srvModified/isValid` SQLite metadata and soft-delete history, then port all upstream `api3.*.test.js` workflows. |
 | Main Socket.IO namespace | `lib/server/websocket.js` | **Missing.** `platform/socket-io-polling-shim.js` only polls REST every 15 seconds and fabricates client events. A real EIO3 polling handshake currently returns 404. | Engine.IO polling/WebSocket handshake, authorize/loadRetro/dbAdd/dbUpdate/dbRemove, acknowledgements, reconnect and multi-client broadcast tests. |
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Missing.** | Namespace authorization, room subscription, create/update/delete events and alarm lifecycle tests. |
 | Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Missing.** Writes persist but do not push real-time deltas; the browser discovers them on the next poll. | Persist-then-broadcast transaction design and tests across DO eviction/reconnect. |
@@ -68,13 +68,29 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
 | Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Profile Editor loads, its authenticated Save persists a current profile, and closing it returns to a homepage that consumes that profile without the basal missing-profile redirect. The polling adapter is content-addressed so the upstream service worker cannot retain an older payload contract. The remaining page workflows are not proven by HTTP 200. | Browser scenarios for profile delete, food, admin, report, clock, split and live updates, with console/network assertions. |
-| Upstream test tracking | `tests/**`, `package.json` test scripts | **Partial.** 17 adapter tests pass; the upstream Mongo-backed suite has not been made green against the DO adapter. | Maintain a test manifest: pass, adapted pass, intentionally excluded by fixed scope, or unresolved—with a reason for every upstream test file. |
+| Upstream test tracking | `tests/**`, `package.json` test scripts | **Partial.** 19 adapter tests pass; the upstream Mongo-backed suite has not been made green against the DO adapter. | Maintain a test manifest: pass, adapted pass, intentionally excluded by fixed scope, or unresolved—with a reason for every upstream test file. |
+
+## Locked-upstream discrepancy decisions
+
+Nightscout v15.0.7 `lib/api3/specific/status.js:43-46` iterates the collection
+registry with `for...in` but passes the string property name to a helper that
+expects a collection descriptor with `colName`. The permission checked for
+every collection is consequently `api:undefined:<action>`. With the official
+read role, the wildcard permission matches `read`, so all six registry keys
+report `r`; a collection-specific create role does not add `c`. Swagger and
+the tutorial show the intended per-collection `crud` matrix. NSCF preserves
+the locked release's actual check and records the contradiction; it does not
+silently repair upstream behavior and then claim byte-for-byte compatibility.
+
+The same evidence rule applies to future contradictions: actual locked source
+and tests take priority unless a deliberate compatibility fix is named,
+documented and contract-tested.
 
 ## Current deployed evidence
 
 The public deployment at
 `https://nscf-phase1.nscf-lab-20260717.workers.dev/` was rechecked on
-2026-07-18 after version `87b53ac1-ded3-4afa-8b45-ea6b9830a673` reached
+2026-07-18 after version `b5d23db9-7ace-430d-ae13-65e753a774e5` reached
 100% traffic:
 
 - `/`, `/admin/`, `/profile/`, `/food/`, `/report/` and
@@ -83,6 +99,15 @@ The public deployment at
   `/api/v2/ddata/at` returned HTTP 200.
 - `/api/v3/version` returned HTTP 200 with the v15.0.7/API 3.0.3-alpha
   envelope and SQLite DO adapter metadata.
+- `/api/v3/status` returned the exact upstream 401 body for both a missing JWT
+  and a malformed Bearer token. Valid JWT, expiry, tamper, DO-eviction and
+  cross-tenant cases are covered locally without exposing a deployed
+  credential.
+- `/api/v2/authorization/request/not-a-subject` returned HTTP 401 with the
+  upstream `description: "Invalid/Missing"` field, proving that the new
+  authorization handler reached the deployed tenant DO.
+- Anonymous `/api/v1/verifyauth` returned the upstream-shaped DEFAULT/read-only
+  result.
 - `/api/v1/activity?count=2` returned HTTP 200 and an empty list for the
   simulated default tenant.
 - A real `/socket.io/?EIO=3&transport=polling` handshake still returned HTTP
@@ -97,6 +122,8 @@ The public deployment at
   bypassed that old cache without manual clearing. Repeating the exact
   `/profile` → `X` workflow stayed at `/`, showed no dialog or redirect, and
   rendered `BASAL 0.100U` from the saved profile.
+- A fresh real-Chrome reload after the JWT deployment again stayed on `/`,
+  rendered `BASAL 0.100U`, and produced no warning/error console entries.
 - Its data connection still came from the polling shim, not a Socket.IO server.
 - The existing `API_SECRET` was retained with `--keep-vars` and used only by
   the official browser's existing authentication state; its value was never

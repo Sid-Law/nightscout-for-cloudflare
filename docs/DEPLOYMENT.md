@@ -12,21 +12,20 @@ is not counted as server/API/plugin compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployment ID: `d5e654c1-7f28-4a6f-8be0-498c677753c9`
-- Version ID: `87b53ac1-ded3-4afa-8b45-ea6b9830a673` at 100% traffic
-- Worker ETag:
-  `2c45e62276ba6bdb985c947efdfa9ff953a28467da37e4f2f09c8a8fb5516e92`
+- Deployment ID: `ff412019-ba1d-48ab-a389-ead053bd6ad0`
+- Version ID: `b5d23db9-7ace-430d-ae13-65e753a774e5` at 100% traffic
+- Worker ETag: not emitted by Wrangler 4.111.0 for this upload
 - Worker module SHA-256:
-  `3b0a0fdc859aa51abb090ea6557b6f7e45009fe9aac28ee5665a81a83bb9ff1d`
+  `0c621744c4724668d619400425b8b7d7f3496832f721c6129aed175f32c668b6`
 - Durable Object: class `EntryStore`, SQLite backend, migration tag `v1`
 - Static Assets: 214 files represented by 248 Wrangler asset entries
 - Observability and invocation logs: enabled
 
-Wrangler uploaded six changed official/generated static entries: `/index.html`,
-the four secondary editor/report pages that load the transport adapter, and
-`/sw.js`. The Worker module ETag remained unchanged. The deployment retained
-the existing dashboard variables with `--keep-vars`; application code and
-tests never read or print the configured credential.
+The rebuilt official assets were byte-identical to the preceding deployment,
+so Wrangler uploaded no changed asset files. It uploaded the Worker module that
+adds tenant JWT persistence, Shiro-compatible permissions and API v3 status.
+The deployment retained the existing dashboard variables with `--keep-vars`;
+application code and tests never read or print the configured credential.
 
 ## Cloudflare footprint
 
@@ -47,18 +46,18 @@ The public instance is for simulated data only.
 | Official UI build | Upstream Webpack production bundle completed |
 | Type generation | `wrangler types` completed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 1 file, 17/17 passed |
+| Workers integration tests | 1 file, 19/19 passed |
 | Static Assets dry run | 248 entries read |
-| Worker dry run | 50.37 KiB raw / 12.44 KiB gzip |
-| Worker startup | Cloudflare reported 4 ms |
+| Worker dry run | 68.82 KiB raw / 16.80 KiB gzip |
+| Worker startup | Cloudflare reported 6 ms |
 
 The locked upstream contains 111 JavaScript test files and approximately 873
-test cases. The 17 adapter tests are a deployment gate for the implemented
+test cases. The 19 adapter tests are a deployment gate for the implemented
 subset, not evidence of complete compatibility.
 
 ## Post-deployment evidence
 
-Cloudflare recorded the final deployment at 2026-07-17 16:51:48 UTC. The smoke
+Cloudflare recorded the final deployment at 2026-07-17 17:24:29 UTC. The smoke
 test verifies response content, not merely a successful Wrangler command. The
 preceding deployment also demonstrated that edge propagation may take tens of
 seconds: a request about 22 seconds after that deployment still reached its
@@ -70,6 +69,10 @@ old version, while the new version was active by about 44 seconds.
 | `/admin/` | HTTP 200, official Admin Tools asset |
 | `/clock/clock-color/` | HTTP 200, official clock asset |
 | `/api/v3/version` | HTTP 200; v15.0.7, API `3.0.3-alpha`, SQLite DO adapter metadata |
+| `/api/v3/status` without JWT | HTTP 401; `Missing or bad access token or JWT` |
+| `/api/v3/status` with malformed JWT | HTTP 401; `Bad access token or JWT` |
+| `/api/v2/authorization/request/not-a-subject` | HTTP 401; upstream `description: Invalid/Missing` field |
+| Anonymous `/api/v1/verifyauth` | HTTP 200; read-only DEFAULT/NOTFOUND/UNAUTHORIZED contract |
 | `/api/v2/ddata/at` | HTTP 200; aggregate page payload includes the persisted profile |
 | `/api/v1/profile/current` | HTTP 200; current profile remains persisted |
 | `/api/v1/activity?count=2` | HTTP 200 and an empty JSON list for the current simulated tenant |
@@ -106,6 +109,14 @@ chart container remain upstream page behavior and are unrelated.
 Activity CRUD, conditional `Last-Modified`/`If-Modified-Since`,
 entries/document CRUD, authorization failure modes, persistence and tenant
 isolation were also exercised in the local Workers/SQLite integration suite.
+The expanded suite additionally covers eight-hour HS256 JWT issue/refresh,
+signature tamper and expiry rejection, DO eviction, cross-tenant rejection,
+subject deletion invalidation, exact Shiro matching and JWT-only API v3 status.
+
+A real Chrome reload after this deployment remained on the official homepage,
+showed the persisted `BASAL 0.100U`, had no JavaScript dialog or redirect and
+reported no warning/error console entries. The browser's existing
+authorization state was not inspected or printed.
 
 ## Historical remote closure evidence
 
@@ -134,7 +145,11 @@ full-port workloads.
 - Engine.IO/Socket.IO is not implemented. The shipped browser file is a
   page-used REST polling adapter.
 - API v1 and v2 are subsets. API v3 currently exposes only the public version
-  envelope; generic CRUD, history, tombstones and JWT security remain missing.
+  envelope and JWT-protected status; generic CRUD, lastModified, history and
+  tombstones remain missing.
+- JWT signing, expiry and Shiro permission matching are implemented, but the
+  upstream access-token derivation/prefix behavior, request-body credentials
+  and persistent per-IP failure delay list remain missing.
 - MongoDB query, BSON ObjectId, index and update semantics are only partially
   mapped to SQLite.
 - Server plugin jobs, real-time database broadcasts, notifications, summary
@@ -148,9 +163,10 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 
 ## Rollback
 
-Deploy the immediately preceding version
-`c57bd113-3e13-4211-b5a3-00501f3b4852` at 100% traffic, or delete Worker
+Deploy the prior known-good UI/API-subset version
+`87b53ac1-ded3-4afa-8b45-ea6b9830a673` at 100% traffic, or delete Worker
 `nscf-phase1` and then its Durable Object namespace if the whole lab is being
-removed. That preceding version does not contain the final content-addressed
-cache bypass and may reproduce the profile redirect in an existing browser.
+removed. That preceding version contains the content-addressed cache fix but
+does not contain the tenant JWT/API v3 status increment. The SQLite v3 secret
+table is forward-compatible and can remain unused by the preceding module.
 No D1/R2/KV/Queue/custom-domain cleanup is required.

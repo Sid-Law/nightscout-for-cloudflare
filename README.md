@@ -20,7 +20,11 @@ for diagnosis, dosing, or medical decisions.
 - A tested subset of Nightscout entries, food, profile, treatments,
   device-status, activity, roles, subjects, status, authorization and
   page-data endpoints.
-- The public API v3 version envelope; the rest of API v3 is not implemented.
+- Tenant-local, SQLite-persisted HS256 JWT signing, the upstream eight-hour
+  authorization-token lifetime, locked `shiro-trie` permission matching and
+  corrected `verifyauth` behavior.
+- The public API v3 version envelope and JWT-protected status endpoint; the
+  generic API v3 collection surface is not implemented.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -37,12 +41,13 @@ for diagnosis, dosing, or medical decisions.
 ## What is not complete
 
 This is not yet a drop-in Nightscout server. Important missing work includes
-the complete v1/v2/v3 route and error surface, JWT-compatible authorization,
-Mongo query/collection parity, Engine.IO/Socket.IO polling and WebSocket
-protocols, real-time write broadcasts, Durable Object alarms, server plugin
-execution, notification/summary persistence and end-to-end verification of
-every official page workflow. The polling shim only keeps the official browser
-bundle supplied with aggregate data; it is not a Socket.IO implementation.
+the complete v1/v2/v3 route and error surface, the authorization delay list and
+legacy access-token derivation, Mongo query/collection parity,
+Engine.IO/Socket.IO polling and WebSocket protocols, real-time write
+broadcasts, Durable Object alarms, server plugin execution,
+notification/summary persistence and end-to-end verification of every official
+page workflow. The polling shim only keeps the official browser bundle supplied
+with aggregate data; it is not a Socket.IO implementation.
 
 The evidence-based compatibility matrix and acceptance criteria are in
 [`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md). The storage
@@ -115,11 +120,18 @@ subject access token; the tenant selector provides storage routing, not
 authorization. Missing or shorter-than-12-character `API_SECRET` configuration
 fails closed with HTTP 503 for API-secret writes. A request must carry the
 SHA-1 or SHA-512 hexadecimal digest in `api-secret` (or `?secret=`); the raw
-passphrase is deliberately rejected on the wire. The root adapter dependency
-audit is clean, while `npm ci` for the locked upstream v15.0.7 tree currently
-reports 66 inherited findings (9 low, 18 moderate, 37 high, 2 critical). They
-are recorded rather than silently changed because `npm audit fix` would mutate
-the official release dependency graph.
+passphrase is deliberately rejected on the wire. A subject's long-lived access
+token can obtain an eight-hour HS256 JWT from
+`/api/v2/authorization/request/<token>`; Bearer authorization verifies the
+signature and expiry, then re-reads the subject and roles from that tenant's
+SQLite Durable Object. Each tenant has a separate random signing key that
+survives DO eviction and is never returned. This is the authorization core, not
+full parity: upstream IP failure delays, body-carried credentials and the
+historical access-token derivation/prefix behavior remain to be ported. The root
+adapter dependency audit is clean, while `npm ci` for the locked upstream
+v15.0.7 tree currently reports 66 inherited findings (9 low, 18 moderate, 37
+high, 2 critical). They are recorded rather than silently changed because
+`npm audit fix` would mutate the official release dependency graph.
 
 ## Configure API_SECRET on Cloudflare
 
@@ -167,14 +179,15 @@ and the `EntryStore` SQLite Durable Object namespace. A normal Wrangler deploy
 requires an authenticated Cloudflare session and a verified Cloudflare account
 email.
 
-The automated suite currently contains 17 Workers-runtime integration tests.
+The automated suite currently contains 19 Workers-runtime integration tests.
 It covers the shipped page routes, dynamic clock template, polling-adapter
 asset/version contracts, implemented status and page-data contracts, API-secret
 failure modes, the implemented entries and document CRUD subset, activity
-conditional requests, the API v3 version envelope, SQLite persistence across
-eviction, tenant isolation and invalid input. The locked upstream has 111
-JavaScript test files and about 873 test cases; the 17 adapter tests do not
-prove complete Nightscout compatibility.
+conditional requests, JWT issue/verify/expiry/tamper/cross-tenant behavior,
+Shiro permission matching, `verifyauth`, the API v3 version/status envelopes,
+SQLite persistence across eviction, tenant isolation and invalid input. The
+locked upstream has 111 JavaScript test files and about 873 test cases; the 19
+adapter tests do not prove complete Nightscout compatibility.
 
 The current simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally

@@ -1,4 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
+import {
+  createJwtSecret,
+  issueJwt as signJwt,
+  verifyJwt as validateJwt,
+} from "./jwt";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
 
 export type DocumentCollection =
@@ -40,6 +45,11 @@ interface DbDocument {
   id: string;
   body: string;
   sort_time: number;
+}
+
+interface DbSecret {
+  [key: string]: SqlStorageValue;
+  value: string;
 }
 
 export interface WriteResult {
@@ -140,6 +150,47 @@ export class EntryStore extends DurableObject<Env> {
         INSERT INTO _sql_schema_migrations (id) VALUES (2);
       `);
     }
+
+    if (version < 3) {
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS tenant_secrets (
+          name TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+        INSERT INTO _sql_schema_migrations (id) VALUES (3);
+      `);
+    }
+  }
+
+  private getOrCreateJwtSecret(): string {
+    const existing = this.ctx.storage.sql
+      .exec<DbSecret>(
+        "SELECT value FROM tenant_secrets WHERE name = 'authorization-jwt' LIMIT 1",
+      )
+      .toArray()[0];
+    if (existing !== undefined) return existing.value;
+
+    const value = createJwtSecret();
+    this.ctx.storage.sql.exec(
+      "INSERT INTO tenant_secrets (name, value, created_at) VALUES ('authorization-jwt', ?, ?)",
+      value,
+      Date.now(),
+    );
+    return value;
+  }
+
+  async issueAccessJwt(accessToken: string): Promise<string> {
+    if (accessToken.length === 0 || accessToken.length > 512) {
+      throw new Error("invalid access token length");
+    }
+    return JSON.stringify(await signJwt(this.getOrCreateJwtSecret(), accessToken));
+  }
+
+  async verifyAccessJwt(token: string): Promise<string | null> {
+    if (token.length === 0 || token.length > 4096) return null;
+    const claims = await validateJwt(this.getOrCreateJwtSecret(), token);
+    return claims === null ? null : JSON.stringify(claims);
   }
 
   async putEntries(entries: ValidatedEntry[]): Promise<WriteResult> {

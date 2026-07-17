@@ -15,7 +15,7 @@ Official Nightscout v15.0.7 pages and browser bundle / compatible uploader
         v
 Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
-  - API_SECRET and access-token authorization
+  - API_SECRET, subject access-token and signed-JWT authorization
   - bounded parsing, upstream query subset and tenant routing
   - Socket.IO client-surface polling adapter
         |
@@ -32,6 +32,7 @@ Embedded SQLite
   - generic documents table keyed by collection + id
   - food, profile, treatments, devicestatus, activity, roles and subjects
   - per-collection sort and lookup indexes
+  - tenant-local JWT signing material
   - local schema migration table
 ```
 
@@ -84,8 +85,25 @@ inputs to a fixed 32-byte value; it uses the runtime's native
 Raw passphrases on the request wire are rejected. Missing configuration fails
 closed. Admin-created subjects, roles, permissions and random access tokens are
 stored in the same tenant's SQLite documents table; authorized subject tokens
-may be used according to their persisted permissions. Current GET routes
-remain public.
+may be used according to their persisted permissions.
+
+`/api/v2/authorization/request/<accessToken>` now signs an upstream-shaped
+HS256 JWT whose payload contains `accessToken`, `iat` and `exp`, with the
+official eight-hour default lifetime. A random 256-bit signing key is stored in
+the tenant's private `tenant_secrets` SQLite table, so signatures survive DO
+eviction while remaining isolated between tenants. Verification uses Workers
+Web Crypto; after signature and expiry validation, every request re-reads the
+subject and roles, so deletion or permission changes immediately affect an
+existing JWT. Permission checks use the same `shiro-trie` 0.4.10 resolved by
+the locked upstream release, including suffix, wildcard and comma semantics.
+Token-bearing authorization paths are redacted from unhandled-error logs.
+
+This remains a partial authorization port. The current subject access token is
+a stored random value rather than the upstream API-secret/ObjectId-derived
+format, and body-carried credentials, historical prefix matching and the
+per-source-IP failure delay list are not yet implemented. Current GET routes
+remain public except API v3 `/status`, which follows the upstream Bearer-JWT
+requirement.
 
 The Worker is otherwise stateless. An optional `tenant` query parameter is
 validated and passed to `ENTRY_STORE.getByName()`. The default is `demo`. A
