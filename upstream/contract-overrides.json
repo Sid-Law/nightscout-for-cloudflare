@@ -129,8 +129,16 @@
       "api_versions": ["v3"],
       "mount_path": "",
       "source_file": "vendor/nightscout/lib/api3/index.js",
+      "source_sha256": "4f23729cbbe3630c54503ae3d7d32acd349a530253855b1f841b4191ade721b7",
       "registered_by": "vendor/nightscout/lib/server/app.js",
-      "only_paths": ["/version", "/test", "/lastModified", "/status", "/swagger-ui-dist"]
+      "only_paths": ["/version", "/test", "/lastModified", "/status", "/swagger-ui-dist"],
+      "only_routes": [
+        "GET /version",
+        "GET /test",
+        "GET /lastModified",
+        "GET /status",
+        "ALL /swagger-ui-dist"
+      ]
     }
   ],
   "dynamic_route_groups": [
@@ -140,7 +148,8 @@
       "collections_source": "vendor/nightscout/lib/api3/index.js",
       "collections_setting": "enabledCollections",
       "registration_file": "vendor/nightscout/lib/api3/generic/collection.js",
-      "risk": "Collection names and route prefixes are assembled at runtime. The generator reads the locked enabledCollections setting and expands the manually reviewed route templates below.",
+      "registration_sha256": "fc315c164d911e448dcc848f756c0b219a6eb1c64f3d7fe0c548cf3731ee3227",
+      "risk": "Collection names and route prefixes are assembled at runtime. The generator reads the locked enabledCollections setting and expands the reviewed templates only while the registration source hash is locked and their method, suffix, and handler source exactly match collection.js.",
       "routes": [
         {
           "method": "GET",
@@ -180,7 +189,11 @@
           "method": "PUT",
           "suffix": "/:identifier",
           "source_file": "vendor/nightscout/lib/api3/generic/update/operation.js",
-          "permission": "api:{collection}:update"
+          "permissions": [
+            "api:{collection}:update",
+            "api:{collection}:create"
+          ],
+          "auth_note": "Conditional upsert: an existing document requires api:{collection}:update; when no existing document matches the identifier, the insert branch requires api:{collection}:create."
         },
         {
           "method": "PATCH",

@@ -16,7 +16,9 @@ Fixed exclusions:
 - no real CGM, pump or medical credentials and no real health data;
 - no replacement UI or downstream branding in the Nightscout surface;
 - no new medical algorithm, dosing logic or treatment recommendation;
-- external bridge/push integrations remain disabled in the simulated-data lab.
+- live external bridge/push delivery remains disabled in the simulated-data
+  lab; mocked internal mapping, validation, deduplication, cancellation and
+  multi-key contracts remain required.
 
 ## Evidence standard
 
@@ -55,8 +57,11 @@ Opening a page or serving an official asset does not satisfy this standard.
 `npm run upstream:audit` builds `upstream/contract-manifest.json` and
 `docs/UPSTREAM_TEST_MANIFEST.md` from the locked route registration modules and
 all 111 upstream test files. `npm run upstream:audit:check` is deterministic and
-fails on duplicate routes, missing sources, count/status drift, unstable order,
-or stale generated output. `npm test` runs this check and the generator's own
+fails on duplicate routes, locked registration-source hash or static/dynamic
+overlay drift, invalid file-line provenance, count/status drift, unstable
+order, or stale generated output. Route/test links are heuristic dispatch
+candidates and require manual confirmation. `npm test` runs this check and the
+generator's own
 Node tests before the Workers-runtime suite.
 
 Dispatch upstream compatibility work in the generated numeric workstream order:

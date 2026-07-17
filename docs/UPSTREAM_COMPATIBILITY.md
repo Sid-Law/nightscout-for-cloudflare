@@ -51,8 +51,11 @@ npm run test:upstream-audit
 ```
 
 The checker enforces stable ordering, unique API-version/method/path keys,
-source-file existence, exactly 111 upstream test files, known status values,
-non-empty reasons, and byte-for-byte freshness of both generated outputs. The
+locked registration-source hashes, exact static/dynamic overlay agreement with
+the locked registrations, valid mount/registration/handler file-line
+provenance, exactly 111 upstream test
+files, known status values, non-empty reasons, and byte-for-byte freshness of
+both generated outputs. The
 default test-file status is `unresolved`. At this audit point, 109 files are
 `unresolved`, two real-CGM bridge files are `excluded-fixed-scope`, and
 zero files are claimed as `pass` or `adapted`.
@@ -111,7 +114,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
 | Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Profile Editor loads, its authenticated Save persists a current profile, and closing it returns to a homepage that consumes that profile without the basal missing-profile redirect. The polling adapter is content-addressed so the upstream service worker cannot retain an older payload contract. The remaining page workflows are not proven by HTTP 200. | Browser scenarios for profile delete, food, admin, report, clock, split and live updates, with console/network assertions. |
-| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; compatibility unresolved.** All 111 files are tracked with a strict status/reason and route associations, but no whole upstream file is yet claimed green against the DO adapter. | Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
+| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; compatibility unresolved.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations, but no whole upstream file is yet claimed green against the DO adapter. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
 
@@ -178,8 +181,9 @@ completion claim.
 
 ## Contract-testing and delivery order
 
-1. Use the generated route/test manifest as the dispatch list; keep its static
-   extraction and reviewed dynamic overlays current as implementation lands.
+1. Use the generated route/test manifest as the dispatch list; manually confirm
+   its heuristic route/test links and keep its locked-source-checked static and
+   dynamic overlays current as implementation lands.
 2. Build one SQLite collection contract that covers ObjectId/UUID, indexes,
    query operators, upsert, tombstones and last-modified fields.
 3. Complete JWT authorization before secured API v3 operations.

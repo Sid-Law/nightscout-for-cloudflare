@@ -223,7 +223,9 @@ the next due time.
 Official plugin formulas and medical calculations are not rewritten. A
 build-time registry lists the locked server plugins so bundling is deterministic;
 platform code supplies storage, time, settings, notifications and logging.
-External bridge/push integrations remain disabled in the simulated-data scope.
+Live external bridge/push delivery remains disabled in the simulated-data
+scope; mocked internal mapping, validation, deduplication, cancellation and
+multi-key contracts remain required.
 
 ## Why no D1 or R2
 

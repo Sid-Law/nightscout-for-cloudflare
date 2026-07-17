@@ -16,6 +16,7 @@ const UPSTREAM_LOCK_PATH = "upstream/manifest.json";
 const MANIFEST_PATH = "upstream/contract-manifest.json";
 const MARKDOWN_PATH = "docs/UPSTREAM_TEST_MANIFEST.md";
 const TEST_ROOT = "vendor/nightscout/tests";
+const DEFAULT_ROLE_SOURCE_PATH = "vendor/nightscout/lib/authorization/storage.js";
 const KNOWN_STATUSES = new Set([
   "pass",
   "adapted",
@@ -210,6 +211,7 @@ function routerDefaultPermissions(source, routerName) {
 export function extractRouteRegistrations(source, sourceFile = "fixture.js") {
   const routes = [];
   const dynamic = [];
+  const dynamicUses = [];
   const expression = /\b([A-Za-z_$][A-Za-z0-9_$]*)\.(get|post|put|patch|delete|head|options|all|use)\s*\(/g;
 
   for (const match of source.matchAll(expression)) {
@@ -224,16 +226,19 @@ export function extractRouteRegistrations(source, sourceFile = "fixture.js") {
     const paths = parsePathArgument(argumentsList[0]);
     if (paths === null) {
       // Express treats use(fn, ...) as middleware on the current mount. It is
-      // not a dynamic HTTP route unless the first argument is a path.
-      if (registrationMethod === "use") continue;
-      dynamic.push({
+      // not emitted as a route, but callers auditing a registration-only file
+      // can reject it fail-closed because the expression might be a path.
+      const dynamicRegistration = {
         method,
         registration_method: registrationMethod,
         router_name: routerName,
         path_expression: argumentsList[0],
+        handler_expression: argumentsList[1],
         source_file: sourceFile,
         source_line: lineNumber(source, match.index),
-      });
+      };
+      if (registrationMethod === "use") dynamicUses.push(dynamicRegistration);
+      else dynamic.push(dynamicRegistration);
       continue;
     }
     const permissions = [
@@ -252,10 +257,11 @@ export function extractRouteRegistrations(source, sourceFile = "fixture.js") {
         source_file: sourceFile,
         source_line: lineNumber(source, match.index),
         required_module: requireMatch?.[2] ?? null,
+        handler_expression: argumentsList[1],
       });
     }
   }
-  return { routes, dynamic };
+  return { routes, dynamic, dynamicUses };
 }
 
 export function normalizePath(...parts) {
@@ -271,7 +277,7 @@ export function normalizePath(...parts) {
 function resolveRequiredModule(sourceFile, requiredModule) {
   if (requiredModule === null || !requiredModule.startsWith(".")) return sourceFile;
   const sourceDirectory = dirname(sourceFile);
-  const base = normalizePath(sourceDirectory, requiredModule).slice(1);
+  const base = join(sourceDirectory, requiredModule);
   for (const candidate of [base, `${base}.js`, join(base, "index.js")]) {
     if (existsSync(join(REPO_ROOT, candidate))) return candidate;
   }
@@ -282,7 +288,99 @@ function routeKey(route) {
   return `${route.api_version} ${route.method} ${route.path}`;
 }
 
-function defaultAuth(permissions) {
+export function assertExactOverlaySet(label, expectedItems, actualItems) {
+  const expected = [...expectedItems].sort();
+  const actual = [...actualItems].sort();
+  if (JSON.stringify(expected) !== JSON.stringify(actual)) {
+    throw new Error(`${label} overlay drift: expected ${JSON.stringify(expected)}, found ${JSON.stringify(actual)}`);
+  }
+}
+
+export function assertLockedSourceHash(label, source, expectedSha256) {
+  if (typeof expectedSha256 !== "string" || expectedSha256.length === 0) {
+    throw new Error(`${label} requires a reviewed source_sha256 lock`);
+  }
+  const actualSha256 = createHash("sha256").update(source).digest("hex");
+  if (actualSha256 !== expectedSha256) {
+    throw new Error(`${label} source hash drift: expected ${expectedSha256}, found ${actualSha256}`);
+  }
+}
+
+function lineForExpressPath(source, path) {
+  if (!path) return null;
+  const escaped = path.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const expression = new RegExp(
+    `\\bapp\\.(?:use|all|get|post|put|patch|delete)\\s*\\(\\s*(['"])${escaped}(?:\\*|/\\*)?\\1`,
+  );
+  const match = expression.exec(source);
+  return match === null ? null : lineNumber(source, match.index);
+}
+
+function moduleReference(sourceFile, targetFile) {
+  let reference = relative(dirname(sourceFile), targetFile).replaceAll("\\", "/");
+  reference = reference.replace(/\.js$/, "").replace(/\/index$/, "");
+  if (!reference.startsWith(".")) reference = `./${reference}`;
+  return reference;
+}
+
+function mountSourceLine(descriptor, versionPrefix, registeredPath) {
+  const source = readFileSync(join(REPO_ROOT, descriptor.registered_by), "utf8");
+  const candidates = [];
+  if (descriptor.registered_by.endsWith("/server/app.js")) candidates.push(versionPrefix);
+  if (descriptor.mount_path) candidates.push(normalizePath(descriptor.mount_path));
+  const firstSegment = normalizePath(registeredPath).split("/").filter(Boolean)[0];
+  if (firstSegment !== undefined) candidates.push(`/${firstSegment}`);
+  for (const candidate of [...new Set(candidates)]) {
+    const sourceLine = lineForExpressPath(source, candidate);
+    if (sourceLine !== null) return sourceLine;
+  }
+  const reference = moduleReference(descriptor.registered_by, descriptor.source_file);
+  const referenceIndex = source.indexOf(reference);
+  if (referenceIndex >= 0) return lineNumber(source, referenceIndex);
+  throw new Error(`Cannot trace mount of ${descriptor.source_file} from ${descriptor.registered_by}`);
+}
+
+function handlerSourceLine(route, registrationFile, sourceFile) {
+  if (registrationFile === sourceFile) return route.source_line;
+  const source = readFileSync(join(REPO_ROOT, sourceFile), "utf8");
+  const matches = extractRouteRegistrations(source, sourceFile).routes.filter((candidate) => (
+    candidate.method === route.method
+      && normalizePath(candidate.registered_path) === normalizePath(route.registered_path)
+  ));
+  if (matches.length !== 1) {
+    throw new Error(
+      `Cannot trace ${route.method} ${route.registered_path} from ${registrationFile} into ${sourceFile}`,
+    );
+  }
+  return matches[0].source_line;
+}
+
+function namedFunctionLine(sourceFile, functionName) {
+  const source = readFileSync(join(REPO_ROOT, sourceFile), "utf8");
+  const escaped = functionName.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const expression = new RegExp(`\\bfunction\\s+${escaped}\\s*\\(`);
+  const match = expression.exec(source);
+  if (match === null) throw new Error(`Cannot trace handler ${functionName} in ${sourceFile}`);
+  return lineNumber(source, match.index);
+}
+
+function parseDefaultReadablePermissions() {
+  const source = readFileSync(join(REPO_ROOT, DEFAULT_ROLE_SOURCE_PATH), "utf8");
+  const match = source.match(/\{\s*name:\s*(['"])readable\1\s*,\s*permissions:\s*\[([^\]]*)\]/);
+  if (match === null) throw new Error(`Cannot find the readable default role in ${DEFAULT_ROLE_SOURCE_PATH}`);
+  const permissions = [...match[2].matchAll(/(['"])(.*?)\1/g)].map((item) => item[2]);
+  assertExactOverlaySet(`${DEFAULT_ROLE_SOURCE_PATH} readable role`, ["*:*:read"], permissions);
+  return permissions;
+}
+
+function permissionCovers(granted, required) {
+  const grantedParts = granted.split(":");
+  const requiredParts = required.split(":");
+  return grantedParts.length === requiredParts.length
+    && grantedParts.every((part, index) => part === "*" || part === requiredParts[index]);
+}
+
+function defaultAuth(permissions, defaultReadablePermissions) {
   if (permissions.length === 0) {
     return {
       mode: "public",
@@ -291,7 +389,9 @@ function defaultAuth(permissions) {
       note: "No explicit authorization middleware is registered on this route.",
     };
   }
-  const credentialRequired = permissions.some((permission) => !permission.endsWith(":read"));
+  const credentialRequired = permissions.some((permission) => (
+    !defaultReadablePermissions.some((granted) => permissionCovers(granted, permission))
+  ));
   return {
     mode: "nightscout-permission",
     credential_required: credentialRequired,
@@ -302,12 +402,35 @@ function defaultAuth(permissions) {
   };
 }
 
-function staticRoutes(overrides) {
+function staticRoutes(overrides, defaultReadablePermissions) {
   const output = [];
   const dynamicRisks = [];
   for (const descriptor of overrides.route_modules) {
     const source = readFileSync(join(REPO_ROOT, descriptor.source_file), "utf8");
+    if (descriptor.only_paths !== undefined) {
+      assertLockedSourceHash(descriptor.source_file, source, descriptor.source_sha256);
+    }
     const extracted = extractRouteRegistrations(source, descriptor.source_file);
+    if (descriptor.only_paths !== undefined) {
+      assertExactOverlaySet(
+        `${descriptor.source_file} only_paths`,
+        descriptor.only_paths.map((path) => normalizePath(path)),
+        extracted.routes.map((route) => normalizePath(route.registered_path)),
+      );
+      if (descriptor.only_routes === undefined) {
+        throw new Error(`${descriptor.source_file} only_paths requires exact only_routes signatures`);
+      }
+      assertExactOverlaySet(
+        `${descriptor.source_file} only_routes`,
+        descriptor.only_routes,
+        extracted.routes.map((route) => `${route.method} ${normalizePath(route.registered_path)}`),
+      );
+      assertExactOverlaySet(
+        `${descriptor.source_file} only_paths/only_routes consistency`,
+        descriptor.only_paths.map((path) => normalizePath(path)),
+        descriptor.only_routes.map((signature) => normalizePath(signature.slice(signature.indexOf(" ") + 1))),
+      );
+    }
     const allowedPaths = descriptor.only_paths === undefined
       ? null
       : new Set(descriptor.only_paths.map((path) => normalizePath(path)));
@@ -321,6 +444,8 @@ function staticRoutes(overrides) {
       const versionPrefix = overrides.version_prefixes[apiVersion];
       if (versionPrefix === undefined) throw new Error(`Unknown API version ${apiVersion}`);
       for (const route of accepted) {
+        const registrationFile = descriptor.source_file;
+        const sourceFile = resolveRequiredModule(registrationFile, route.required_module);
         const registeredPath = route.registration_method === "use"
           ? normalizePath(route.registered_path, "*")
           : route.registered_path;
@@ -332,12 +457,16 @@ function staticRoutes(overrides) {
           registration_kind: route.registration_method === "use"
             ? "static-express-prefix"
             : "static-express",
-          registration_file: descriptor.registered_by,
-          source_file: resolveRequiredModule(descriptor.source_file, route.required_module),
-          source_line: route.source_line,
+          mount_file: descriptor.registered_by,
+          mount_line: mountSourceLine(descriptor, versionPrefix, route.registered_path),
+          registration_file: registrationFile,
+          registration_line: route.source_line,
+          source_file: sourceFile,
+          source_line: handlerSourceLine(route, registrationFile, sourceFile),
           condition: descriptor.condition ?? "always",
-          auth: defaultAuth(route.permissions),
+          auth: defaultAuth(route.permissions, defaultReadablePermissions),
           related_tests: [],
+          related_tests_basis: "heuristic-candidate-linkage",
         };
         const key = routeKey(built);
         if (overrides.auth_overrides[key] !== undefined) built.auth = overrides.auth_overrides[key];
@@ -370,15 +499,142 @@ function parseConfiguredCollections(group) {
   return collections;
 }
 
+function splitConcatenation(expression) {
+  const parts = [];
+  let start = 0;
+  let quote = null;
+  let escaped = false;
+  for (let index = 0; index < expression.length; index += 1) {
+    const character = expression[index];
+    if (quote !== null) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "'" || character === '"' || character === "`") {
+      quote = character;
+      continue;
+    }
+    if (character === "+") {
+      parts.push(expression.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  parts.push(expression.slice(start).trim());
+  return parts;
+}
+
+function evaluateDynamicPath(expression, definitions, stack = []) {
+  return splitConcatenation(expression).map((part) => {
+    const literal = decodeStringLiteral(part);
+    if (literal !== null) return literal;
+    if (part === "colName") return "{collection}";
+    if (!definitions.has(part)) throw new Error(`Unsupported dynamic route expression ${part}`);
+    if (stack.includes(part)) throw new Error(`Recursive dynamic route expression ${part}`);
+    return evaluateDynamicPath(definitions.get(part), definitions, [...stack, part]);
+  }).join("");
+}
+
+function dynamicTemplateKey(template) {
+  return JSON.stringify([
+    template.method.toUpperCase(),
+    template.suffix,
+    template.source_file,
+  ]);
+}
+
+export function extractDynamicRouteTemplates(source, sourceFile) {
+  const definitions = new Map();
+  const definitionExpression = /\b(prefix(?:Id|History)?)\s*=\s*([^,\n;]+)/g;
+  for (const match of source.matchAll(definitionExpression)) definitions.set(match[1], match[2].trim());
+
+  const requiredModules = new Map();
+  const requireExpression = /\b([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\s*\(\s*(['"])(.*?)\2\s*\)/g;
+  for (const match of source.matchAll(requireExpression)) {
+    requiredModules.set(match[1], resolveRequiredModule(sourceFile, match[3]));
+  }
+
+  const registrations = extractRouteRegistrations(source, sourceFile);
+  if (registrations.routes.length > 0) {
+    throw new Error(
+      `${sourceFile} dynamic overlay drift: unexpected literal registrations ${JSON.stringify(
+        registrations.routes.map((route) => `${route.router_name}.${route.method} ${route.registered_path}`),
+      )}`,
+    );
+  }
+  const unexpectedDynamic = registrations.dynamic.filter((route) => route.router_name !== "app");
+  if (unexpectedDynamic.length > 0) {
+    throw new Error(
+      `${sourceFile} dynamic overlay drift: unexpected router registrations ${JSON.stringify(
+        unexpectedDynamic.map((route) => `${route.router_name}.${route.method} ${route.path_expression}`),
+      )}`,
+    );
+  }
+  if (registrations.dynamicUses.length > 0) {
+    throw new Error(
+      `${sourceFile} dynamic overlay drift: unexpected dynamic use registrations ${JSON.stringify(
+        registrations.dynamicUses.map((route) => `${route.router_name}.use ${route.path_expression}`),
+      )}`,
+    );
+  }
+
+  return registrations.dynamic
+    .filter((route) => route.router_name === "app")
+    .map((route) => {
+      const fullPath = evaluateDynamicPath(route.path_expression, definitions);
+      const collectionPrefix = "/{collection}";
+      if (!fullPath.startsWith(collectionPrefix)) {
+        throw new Error(`Dynamic route does not start with ${collectionPrefix}: ${fullPath}`);
+      }
+      const handlerMatch = route.handler_expression.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/);
+      if (handlerMatch === null || !requiredModules.has(handlerMatch[1])) {
+        throw new Error(`Cannot trace dynamic handler ${route.handler_expression} in ${sourceFile}`);
+      }
+      return {
+        method: route.method,
+        suffix: fullPath.slice(collectionPrefix.length),
+        source_file: requiredModules.get(handlerMatch[1]),
+        handler_name: handlerMatch[1],
+        registration_line: route.source_line,
+      };
+    });
+}
+
 function dynamicRoutes(overrides) {
   const routes = [];
   const risks = [];
   for (const group of overrides.dynamic_route_groups) {
     const collections = parseConfiguredCollections(group);
     const versionPrefix = overrides.version_prefixes[group.api_version];
+    const collectionsSource = readFileSync(join(REPO_ROOT, group.collections_source), "utf8");
+    const mountIndex = collectionsSource.indexOf("genericSetup(ctx, env, app)");
+    if (mountIndex < 0) throw new Error(`Cannot trace generic route setup in ${group.collections_source}`);
+    const mountLine = lineNumber(collectionsSource, mountIndex);
+    const registrationSource = readFileSync(join(REPO_ROOT, group.registration_file), "utf8");
+    assertLockedSourceHash(group.registration_file, registrationSource, group.registration_sha256);
+    const sourceTemplates = extractDynamicRouteTemplates(registrationSource, group.registration_file);
+    assertExactOverlaySet(
+      `${group.name} dynamic templates`,
+      group.routes.map((template) => dynamicTemplateKey({
+        method: template.method,
+        suffix: template.suffix,
+        source_file: template.source_file,
+      })),
+      sourceTemplates.map(dynamicTemplateKey),
+    );
+    const sourceTemplateByKey = new Map(sourceTemplates.map((template) => [dynamicTemplateKey(template), template]));
     for (const collection of collections) {
       for (const template of group.routes) {
-        const permission = template.permission.replaceAll("{collection}", collection);
+        const templateKey = dynamicTemplateKey(template);
+        const sourceTemplate = sourceTemplateByKey.get(templateKey);
+        const permissionTemplates = template.permissions ?? [template.permission];
+        if (permissionTemplates.some((permission) => typeof permission !== "string")) {
+          throw new Error(`Missing permission overlay for ${group.name} ${template.method} ${template.suffix}`);
+        }
+        const permissions = permissionTemplates
+          .map((permission) => permission.replaceAll("{collection}", collection))
+          .sort();
         const note = template.auth_note?.replaceAll("{collection}", collection)
           ?? "API v3 authenticates the JWT before checking the collection permission.";
         routes.push({
@@ -386,17 +642,21 @@ function dynamicRoutes(overrides) {
           method: template.method,
           path: normalizePath(versionPrefix, collection, template.suffix),
           registration_kind: "dynamic-expanded",
+          mount_file: group.collections_source,
+          mount_line: mountLine,
           registration_file: group.registration_file,
+          registration_line: sourceTemplate.registration_line,
           source_file: template.source_file,
-          source_line: null,
+          source_line: namedFunctionLine(template.source_file, sourceTemplate.handler_name),
           condition: "collection-enabled",
           auth: {
             mode: "jwt",
             credential_required: true,
-            permissions: [permission],
+            permissions,
             note,
           },
           related_tests: [],
+          related_tests_basis: "heuristic-candidate-linkage",
         });
       }
     }
@@ -404,6 +664,7 @@ function dynamicRoutes(overrides) {
       name: group.name,
       collections,
       route_templates: group.routes.length,
+      source_route_templates: sourceTemplates.length,
       expanded_routes: collections.length * group.routes.length,
       risk: group.risk,
       sources: [group.collections_source, group.registration_file],
@@ -459,11 +720,13 @@ function dependencyFor(workstream) {
 }
 
 function routeNeedles(route) {
+  if (route.registration_kind === "dynamic-expanded" && route.path.includes("/:")) return [];
   const withoutParameters = route.path
     .replaceAll(/\/:([^/]+)/g, "")
     .replaceAll("/*", "")
     .replace(/\/$/, "");
   const needles = new Set([withoutParameters]);
+  if (route.api_version === "v3") return [...needles].filter((needle) => needle.length >= 4);
   for (const prefix of ["/api/v1", "/api/v2", "/api/v3"]) {
     if (withoutParameters.startsWith(prefix)) {
       const suffix = withoutParameters.slice(prefix.length) || "/";
@@ -475,7 +738,7 @@ function routeNeedles(route) {
 }
 
 function operationTestHints(route) {
-  if (route.api_version !== "v3") return [];
+  if (route.api_version !== "v3" || route.registration_kind !== "dynamic-expanded") return [];
   if (route.path.includes("/history")) return ["api3.generic.workflow", "api3.storage.find"];
   if (route.path.includes(":")) {
     if (route.method === "GET") return ["api3.read"];
@@ -486,6 +749,11 @@ function operationTestHints(route) {
   if (route.method === "GET") return ["api3.search"];
   if (route.method === "POST") return ["api3.create"];
   return [];
+}
+
+function contentHasRouteNeedle(content, needle) {
+  const escaped = needle.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![A-Za-z0-9_/-])${escaped}/?(?![A-Za-z0-9_/-])`, "i").test(content);
 }
 
 function associateTests(routes, testFiles) {
@@ -499,7 +767,7 @@ function associateTests(routes, testFiles) {
     route.related_tests = testFiles.filter((testFile) => {
       const content = testContents.get(testFile);
       const basename = testFile.split("/").at(-1).toLowerCase();
-      return needles.some((needle) => content.includes(needle))
+      return needles.some((needle) => contentHasRouteNeedle(content, needle))
         || hints.some((hint) => basename.includes(hint));
     });
   }
@@ -524,6 +792,7 @@ function buildTests(overrides, routes) {
       workstream,
       depends_on: dependencyFor(workstream),
       related_routes: reverseRoutes.get(testFile).sort(),
+      related_routes_basis: "heuristic-candidate-linkage",
     };
   });
 }
@@ -534,7 +803,7 @@ function countBy(items, keyFunction) {
     const key = keyFunction(item);
     output[key] = (output[key] ?? 0) + 1;
   }
-  return Object.fromEntries(Object.entries(output).sort(([a], [b]) => a.localeCompare(b)));
+  return Object.fromEntries(Object.entries(output).sort(([a], [b]) => compareStrings(a, b)));
 }
 
 function countTestStatuses(tests) {
@@ -554,11 +823,15 @@ function inputDigest(paths) {
   return digest.digest("hex");
 }
 
+function compareStrings(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function compareRoutes(left, right) {
   return (VERSION_ORDER.get(left.api_version) - VERSION_ORDER.get(right.api_version))
-    || left.path.localeCompare(right.path)
+    || compareStrings(left.path, right.path)
     || (METHOD_ORDER.get(left.method) - METHOD_ORDER.get(right.method))
-    || left.source_file.localeCompare(right.source_file);
+    || compareStrings(left.source_file, right.source_file);
 }
 
 export function assertNoDuplicateRoutes(routes) {
@@ -570,6 +843,14 @@ export function assertNoDuplicateRoutes(routes) {
     }
     seen.set(key, route.source_file);
   }
+}
+
+function validateSourceLocation(file, line, label) {
+  const absolute = join(REPO_ROOT, file);
+  if (!existsSync(absolute)) throw new Error(`Missing ${label} source ${file}`);
+  if (!Number.isInteger(line) || line < 1) throw new Error(`Invalid ${label} line ${line} for ${file}`);
+  const lineCount = readFileSync(absolute, "utf8").split("\n").length;
+  if (line > lineCount) throw new Error(`${label} line ${line} exceeds ${file} line count ${lineCount}`);
 }
 
 export function validateManifest(manifest, overrides = readJson(OVERRIDES_PATH)) {
@@ -591,14 +872,20 @@ export function validateManifest(manifest, overrides = readJson(OVERRIDES_PATH))
     throw new Error("Tests are not in deterministic order");
   }
   for (const route of manifest.routes) {
-    for (const path of [route.registration_file, route.source_file]) {
-      if (!existsSync(join(REPO_ROOT, path))) throw new Error(`Missing route source ${path}`);
+    validateSourceLocation(route.mount_file, route.mount_line, "route mount");
+    validateSourceLocation(route.registration_file, route.registration_line, "route registration");
+    validateSourceLocation(route.source_file, route.source_line, "route handler");
+    if (route.related_tests_basis !== "heuristic-candidate-linkage") {
+      throw new Error(`Unknown related test basis for ${routeKey(route)}`);
     }
   }
   for (const test of manifest.tests) {
     if (!KNOWN_STATUSES.has(test.status)) throw new Error(`Unknown status ${test.status} for ${test.file}`);
     if (test.reason.trim().length === 0) throw new Error(`Missing reason for ${test.file}`);
     if (!existsSync(join(REPO_ROOT, test.file))) throw new Error(`Missing test file ${test.file}`);
+    if (test.related_routes_basis !== "heuristic-candidate-linkage") {
+      throw new Error(`Unknown related route basis for ${test.file}`);
+    }
   }
   if (manifest.statistics.route_count !== manifest.routes.length) {
     throw new Error("Route statistics do not match the route inventory");
@@ -619,7 +906,8 @@ export function validateManifest(manifest, overrides = readJson(OVERRIDES_PATH))
 export function buildManifest() {
   const overrides = readJson(OVERRIDES_PATH);
   const upstream = readJson(UPSTREAM_LOCK_PATH);
-  const staticResult = staticRoutes(overrides);
+  const defaultReadablePermissions = parseDefaultReadablePermissions();
+  const staticResult = staticRoutes(overrides, defaultReadablePermissions);
   const dynamicResult = dynamicRoutes(overrides);
   const routes = [...staticResult.routes, ...dynamicResult.routes].sort(compareRoutes);
   const tests = buildTests(overrides, routes);
@@ -627,16 +915,18 @@ export function buildManifest() {
     "scripts/audit-upstream-contracts.mjs",
     OVERRIDES_PATH,
     UPSTREAM_LOCK_PATH,
+    DEFAULT_ROLE_SOURCE_PATH,
     ...overrides.route_modules.flatMap((module) => [module.source_file, module.registered_by]),
     ...overrides.dynamic_route_groups.flatMap((group) => [
       group.collections_source,
       group.registration_file,
       ...group.routes.map((route) => route.source_file),
     ]),
+    ...routes.flatMap((route) => [route.mount_file, route.registration_file, route.source_file]),
     ...tests.map((test) => test.file),
   ];
   const manifest = {
-    schema_version: 1,
+    schema_version: 2,
     generated_by: "scripts/audit-upstream-contracts.mjs",
     baseline: {
       project: upstream.project,
@@ -648,8 +938,10 @@ export function buildManifest() {
       pass_definition: "pass means the complete upstream test file runs unchanged and passes against NSCF",
       adapted_definition: "adapted means every contract in the upstream file is represented by a named passing Workers-runtime adapter test",
       default_status: overrides.test_defaults.status,
-      fixed_scope: "Only tests whose execution inherently requires live real-CGM credentials or an actual external delivery service may be excluded-fixed-scope. Mocked transport, message mapping, validation, deduplication, cancellation, persistence, API, auth, realtime, calculations, and UI contracts remain implementation work.",
+      default_anonymous_permissions: defaultReadablePermissions,
+      fixed_scope: "Only bridge.test.js and mmconnect.test.js are excluded-fixed-scope because they inherently require live real-CGM bridge credentials and traffic. Mocked push transport, message mapping, validation, deduplication, cancellation, persistence, API, auth, realtime, calculations, and UI contracts remain required implementation work.",
       route_method_scope: "The manifest records explicit Express registrations. Express-derived HEAD/OPTIONS behavior and extension middleware variants are not expanded into duplicate rows.",
+      related_test_association: "Route-to-test links are boundary-aware heuristic candidates derived from source text and API3 operation filenames; they are not pass, adapted, or coverage evidence and require human confirmation.",
     },
     inputs_sha256: inputDigest(inputPaths),
     statistics: {
@@ -693,7 +985,7 @@ function renderMarkdown(manifest) {
     "",
     "`pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.",
     "",
-    "Fixed-scope exclusions are limited to real-CGM bridges and external push delivery. Everything else below remains required implementation work even when it depends on Mongo/Express/Socket.IO/process-lifetime adaptation.",
+    "Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.test.js` and `mmconnect.test.js`). Mocked push delivery and all other contracts remain required implementation work even when they depend on Mongo/Express/Socket.IO/process-lifetime adaptation.",
     "",
     "## Dependency-ordered workstreams",
     "",
@@ -708,7 +1000,7 @@ function renderMarkdown(manifest) {
   }
   lines.push(
     "",
-    "Dispatch work in numeric order. Within a workstream, use each test's `related_routes` in `upstream/contract-manifest.json` to group compatible implementation slices.",
+    "Dispatch work in numeric order. Within a workstream, use each test's `related_routes` in `upstream/contract-manifest.json` only as heuristic candidate links for grouping implementation slices; confirm each link against upstream source before claiming coverage.",
     "",
     "## Dynamic route risk",
     "",
@@ -718,7 +1010,9 @@ function renderMarkdown(manifest) {
   }
   lines.push(
     "",
-    "The check command also rejects duplicate method/path pairs, missing source files, an upstream test count other than 111, unknown statuses, stale generated output, and nondeterministic ordering.",
+    "The check command also rejects duplicate method/path pairs, locked registration-source hash drift, static/dynamic overlay drift, invalid file/line provenance, an upstream test count other than 111, unknown statuses, stale generated output, and nondeterministic ordering.",
+    "",
+    "Route/test associations are boundary-aware heuristics based on source text and API3 operation filenames. They are candidate links, not pass/adapted claims or coverage evidence.",
     "",
     "## Complete upstream test-file status",
     "",
@@ -727,7 +1021,7 @@ function renderMarkdown(manifest) {
     lines.push(
       `### ${workstream}`,
       "",
-      "| Test file | Status | Related routes | Reason |",
+      "| Test file | Status | Candidate routes (heuristic) | Reason |",
       "| --- | --- | ---: | --- |",
     );
     for (const test of manifest.tests.filter((item) => item.workstream === workstream)) {
