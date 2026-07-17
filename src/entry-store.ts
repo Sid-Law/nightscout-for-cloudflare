@@ -4,6 +4,13 @@ import {
   issueJwt as signJwt,
   verifyJwt as validateJwt,
 } from "./jwt";
+import {
+  migrateDocumentsV4,
+  SqliteDocumentRepository,
+  type DocumentDeleteResult,
+  type DocumentHistoryQuery,
+  type DocumentQuery,
+} from "./document-repository";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
 
 export type DocumentCollection =
@@ -103,64 +110,75 @@ export class EntryStore extends DurableObject<Env> {
   }
 
   private migrate(): void {
-    this.ctx.storage.sql.exec(`
-      CREATE TABLE IF NOT EXISTS _sql_schema_migrations (
-        id INTEGER PRIMARY KEY,
-        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-    `);
-    const version = this.ctx.storage.sql
-      .exec<{ version: number }>(
-        "SELECT COALESCE(MAX(id), 0) AS version FROM _sql_schema_migrations",
-      )
-      .one().version;
-
-    if (version < 1) {
+    this.ctx.storage.transactionSync(() => {
       this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS entries (
-          id TEXT PRIMARY KEY,
-          identifier TEXT UNIQUE,
-          dedupe_key TEXT NOT NULL UNIQUE,
-          sgv INTEGER NOT NULL CHECK (sgv >= 20 AND sgv <= 600),
-          date INTEGER NOT NULL,
-          date_string TEXT NOT NULL,
-          direction TEXT NOT NULL,
-          device TEXT NOT NULL,
-          type TEXT NOT NULL CHECK (type = 'sgv'),
-          created_at INTEGER NOT NULL
+        CREATE TABLE IF NOT EXISTS _sql_schema_migrations (
+          id INTEGER PRIMARY KEY,
+          applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS entries_date_desc ON entries(date DESC);
-        INSERT INTO _sql_schema_migrations (id) VALUES (1);
       `);
-    }
+      const version = this.ctx.storage.sql
+        .exec<{ version: number }>(
+          "SELECT COALESCE(MAX(id), 0) AS version FROM _sql_schema_migrations",
+        )
+        .one().version;
 
-    if (version < 2) {
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS documents (
-          collection TEXT NOT NULL,
-          id TEXT NOT NULL,
-          body TEXT NOT NULL,
-          sort_time INTEGER NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          PRIMARY KEY (collection, id)
-        );
-        CREATE INDEX IF NOT EXISTS documents_collection_sort
-          ON documents(collection, sort_time DESC);
-        INSERT INTO _sql_schema_migrations (id) VALUES (2);
-      `);
-    }
+      if (version < 1) {
+        this.ctx.storage.sql.exec(`
+          CREATE TABLE IF NOT EXISTS entries (
+            id TEXT PRIMARY KEY,
+            identifier TEXT UNIQUE,
+            dedupe_key TEXT NOT NULL UNIQUE,
+            sgv INTEGER NOT NULL CHECK (sgv >= 20 AND sgv <= 600),
+            date INTEGER NOT NULL,
+            date_string TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            device TEXT NOT NULL,
+            type TEXT NOT NULL CHECK (type = 'sgv'),
+            created_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS entries_date_desc ON entries(date DESC);
+          INSERT INTO _sql_schema_migrations (id) VALUES (1);
+        `);
+      }
 
-    if (version < 3) {
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS tenant_secrets (
-          name TEXT PRIMARY KEY,
-          value TEXT NOT NULL,
-          created_at INTEGER NOT NULL
-        );
-        INSERT INTO _sql_schema_migrations (id) VALUES (3);
-      `);
-    }
+      if (version < 2) {
+        this.ctx.storage.sql.exec(`
+          CREATE TABLE IF NOT EXISTS documents (
+            collection TEXT NOT NULL,
+            id TEXT NOT NULL,
+            body TEXT NOT NULL,
+            sort_time INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (collection, id)
+          );
+          CREATE INDEX IF NOT EXISTS documents_collection_sort
+            ON documents(collection, sort_time DESC);
+          INSERT INTO _sql_schema_migrations (id) VALUES (2);
+        `);
+      }
+
+      if (version < 3) {
+        this.ctx.storage.sql.exec(`
+          CREATE TABLE IF NOT EXISTS tenant_secrets (
+            name TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          );
+          INSERT INTO _sql_schema_migrations (id) VALUES (3);
+        `);
+      }
+
+      if (version < 4) {
+        migrateDocumentsV4(this.ctx.storage.sql);
+        this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (4)");
+      }
+    });
+  }
+
+  private documentRepository(): SqliteDocumentRepository {
+    return new SqliteDocumentRepository(this.ctx.storage);
   }
 
   private getOrCreateJwtSecret(): string {
@@ -319,6 +337,9 @@ export class EntryStore extends DurableObject<Env> {
 
   async listDocuments(collection: DocumentCollection, limit = 5000): Promise<string> {
     const boundedLimit = Math.max(1, Math.min(10000, Math.trunc(limit)));
+    if (collection === "treatments") {
+      return JSON.stringify(this.documentRepository().queryTreatments({ limit: boundedLimit }));
+    }
     const documents = this.ctx.storage.sql
       .exec<DbDocument>(
         `SELECT id, body, sort_time
@@ -339,6 +360,11 @@ export class EntryStore extends DurableObject<Env> {
     documentsJson: string,
   ): Promise<string> {
     const documents = JSON.parse(documentsJson) as JsonDocument[];
+    if (collection === "treatments") {
+      return JSON.stringify(
+        documents.map((document) => this.documentRepository().upsertTreatment(document).document),
+      );
+    }
     const now = Date.now();
     const stored: JsonDocument[] = [];
     for (const document of documents) {
@@ -364,6 +390,11 @@ export class EntryStore extends DurableObject<Env> {
     documentsJson: string,
   ): Promise<string> {
     const documents = JSON.parse(documentsJson) as JsonDocument[];
+    if (collection === "treatments") {
+      return JSON.stringify(
+        documents.map((document) => this.documentRepository().upsertTreatment(document).document),
+      );
+    }
     const now = Date.now();
     for (const document of documents) {
       const id = document._id as string;
@@ -386,6 +417,13 @@ export class EntryStore extends DurableObject<Env> {
   }
 
   async deleteDocuments(collection: DocumentCollection, ids: string[]): Promise<number> {
+    if (collection === "treatments") {
+      let deleted = 0;
+      for (const id of ids) {
+        if (this.documentRepository().deleteTreatmentById(id)) deleted += 1;
+      }
+      return deleted;
+    }
     let deleted = 0;
     for (const id of ids) {
       deleted += this.ctx.storage.sql
@@ -399,8 +437,104 @@ export class EntryStore extends DurableObject<Env> {
     field: string,
     expected: string,
   ): Promise<string | null> {
-    const documents = JSON.parse(await this.listDocuments(collection)) as JsonDocument[];
-    const found = documents.find((document) => document[field] === expected);
+    if (collection === "treatments") {
+      const found = field === "_id"
+        ? this.documentRepository().findTreatmentById(expected)
+        : field === "identifier"
+          ? this.documentRepository().findTreatmentByIdentifier(expected)
+          : this.documentRepository().queryTreatments({
+            filters: [{ field, operator: "eq", value: expected }],
+            limit: 1,
+          })[0] ?? null;
+      return found === null ? null : JSON.stringify(found);
+    }
+    if (!/^[A-Za-z0-9_.-]+$/.test(field)) throw new Error("invalid document field");
+    const row = field === "_id"
+      ? this.ctx.storage.sql.exec<DbDocument>(
+        `SELECT id, body, sort_time FROM documents
+         WHERE collection = ? AND id = ? LIMIT 1`,
+        collection,
+        expected,
+      ).toArray()[0]
+      : this.ctx.storage.sql.exec<DbDocument>(
+        `SELECT id, body, sort_time FROM documents
+         WHERE collection = ? AND json_extract(body, ?) = ? LIMIT 1`,
+        collection,
+        `$.${field}`,
+        expected,
+      ).toArray()[0];
+    const found = row === undefined ? undefined : toDocument(row);
     return found === undefined ? null : JSON.stringify(found);
+  }
+
+  async findTreatmentById(id: string, includeDeleted = false): Promise<string | null> {
+    const document = this.documentRepository().findTreatmentById(id, includeDeleted);
+    return document === null ? null : JSON.stringify(document);
+  }
+
+  async findTreatmentByIdentifier(
+    identifier: string,
+    includeDeleted = false,
+  ): Promise<string | null> {
+    const document = this.documentRepository().findTreatmentByIdentifier(identifier, includeDeleted);
+    return document === null ? null : JSON.stringify(document);
+  }
+
+  async findTreatmentByFallback(
+    createdAt: string | number,
+    eventType: string | number,
+    includeDeleted = false,
+  ): Promise<string | null> {
+    const document = this.documentRepository().findTreatmentByFallback(
+      createdAt,
+      eventType,
+      includeDeleted,
+    );
+    return document === null ? null : JSON.stringify(document);
+  }
+
+  async queryTreatments(queryJson = "{}"): Promise<string> {
+    const query = JSON.parse(queryJson) as DocumentQuery;
+    return JSON.stringify(this.documentRepository().queryTreatments(query));
+  }
+
+  async upsertTreatment(documentJson: string): Promise<string> {
+    const document = JSON.parse(documentJson) as JsonDocument;
+    return JSON.stringify(this.documentRepository().upsertTreatment(document));
+  }
+
+  async createTreatment(documentJson: string): Promise<string> {
+    const document = JSON.parse(documentJson) as JsonDocument;
+    return JSON.stringify(this.documentRepository().createTreatment(document));
+  }
+
+  async replaceTreatment(
+    identity: string,
+    documentJson: string,
+  ): Promise<string> {
+    const document = JSON.parse(documentJson) as JsonDocument;
+    return JSON.stringify(this.documentRepository().replaceTreatment(identity, document));
+  }
+
+  async patchTreatment(
+    identity: string,
+    patchJson: string,
+  ): Promise<string | null> {
+    const patch = JSON.parse(patchJson) as JsonDocument;
+    const result = this.documentRepository().patchTreatment(identity, patch);
+    return result === null ? null : JSON.stringify(result);
+  }
+
+  async deleteTreatment(identity: string, permanent = false): Promise<DocumentDeleteResult> {
+    return this.documentRepository().deleteTreatment(identity, permanent);
+  }
+
+  async treatmentsLastModified(): Promise<number | null> {
+    return this.documentRepository().treatmentsLastModified();
+  }
+
+  async treatmentHistory(queryJson: string): Promise<string> {
+    const query = JSON.parse(queryJson) as DocumentHistoryQuery;
+    return JSON.stringify(this.documentRepository().treatmentHistory(query));
   }
 }

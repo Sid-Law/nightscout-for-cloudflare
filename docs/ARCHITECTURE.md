@@ -194,6 +194,46 @@ JSON. Required behavior includes:
 SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
+The first treatments-focused vertical slice is now implemented in the tenant
+`EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
+with `identifier`, `srv_created`, `srv_modified`, `is_valid`, `fallback_key`
+and `revision`; adds `collection_clocks` and `document_changes`; and adds
+non-unique lookup/history indexes. `identifier` and the treatments fallback
+identity are deliberately **not** unique because the locked Mongo adapter only
+creates ordinary indexes and resolves legacy duplicates at lookup time.
+
+The v4 migration runs in `DurableObjectStorage.transactionSync()`. It leaves the
+legacy `body` and `_id` untouched, derives indexed metadata, snapshots each old
+document once, and records a per-collection clock. The migration record,
+metadata backfill and new tables commit together. Re-activation is a no-op; an
+interrupted or deliberately replayed migration also checks existing columns and
+change revisions before writing, so it does not duplicate history.
+
+Treatments now have an internal SQLite repository and DO RPC boundary for:
+
+- lookup by server `_id`, client `identifier`, or `created_at + eventType`;
+- v1 treatments upsert selector priority (`identifier`, then `_id`, then
+  `created_at + eventType`) plus API v3 create dedupe against legacy
+  no-identifier documents;
+- create/upsert, replace, patch, soft delete and permanent delete;
+- strictly increasing server modification times persisted across eviction;
+- last-modified and ascending, field-projected history with tombstones;
+- SQL filtering before sort/limit rather than loading 5,000 documents first.
+
+Every create, replace, patch and soft delete writes its current document and a
+`document_changes` snapshot in one synchronous storage transaction. History
+coalesces multiple changes for the same document to its newest post-cursor
+state, matching the generic API's collection-view behavior. Permanent deletion
+removes the document and its snapshots together, matching upstream history
+behavior for `permanent=true`.
+
+This is storage infrastructure, not API v3 route completion. No HTTP route was
+added or remapped. The generic API adapter still needs request validation,
+conditional headers, exact envelopes/renderers and authorization before these
+RPCs can be exposed as `/api/v3/treatments/**`. Other document collections also
+remain on the v3-era generic path until they receive collection-specific
+contract slices.
+
 ### Real-time transport
 
 `platform/socket-io-polling-shim.js` currently creates browser-side `connect`,
