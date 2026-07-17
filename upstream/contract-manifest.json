@@ -11,10 +11,10 @@
     "pass_definition": "pass means the complete upstream test file runs unchanged and passes against NSCF",
     "adapted_definition": "adapted means every contract in the upstream file is represented by a named passing Workers-runtime adapter test",
     "default_status": "unresolved",
-    "fixed_scope": "Only tests exclusively covering real-CGM bridges or external push delivery may be excluded-fixed-scope; storage, API, auth, realtime, calculations, and UI contracts remain implementation work.",
+    "fixed_scope": "Only tests whose execution inherently requires live real-CGM credentials or an actual external delivery service may be excluded-fixed-scope. Mocked transport, message mapping, validation, deduplication, cancellation, persistence, API, auth, realtime, calculations, and UI contracts remain implementation work.",
     "route_method_scope": "The manifest records explicit Express registrations. Express-derived HEAD/OPTIONS behavior and extension middleware variants are not expanded into duplicate rows."
   },
-  "inputs_sha256": "b4e333cdb0aed92cca465d8dda03450d6a6c15c7eede1f3b7b7d21e19410b460",
+  "inputs_sha256": "69f7f22b5806b3d5ad533e812f31aa7b80847d23bc6cf9227055cf48c1816d4f",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -35,8 +35,8 @@
     "tests_by_status": {
       "pass": 0,
       "adapted": 0,
-      "excluded-fixed-scope": 5,
-      "unresolved": 106
+      "excluded-fixed-scope": 2,
+      "unresolved": 109
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -6059,8 +6059,8 @@
     },
     {
       "file": "vendor/nightscout/tests/maker.test.js",
-      "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: Maker/IFTTT outbound notification delivery is an external push integration, not part of the simulated-data Cloudflare port.",
+      "status": "unresolved",
+      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
       "workstream": "7-background-and-integrations",
       "depends_on": [
         "1-storage-foundation",
@@ -6293,8 +6293,8 @@
     },
     {
       "file": "vendor/nightscout/tests/pushnotify.test.js",
-      "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: this file exercises orchestration for external Pushover delivery, which remains disabled by scope.",
+      "status": "unresolved",
+      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
       "workstream": "7-background-and-integrations",
       "depends_on": [
         "1-storage-foundation",
@@ -6304,8 +6304,8 @@
     },
     {
       "file": "vendor/nightscout/tests/pushover.test.js",
-      "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: Pushover is an external push provider and no real provider credentials or delivery calls are permitted.",
+      "status": "unresolved",
+      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
       "workstream": "7-background-and-integrations",
       "depends_on": [
         "1-storage-foundation",

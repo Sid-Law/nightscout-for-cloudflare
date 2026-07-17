@@ -53,15 +53,17 @@ npm run test:upstream-audit
 The checker enforces stable ordering, unique API-version/method/path keys,
 source-file existence, exactly 111 upstream test files, known status values,
 non-empty reasons, and byte-for-byte freshness of both generated outputs. The
-default test-file status is `unresolved`. At this audit point, 106 files are
-`unresolved`, five integration-specific files are `excluded-fixed-scope`, and
+default test-file status is `unresolved`. At this audit point, 109 files are
+`unresolved`, two real-CGM bridge files are `excluded-fixed-scope`, and
 zero files are claimed as `pass` or `adapted`.
 
-The five exclusions are limited to the real-CGM bridge modules (`bridge`,
-`mmconnect`) and external push delivery (`maker`, `pushnotify`, `pushover`).
-This does **not** exclude storage, simulated entry ingestion, notifications
-state, authorization, API behavior, server calculations, real-time transport,
-or browser workflows. Those contracts remain required and unresolved.
+The two exclusions are limited to the real-CGM bridge modules (`bridge`,
+`mmconnect`). The `maker`, `pushnotify`, and `pushover` tests replace their
+external requests and exercise internal mapping, validation, deduplication,
+all-clear/cancel, and multi-key behavior, so they remain `unresolved`. Storage,
+simulated entry ingestion, notification state, authorization, API behavior,
+server calculations, real-time transport, and browser workflows also remain
+required and unresolved.
 
 ## What cannot run unchanged, and what only needs adaptation
 

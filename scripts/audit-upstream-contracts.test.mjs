@@ -48,5 +48,20 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.equal(serializeManifest(first), serializeManifest(second));
   assert.equal(first.tests.filter((item) => item.status === "pass").length, 0);
   assert.equal(first.tests.filter((item) => item.status === "adapted").length, 0);
-  assert.equal(first.tests.filter((item) => item.status === "excluded-fixed-scope").length, 5);
+  assert.deepEqual(
+    first.tests
+      .filter((item) => item.status === "excluded-fixed-scope")
+      .map((item) => item.file),
+    [
+      "vendor/nightscout/tests/bridge.test.js",
+      "vendor/nightscout/tests/mmconnect.test.js",
+    ],
+  );
+  for (const file of [
+    "vendor/nightscout/tests/maker.test.js",
+    "vendor/nightscout/tests/pushnotify.test.js",
+    "vendor/nightscout/tests/pushover.test.js",
+  ]) {
+    assert.equal(first.tests.find((item) => item.file === file)?.status, "unresolved", file);
+  }
 });

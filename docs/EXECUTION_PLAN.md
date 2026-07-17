@@ -48,7 +48,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 9. Real-time storage updates | Not started | Persist-then-broadcast mutation log and reconnect/eviction tests. |
 | 10. Alarms/background tasks | Not started | One-alarm SQLite task scheduler for heartbeat, cleanup, API v3 pruning and server-plugin evaluation. |
 | 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
-| 12. Upstream regression suite | Tracked, execution not started | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; 106 files remain unresolved and five are fixed-scope exclusions. |
+| 12. Upstream regression suite | Tracked, execution not started | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; 109 files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -70,10 +70,12 @@ Dispatch upstream compatibility work in the generated numeric workstream order:
 7. background behavior and fixed-scope integrations;
 8. UI and process-boundary workflows.
 
-The manifest's five `excluded-fixed-scope` files cover only real-CGM bridges or
-external push delivery. Mongo-to-SQLite, Express-to-Worker, process-lifecycle,
-Socket.IO, notification-state and browser adaptations remain required work and
-must not be relabeled as scope exclusions.
+The manifest's two `excluded-fixed-scope` files cover only real-CGM bridges.
+Tests that mock external notification delivery still specify required internal
+mapping, validation, deduplication, cancellation and multi-key behavior.
+Mongo-to-SQLite, Express-to-Worker, process-lifecycle, Socket.IO,
+notification-state and browser adaptations remain required work and must not be
+relabeled as scope exclusions.
 
 ## Current verified baseline
 

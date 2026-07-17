@@ -326,18 +326,6 @@
     "vendor/nightscout/tests/mmconnect.test.js": {
       "status": "excluded-fixed-scope",
       "reason": "Fixed-scope exclusion: MiniMed CareLink ingestion is an external real-CGM bridge and is disabled in the simulated-data port."
-    },
-    "vendor/nightscout/tests/maker.test.js": {
-      "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: Maker/IFTTT outbound notification delivery is an external push integration, not part of the simulated-data Cloudflare port."
-    },
-    "vendor/nightscout/tests/pushnotify.test.js": {
-      "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: this file exercises orchestration for external Pushover delivery, which remains disabled by scope."
-    },
-    "vendor/nightscout/tests/pushover.test.js": {
-      "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: Pushover is an external push provider and no real provider credentials or delivery calls are permitted."
     }
   }
 }

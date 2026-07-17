@@ -648,7 +648,7 @@ export function buildManifest() {
       pass_definition: "pass means the complete upstream test file runs unchanged and passes against NSCF",
       adapted_definition: "adapted means every contract in the upstream file is represented by a named passing Workers-runtime adapter test",
       default_status: overrides.test_defaults.status,
-      fixed_scope: "Only tests exclusively covering real-CGM bridges or external push delivery may be excluded-fixed-scope; storage, API, auth, realtime, calculations, and UI contracts remain implementation work.",
+      fixed_scope: "Only tests whose execution inherently requires live real-CGM credentials or an actual external delivery service may be excluded-fixed-scope. Mocked transport, message mapping, validation, deduplication, cancellation, persistence, API, auth, realtime, calculations, and UI contracts remain implementation work.",
       route_method_scope: "The manifest records explicit Express registrations. Express-derived HEAD/OPTIONS behavior and extension middleware variants are not expanded into duplicate rows.",
     },
     inputs_sha256: inputDigest(inputPaths),
