@@ -17,8 +17,14 @@ import { migrateRealtimeSessions } from "./realtime/session-repository";
 import {
   RealtimeSessionError,
   RealtimeSessionService,
+  type RealtimeAuthorization,
   type RealtimeSnapshot,
 } from "./realtime/session-service";
+import {
+  buildRealtimeDdataSnapshot,
+  buildRealtimeRetroDeviceStatus,
+} from "./realtime/ddata-snapshot";
+import { nightscoutWebsocketStatus } from "./status";
 
 export type DocumentCollection =
   | "activity"
@@ -82,6 +88,8 @@ export type RealtimeRpcResult<T> =
       };
     };
 
+type EntryStoreEnv = Env & { API_SECRET?: string };
+
 function randomObjectId(): string {
   const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
@@ -118,13 +126,16 @@ function toDocument(row: DbDocument): JsonDocument {
   return JSON.parse(row.body) as JsonDocument;
 }
 
-export class EntryStore extends DurableObject<Env> {
+export class EntryStore extends DurableObject<EntryStoreEnv> {
   private readonly realtime: RealtimeSessionService;
 
-  constructor(ctx: DurableObjectState, env: Env) {
+  constructor(ctx: DurableObjectState, env: EntryStoreEnv) {
     super(ctx, env);
     this.realtime = new RealtimeSessionService(ctx.storage, {
       snapshot: (now) => this.realtimeSnapshot(now),
+      retroDeviceStatus: () => this.realtimeRetroDeviceStatus(),
+      status: (now) => nightscoutWebsocketStatus(new Date(now)),
+      authorize: (message) => this.realtimeAuthorize(message),
     });
     ctx.blockConcurrencyWhile(async () => {
       this.migrate();
@@ -214,21 +225,13 @@ export class EntryStore extends DurableObject<Env> {
   }
 
   private realtimeSnapshot(now: number): RealtimeSnapshot {
-    const sgvs = this.ctx.storage.sql
+    const entries = this.ctx.storage.sql
       .exec<DbEntry>(
         `SELECT id, identifier, dedupe_key, sgv, date, date_string, direction, device, type
          FROM entries ORDER BY date DESC LIMIT 1000`,
       )
       .toArray()
-      .map((row) => ({
-        _id: row.id,
-        mgdl: row.sgv,
-        mills: row.date,
-        device: row.device,
-        direction: row.direction,
-        type: row.type,
-      }))
-      .reverse();
+      .map(toPublicEntry);
     const documents = (collection: DocumentCollection, limit: number): JsonDocument[] =>
       this.ctx.storage.sql
         .exec<DbDocument>(
@@ -243,17 +246,108 @@ export class EntryStore extends DurableObject<Env> {
         .toArray()
         .map(toDocument);
 
-    return {
-      lastUpdated: now,
-      sgvs,
-      mbgs: [],
-      cals: [],
+    return buildRealtimeDdataSnapshot({
+      sgvs: entries
+        .map((entry) => ({
+          _id: entry._id,
+          mgdl: entry.sgv,
+          mills: entry.date,
+          device: entry.device,
+          direction: entry.direction,
+          type: entry.type,
+        }))
+        .sort((left, right) => left.mills - right.mills),
       treatments: this.documentRepository().queryLegacyTreatments({ limit: 1000 }),
       food: documents("food", 5000),
       profiles: documents("profile", 10),
       devicestatus: documents("devicestatus", 100),
-      dbstats: {},
-    };
+    }, now);
+  }
+
+  private realtimeRetroDeviceStatus(): JsonDocument[] {
+    return buildRealtimeRetroDeviceStatus(
+      this.ctx.storage.sql
+        .exec<DbDocument>(
+          `SELECT id, body, sort_time
+           FROM documents
+           WHERE collection = 'devicestatus'
+           ORDER BY sort_time DESC, updated_at DESC
+           LIMIT 100`,
+        )
+        .toArray()
+        .map(toDocument),
+    ) as JsonDocument[];
+  }
+
+  private async realtimeAuthorize(
+    message: Record<string, unknown>,
+  ): Promise<RealtimeAuthorization | null> {
+    const rawSecret = message.secret === "null" ? null : message.secret;
+    const rawToken = message.token;
+    if (
+      (rawSecret === undefined || rawSecret === null || rawSecret === "") &&
+      (rawToken === undefined || rawToken === null || rawToken === "")
+    ) {
+      return { read: true, write: false, write_treatment: false };
+    }
+
+    if (typeof rawSecret === "string" && rawSecret.length <= 4096) {
+      const configured = this.env.API_SECRET;
+      if (configured !== undefined && configured.length >= 12) {
+        const encoder = new TextEncoder();
+        const [sha1, sha512] = await Promise.all([
+          crypto.subtle.digest("SHA-1", encoder.encode(configured)),
+          crypto.subtle.digest("SHA-512", encoder.encode(configured)),
+        ]);
+        const hex = (value: ArrayBuffer): string =>
+          Array.from(
+            new Uint8Array(value),
+            (byte) => byte.toString(16).padStart(2, "0"),
+          ).join("");
+        const presented = rawSecret.toLowerCase();
+        if (
+          await this.timingSafeRealtimeCredential(presented, hex(sha1)) ||
+          await this.timingSafeRealtimeCredential(presented, hex(sha512))
+        ) {
+          return { read: true, write: false, write_treatment: false };
+        }
+      }
+
+      const subject = await this.findDocumentByField("subjects", "accessToken", rawSecret);
+      if (subject !== null) {
+        return { read: true, write: false, write_treatment: false };
+      }
+    }
+
+    if (typeof rawToken === "string" && rawToken.length <= 4096) {
+      const claims = await validateJwt(this.getOrCreateJwtSecret(), rawToken);
+      if (claims !== null) {
+        const subject = await this.findDocumentByField(
+          "subjects",
+          "accessToken",
+          claims.accessToken,
+        );
+        if (subject !== null) {
+          return { read: true, write: false, write_treatment: false };
+        }
+      }
+    }
+    return null;
+  }
+
+  private async timingSafeRealtimeCredential(left: string, right: string): Promise<boolean> {
+    const encoder = new TextEncoder();
+    const [leftDigest, rightDigest] = await Promise.all([
+      crypto.subtle.digest("SHA-256", encoder.encode(left)),
+      crypto.subtle.digest("SHA-256", encoder.encode(right)),
+    ]);
+    const leftBytes = new Uint8Array(leftDigest);
+    const rightBytes = new Uint8Array(rightDigest);
+    let difference = 0;
+    for (let index = 0; index < leftBytes.length; index += 1) {
+      difference |= leftBytes[index]! ^ rightBytes[index]!;
+    }
+    return difference === 0;
   }
 
   private realtimeResult<T>(operation: () => T): RealtimeRpcResult<T> {

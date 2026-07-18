@@ -19,6 +19,7 @@ import {
   REALTIME_POST_LEASE_MS,
 } from "./constants";
 import {
+  createRealtimeSocketId,
   RealtimeRepositoryError,
   SqliteRealtimeSessionRepository,
   type RealtimeSession,
@@ -31,15 +32,15 @@ export interface RealtimeAuthorization {
 }
 
 export interface RealtimeSnapshot {
-  lastUpdated: number;
-  sgvs: unknown[];
-  mbgs: unknown[];
-  cals: unknown[];
-  treatments: unknown[];
-  food: unknown[];
-  profiles: unknown[];
   devicestatus: unknown[];
+  sgvs: unknown[];
+  cals: unknown[];
+  profiles: unknown[];
+  mbgs: unknown[];
+  food: unknown[];
+  treatments: unknown[];
   dbstats: Record<string, never>;
+  status?: Record<string, unknown>;
 }
 
 export interface RealtimeServiceOptions {
@@ -47,8 +48,11 @@ export interface RealtimeServiceOptions {
   pollWaitMs?: number;
   authorize?: (message: Record<string, unknown>) =>
     | RealtimeAuthorization
-    | Promise<RealtimeAuthorization>;
-  snapshot?: (now: number) => RealtimeSnapshot;
+    | null
+    | Promise<RealtimeAuthorization | null>;
+  snapshot?: (now: number) => RealtimeSnapshot | null;
+  retroDeviceStatus?: (now: number) => unknown[] | null;
+  status?: (now: number) => Record<string, unknown>;
 }
 
 export class RealtimeSessionError extends Error {
@@ -77,29 +81,27 @@ function cloneSession(session: RealtimeSession): RealtimeSession {
   return { ...session };
 }
 
-function defaultSnapshot(now: number): RealtimeSnapshot {
+function defaultSnapshot(_now: number): RealtimeSnapshot {
   return {
-    lastUpdated: now,
-    sgvs: [],
-    mbgs: [],
-    cals: [],
-    treatments: [],
-    food: [],
-    profiles: [],
     devicestatus: [],
+    sgvs: [],
+    cals: [],
+    profiles: [],
+    mbgs: [],
+    food: [],
+    treatments: [],
     dbstats: {},
   };
 }
 
-function defaultAuthorization(message: Record<string, unknown>): RealtimeAuthorization {
+function defaultAuthorization(message: Record<string, unknown>): RealtimeAuthorization | null {
   const credential = message.secret ?? message.token;
-  return {
-    // Nightscout's locked default role is readable. Explicit credentials need
-    // the tenant authorization adapter and are not silently treated as valid.
-    read: credential === undefined || credential === null || credential === "",
-    write: false,
-    write_treatment: false,
-  };
+  // Nightscout's locked default role is readable. Explicit credentials must
+  // be resolved by the tenant authorization adapter; they are never silently
+  // treated as anonymous or valid.
+  return credential === undefined || credential === null || credential === ""
+    ? { read: true, write: false, write_treatment: false }
+    : null;
 }
 
 function randomLeaseToken(): string {
@@ -123,6 +125,8 @@ export class RealtimeSessionService {
   private readonly pollWaitMs: number;
   private readonly authorize: NonNullable<RealtimeServiceOptions["authorize"]>;
   private readonly snapshot: NonNullable<RealtimeServiceOptions["snapshot"]>;
+  private readonly retroDeviceStatus: NonNullable<RealtimeServiceOptions["retroDeviceStatus"]>;
+  private readonly status: RealtimeServiceOptions["status"];
   private readonly waiters = new Map<string, PollWaiter>();
 
   constructor(
@@ -134,6 +138,10 @@ export class RealtimeSessionService {
     this.pollWaitMs = options.pollWaitMs ?? REALTIME_PING_INTERVAL_MS;
     this.authorize = options.authorize ?? defaultAuthorization;
     this.snapshot = options.snapshot ?? defaultSnapshot;
+    this.retroDeviceStatus = options.retroDeviceStatus ?? ((now) =>
+      this.snapshot(now)?.devicestatus ?? null
+    );
+    this.status = options.status;
   }
 
   createHandshake(): { sid: string; payload: string } {
@@ -164,7 +172,7 @@ export class RealtimeSessionService {
     const token = this.storage.transactionSync(() => {
       const session = this.requireLiveSession(sid, now);
       if (session.postToken !== null && (session.postDeadline ?? 0) > now) {
-        this.repository.deleteSession(sid);
+        this.repository.deleteSessionInTransaction(sid);
         return null;
       }
       session.postToken = randomLeaseToken();
@@ -207,6 +215,7 @@ export class RealtimeSessionService {
 
     const session = cloneSession(initial);
     const outbound: EngineIoV4Packet[] = [];
+    const broadcasts: EngineIoV4Packet[] = [];
     let closed = false;
     try {
       for (const packet of packets) {
@@ -224,8 +233,9 @@ export class RealtimeSessionService {
             `client packet type ${packet.type} is invalid for EIO4 polling`,
           );
         }
+        this.refreshInboundLiveness(session, this.now());
         const socketPacket = unwrapSocketIoV5Packet(packet);
-        await this.processSocketPacket(session, socketPacket, outbound);
+        await this.processSocketPacket(session, socketPacket, outbound, broadcasts);
       }
     } catch (error) {
       this.closeForBadPacket(sid);
@@ -233,8 +243,7 @@ export class RealtimeSessionService {
     }
 
     if (closed) {
-      this.repository.deleteSession(sid);
-      this.wake(sid);
+      this.closeSession(sid);
       return;
     }
 
@@ -245,20 +254,50 @@ export class RealtimeSessionService {
         return new RealtimeSessionError("unknown_sid", "session ID is unknown");
       }
       if (current.postToken !== token) {
-        this.repository.deleteSession(sid);
+        this.repository.deleteSessionInTransaction(sid);
         return new RealtimeSessionError("invalid_post_lease", "polling POST lease changed");
       }
       session.postToken = null;
       session.postDeadline = null;
+      // Authorization may await tenant storage/crypto while a GET emits a due
+      // ping. Heartbeat, queue, and lease fields remain owned by the current
+      // row and must never be replaced by the pre-await clone.
       session.pollToken = current.pollToken;
       session.pollDeadline = current.pollDeadline;
-      session.lastSeenAt = now;
+      session.lastSeenAt = Math.max(session.lastSeenAt, current.lastSeenAt, now);
+      const heartbeatChangedConcurrently =
+        current.nextPingAt !== initial.nextPingAt ||
+        current.pongDeadline !== initial.pongDeadline ||
+        current.expiresAt !== initial.expiresAt;
+      if (heartbeatChangedConcurrently) {
+        session.nextPingAt = current.nextPingAt;
+        session.pongDeadline = current.pongDeadline;
+        session.expiresAt = current.expiresAt;
+      }
       this.repository.updateSession(session);
       try {
         this.repository.enqueueFrames(sid, engineFrames(outbound), now);
       } catch (error) {
-        this.repository.deleteSession(sid);
+        this.repository.deleteSessionInTransaction(sid);
         return this.translateRepositoryError(error);
+      }
+      for (const broadcast of broadcasts) {
+        const frame = encodeEngineIoV4Packet(broadcast);
+        for (const targetSid of this.repository.listConnectedSessionIds()) {
+          if (targetSid === sid) continue;
+          try {
+            this.repository.enqueueFrames(targetSid, [frame], now);
+          } catch (error) {
+            if (
+              error instanceof RealtimeRepositoryError &&
+              error.code === "queue_overflow"
+            ) {
+              this.repository.deleteSessionInTransaction(targetSid);
+              continue;
+            }
+            throw error;
+          }
+        }
       }
       return null;
     });
@@ -267,6 +306,11 @@ export class RealtimeSessionService {
       throw commitError;
     }
     if (outbound.length > 0) this.wake(sid);
+    if (broadcasts.length > 0) {
+      for (const targetSid of this.repository.listConnectedSessionIds()) {
+        if (targetSid !== sid) this.wake(targetSid);
+      }
+    }
   }
 
   async poll(sid: string): Promise<string> {
@@ -275,7 +319,7 @@ export class RealtimeSessionService {
     const acquired = this.storage.transactionSync(() => {
       const session = this.requireLiveSession(sid, startedAt);
       if (session.pollToken !== null && (session.pollDeadline ?? 0) > startedAt) {
-        this.repository.deleteSession(sid);
+        this.repository.deleteSessionInTransaction(sid);
         return { overlap: true as const };
       }
       session.pollToken = randomLeaseToken();
@@ -337,6 +381,7 @@ export class RealtimeSessionService {
     session: RealtimeSession,
     packet: SocketIoV5Packet,
     outbound: EngineIoV4Packet[],
+    broadcasts: EngineIoV4Packet[],
   ): Promise<void> {
     if (packet.type === "connect") {
       if (packet.namespace !== "/") {
@@ -350,10 +395,20 @@ export class RealtimeSessionService {
       if (session.socketConnected) {
         throw new RealtimeSessionError("bad_packet", "root namespace is already connected");
       }
+      session.socketSid = createRealtimeSocketId();
       session.socketConnected = true;
       outbound.push(wrapSocketIoV5Packet(
         createSocketIoV5ServerConnectPacket("/", session.socketSid),
       ));
+      const clients = wrapSocketIoV5Packet({
+        type: "event",
+        namespace: "/",
+        data: ["clients", this.repository.countConnectedSessions() + 1],
+      });
+      // Socket.IO sends the root CONNECT response before invoking the locked
+      // Nightscout connection handler, which then broadcasts `clients`.
+      outbound.push(clients);
+      broadcasts.push(clients);
       return;
     }
 
@@ -362,6 +417,14 @@ export class RealtimeSessionService {
         session.socketConnected = false;
         session.authorized = false;
         session.readAllowed = false;
+        broadcasts.push(wrapSocketIoV5Packet({
+          type: "event",
+          namespace: "/",
+          data: [
+            "clients",
+            Math.max(0, this.repository.countConnectedSessions() - 1),
+          ],
+        }));
       }
       return;
     }
@@ -370,13 +433,14 @@ export class RealtimeSessionService {
     if (packet.namespace !== "/" || !session.socketConnected) {
       throw new RealtimeSessionError("bad_packet", "event requires the connected root namespace");
     }
-    await this.processRootEvent(session, packet, outbound);
+    await this.processRootEvent(session, packet, outbound, broadcasts);
   }
 
   private async processRootEvent(
     session: RealtimeSession,
     packet: SocketIoV5EventPacket,
     outbound: EngineIoV4Packet[],
+    broadcasts: EngineIoV4Packet[],
   ): Promise<void> {
     const eventName = packet.data[0];
     if (eventName === "authorize") {
@@ -385,6 +449,25 @@ export class RealtimeSessionService {
       }
       const message = recordValue(packet.data[1], "authorize payload");
       const authorization = await this.authorize(message);
+
+      if (authorization === null) {
+        // Locked verifyAuthorization errors call socket.disconnect() and never
+        // invoke the callback. This disconnects only root; EIO stays alive so
+        // the client may reconnect a namespace on the same transport.
+        session.socketConnected = false;
+        session.authorized = false;
+        session.readAllowed = false;
+        outbound.push(wrapSocketIoV5Packet({ type: "disconnect", namespace: "/" }));
+        broadcasts.push(wrapSocketIoV5Packet({
+          type: "event",
+          namespace: "/",
+          data: [
+            "clients",
+            Math.max(0, this.repository.countConnectedSessions() - 1),
+          ],
+        }));
+        return;
+      }
 
       // Locked Nightscout v15.0.7 order: connected, authorization state,
       // optional initial dataUpdate, then the callback ACK.
@@ -396,18 +479,30 @@ export class RealtimeSessionService {
       session.authorized = true;
       session.readAllowed = authorization.read;
       if (authorization.read) {
-        outbound.push(wrapSocketIoV5Packet({
-          type: "event",
-          namespace: "/",
-          data: ["dataUpdate", this.snapshot(this.now())],
-        }));
+        const now = this.now();
+        const snapshot = this.snapshot(now);
+        if (snapshot !== null) {
+          const data: RealtimeSnapshot = { ...snapshot };
+          if (message.status && this.status !== undefined) {
+            data.status = this.status(now);
+          }
+          outbound.push(wrapSocketIoV5Packet({
+            type: "event",
+            namespace: "/",
+            data: ["dataUpdate", data],
+          }));
+        }
       }
       if (packet.id !== undefined) {
         outbound.push(wrapSocketIoV5Packet({
           type: "ack",
           namespace: "/",
           id: packet.id,
-          data: [authorization],
+          data: [{
+            read: authorization.read,
+            write: false,
+            write_treatment: false,
+          }],
         }));
       }
       return;
@@ -418,7 +513,7 @@ export class RealtimeSessionService {
         throw new RealtimeSessionError("bad_packet", "loadRetro requires one object payload");
       }
       recordValue(packet.data[1], "loadRetro payload");
-      const snapshot = this.snapshot(this.now());
+      const devicestatus = this.retroDeviceStatus(this.now());
       // Locked upstream calls the callback before emitting retroUpdate.
       if (packet.id !== undefined) {
         outbound.push(wrapSocketIoV5Packet({
@@ -431,7 +526,7 @@ export class RealtimeSessionService {
       outbound.push(wrapSocketIoV5Packet({
         type: "event",
         namespace: "/",
-        data: ["retroUpdate", { devicestatus: snapshot.devicestatus }],
+        data: ["retroUpdate", { devicestatus: devicestatus ?? [] }],
       }));
       return;
     }
@@ -441,15 +536,21 @@ export class RealtimeSessionService {
     // Other unimplemented events, including every write event, behave the same.
   }
 
-  private acceptPong(session: RealtimeSession, packet: EngineIoV4Packet): void {
-    if (packet.data !== undefined) {
-      throw new RealtimeSessionError("bad_packet", "heartbeat pong cannot contain data");
-    }
+  private acceptPong(session: RealtimeSession, _packet: EngineIoV4Packet): void {
     const now = this.now();
+    // engine.io 6.2.1 ignores optional pong data on the normal polling path.
     session.pongDeadline = null;
     session.nextPingAt = now + REALTIME_PING_INTERVAL_MS;
     session.expiresAt = session.nextPingAt + REALTIME_PING_TIMEOUT_MS;
     session.lastSeenAt = now;
+  }
+
+  private refreshInboundLiveness(session: RealtimeSession, now: number): void {
+    session.lastSeenAt = now;
+    // engine.io 6.2.1 resets its liveness timeout for every inbound packet.
+    // The independent server-ping interval remains unchanged until a pong.
+    session.expiresAt = now + REALTIME_PING_INTERVAL_MS + REALTIME_PING_TIMEOUT_MS;
+    if (session.pongDeadline !== null) session.pongDeadline = session.expiresAt;
   }
 
   private enqueuePingIfDue(session: RealtimeSession, now: number): void {
@@ -466,7 +567,7 @@ export class RealtimeSessionService {
       session.expiresAt <= now ||
       (session.pongDeadline !== null && session.pongDeadline <= now)
     ) {
-      if (session !== null) this.repository.deleteSession(sid);
+      if (session !== null) this.repository.deleteSessionInTransaction(sid);
       throw new RealtimeSessionError("unknown_sid", "session ID is unknown or expired");
     }
     return session;
@@ -474,7 +575,13 @@ export class RealtimeSessionService {
 
   private cleanup(now: number): void {
     const expired = this.repository.cleanupOpportunity(now);
-    for (const sid of expired) this.wake(sid);
+    for (const session of expired) this.wake(session.sid);
+    if (expired.some((session) => session.socketConnected)) {
+      const targets = this.storage.transactionSync(() =>
+        this.enqueueClientsForConnectedSessions(now),
+      );
+      for (const targetSid of targets) this.wake(targetSid);
+    }
   }
 
   private wake(sid: string): void {
@@ -486,8 +593,47 @@ export class RealtimeSessionService {
   }
 
   private closeForBadPacket(sid: string): void {
-    this.storage.transactionSync(() => this.repository.deleteSession(sid));
+    this.closeSession(sid);
+  }
+
+  private closeSession(sid: string): void {
+    const now = this.now();
+    const targets = this.storage.transactionSync(() => {
+      const session = this.repository.getSession(sid);
+      if (session === null) return [];
+      const wasConnected = session.socketConnected;
+      this.repository.deleteSessionInTransaction(sid);
+      return wasConnected ? this.enqueueClientsForConnectedSessions(now) : [];
+    });
     this.wake(sid);
+    for (const targetSid of targets) this.wake(targetSid);
+  }
+
+  private enqueueClientsForConnectedSessions(now: number): string[] {
+    const targets = this.repository.listConnectedSessionIds();
+    if (targets.length === 0) return [];
+    const frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+      type: "event",
+      namespace: "/",
+      data: ["clients", targets.length],
+    }));
+    const enqueued: string[] = [];
+    for (const targetSid of targets) {
+      try {
+        this.repository.enqueueFrames(targetSid, [frame], now);
+        enqueued.push(targetSid);
+      } catch (error) {
+        if (
+          error instanceof RealtimeRepositoryError &&
+          error.code === "queue_overflow"
+        ) {
+          this.repository.deleteSessionInTransaction(targetSid);
+          continue;
+        }
+        throw error;
+      }
+    }
+    return enqueued;
   }
 
   private badPacket(error: unknown): RealtimeSessionError {

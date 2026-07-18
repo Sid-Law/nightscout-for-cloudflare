@@ -64,3 +64,27 @@ export function nightscoutStatus(now = new Date()): Record<string, unknown> {
     extendedSettings: {},
   };
 }
+
+/** Exact field set/order used by locked Nightscout's Socket.IO authorize path. */
+export function nightscoutWebsocketStatus(
+  now = new Date(),
+  activeProfile?: unknown,
+): Record<string, unknown> {
+  const httpStatus = nightscoutStatus(now);
+  const websocketStatus: Record<string, unknown> = {
+    status: "ok",
+    name: "Nightscout",
+    version: "15.0.7",
+    versionNum: 150007,
+    serverTime: now.toISOString(),
+    apiEnabled: true,
+    careportalEnabled: true,
+    boluscalcEnabled: false,
+    settings: httpStatus.settings,
+    extendedSettings: {},
+  };
+  if (activeProfile !== undefined && activeProfile !== null) {
+    websocketStatus.activeProfile = activeProfile;
+  }
+  return websocketStatus;
+}

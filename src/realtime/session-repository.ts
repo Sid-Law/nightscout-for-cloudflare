@@ -48,11 +48,6 @@ interface CountRow {
   count: number;
 }
 
-interface SidRow {
-  [key: string]: SqlStorageValue;
-  sid: string;
-}
-
 export interface RealtimeSession {
   sid: string;
   socketSid: string;
@@ -71,6 +66,11 @@ export interface RealtimeSession {
   pollDeadline: number | null;
   postToken: string | null;
   postDeadline: number | null;
+}
+
+export interface ExpiredRealtimeSession {
+  sid: string;
+  socketConnected: boolean;
 }
 
 export class RealtimeRepositoryError extends Error {
@@ -108,6 +108,10 @@ function randomSessionId(): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+export function createRealtimeSocketId(): string {
+  return randomSessionId();
 }
 
 export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
@@ -206,48 +210,62 @@ export class SqliteRealtimeSessionRepository {
   }
 
   deleteSession(sid: string): void {
+    this.storage.transactionSync(() => this.deleteSessionInTransaction(sid));
+  }
+
+  deleteSessionInTransaction(sid: string): void {
     this.storage.sql.exec("DELETE FROM realtime_outbound_packets WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_sessions WHERE sid = ?", sid);
   }
 
-  cleanupOpportunity(now: number, limit = REALTIME_CLEANUP_BATCH): string[] {
+  cleanupOpportunity(
+    now: number,
+    limit = REALTIME_CLEANUP_BATCH,
+  ): ExpiredRealtimeSession[] {
     const boundedLimit = Math.max(1, Math.min(REALTIME_CLEANUP_BATCH, Math.trunc(limit)));
-    const expired = this.storage.sql
-      .exec<SidRow>(
-        `SELECT sid FROM realtime_sessions
-         WHERE expires_at <= ? OR (pong_deadline IS NOT NULL AND pong_deadline <= ?)
-         ORDER BY expires_at, sid
-         LIMIT ?`,
-        now,
-        now,
-        boundedLimit,
-      )
-      .toArray()
-      .map((row) => row.sid);
-    for (const sid of expired) this.deleteSession(sid);
+    return this.storage.transactionSync(() => {
+      const expired = this.storage.sql
+        .exec<SessionRow>(
+          `SELECT sid, socket_sid, socket_connected, authorized, read_allowed,
+                  created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
+                  next_sequence, outbound_packets, outbound_bytes,
+                  poll_token, poll_deadline, post_token, post_deadline
+           FROM realtime_sessions
+           WHERE expires_at <= ? OR (pong_deadline IS NOT NULL AND pong_deadline <= ?)
+           ORDER BY expires_at, sid
+           LIMIT ?`,
+          now,
+          now,
+          boundedLimit,
+        )
+        .toArray()
+        .map((row) => ({ sid: row.sid, socketConnected: row.socket_connected === 1 }));
+      for (const session of expired) this.deleteSessionInTransaction(session.sid);
 
-    this.storage.sql.exec(
-      `UPDATE realtime_sessions
-       SET poll_token = NULL, poll_deadline = NULL
-       WHERE poll_deadline IS NOT NULL AND poll_deadline <= ?`,
-      now,
-    );
-    this.storage.sql.exec(
-      `UPDATE realtime_sessions
-       SET post_token = NULL, post_deadline = NULL
-       WHERE post_deadline IS NOT NULL AND post_deadline <= ?`,
-      now,
-    );
-    return expired;
+      this.storage.sql.exec(
+        `UPDATE realtime_sessions
+         SET poll_token = NULL, poll_deadline = NULL
+         WHERE poll_deadline IS NOT NULL AND poll_deadline <= ?`,
+        now,
+      );
+      this.storage.sql.exec(
+        `UPDATE realtime_sessions
+         SET post_token = NULL, post_deadline = NULL
+         WHERE post_deadline IS NOT NULL AND post_deadline <= ?`,
+        now,
+      );
+      return expired;
+    });
   }
 
   updateSession(session: RealtimeSession): void {
     this.storage.sql.exec(
       `UPDATE realtime_sessions SET
-         socket_connected = ?, authorized = ?, read_allowed = ?,
+         socket_sid = ?, socket_connected = ?, authorized = ?, read_allowed = ?,
          last_seen_at = ?, next_ping_at = ?, pong_deadline = ?, expires_at = ?,
          poll_token = ?, poll_deadline = ?, post_token = ?, post_deadline = ?
        WHERE sid = ?`,
+      session.socketSid,
       session.socketConnected ? 1 : 0,
       session.authorized ? 1 : 0,
       session.readAllowed ? 1 : 0,
@@ -261,6 +279,31 @@ export class SqliteRealtimeSessionRepository {
       session.postDeadline,
       session.sid,
     );
+  }
+
+  countConnectedSessions(): number {
+    return this.storage.sql
+      .exec<CountRow>(
+        "SELECT COUNT(*) AS count FROM realtime_sessions WHERE socket_connected = 1",
+      )
+      .one().count;
+  }
+
+  listConnectedSessionIds(): string[] {
+    return this.storage.sql
+      .exec<SessionRow>(
+        `SELECT sid, socket_sid, socket_connected, authorized, read_allowed,
+                created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
+                next_sequence, outbound_packets, outbound_bytes,
+                poll_token, poll_deadline, post_token, post_deadline
+         FROM realtime_sessions
+         WHERE socket_connected = 1
+         ORDER BY created_at, sid
+         LIMIT ?`,
+        REALTIME_MAX_SESSIONS_PER_TENANT,
+      )
+      .toArray()
+      .map((row) => row.sid);
   }
 
   enqueueFrames(sid: string, frames: readonly string[], now: number): void {
@@ -360,4 +403,3 @@ export class SqliteRealtimeSessionRepository {
     return payload;
   }
 }
-

@@ -17,8 +17,14 @@ import {
 import {
   RealtimeSessionError,
   RealtimeSessionService,
+  type RealtimeAuthorization,
   type RealtimeSnapshot,
 } from "../src/realtime/session-service";
+import {
+  buildRealtimeDdataSnapshot,
+  buildRealtimeRetroDeviceStatus,
+} from "../src/realtime/ddata-snapshot";
+import { nightscoutWebsocketStatus } from "../src/status";
 
 function store(prefix: string): DurableObjectStub<EntryStore> {
   return env.ENTRY_STORE.getByName(`${prefix}-${crypto.randomUUID()}`);
@@ -30,14 +36,13 @@ function clientPayload(packet: SocketIoV5Packet): string {
 
 function snapshot(now: number): RealtimeSnapshot {
   return {
-    lastUpdated: now,
-    sgvs: [{ _id: "mock-entry", mgdl: 123, mills: now - 60_000, direction: "Flat" }],
-    mbgs: [],
-    cals: [],
-    treatments: [],
-    food: [],
-    profiles: [],
     devicestatus: [{ created_at: "2026-07-18T00:00:00.000Z" }],
+    sgvs: [{ _id: "mock-entry", mgdl: 123, mills: now - 60_000, direction: "Flat" }],
+    cals: [],
+    profiles: [],
+    mbgs: [],
+    food: [],
+    treatments: [],
     dbstats: {},
   };
 }
@@ -52,6 +57,47 @@ async function post(
 }
 
 describe("tenant Durable Object EIO4 polling state machine", () => {
+  it("matches dataWithRecentStatuses fields, device windows, and public profiles", () => {
+    const now = Date.parse("2026-07-18T00:00:00.000Z");
+    const statuses = Array.from({ length: 12 }, (_unused, index) => ({
+      _id: `status-${index}`,
+      device: "uploader-a",
+      created_at: new Date(now - (12 - index) * 60_000).toISOString(),
+      uploader: { battery: 80 + index },
+    }));
+    statuses.push({
+      _id: "future",
+      device: "uploader-a",
+      created_at: new Date(now + 60_000).toISOString(),
+      uploader: { battery: 100 },
+    });
+    const realtime = buildRealtimeDdataSnapshot({
+      sgvs: [{ _id: "sgv" }],
+      profiles: [{ store: { "Default": {}, "Hidden@@@@@copy": {}, "@@@@@prefix": {} } }],
+      food: [{ _id: "food", created_at: "2026-07-17T20:00:00.000Z" }],
+      treatments: [{ _id: "treatment", created_at: "2026-07-17T21:00:00.000Z" }],
+      devicestatus: statuses,
+    }, now);
+
+    expect(Object.keys(realtime)).toEqual([
+      "devicestatus",
+      "sgvs",
+      "cals",
+      "profiles",
+      "mbgs",
+      "food",
+      "treatments",
+      "dbstats",
+    ]);
+    expect(realtime).not.toHaveProperty("lastUpdated");
+    expect(realtime.devicestatus).toHaveLength(10);
+    expect(realtime.devicestatus).not.toContainEqual(expect.objectContaining({ _id: "future" }));
+    const profileStore = (realtime.profiles[0] as { store: Record<string, unknown> }).store;
+    expect(profileStore).toHaveProperty("Default");
+    expect(profileStore).toHaveProperty("@@@@@prefix");
+    expect(profileStore).not.toHaveProperty("Hidden@@@@@copy");
+  });
+
   it("exposes a recoverable EntryStore RPC slice across Durable Object eviction", async () => {
     const stub = store("realtime-rpc");
     const opened = await stub.realtimeHandshake();
@@ -143,11 +189,16 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
 
       await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
       const connectPackets = decodeEngineIoV4PollingPayload(await service.poll(sid));
-      expect(connectPackets).toHaveLength(1);
+      expect(connectPackets).toHaveLength(2);
       expect(unwrapSocketIoV5Packet(connectPackets[0]!)).toMatchObject({
         type: "connect",
         namespace: "/",
         data: { sid: expect.stringMatching(/^[A-Za-z0-9_-]{20}$/) },
+      });
+      expect(unwrapSocketIoV5Packet(connectPackets[1]!)).toEqual({
+        type: "event",
+        namespace: "/",
+        data: ["clients", 1],
       });
 
       await post(service, sid, clientPayload({
@@ -187,13 +238,58 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     const stub = store("realtime-read-events");
     await runInDurableObject(stub, async (_instance, state) => {
       migrateRealtimeSessions(state.storage);
+      const now = 3_000_000;
+      const statuses: Array<Record<string, unknown>> = Array.from(
+        { length: 12 },
+        (_unused, index) => ({
+        _id: `retro-${index}`,
+        device: "uploader-a",
+        mills: now - (12 - index) * 1_000,
+        uploader: { battery: index },
+        }),
+      );
+      statuses.push({
+        _id: "retro-future",
+        device: "uploader-a",
+        mills: now + 1_000,
+        uploader: { battery: 100 },
+      });
+      statuses.push({
+        _id: "retro-pump",
+        device: "pump-a",
+        mills: now - 500,
+        pump: { battery: 50 },
+      });
+      const initialSnapshot = buildRealtimeDdataSnapshot({
+        sgvs: [],
+        profiles: [],
+        food: [],
+        treatments: [],
+        devicestatus: statuses,
+      }, now);
+      const rawDeviceStatus = buildRealtimeRetroDeviceStatus(statuses);
       const service = new RealtimeSessionService(state.storage, {
-        now: () => 3_000_000,
-        snapshot,
+        now: () => now,
+        snapshot: () => initialSnapshot,
+        retroDeviceStatus: () => rawDeviceStatus,
       });
       const { sid } = service.createHandshake();
       await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
       await service.poll(sid);
+
+      await post(service, sid, clientPayload({
+        type: "event",
+        namespace: "/",
+        id: 7,
+        data: ["authorize", { client: "web" }],
+      }));
+      const initial = decodeEngineIoV4PollingPayload(await service.poll(sid))
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      const initialStatuses = (
+        (initial[1] as unknown as { data: [string, RealtimeSnapshot] }).data[1].devicestatus
+      );
+      expect(initialStatuses).toHaveLength(11);
+      expect(initialStatuses).not.toContainEqual(expect.objectContaining({ _id: "retro-future" }));
 
       await post(service, sid, clientPayload({
         type: "event",
@@ -213,9 +309,11 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         {
           type: "event",
           namespace: "/",
-          data: ["retroUpdate", { devicestatus: snapshot(3_000_000).devicestatus }],
+          data: ["retroUpdate", { devicestatus: rawDeviceStatus }],
         },
       ]);
+      expect(rawDeviceStatus).toHaveLength(14);
+      expect(rawDeviceStatus).toContainEqual(expect.objectContaining({ _id: "retro-future" }));
 
       await post(service, sid, clientPayload({
         type: "event",
@@ -225,6 +323,216 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       }));
       const persisted = new SqliteRealtimeSessionRepository(state.storage).requireSession(sid);
       expect(persisted.outboundPackets).toBe(0);
+
+      await post(service, sid, clientPayload({
+        type: "event",
+        namespace: "/",
+        data: ["loadRetro", { loadedMills: 0 }],
+      }));
+      const withoutAck = decodeEngineIoV4PollingPayload(await service.poll(sid))
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      expect(withoutAck).toEqual([{
+        type: "event",
+        namespace: "/",
+        data: ["retroUpdate", { devicestatus: rawDeviceStatus }],
+      }]);
+    });
+  });
+
+  it("adds status only when requested and skips initial data when the loader is unavailable", async () => {
+    const stub = store("realtime-status");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const status = nightscoutWebsocketStatus(new Date(3_500_000));
+      const reusedSnapshot = snapshot(3_500_000);
+      const service = new RealtimeSessionService(state.storage, {
+        now: () => 3_500_000,
+        snapshot: () => reusedSnapshot,
+        status: () => status,
+        authorize: () => ({
+          read: true,
+          write: false,
+          write_treatment: false,
+          ignored: "must-not-leak",
+        } as unknown as RealtimeAuthorization),
+      });
+      const { sid } = service.createHandshake();
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
+      await service.poll(sid);
+
+      await post(service, sid, clientPayload({
+        type: "event",
+        namespace: "/",
+        id: 10,
+        data: ["authorize", { client: "web", status: true }],
+      }));
+      const withStatus = decodeEngineIoV4PollingPayload(await service.poll(sid))
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      const data = (withStatus[1] as { data: unknown[] }).data[1] as Record<string, unknown>;
+      expect(data.status).toEqual(status);
+      expect(Object.keys(data).at(-1)).toBe("status");
+      expect(Object.keys(status)).toEqual([
+        "status",
+        "name",
+        "version",
+        "versionNum",
+        "serverTime",
+        "apiEnabled",
+        "careportalEnabled",
+        "boluscalcEnabled",
+        "settings",
+        "extendedSettings",
+      ]);
+      expect(status).not.toHaveProperty("serverTimeEpoch");
+      expect(status).not.toHaveProperty("runtimeState");
+      expect(withStatus.at(-1)).toEqual({
+        type: "ack",
+        namespace: "/",
+        id: 10,
+        data: [{ read: true, write: false, write_treatment: false }],
+      });
+
+      await post(service, sid, clientPayload({
+        type: "event",
+        namespace: "/",
+        id: 11,
+        data: ["authorize", { client: "web", status: false }],
+      }));
+      const withoutStatus = decodeEngineIoV4PollingPayload(await service.poll(sid))
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      expect((withoutStatus[1] as { data: unknown[] }).data[1]).not.toHaveProperty("status");
+      expect(reusedSnapshot).not.toHaveProperty("status");
+
+      const unavailable = new RealtimeSessionService(state.storage, {
+        now: () => 3_500_000,
+        snapshot: () => null,
+      });
+      const unavailableSid = unavailable.createHandshake().sid;
+      await post(unavailable, unavailableSid, clientPayload({ type: "connect", namespace: "/" }));
+      await unavailable.poll(unavailableSid);
+      await post(unavailable, unavailableSid, clientPayload({
+        type: "event",
+        namespace: "/",
+        id: 12,
+        data: ["authorize", { client: "web", status: true }],
+      }));
+      const packets = decodeEngineIoV4PollingPayload(await unavailable.poll(unavailableSid))
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      expect(packets).toEqual([
+        { type: "event", namespace: "/", data: ["connected"] },
+        {
+          type: "ack",
+          namespace: "/",
+          id: 12,
+          data: [{ read: true, write: false, write_treatment: false }],
+        },
+      ]);
+    });
+  });
+
+  it("disconnects only root with no ACK after invalid authorization and issues a new sid on reconnect", async () => {
+    const stub = store("realtime-invalid-auth");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const service = new RealtimeSessionService(state.storage, { snapshot });
+      const { sid } = service.createHandshake();
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
+      const firstConnect = decodeEngineIoV4PollingPayload(await service.poll(sid))
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      const firstSocketSid = (
+        firstConnect[0] as unknown as { data: { sid: string } }
+      ).data.sid;
+
+      await post(service, sid, clientPayload({
+        type: "event",
+        namespace: "/",
+        id: 13,
+        data: ["authorize", { client: "web", secret: "invalid-explicit-credential" }],
+      }));
+      expect(
+        decodeEngineIoV4PollingPayload(await service.poll(sid))
+          .map((packet) => unwrapSocketIoV5Packet(packet)),
+      ).toEqual([{ type: "disconnect", namespace: "/" }]);
+      expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid))
+        .toMatchObject({ socketConnected: false, authorized: false });
+
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
+      const reconnected = decodeEngineIoV4PollingPayload(await service.poll(sid))
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      const nextSocketSid = (
+        reconnected[0] as unknown as { data: { sid: string } }
+      ).data.sid;
+      expect(nextSocketSid).not.toBe(firstSocketSid);
+    });
+  });
+
+  it("returns CONNECT_ERROR for /alarm without killing the connected root", async () => {
+    const stub = store("realtime-alarm-namespace");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const service = new RealtimeSessionService(state.storage);
+      const { sid } = service.createHandshake();
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
+      await service.poll(sid);
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/alarm" }));
+      expect(
+        decodeEngineIoV4PollingPayload(await service.poll(sid))
+          .map((packet) => unwrapSocketIoV5Packet(packet)),
+      ).toEqual([{
+        type: "error",
+        namespace: "/alarm",
+        data: { message: "Invalid namespace" },
+      }]);
+      expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid).socketConnected)
+        .toBe(true);
+    });
+  });
+
+  it("preserves a concurrent due ping while tenant authorization is awaiting", async () => {
+    const stub = store("realtime-auth-race");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      let resolveAuthorization: ((value: RealtimeAuthorization) => void) | undefined;
+      const authorization = new Promise<RealtimeAuthorization>((resolve) => {
+        resolveAuthorization = resolve;
+      });
+      const now = 3_750_000;
+      const service = new RealtimeSessionService(state.storage, {
+        now: () => now,
+        authorize: () => authorization,
+        snapshot,
+      });
+      const { sid } = service.createHandshake();
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
+      await service.poll(sid);
+
+      const lease = service.beginPost(sid);
+      const pendingAuthorization = service.submitPost(sid, lease, clientPayload({
+        type: "event",
+        namespace: "/",
+        id: 14,
+        data: ["authorize", { client: "web" }],
+      }));
+      await Promise.resolve();
+      state.storage.sql.exec(
+        "UPDATE realtime_sessions SET next_ping_at = ? WHERE sid = ?",
+        now,
+        sid,
+      );
+      expect(await service.poll(sid)).toBe("2");
+      resolveAuthorization?.({ read: true, write: false, write_treatment: false });
+      await pendingAuthorization;
+
+      expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid))
+        .toMatchObject({ pongDeadline: now + 20_000, expiresAt: now + 20_000 });
+      const authorized = decodeEngineIoV4PollingPayload(await service.poll(sid))
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      expect(authorized.at(-1)).toEqual({
+        type: "ack",
+        namespace: "/",
+        id: 14,
+        data: [{ read: true, write: false, write_treatment: false }],
+      });
     });
   });
 
@@ -297,6 +605,36 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     await runInDurableObject(beta, async (_instance, state) => {
       migrateRealtimeSessions(state.storage);
       expect(new SqliteRealtimeSessionRepository(state.storage).getSession(sid)).toBeNull();
+    });
+  });
+
+  it("rolls back queued-packet deletion if the session delete step fails", async () => {
+    const stub = store("realtime-delete-atomic");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const session = repository.createSession(5_000_000);
+      repository.enqueueFrames(session.sid, ["2"], 5_000_001);
+      state.storage.sql.exec(`
+        CREATE TRIGGER realtime_test_delete_failure
+        BEFORE DELETE ON realtime_sessions
+        BEGIN
+          SELECT RAISE(ABORT, 'forced session delete failure');
+        END;
+      `);
+      expect(() => repository.deleteSession(session.sid)).toThrow();
+      state.storage.sql.exec("DROP TRIGGER realtime_test_delete_failure");
+
+      expect(repository.requireSession(session.sid)).toMatchObject({
+        outboundPackets: 1,
+        outboundBytes: 1,
+      });
+      expect(
+        state.storage.sql.exec<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM realtime_outbound_packets WHERE sid = ?",
+          session.sid,
+        ).one().count,
+      ).toBe(1);
     });
   });
 });
