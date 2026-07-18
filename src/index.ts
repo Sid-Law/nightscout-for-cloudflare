@@ -23,12 +23,7 @@ import { ApiError, parseEntryPayload, parseHistoryQuery } from "./model";
 import type { PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
 import { handleSocketIo } from "./realtime/http-adapter";
-import {
-  nightscoutStatus,
-  normalizeConfiguredDisplayUnits,
-  normalizeProfileUnits,
-  type NightscoutDisplayUnits,
-} from "./status";
+import { normalizePlatformAuthFailDelay } from "./status";
 import {
   handleApi3DeviceStatus,
   handleApi3Entries,
@@ -101,11 +96,6 @@ type AppEnv = Env & {
   API_SECRET?: string;
   AUTH_DEFAULT_ROLES?: string;
   AUTH_FAIL_DELAY?: string;
-  DISPLAY_UNITS?: string;
-  BG_HIGH?: string;
-  BG_TARGET_TOP?: string;
-  BG_TARGET_BOTTOM?: string;
-  BG_LOW?: string;
 };
 
 function corsHeaders(): Record<string, string> {
@@ -122,14 +112,6 @@ function json(data: unknown, init: ResponseInit = {}): Response {
   headers.set("Cache-Control", "no-store");
   for (const [name, value] of Object.entries(corsHeaders())) headers.set(name, value);
   return new Response(JSON.stringify(data), { ...init, headers });
-}
-
-function javascript(source: string, init: ResponseInit = {}): Response {
-  const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/javascript; charset=utf-8");
-  headers.set("Cache-Control", "no-store");
-  for (const [name, value] of Object.entries(corsHeaders())) headers.set(name, value);
-  return new Response(source, { ...init, headers });
 }
 
 function withUtf8Charset(response: Response): Response {
@@ -252,10 +234,7 @@ function configuredAuthDefaultRoles(env: AppEnv): string {
 }
 
 function configuredAuthFailDelay(env: AppEnv): number {
-  const parsed = Number(env.AUTH_FAIL_DELAY ?? 5000);
-  return Number.isFinite(parsed)
-    ? Math.max(0, Math.min(MAX_AUTH_FAIL_DELAY_MS, Math.trunc(parsed)))
-    : 5000;
+  return normalizePlatformAuthFailDelay(env.AUTH_FAIL_DELAY);
 }
 
 function requestRemoteIp(request: Request): string {
@@ -699,173 +678,134 @@ function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
   };
 }
 
-const DEFAULT_STATUS_THRESHOLDS = {
-  bgHigh: 260,
-  bgTargetTop: 180,
-  bgTargetBottom: 80,
-  bgLow: 55,
-};
-
-function profileDisplayUnits(profile: JsonDocument | undefined): NightscoutDisplayUnits | null {
-  if (profile === undefined) return null;
-  const recordUnits = normalizeProfileUnits(profile.units);
-  if (recordUnits !== null) return recordUnits;
-
-  const defaultProfile = profile.defaultProfile;
-  const store = profile.store;
-  if (
-    typeof defaultProfile !== "string"
-    || typeof store !== "object"
-    || store === null
-    || Array.isArray(store)
-  ) {
-    return null;
-  }
-  const selected = (store as Record<string, unknown>)[defaultProfile];
-  if (typeof selected !== "object" || selected === null || Array.isArray(selected)) return null;
-  return normalizeProfileUnits((selected as Record<string, unknown>).units);
-}
-
-function configuredStatusThresholds(
-  env: AppEnv,
-  units: NightscoutDisplayUnits,
-): typeof DEFAULT_STATUS_THRESHOLDS | undefined {
-  const configured = [env.BG_HIGH, env.BG_TARGET_TOP, env.BG_TARGET_BOTTOM, env.BG_LOW];
-  if (configured.every((value) => value === undefined)) return undefined;
-
-  function numberOr(value: string | undefined, fallback: number): number {
-    if (value === undefined || value.trim() === "") return fallback;
-    const parsed = Number(value.replace(",", "."));
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-
-  const thresholds = {
-    bgHigh: numberOr(env.BG_HIGH, DEFAULT_STATUS_THRESHOLDS.bgHigh),
-    bgTargetTop: numberOr(env.BG_TARGET_TOP, DEFAULT_STATUS_THRESHOLDS.bgTargetTop),
-    bgTargetBottom: numberOr(env.BG_TARGET_BOTTOM, DEFAULT_STATUS_THRESHOLDS.bgTargetBottom),
-    bgLow: numberOr(env.BG_LOW, DEFAULT_STATUS_THRESHOLDS.bgLow),
-  };
-
-  // Locked settings.js accepts mmol thresholds, but keeps legacy mg/dl values
-  // when bgHigh is already above the mmol range.
-  if (units === "mmol" && thresholds.bgHigh < 50) {
-    thresholds.bgHigh = Math.round(thresholds.bgHigh * 18.01559);
-    thresholds.bgTargetTop = Math.round(thresholds.bgTargetTop * 18.01559);
-    thresholds.bgTargetBottom = Math.round(thresholds.bgTargetBottom * 18.01559);
-    thresholds.bgLow = Math.round(thresholds.bgLow * 18.01559);
-  }
-  if (thresholds.bgTargetBottom >= thresholds.bgTargetTop) {
-    thresholds.bgTargetBottom = thresholds.bgTargetTop - 1;
-  }
-  if (thresholds.bgTargetTop <= thresholds.bgTargetBottom) {
-    thresholds.bgTargetTop = thresholds.bgTargetBottom + 1;
-  }
-  if (thresholds.bgLow >= thresholds.bgTargetBottom) {
-    thresholds.bgLow = thresholds.bgTargetBottom - 1;
-  }
-  if (thresholds.bgHigh <= thresholds.bgTargetTop) {
-    thresholds.bgHigh = thresholds.bgTargetTop + 1;
-  }
-  return thresholds;
-}
-
 async function statusForResolution(
   env: AppEnv,
   url: URL,
   resolution: AuthorizationResolution,
 ): Promise<Record<string, unknown>> {
-  let units: NightscoutDisplayUnits;
-  if (env.DISPLAY_UNITS !== undefined) {
-    units = normalizeConfiguredDisplayUnits(env.DISPLAY_UNITS);
-  } else {
-    let storedUnits: NightscoutDisplayUnits | null = null;
-    if (env.ENTRY_STORE !== undefined) {
-      try {
-        const store = env.ENTRY_STORE.getByName(resolveTenantFromUrl(url));
-        const profiles = parseDocuments(await store.listDocuments("profile", 1));
-        storedUnits = profileDisplayUnits(profiles[0]);
-      } catch {
-        // Profile lookup is an adapter fallback, not an upstream dependency of
-        // /status. A damaged optional profile must not make server status fail.
-      }
-    }
-    // This fallback is the Cloudflare adapter's only intentional source
-    // extension: locked Node Nightscout reads DISPLAY_UNITS only, while an
-    // existing profile is the sole persisted unit setting available here.
-    units = storedUnits ?? "mg/dl";
-  }
-
-  const thresholds = configuredStatusThresholds(env, units);
-  const settingsOverrides = thresholds === undefined
-    ? { units, authFailDelay: configuredAuthFailDelay(env) }
-    : { units, authFailDelay: configuredAuthFailDelay(env), thresholds };
-  const status = nightscoutStatus(
-    new Date(),
-    configuredAuthDefaultRoles(env),
-    settingsOverrides,
-  );
-  if (resolution.authorized !== null) {
-    // Preserve locked status.js key order: authorized precedes runtimeState.
-    const runtimeState = status.runtimeState;
-    delete status.runtimeState;
-    status.authorized = resolution.authorized;
-    status.runtimeState = runtimeState;
-  }
+  const store = env.ENTRY_STORE.getByName(resolveTenantFromUrl(url));
+  const status = JSON.parse(await store.nightscoutHttpStatus(Date.now())) as Record<string, unknown>;
+  // The DO supplies the key in locked order. Assignment updates the value in
+  // place, so anonymous/admin null and an authorized subject share one shape.
+  status.authorized = resolution.authorized;
   return status;
 }
 
 type StatusFormat = "html" | "png" | "svg" | "js" | "text" | "json";
 
-interface AcceptPreference {
+interface ParsedMediaRange {
+  type: string;
+  subtype: string;
+  params: Record<string, string | undefined>;
   quality: number;
-  specificity: number;
   order: number;
 }
 
-function acceptedPreference(accept: string, mediaType: string): AcceptPreference | null {
-  const [wantedType, wantedSubtype] = mediaType.toLowerCase().split("/");
-  let best: AcceptPreference | null = null;
-  for (const [order, range] of accept.toLowerCase().split(",").entries()) {
-    const [rawType, ...parameters] = range.trim().split(";");
-    const [type, subtype] = rawType!.trim().split("/");
-    if (
-      wantedType === undefined
-      || wantedSubtype === undefined
-      || type === undefined
-      || subtype === undefined
-      || (type !== "*" && type !== wantedType)
-      || (subtype !== "*" && subtype !== wantedSubtype)
-    ) {
-      continue;
-    }
-    let quality = 1;
-    for (const parameter of parameters) {
-      const match = /^\s*q\s*=\s*(0(?:\.\d+)?|1(?:\.0+)?)\s*$/.exec(parameter);
-      if (match !== null) quality = Number(match[1]);
-    }
-    if (quality <= 0) continue;
-    const preference = {
-      quality,
-      specificity: (type === "*" ? 0 : 1) + (subtype === "*" ? 0 : 1),
-      order,
-    };
-    if (
-      best === null
-      || preference.quality > best.quality
-      || (
-        preference.quality === best.quality
-        && preference.specificity > best.specificity
-      )
-      || (
-        preference.quality === best.quality
-        && preference.specificity === best.specificity
-        && preference.order < best.order
-      )
-    ) {
-      best = preference;
+interface MediaPriority {
+  quality: number;
+  specificity: number;
+  acceptOrder: number;
+  providedOrder: number;
+}
+
+function splitQuoted(value: string, delimiter: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let quoted = false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === '"') quoted = !quoted;
+    if (!quoted && value[index] === delimiter) {
+      parts.push(value.slice(start, index));
+      start = index + 1;
     }
   }
-  return best;
+  parts.push(value.slice(start));
+  return parts;
+}
+
+function parsedMediaRange(value: string, order: number): ParsedMediaRange | null {
+  const match = /^\s*([^\s/;]+)\/([^;\s]+)\s*(?:;(.*))?$/.exec(value);
+  if (match === null) return null;
+  const params: Record<string, string | undefined> = {};
+  let quality = 1;
+  if (match[3] !== undefined) {
+    for (const rawParameter of splitQuoted(match[3], ";")) {
+      const parameter = rawParameter.trim();
+      const equals = parameter.indexOf("=");
+      const key = (equals < 0 ? parameter : parameter.slice(0, equals)).toLowerCase();
+      const rawValue = equals < 0 ? undefined : parameter.slice(equals + 1);
+      const parsed = rawValue?.startsWith('"') && rawValue.endsWith('"')
+        ? rawValue.slice(1, -1)
+        : rawValue;
+      if (key === "q") {
+        quality = Number.parseFloat(parsed ?? "");
+        break;
+      }
+      params[key] = parsed;
+    }
+  }
+  return {
+    type: match[1]!,
+    subtype: match[2]!,
+    params,
+    quality,
+    order,
+  };
+}
+
+function priorityForMediaType(
+  mediaType: string,
+  accepted: ParsedMediaRange[],
+  providedOrder: number,
+): MediaPriority {
+  const provided = parsedMediaRange(mediaType, providedOrder);
+  let priority: MediaPriority = {
+    acceptOrder: -1,
+    quality: 0,
+    specificity: 0,
+    providedOrder,
+  };
+  if (provided === null) return priority;
+
+  for (const range of accepted) {
+    let specificity = 0;
+    if (range.type.toLowerCase() === provided.type.toLowerCase()) specificity |= 4;
+    else if (range.type !== "*") continue;
+    if (range.subtype.toLowerCase() === provided.subtype.toLowerCase()) specificity |= 2;
+    else if (range.subtype !== "*") continue;
+    const parameterKeys = Object.keys(range.params);
+    if (!parameterKeys.every((key) =>
+      range.params[key] === "*"
+      || (range.params[key] ?? "").toLowerCase()
+        === (provided.params[key] ?? "").toLowerCase()
+    )) {
+      continue;
+    }
+    if (parameterKeys.length > 0) specificity |= 1;
+    const candidate: MediaPriority = {
+      acceptOrder: range.order,
+      quality: range.quality,
+      specificity,
+      providedOrder,
+    };
+    // Exact negotiator priority: first choose the most-specific Accept range
+    // for each offered type, then its q value and header order.
+    if (
+      candidate.specificity > priority.specificity
+      || (
+        candidate.specificity === priority.specificity
+        && candidate.quality > priority.quality
+      )
+      || (
+        candidate.specificity === priority.specificity
+        && candidate.quality === priority.quality
+        && candidate.acceptOrder > priority.acceptOrder
+      )
+    ) {
+      priority = candidate;
+    }
+  }
+  return priority;
 }
 
 function negotiatedStatusFormat(request: Request): StatusFormat | null {
@@ -878,45 +818,52 @@ function negotiatedStatusFormat(request: Request): StatusFormat | null {
     ["text", "text/plain"],
     ["json", "application/json"],
   ] as const;
-  let selected: StatusFormat | null = null;
-  let selectedPreference: AcceptPreference | null = null;
-  for (const [format, mediaType] of offered) {
-    const preference = acceptedPreference(accept, mediaType);
-    if (
-      preference !== null
-      && (
-        selectedPreference === null
-        || preference.quality > selectedPreference.quality
-        || (
-          preference.quality === selectedPreference.quality
-          && preference.specificity > selectedPreference.specificity
-        )
-        || (
-          preference.quality === selectedPreference.quality
-          && preference.specificity === selectedPreference.specificity
-          && preference.order < selectedPreference.order
-        )
-      )
-    ) {
-      selected = format;
-      selectedPreference = preference;
-    }
-  }
-  return selected;
+  const accepted = splitQuoted(accept, ",")
+    .map((value, order) => parsedMediaRange(value.trim(), order))
+    .filter((value): value is ParsedMediaRange => value !== null);
+  const priorities = offered.map(([format, mediaType], providedOrder) => ({
+    format,
+    priority: priorityForMediaType(mediaType, accepted, providedOrder),
+  })).filter(({ priority }) => priority.quality > 0);
+  priorities.sort((left, right) =>
+    right.priority.quality - left.priority.quality
+    || right.priority.specificity - left.priority.specificity
+    || left.priority.acceptOrder - right.priority.acceptOrder
+    || left.priority.providedOrder - right.priority.providedOrder
+  );
+  return priorities[0]?.format ?? null;
 }
 
-function statusText(body: string, contentType: string): Response {
-  const headers = new Headers(corsHeaders());
+function statusText(
+  body: string,
+  contentType: string,
+  init: ResponseInit = {},
+): Response {
+  const headers = new Headers(init.headers);
+  for (const [name, value] of Object.entries(corsHeaders())) headers.set(name, value);
   headers.set("Content-Type", `${contentType}; charset=utf-8`);
   headers.set("Cache-Control", "no-store");
-  return new Response(body, { headers });
+  headers.set("Content-Length", String(new TextEncoder().encode(body).byteLength));
+  headers.set("Vary", "Accept");
+  return new Response(body, { ...init, headers });
 }
 
 function statusRedirect(extension: "png" | "svg"): Response {
   const headers = new Headers(corsHeaders());
   headers.set("Location", `http://img.shields.io/badge/Nightscout-OK-green.${extension}`);
+  headers.set("Content-Type", extension === "png" ? "image/png" : "image/svg+xml");
+  headers.set("Content-Length", "0");
   headers.set("Cache-Control", "no-store");
+  headers.set("Vary", "Accept");
   return new Response(null, { status: 302, headers });
+}
+
+function statusNotAcceptable(): Response {
+  return statusText(
+    JSON.stringify({ status: 406, message: "Not Acceptable" }),
+    "application/json",
+    { status: 406 },
+  );
 }
 
 function renderStatus(
@@ -930,11 +877,14 @@ function renderStatus(
     case "svg":
       return statusRedirect(format);
     case "js":
-      return javascript(`this.serverSettings = ${JSON.stringify(status)};`);
+      return statusText(
+        `this.serverSettings = ${JSON.stringify(status)};`,
+        "application/javascript",
+      );
     case "text":
       return statusText("STATUS OK", "text/plain");
     case "json":
-      return json(status);
+      return statusText(JSON.stringify(status), "application/json");
   }
 }
 
@@ -1508,7 +1458,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     }
   }
 
-  const statusMatch = /^\/api\/v[12]\/status(?:\.(json|html|txt|png|svg|js|csv|tsv))?\/?$/i.exec(
+  const statusMatch = /^\/api\/v[12]\/status(?:\/|\.(json|html|txt|png|svg|js|csv))?$/i.exec(
     url.pathname,
   );
   if ((request.method === "GET" || request.method === "HEAD") && statusMatch !== null) {
@@ -1522,10 +1472,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     if (extension === "csv" || extension === "tsv") {
       return withoutBodyForHead(
         request,
-        json(
-          { status: 406, message: "Not Acceptable" },
-          { status: 406, headers: { Vary: "Accept" } },
-        ),
+        statusNotAcceptable(),
       );
     }
     const format: StatusFormat | null = extension === undefined
@@ -1536,10 +1483,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     if (format === null) {
       return withoutBodyForHead(
         request,
-        json(
-          { status: 406, message: "Not Acceptable" },
-          { status: 406, headers: { Vary: "Accept" } },
-        ),
+        statusNotAcceptable(),
       );
     }
     const status = await statusForResolution(env, url, resolution);

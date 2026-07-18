@@ -59,7 +59,13 @@ import {
   REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES,
   REALTIME_WEBSOCKET_FLUSH_MAX_SOCKETS,
 } from "./realtime/constants";
-import { nightscoutWebsocketStatus } from "./status";
+import {
+  nightscoutStatus,
+  nightscoutWebsocketStatus,
+  tenantStatusSettings as deriveTenantStatusSettings,
+  type NightscoutStatusEnvironment,
+  type NightscoutStatusSettingsOverrides,
+} from "./status";
 
 export type DocumentCollection =
   | "activity"
@@ -115,10 +121,9 @@ export type AuthorizationMutationResult =
   | { ok: true; value: string }
   | { ok: false; error: string };
 
-type EntryStoreEnv = Env & {
+type EntryStoreEnv = Env & NightscoutStatusEnvironment & {
   API_SECRET?: string;
   AUTH_DEFAULT_ROLES?: string;
-  AUTH_FAIL_DELAY?: string;
 };
 
 const REALTIME_WEBSOCKET_TAG = "eio4-websocket";
@@ -354,6 +359,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         new Date(now),
         undefined,
         this.env.AUTH_DEFAULT_ROLES ?? "readable",
+        this.tenantStatusSettings(),
       ),
       authorize: (message) => this.realtimeAuthorize(message),
     });
@@ -1029,6 +1035,34 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           : "Authorization storage failure",
       };
     }
+  }
+
+  private latestStatusProfile(): JsonDocument | undefined {
+    const rows = this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time, updated_at
+       FROM documents
+       WHERE collection = 'profile'
+       ORDER BY sort_time DESC, updated_at DESC
+       LIMIT 10`,
+    ).toArray();
+    for (const row of rows) {
+      const profile = tryDocument(row);
+      if (profile !== null) return profile;
+    }
+    return undefined;
+  }
+
+  private tenantStatusSettings(): NightscoutStatusSettingsOverrides {
+    return deriveTenantStatusSettings(this.env, this.latestStatusProfile());
+  }
+
+  nightscoutHttpStatus(now: number): string {
+    const timestamp = Number.isFinite(now) ? now : Date.now();
+    return JSON.stringify(nightscoutStatus(
+      new Date(timestamp),
+      this.env.AUTH_DEFAULT_ROLES ?? "readable",
+      this.tenantStatusSettings(),
+    ));
   }
 
   private realtimeSnapshot(now: number): RealtimeSnapshot {

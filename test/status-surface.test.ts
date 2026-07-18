@@ -1,11 +1,14 @@
 import { env } from "cloudflare:workers";
 import { SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import {
   nightscoutStatus,
+  nightscoutWebsocketStatus,
   normalizeConfiguredDisplayUnits,
+  normalizePlatformAuthFailDelay,
   normalizeProfileUnits,
+  tenantStatusSettings,
 } from "../src/status";
 
 const TEST_API_SECRET = "nscf-test-secret-20260717";
@@ -46,7 +49,8 @@ function settingsOf(status: Record<string, unknown>): Record<string, unknown> {
 
 describe("locked Nightscout status settings", () => {
   it("matches the v15.0.7 filtered default settings instead of a downstream approximation", () => {
-    const settings = settingsOf(nightscoutStatus(new Date(0)));
+    const status = nightscoutStatus(new Date(0));
+    const settings = settingsOf(status);
     expect(settings).toEqual({
       units: "mg/dl",
       timeFormat: 12,
@@ -146,6 +150,21 @@ describe("locked Nightscout status settings", () => {
         "ar2",
       ],
     });
+    expect(status.authorized).toBeNull();
+    expect(Object.keys(status)).toEqual([
+      "status",
+      "name",
+      "version",
+      "serverTime",
+      "serverTimeEpoch",
+      "apiEnabled",
+      "careportalEnabled",
+      "boluscalcEnabled",
+      "settings",
+      "extendedSettings",
+      "authorized",
+      "runtimeState",
+    ]);
   });
 
   it("normalizes configured and persisted unit spellings without guessing unknown profile data", () => {
@@ -154,7 +173,16 @@ describe("locked Nightscout status settings", () => {
     expect(normalizeConfiguredDisplayUnits("unexpected")).toBe("mg/dl");
     expect(normalizeProfileUnits("mmol / L")).toBe("mmol");
     expect(normalizeProfileUnits("mgdl")).toBe("mg/dl");
+    expect(normalizeProfileUnits("notmmol")).toBeNull();
     expect(normalizeProfileUnits("unexpected")).toBeNull();
+  });
+
+  it("reports the bounded platform auth delay actually enforced", () => {
+    expect(normalizePlatformAuthFailDelay(undefined)).toBe(5000);
+    expect(normalizePlatformAuthFailDelay("  ")).toBe(5000);
+    expect(normalizePlatformAuthFailDelay("-1")).toBe(0);
+    expect(normalizePlatformAuthFailDelay("60001")).toBe(60_000);
+    expect(normalizePlatformAuthFailDelay("not-a-number")).toBe(5000);
   });
 });
 
@@ -209,32 +237,24 @@ describe("tenant status configuration sources", () => {
     expect(settingsOf(empty).units).toBe("mg/dl");
   });
 
-  it("gives the locked DISPLAY_UNITS binding precedence and maps configured thresholds", async () => {
-    const name = tenant("status-config-units");
-    await saveProfile(name, {
+  it("gives DISPLAY_UNITS precedence and applies locked configured-threshold semantics", () => {
+    const profile = {
       defaultProfile: "Default",
       startDate: new Date().toISOString(),
       units: "mg/dl",
       store: { Default: { units: "mg/dl" } },
-    });
-
-    const response = await worker.fetch(
-      new Request(`https://example.test/api/v1/status.json?tenant=${name}`),
-      {
-        ASSETS: env.ASSETS,
-        ENTRY_STORE: env.ENTRY_STORE,
-        API_SECRET: TEST_API_SECRET,
-        AUTH_DEFAULT_ROLES: "readable",
-        AUTH_FAIL_DELAY: "7",
-        DISPLAY_UNITS: "mmol/L",
-        BG_HIGH: "14",
-        BG_TARGET_TOP: "10",
-        BG_TARGET_BOTTOM: "4,4",
-        BG_LOW: "3",
-      },
-    );
-    expect(response.status).toBe(200);
-    const status = await response.json<Record<string, unknown>>();
+    };
+    const overrides = tenantStatusSettings({
+      DISPLAY_UNITS: "mmol/L",
+      AUTH_FAIL_DELAY: "7",
+      BG_HIGH: "14",
+      BG_TARGET_TOP: "10",
+      BG_TARGET_BOTTOM: "4,4",
+      BG_LOW: "3",
+    }, profile);
+    const status = JSON.parse(JSON.stringify(
+      nightscoutStatus(new Date(0), "readable", overrides),
+    )) as Record<string, unknown>;
     expect(settingsOf(status)).toMatchObject({
       units: "mmol",
       authFailDelay: 7,
@@ -244,16 +264,87 @@ describe("tenant status configuration sources", () => {
         bgTargetBottom: 79,
         bgLow: 54,
       },
+      alarmTypes: ["simple"],
     });
+    expect(settingsOf(status).enable).toContain("simplealarms");
+    expect(settingsOf(status).enable).not.toContain("ar2");
+    expect(settingsOf(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      overrides,
+    ))).toEqual(settingsOf(status));
+
+    const invalid = JSON.parse(JSON.stringify(nightscoutStatus(
+      new Date(0),
+      "readable",
+      tenantStatusSettings({ BG_HIGH: "not-a-number" }, profile),
+    ))) as Record<string, unknown>;
+    expect(settingsOf(invalid)).toMatchObject({
+      thresholds: { bgHigh: null },
+      alarmTypes: ["simple"],
+    });
+
+    const empty = nightscoutStatus(
+      new Date(0),
+      "readable",
+      tenantStatusSettings({ BG_HIGH: "  " }, profile),
+    );
+    expect(settingsOf(empty).thresholds).toEqual({
+      bgHigh: 260,
+      bgTargetTop: 180,
+      bgTargetBottom: 80,
+      bgLow: 55,
+    });
+    expect(settingsOf(empty).alarmTypes).toEqual(["predict"]);
   });
 });
 
 describe("v1/v2 status representations", () => {
+  it("contains a status RPC failure behind the generic Worker error envelope", async () => {
+    const marker = "private-status-rpc-detail";
+    const fakeStub = {
+      authorizationDelay: async () => 0,
+      listDocuments: async () => "[]",
+      nightscoutHttpStatus: async () => {
+        throw new Error(marker);
+      },
+    };
+    const fakeNamespace = {
+      getByName: () => fakeStub,
+    };
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const response = await worker.fetch(
+        new Request("https://example.test/api/v1/status.json?tenant=status-rpc-failure"),
+        {
+          ASSETS: env.ASSETS,
+          ENTRY_STORE: fakeNamespace,
+          API_SECRET: TEST_API_SECRET,
+          AUTH_DEFAULT_ROLES: "readable",
+          AUTH_FAIL_DELAY: "0",
+        } as unknown as Parameters<typeof worker.fetch>[1],
+      );
+      expect(response.status).toBe(500);
+      const body = await response.text();
+      expect(body).toBe(
+        JSON.stringify({ error: { code: "internal_error", message: "Internal server error" } }),
+      );
+      expect(body).not.toContain(marker);
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
   it("serves the locked explicit representations through both inherited mounts", async () => {
     for (const version of ["v1", "v2"] as const) {
       const html = await SELF.fetch(`https://example.test/api/${version}/status.html`);
       expect(html.status).toBe(200);
       expect(html.headers.get("Content-Type")).toMatch(/^text\/html/);
+      expect(html.headers.get("Vary")).toBe("Accept");
+      expect(Number(html.headers.get("Content-Length"))).toBe(
+        new TextEncoder().encode("<h1>STATUS OK</h1>").byteLength,
+      );
       expect(await html.text()).toBe("<h1>STATUS OK</h1>");
 
       const text = await SELF.fetch(`https://example.test/api/${version}/status.txt`);
@@ -267,6 +358,11 @@ describe("v1/v2 status representations", () => {
           { redirect: "manual" },
         );
         expect(redirect.status).toBe(302);
+        expect(redirect.headers.get("Content-Type")).toBe(
+          extension === "png" ? "image/png" : "image/svg+xml",
+        );
+        expect(redirect.headers.get("Content-Length")).toBe("0");
+        expect(redirect.headers.get("Vary")).toBe("Accept");
         expect(redirect.headers.get("Location")).toBe(
           `http://img.shields.io/badge/Nightscout-OK-green.${extension}`,
         );
@@ -275,11 +371,17 @@ describe("v1/v2 status representations", () => {
       const script = await SELF.fetch(`https://example.test/api/${version}/status.js`);
       expect(script.status).toBe(200);
       expect(script.headers.get("Content-Type")).toMatch(/^application\/javascript/);
+      expect(script.headers.get("Vary")).toBe("Accept");
       expect(await script.text()).toMatch(/^this\.serverSettings = \{"status":"ok"/);
 
       const json = await SELF.fetch(`https://example.test/api/${version}/status.json`);
       expect(json.status).toBe(200);
-      expect(await json.json()).toMatchObject({ status: "ok", version: "15.0.7" });
+      expect(json.headers.get("Vary")).toBe("Accept");
+      expect(await json.json()).toMatchObject({
+        status: "ok",
+        version: "15.0.7",
+        authorized: null,
+      });
     }
   });
 
@@ -289,6 +391,7 @@ describe("v1/v2 status representations", () => {
     });
     expect(json.status).toBe(200);
     expect(json.headers.get("Content-Type")).toMatch(/^application\/json/);
+    expect(json.headers.get("Vary")).toBe("Accept");
 
     const axiosStyle = await SELF.fetch("https://example.test/api/v1/status", {
       headers: { Accept: "application/json, text/plain, */*" },
@@ -302,6 +405,25 @@ describe("v1/v2 status representations", () => {
     expect(html.status).toBe(200);
     expect(await html.text()).toBe("<h1>STATUS OK</h1>");
 
+    const negotiatorPriority = await SELF.fetch("https://example.test/api/v1/status", {
+      headers: { Accept: "text/*;q=.1,*/*;q=1" },
+      redirect: "manual",
+    });
+    expect(negotiatorPriority.status).toBe(302);
+    expect(negotiatorPriority.headers.get("Content-Type")).toBe("image/png");
+
+    const wildcard = await SELF.fetch("https://example.test/api/v1/status", {
+      headers: { Accept: "*/*" },
+    });
+    expect(wildcard.status).toBe(200);
+    expect(wildcard.headers.get("Content-Type")).toMatch(/^text\/html/);
+
+    // negotiator 0.6.3 intentionally does not trim between the q key and `=`.
+    const spacedQuality = await SELF.fetch("https://example.test/api/v1/status", {
+      headers: { Accept: "text/html;q =.5" },
+    });
+    expect(spacedQuality.status).toBe(406);
+
     const csv = await SELF.fetch("https://example.test/api/v1/status.csv");
     expect(csv.status).toBe(406);
     expect(csv.headers.get("Vary")).toBe("Accept");
@@ -309,14 +431,22 @@ describe("v1/v2 status representations", () => {
 
     const unknown = await SELF.fetch("https://example.test/api/v1/status.xml");
     expect(unknown.status).toBe(404);
+    const extensionWithSlash = await SELF.fetch("https://example.test/api/v1/status.json/");
+    expect(extensionWithSlash.status).toBe(404);
+    const unsupportedExtension = await SELF.fetch("https://example.test/api/v1/status.tsv");
+    expect(unsupportedExtension.status).toBe(404);
   });
 
   it("inherits GET as HEAD without returning a body", async () => {
+    const get = await SELF.fetch("https://example.test/api/v2/status.json");
     const response = await SELF.fetch("https://example.test/api/v2/status.json", {
       method: "HEAD",
     });
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toMatch(/^application\/json/);
+    expect(response.headers.get("Content-Length")).toBe(get.headers.get("Content-Length"));
+    expect(Number(response.headers.get("Content-Length"))).toBeGreaterThan(0);
+    expect(response.headers.get("Vary")).toBe("Accept");
     expect(await response.text()).toBe("");
   });
 });
