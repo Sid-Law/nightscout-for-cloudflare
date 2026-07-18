@@ -757,6 +757,209 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     });
   });
 
+  it("multiplexes authorization cleanup and websocket close retries on the earliest alarm", async () => {
+    const name = tenant("ws-auth-alarm-multiplex");
+    const stub = store(name);
+    const liveIp = "198.51.100.40";
+    const expiredIp = "198.51.100.41";
+    const liveFailureAt = Date.now();
+    const liveCleanupAt = liveFailureAt + 60_001;
+    await stub.authorizationFailed(liveIp, liveFailureAt, 0);
+
+    let sid = "";
+    let client: WebSocket | null = null;
+    let originalClose: WebSocket["close"] | null = null;
+    let closeCalls = 0;
+    let firstRetryAt = 0;
+
+    await runInDurableObject(stub, async (instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const session = repository.createSession(Date.now(), "websocket");
+      sid = session.sid;
+      const pair = new WebSocketPair();
+      client = pair[0];
+      const server = pair[1];
+      state.acceptWebSocket(server, [
+        "eio4-websocket",
+        `eio4-sid:${session.sid}`,
+      ]);
+      server.serializeAttachment({
+        version: 1,
+        objectId: state.id.toString(),
+        sid: session.sid,
+      });
+      client.accept();
+      repository.deleteSession(session.sid);
+
+      originalClose = server.close;
+      server.close = (): void => {
+        closeCalls += 1;
+        throw new Error("forced multiplex close failure");
+      };
+
+      const firstStartedAt = Date.now();
+      expect(await instance.realtimeValidateSession(session.sid)).toMatchObject({
+        ok: false,
+        error: { code: "unknown_sid" },
+      });
+      const firstFailure = state.storage.sql.exec<{
+        attempt_count: number;
+        next_attempt_at: number;
+      }>(
+        `SELECT attempt_count, next_attempt_at
+         FROM realtime_websocket_closures WHERE sid = ?`,
+        session.sid,
+      ).one();
+      firstRetryAt = firstFailure.next_attempt_at;
+      expect(closeCalls).toBe(1);
+      expect(firstFailure.attempt_count).toBe(1);
+      expect(firstRetryAt).toBeGreaterThanOrEqual(firstStartedAt + 1_000);
+      expect(firstRetryAt).toBeLessThan(liveCleanupAt);
+      expect(await state.storage.getAlarm()).toBe(firstRetryAt);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM authorization_failures WHERE ip = ?",
+        liveIp,
+      ).one().count).toBe(1);
+    });
+
+    // Protect the close retry from wall-clock test jitter, then deliberately
+    // deliver its alarm early. The durable retry remains untouched and still
+    // wins over the later authorization cleanup deadline.
+    const protectedRetryAt = Date.now() + 10_000;
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `UPDATE realtime_websocket_closures
+         SET next_attempt_at = ? WHERE sid = ?`,
+        protectedRetryAt,
+        sid,
+      );
+    });
+    expect(await stub.authorizationDelay(liveIp, Date.now())).toBe(0);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.getAlarm()).toBe(protectedRetryAt);
+    });
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(closeCalls).toBe(1);
+      expect(state.storage.sql.exec<{
+        attempt_count: number;
+        next_attempt_at: number;
+      }>(
+        `SELECT attempt_count, next_attempt_at
+         FROM realtime_websocket_closures WHERE sid = ?`,
+        sid,
+      ).one()).toEqual({
+        attempt_count: 1,
+        next_attempt_at: protectedRetryAt,
+      });
+      expect(await state.storage.getAlarm()).toBe(protectedRetryAt);
+    });
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `UPDATE realtime_websocket_closures
+         SET next_attempt_at = ? WHERE sid = ?`,
+        Date.now() - 1,
+        sid,
+      );
+    });
+    const secondStartedAt = Date.now();
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    let secondRetryAt = 0;
+    await runInDurableObject(stub, async (_instance, state) => {
+      const secondFailure = state.storage.sql.exec<{
+        attempt_count: number;
+        next_attempt_at: number;
+      }>(
+        `SELECT attempt_count, next_attempt_at
+         FROM realtime_websocket_closures WHERE sid = ?`,
+        sid,
+      ).one();
+      secondRetryAt = secondFailure.next_attempt_at;
+      expect(closeCalls).toBe(2);
+      expect(secondFailure.attempt_count).toBe(2);
+      expect(secondRetryAt).toBeGreaterThanOrEqual(secondStartedAt + 2_000);
+      expect(secondRetryAt).toBeLessThan(liveCleanupAt);
+      expect(await state.storage.getAlarm()).toBe(secondRetryAt);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM authorization_failures WHERE ip = ?",
+        liveIp,
+      ).one().count).toBe(1);
+    });
+
+    // Reverse priority: leave the close retry in the future and add an already
+    // expired failure through the public RPC. Its prompt alarm runs cleanup
+    // first, without consuming or advancing the WebSocket retry.
+    const futureRetryAt = Date.now() + 10_000;
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `UPDATE realtime_websocket_closures
+         SET next_attempt_at = ? WHERE sid = ?`,
+        futureRetryAt,
+        sid,
+      );
+    });
+    const promptStartedAt = Date.now();
+    await stub.authorizationFailed(expiredIp, promptStartedAt - 60_100, 0);
+    await runInDurableObject(stub, async (_instance, state) => {
+      const promptAlarm = await state.storage.getAlarm();
+      expect(promptAlarm).not.toBeNull();
+      expect(promptAlarm!).toBeGreaterThanOrEqual(promptStartedAt + 100);
+      expect(promptAlarm!).toBeLessThanOrEqual(Date.now() + 100);
+      expect(promptAlarm!).toBeLessThan(futureRetryAt);
+    });
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(closeCalls).toBe(2);
+      expect(state.storage.sql.exec<{
+        attempt_count: number;
+        next_attempt_at: number;
+      }>(
+        `SELECT attempt_count, next_attempt_at
+         FROM realtime_websocket_closures WHERE sid = ?`,
+        sid,
+      ).one()).toEqual({
+        attempt_count: 2,
+        next_attempt_at: futureRetryAt,
+      });
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM authorization_failures WHERE ip = ?",
+        expiredIp,
+      ).one().count).toBe(0);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM authorization_failures WHERE ip = ?",
+        liveIp,
+      ).one().count).toBe(1);
+      expect(await state.storage.getAlarm()).toBe(futureRetryAt);
+    });
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const server = state.getWebSockets(`eio4-sid:${sid}`)[0];
+      if (server === undefined || originalClose === null) {
+        throw new Error("missing multiplex test websocket");
+      }
+      server.close = originalClose;
+      state.storage.sql.exec(
+        `UPDATE realtime_websocket_closures
+         SET next_attempt_at = ? WHERE sid = ?`,
+        Date.now() - 1,
+        sid,
+      );
+    });
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    await stub.authorizationSucceeded(liveIp);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_websocket_closures WHERE sid = ?",
+        sid,
+      ).one().count).toBe(0);
+      expect(await state.storage.getAlarm()).toBeNull();
+    });
+    expect(client).not.toBeNull();
+    expect(firstRetryAt).toBeGreaterThan(0);
+    expect(secondRetryAt).toBeGreaterThan(firstRetryAt);
+  });
+
   it("drops a saturated client, closes its socket and sends corrected client counts", async () => {
     const name = tenant("ws-backpressure");
     const stub = store(name);
