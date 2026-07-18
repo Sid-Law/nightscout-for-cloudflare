@@ -1,5 +1,9 @@
 export const REALTIME_ENGINE_PROTOCOL = 4;
 export const REALTIME_TRANSPORT = "polling";
+export const REALTIME_WEBSOCKET_TRANSPORT = "websocket";
+export type RealtimeTransport =
+  | typeof REALTIME_TRANSPORT
+  | typeof REALTIME_WEBSOCKET_TRANSPORT;
 
 export const REALTIME_PING_INTERVAL_MS = 25_000;
 export const REALTIME_PING_TIMEOUT_MS = 20_000;
@@ -9,6 +13,11 @@ export const REALTIME_MAX_SESSIONS_PER_TENANT = 256;
 export const REALTIME_MAX_QUEUE_PACKETS = 128;
 export const REALTIME_MAX_QUEUE_BYTES = REALTIME_MAX_PAYLOAD_BYTES;
 export const REALTIME_CLEANUP_BATCH = 32;
+// Global per-invocation WebSocket delivery budget. Pending frames remain in
+// SQLite and participate in the DO's single derived alarm until delivered.
+export const REALTIME_WEBSOCKET_FLUSH_MAX_SOCKETS = 16;
+export const REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES = 64;
+export const REALTIME_WEBSOCKET_FLUSH_MAX_BYTES = REALTIME_MAX_PAYLOAD_BYTES;
 // Leaves deterministic headroom for the Socket.IO event wrapper, optional
 // websocket status, and the authorize ACK within the advertised 1 MB queue.
 export const REALTIME_SNAPSHOT_MAX_BYTES = 900_000;

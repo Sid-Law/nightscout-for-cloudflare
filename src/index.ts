@@ -17,7 +17,7 @@ import {
 import { ApiError, parseEntryPayload, parseHistoryQuery } from "./model";
 import type { PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
-import { handleSocketIoPolling } from "./realtime/http-adapter";
+import { handleSocketIo } from "./realtime/http-adapter";
 import { nightscoutStatus } from "./status";
 import {
   handleApi3DeviceStatus,
@@ -1281,7 +1281,7 @@ export default {
       }
       if (url.pathname === "/socket.io" || url.pathname === "/socket.io/") {
         const tenant = resolveTenant(request, url);
-        return await handleSocketIoPolling(
+        return await handleSocketIo(
           request,
           url,
           env.ENTRY_STORE.getByName(tenant),

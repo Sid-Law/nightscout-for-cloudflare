@@ -95,9 +95,36 @@ async function readPollingBody(request: Request): Promise<string | null> {
 }
 
 /**
+ * Routes the two complete transports implemented by this adapter. A direct
+ * EIO4 WebSocket handshake has no `sid`; a WebSocket request with a polling
+ * SID is an upgrade attempt and remains deliberately unsupported.
+ */
+export async function handleSocketIo(
+  request: Request,
+  url: URL,
+  store: DurableObjectStub<EntryStore>,
+): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: pollingHeaders() });
+  }
+
+  const transport = url.searchParams.get("transport");
+  if (transport === "polling") return handleSocketIoPolling(request, url, store);
+  if (transport !== "websocket") return engineError(0);
+  if (url.searchParams.get("EIO") !== "4") return engineError(5);
+  if (url.searchParams.has("j")) return engineError(3);
+  if (request.method !== "GET") return engineError(2);
+  if (url.searchParams.has("sid")) return engineError(3);
+  if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+    return engineError(3);
+  }
+  return store.fetch(request);
+}
+
+/**
  * Engine.IO 4 HTTP long-polling adapter for the tenant EntryStore Durable Object.
- * WebSocket upgrades, EIO3, JSONP polling, and binary polling are intentionally
- * outside this slice and are never advertised in the open packet.
+ * Polling-to-WebSocket upgrades, EIO3, JSONP polling, and binary polling are
+ * intentionally outside this slice and are never advertised in the polling open packet.
  */
 export async function handleSocketIoPolling(
   request: Request,

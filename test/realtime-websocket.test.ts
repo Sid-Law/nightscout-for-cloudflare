@@ -1,0 +1,751 @@
+import { env } from "cloudflare:workers";
+import {
+  SELF,
+  evictDurableObject,
+  runDurableObjectAlarm,
+  runInDurableObject,
+} from "cloudflare:test";
+import { describe, expect, it } from "vitest";
+import type { EntryStore } from "../src/entry-store";
+import {
+  decodeEngineIoV4Handshake,
+  decodeEngineIoV4Packet,
+  encodeEngineIoV4Packet,
+  unwrapSocketIoV5Packet,
+  wrapSocketIoV5Packet,
+  type SocketIoV5Packet,
+} from "../src/protocol";
+import {
+  REALTIME_MAX_PAYLOAD_BYTES,
+  REALTIME_MAX_QUEUE_PACKETS,
+  REALTIME_MAX_SESSIONS_PER_TENANT,
+  REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES,
+} from "../src/realtime/constants";
+import { SqliteRealtimeSessionRepository } from "../src/realtime/session-repository";
+
+function tenant(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function endpoint(tenantName: string, query = ""): string {
+  return `https://example.test/socket.io/?EIO=4&transport=websocket&tenant=${tenantName}${query}`;
+}
+
+function store(tenantName: string): DurableObjectStub<EntryStore> {
+  return env.ENTRY_STORE.getByName(tenantName);
+}
+
+function clientFrame(packet: SocketIoV5Packet): string {
+  return encodeEngineIoV4Packet(wrapSocketIoV5Packet(packet));
+}
+
+function socketPacket(frame: string): SocketIoV5Packet {
+  return unwrapSocketIoV5Packet(decodeEngineIoV4Packet(frame));
+}
+
+interface MessageWaiter {
+  resolve: (value: string | ArrayBuffer) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+interface CloseWaiter {
+  resolve: (value: CloseEvent) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+class WebSocketInbox {
+  private readonly messages: Array<string | ArrayBuffer> = [];
+  private readonly messageWaiters: MessageWaiter[] = [];
+  private closeEvent: CloseEvent | null = null;
+  private readonly closeWaiters: CloseWaiter[] = [];
+
+  constructor(readonly socket: WebSocket) {
+    socket.addEventListener("message", (event) => {
+      const waiter = this.messageWaiters.shift();
+      if (waiter === undefined) {
+        this.messages.push(event.data as string | ArrayBuffer);
+        return;
+      }
+      clearTimeout(waiter.timer);
+      waiter.resolve(event.data as string | ArrayBuffer);
+    });
+    socket.addEventListener("close", (event) => {
+      this.closeEvent = event;
+      for (const waiter of this.closeWaiters.splice(0)) {
+        clearTimeout(waiter.timer);
+        waiter.resolve(event);
+      }
+    });
+  }
+
+  next(timeoutMs = 2_000): Promise<string | ArrayBuffer> {
+    const queued = this.messages.shift();
+    if (queued !== undefined) return Promise.resolve(queued);
+    return new Promise((resolve, reject) => {
+      const waiter: MessageWaiter = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          const index = this.messageWaiters.indexOf(waiter);
+          if (index !== -1) this.messageWaiters.splice(index, 1);
+          reject(new Error("timed out waiting for WebSocket message"));
+        }, timeoutMs),
+      };
+      this.messageWaiters.push(waiter);
+    });
+  }
+
+  async nextString(timeoutMs = 2_000): Promise<string> {
+    const value = await this.next(timeoutMs);
+    if (typeof value !== "string") throw new Error("expected a text WebSocket frame");
+    return value;
+  }
+
+  closed(timeoutMs = 2_000): Promise<CloseEvent> {
+    if (this.closeEvent !== null) return Promise.resolve(this.closeEvent);
+    return new Promise((resolve, reject) => {
+      const waiter: CloseWaiter = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          const index = this.closeWaiters.indexOf(waiter);
+          if (index !== -1) this.closeWaiters.splice(index, 1);
+          reject(new Error("timed out waiting for WebSocket close"));
+        }, timeoutMs),
+      };
+      this.closeWaiters.push(waiter);
+    });
+  }
+}
+
+interface OpenWebSocket {
+  sid: string;
+  inbox: WebSocketInbox;
+  handshakeFrame: string;
+}
+
+async function openWebSocket(tenantName: string): Promise<OpenWebSocket> {
+  const response = await SELF.fetch(endpoint(tenantName), {
+    headers: { Upgrade: "websocket" },
+  });
+  expect(response.status).toBe(101);
+  const socket = response.webSocket;
+  if (socket === null) throw new Error("WebSocket upgrade did not return a socket");
+  const inbox = new WebSocketInbox(socket);
+  socket.accept();
+  const handshakeFrame = await inbox.nextString();
+  const handshake = decodeEngineIoV4Handshake(decodeEngineIoV4Packet(handshakeFrame));
+  return { sid: handshake.sid, inbox, handshakeFrame };
+}
+
+async function nextSocketPackets(
+  inbox: WebSocketInbox,
+  count: number,
+): Promise<SocketIoV5Packet[]> {
+  const packets: SocketIoV5Packet[] = [];
+  for (let index = 0; index < count; index += 1) {
+    packets.push(socketPacket(await inbox.nextString()));
+  }
+  return packets;
+}
+
+async function expectStoredSession(
+  tenantName: string,
+  sid: string,
+): Promise<ReturnType<SqliteRealtimeSessionRepository["requireSession"]>> {
+  return runInDurableObject(store(tenantName), async (_instance, state) =>
+    new SqliteRealtimeSessionRepository(state.storage).requireSession(sid)
+  );
+}
+
+describe("direct Engine.IO 4 WebSocket transport", () => {
+  it("validates direct-handshake HTTP boundaries and never accepts SID upgrades", async () => {
+    const name = tenant("ws-http");
+    const unknownTransport = await SELF.fetch(
+      `https://example.test/socket.io/?EIO=4&transport=bogus&tenant=${name}`,
+    );
+    expect(unknownTransport.status).toBe(400);
+    expect(await unknownTransport.json()).toEqual({ code: 0, message: "Transport unknown" });
+
+    const noUpgrade = await SELF.fetch(endpoint(name));
+    expect(noUpgrade.status).toBe(400);
+    expect(await noUpgrade.json()).toEqual({ code: 3, message: "Bad request" });
+
+    const wrongProtocol = await SELF.fetch(
+      endpoint(name).replace("EIO=4", "EIO=3"),
+      { headers: { Upgrade: "websocket" } },
+    );
+    expect(wrongProtocol.status).toBe(400);
+    expect(await wrongProtocol.json()).toEqual({
+      code: 5,
+      message: "Unsupported protocol version",
+    });
+
+    const wrongMethod = await SELF.fetch(endpoint(name), {
+      method: "POST",
+    });
+    expect(wrongMethod.status).toBe(400);
+    expect(await wrongMethod.json()).toEqual({ code: 2, message: "Bad handshake method" });
+
+    const sidUpgrade = await SELF.fetch(endpoint(name, "&sid=not-a-direct-handshake"), {
+      headers: { Upgrade: "websocket" },
+    });
+    expect(sidUpgrade.status).toBe(400);
+    expect(await sidUpgrade.json()).toEqual({ code: 3, message: "Bad request" });
+  });
+
+  it("matches the locked open, CONNECT, authorize and loadRetro frame order read-only", async () => {
+    const name = tenant("ws-order");
+    const { sid, inbox, handshakeFrame } = await openWebSocket(name);
+    expect(handshakeFrame).toBe(
+      `0{"sid":"${sid}","upgrades":[],"pingInterval":25000,` +
+        `"pingTimeout":20000,"maxPayload":1000000}`,
+    );
+    await expect(expectStoredSession(name, sid)).resolves.toMatchObject({
+      transport: "websocket",
+      socketConnected: false,
+      outboundPackets: 0,
+    });
+
+    inbox.socket.send(clientFrame({ type: "connect", namespace: "/" }));
+    const connected = await nextSocketPackets(inbox, 2);
+    expect(connected[0]).toMatchObject({
+      type: "connect",
+      namespace: "/",
+      data: { sid: expect.stringMatching(/^[A-Za-z0-9_-]{20}$/) },
+    });
+    expect(connected[1]).toEqual({
+      type: "event",
+      namespace: "/",
+      data: ["clients", 1],
+    });
+
+    inbox.socket.send(clientFrame({
+      type: "event",
+      namespace: "/",
+      id: 7,
+      data: ["authorize", { client: "web", status: true }],
+    }));
+    const authorized = await nextSocketPackets(inbox, 3);
+    expect(authorized[0]).toEqual({
+      type: "event",
+      namespace: "/",
+      data: ["connected"],
+    });
+    expect(authorized[1]).toMatchObject({
+      type: "event",
+      namespace: "/",
+      data: ["dataUpdate", {
+        devicestatus: [],
+        sgvs: [],
+        cals: [],
+        profiles: [],
+        mbgs: [],
+        food: [],
+        treatments: [],
+        dbstats: {},
+        status: {
+          status: "ok",
+          version: "15.0.7",
+          versionNum: 150007,
+        },
+      }],
+    });
+    expect(authorized[2]).toEqual({
+      type: "ack",
+      namespace: "/",
+      id: 7,
+      data: [{ read: true, write: false, write_treatment: false }],
+    });
+
+    inbox.socket.send(clientFrame({
+      type: "event",
+      namespace: "/",
+      id: 8,
+      data: ["loadRetro", {}],
+    }));
+    expect(await nextSocketPackets(inbox, 2)).toEqual([
+      { type: "ack", namespace: "/", id: 8, data: [{ result: "success" }] },
+      {
+        type: "event",
+        namespace: "/",
+        data: ["retroUpdate", { devicestatus: [] }],
+      },
+    ]);
+
+    // Every upstream mutation event is a deliberate no-op in this downstream.
+    inbox.socket.send(clientFrame({
+      type: "event",
+      namespace: "/",
+      id: 9,
+      data: ["dbAdd", { collection: "treatments", data: { carbs: 10 } }],
+    }));
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    await runInDurableObject(store(name), async (_instance, state) => {
+      expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid))
+        .toMatchObject({ outboundPackets: 0, readAllowed: true });
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM documents",
+      ).one().count).toBe(0);
+    });
+    await expect(inbox.nextString(50)).rejects.toThrow("timed out");
+    inbox.socket.close(1000, "done");
+  });
+
+  it("resumes hibernated attachments across eviction and drives ping/pong from one SQL alarm", async () => {
+    const name = tenant("ws-hibernate");
+    const stub = store(name);
+    const { sid, inbox } = await openWebSocket(name);
+
+    await evictDurableObject(stub);
+    inbox.socket.send(clientFrame({ type: "connect", namespace: "/" }));
+    expect(await nextSocketPackets(inbox, 2)).toMatchObject([
+      { type: "connect", namespace: "/" },
+      { type: "event", data: ["clients", 1] },
+    ]);
+
+    const due = Date.now() - 1;
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `UPDATE realtime_sessions
+         SET next_ping_at = ?, expires_at = ?
+         WHERE sid = ?`,
+        due,
+        due + 20_000,
+        sid,
+      );
+      await state.storage.setAlarm(Date.now() + 60_000);
+    });
+    await evictDurableObject(stub);
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    expect(await inbox.nextString()).toBe("2");
+
+    const pingState = await expectStoredSession(name, sid);
+    expect(pingState.pongDeadline).not.toBeNull();
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.getAlarm()).toBe(pingState.pongDeadline);
+    });
+
+    const beforePong = Date.now();
+    inbox.socket.send("3");
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    const pongState = await expectStoredSession(name, sid);
+    expect(pongState.pongDeadline).toBeNull();
+    expect(pongState.nextPingAt).toBeGreaterThanOrEqual(beforePong + 25_000);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.getAlarm()).toBe(pongState.nextPingAt);
+    });
+
+    inbox.socket.send("1");
+    expect((await inbox.closed()).code).toBe(1000);
+    await expect(expectStoredSession(name, sid)).rejects.toThrow("unknown");
+    const reconnected = await openWebSocket(name);
+    expect(reconnected.sid).not.toBe(sid);
+    reconnected.inbox.socket.close(1000, "done");
+  });
+
+  it("closes binary, malformed, client-ping and oversized frames with bounded codes", async () => {
+    const cases: Array<{
+      prefix: string;
+      frame: string | ArrayBuffer;
+      code: number;
+    }> = [
+      { prefix: "binary", frame: new Uint8Array([4, 0]).buffer, code: 1003 },
+      { prefix: "malformed", frame: "4not-socket-io", code: 1002 },
+      { prefix: "client-ping", frame: "2", code: 1002 },
+      {
+        prefix: "oversized",
+        frame: `4${"a".repeat(REALTIME_MAX_PAYLOAD_BYTES)}`,
+        code: 1009,
+      },
+    ];
+
+    for (const item of cases) {
+      const name = tenant(`ws-${item.prefix}`);
+      const { sid, inbox } = await openWebSocket(name);
+      inbox.socket.send(item.frame);
+      expect((await inbox.closed(4_000)).code).toBe(item.code);
+      await runInDurableObject(store(name), async (_instance, state) => {
+        expect(new SqliteRealtimeSessionRepository(state.storage).getSession(sid)).toBeNull();
+      });
+    }
+  });
+
+  it("keeps global flush work bounded and recovers pending FIFO frames through the alarm", async () => {
+    const name = tenant("ws-flush-budget");
+    const stub = store(name);
+    const first = await openWebSocket(name);
+    const second = await openWebSocket(name);
+    const queuedAt = Date.now() - 100;
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      repository.enqueueFrames(
+        first.sid,
+        Array.from({ length: REALTIME_MAX_QUEUE_PACKETS }, () => "6"),
+        queuedAt,
+      );
+      repository.enqueueFrames(
+        second.sid,
+        Array.from({ length: REALTIME_MAX_QUEUE_PACKETS }, () => "6"),
+        queuedAt + 1,
+      );
+    });
+
+    // Any normal RPC turn may flush, but only within the global turn budget.
+    const trigger = await stub.realtimeHandshake();
+    expect(trigger.ok).toBe(true);
+    for (let index = 0; index < REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES; index += 1) {
+      expect(await first.inbox.nextString()).toBe("6");
+    }
+    await runInDurableObject(stub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      expect(repository.requireSession(first.sid).outboundPackets).toBe(64);
+      expect(repository.requireSession(second.sid).outboundPackets).toBe(128);
+      const alarm = await state.storage.getAlarm();
+      expect(alarm).not.toBeNull();
+      expect(alarm!).toBeLessThanOrEqual(Date.now() + 1_000);
+    });
+
+    await evictDurableObject(stub);
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    for (let index = 0; index < REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES; index += 1) {
+      expect(await first.inbox.nextString()).toBe("6");
+    }
+    await runInDurableObject(stub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      expect(repository.requireSession(first.sid).outboundPackets).toBe(0);
+      expect(repository.requireSession(second.sid).outboundPackets).toBe(128);
+      const alarm = await state.storage.getAlarm();
+      expect(alarm).not.toBeNull();
+      expect(alarm!).toBeLessThanOrEqual(Date.now() + 1_000);
+    });
+
+    first.inbox.socket.close(1000, "done");
+    second.inbox.socket.close(1000, "done");
+  });
+
+  it("limits aggregate WebSocket bytes and socket fan-out in each flush turn", async () => {
+    const byteName = tenant("ws-byte-budget");
+    const byteStub = store(byteName);
+    const large = await openWebSocket(byteName);
+    const deferred = await openWebSocket(byteName);
+    const firstFrame = `6${"a".repeat(699_999)}`;
+    const secondFrame = `6${"b".repeat(399_999)}`;
+    await runInDurableObject(byteStub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      repository.enqueueFrames(large.sid, [firstFrame], Date.now() - 2);
+      repository.enqueueFrames(deferred.sid, [secondFrame], Date.now() - 1);
+    });
+    expect((await byteStub.realtimeHandshake()).ok).toBe(true);
+    expect(await large.inbox.nextString(4_000)).toBe(firstFrame);
+    await runInDurableObject(byteStub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      expect(repository.requireSession(large.sid).outboundPackets).toBe(0);
+      expect(repository.requireSession(deferred.sid).outboundPackets).toBe(1);
+      expect(await state.storage.getAlarm()).not.toBeNull();
+    });
+    expect(await runDurableObjectAlarm(byteStub)).toBe(true);
+    expect(await deferred.inbox.nextString(4_000)).toBe(secondFrame);
+    large.inbox.socket.close(1000, "done");
+    deferred.inbox.socket.close(1000, "done");
+
+    const socketName = tenant("ws-socket-budget");
+    const socketStub = store(socketName);
+    const sockets: OpenWebSocket[] = [];
+    for (let index = 0; index < 17; index += 1) {
+      sockets.push(await openWebSocket(socketName));
+    }
+    await runInDurableObject(socketStub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const queuedAt = Date.now() - 100;
+      for (const [index, socket] of sockets.entries()) {
+        repository.enqueueFrames(socket.sid, ["6"], queuedAt + index);
+      }
+    });
+    expect((await socketStub.realtimeHandshake()).ok).toBe(true);
+    await runInDurableObject(socketStub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const remaining = sockets.filter(
+        (socket) => repository.requireSession(socket.sid).outboundPackets === 1,
+      );
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.sid).toBe(sockets.at(-1)!.sid);
+      expect(await state.storage.getAlarm()).not.toBeNull();
+    });
+    for (const socket of sockets) socket.inbox.socket.close(1000, "done");
+  });
+
+  it("keeps the close budget when a corrupt SID tag maps to many physical sockets", async () => {
+    const name = tenant("ws-duplicate-tag-budget");
+    const stub = store(name);
+    await runInDurableObject(stub, async (instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const session = repository.createSession(Date.now(), "websocket");
+      const clients: WebSocket[] = [];
+      for (let index = 0; index < 20; index += 1) {
+        const pair = new WebSocketPair();
+        const client = pair[0];
+        const server = pair[1];
+        state.acceptWebSocket(server, [
+          "eio4-websocket",
+          `eio4-sid:${session.sid}`,
+        ]);
+        server.serializeAttachment({
+          version: 1,
+          objectId: state.id.toString(),
+          sid: session.sid,
+        });
+        client.accept();
+        clients.push(client);
+      }
+      repository.deleteSession(session.sid);
+
+      const flush = (instance as unknown as {
+        flushRealtimeWebSockets(): void;
+      }).flushRealtimeWebSockets.bind(instance);
+      const activeCount = (): number => state
+        .getWebSockets(`eio4-sid:${session.sid}`)
+        .filter((socket) =>
+          socket.readyState === WebSocket.OPEN ||
+          socket.readyState === WebSocket.CONNECTING
+        ).length;
+      const closureCount = (): number => state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_websocket_closures WHERE sid = ?",
+        session.sid,
+      ).one().count;
+
+      flush();
+      expect(activeCount()).toBe(4);
+      expect(closureCount()).toBe(1);
+      flush();
+      expect(activeCount()).toBe(0);
+      expect(closureCount()).toBe(0);
+      expect(clients).toHaveLength(20);
+    });
+  });
+
+  it("retains a closure tombstone when the physical socket close throws", async () => {
+    const name = tenant("ws-close-failure");
+    const stub = store(name);
+    await runInDurableObject(stub, async (instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const session = repository.createSession(Date.now(), "websocket");
+      const pair = new WebSocketPair();
+      const client = pair[0];
+      const server = pair[1];
+      state.acceptWebSocket(server, [
+        "eio4-websocket",
+        `eio4-sid:${session.sid}`,
+      ]);
+      server.serializeAttachment({
+        version: 1,
+        objectId: state.id.toString(),
+        sid: session.sid,
+      });
+      client.accept();
+      repository.deleteSession(session.sid);
+
+      const originalClose = server.close;
+      server.close = (): void => {
+        throw new Error("forced close failure");
+      };
+      const flush = (instance as unknown as {
+        flushRealtimeWebSockets(): void;
+      }).flushRealtimeWebSockets.bind(instance);
+      const closureCount = (): number => state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_websocket_closures WHERE sid = ?",
+        session.sid,
+      ).one().count;
+
+      flush();
+      expect(server.readyState).toBe(WebSocket.OPEN);
+      expect(closureCount()).toBe(1);
+
+      server.close = originalClose;
+      flush();
+      expect(server.readyState).not.toBe(WebSocket.OPEN);
+      expect(closureCount()).toBe(0);
+    });
+  });
+
+  it("drops a saturated client, closes its socket and sends corrected client counts", async () => {
+    const name = tenant("ws-backpressure");
+    const stub = store(name);
+    const saturated = await openWebSocket(name);
+    const survivor = await openWebSocket(name);
+
+    saturated.inbox.socket.send(clientFrame({ type: "connect", namespace: "/" }));
+    await nextSocketPackets(saturated.inbox, 2);
+    survivor.inbox.socket.send(clientFrame({ type: "connect", namespace: "/" }));
+    await nextSocketPackets(survivor.inbox, 2);
+    expect(await nextSocketPackets(saturated.inbox, 1)).toEqual([{
+      type: "event",
+      namespace: "/",
+      data: ["clients", 2],
+    }]);
+
+    const newcomer = await openWebSocket(name);
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      new SqliteRealtimeSessionRepository(state.storage).enqueueFrames(
+        saturated.sid,
+        Array.from({ length: REALTIME_MAX_QUEUE_PACKETS }, () => "6"),
+        Date.now(),
+      );
+    });
+
+    newcomer.inbox.socket.send(clientFrame({ type: "connect", namespace: "/" }));
+    expect((await saturated.inbox.closed()).code).toBe(1008);
+    expect(await nextSocketPackets(survivor.inbox, 2)).toEqual([
+      { type: "event", namespace: "/", data: ["clients", 3] },
+      { type: "event", namespace: "/", data: ["clients", 2] },
+    ]);
+    expect(await nextSocketPackets(newcomer.inbox, 3)).toMatchObject([
+      { type: "connect", namespace: "/" },
+      { type: "event", data: ["clients", 3] },
+      { type: "event", data: ["clients", 2] },
+    ]);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(new SqliteRealtimeSessionRepository(state.storage).getSession(saturated.sid))
+        .toBeNull();
+    });
+    survivor.inbox.socket.close(1000, "done");
+    newcomer.inbox.socket.close(1000, "done");
+  });
+
+  it("rejects cross-tenant attachment substitution after hibernation", async () => {
+    const alphaName = tenant("ws-alpha");
+    const betaName = tenant("ws-beta");
+    const alpha = await openWebSocket(alphaName);
+    const beta = await openWebSocket(betaName);
+    const alphaStub = store(alphaName);
+    const betaStub = store(betaName);
+
+    const betaAttachment = await runInDurableObject(betaStub, async (_instance, state) => {
+      const socket = state.getWebSockets("eio4-websocket")[0];
+      if (socket === undefined) throw new Error("missing beta server socket");
+      return socket.deserializeAttachment();
+    });
+    await runInDurableObject(alphaStub, async (_instance, state) => {
+      const socket = state.getWebSockets("eio4-websocket")[0];
+      if (socket === undefined) throw new Error("missing alpha server socket");
+      socket.serializeAttachment(betaAttachment);
+    });
+
+    await evictDurableObject(alphaStub);
+    alpha.inbox.socket.send(clientFrame({ type: "connect", namespace: "/" }));
+    expect((await alpha.inbox.closed()).code).toBe(1008);
+    await runInDurableObject(alphaStub, async (_instance, state) => {
+      expect(new SqliteRealtimeSessionRepository(state.storage).getSession(alpha.sid)).toBeNull();
+    });
+
+    beta.inbox.socket.send(clientFrame({ type: "connect", namespace: "/" }));
+    expect(await nextSocketPackets(beta.inbox, 2)).toMatchObject([
+      { type: "connect", namespace: "/" },
+      { type: "event", data: ["clients", 1] },
+    ]);
+    beta.inbox.socket.close(1000, "done");
+  });
+
+  it("enforces the shared per-tenant session cap on a direct WebSocket handshake", async () => {
+    const name = tenant("ws-cap");
+    const stub = store(name);
+    await runInDurableObject(stub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      for (let index = 0; index < REALTIME_MAX_SESSIONS_PER_TENANT; index += 1) {
+        repository.createSession(Date.now());
+      }
+    });
+    const response = await SELF.fetch(endpoint(name), {
+      headers: { Upgrade: "websocket" },
+    });
+    expect(response.status).toBe(503);
+    expect(response.webSocket).toBeNull();
+    expect(await response.json()).toEqual({ code: 3, message: "Bad request" });
+  });
+});
+
+describe("realtime transport schema migration", () => {
+  it("repairs a high-version polling-only table idempotently and records v7", async () => {
+    const name = tenant("ws-migrate-v7");
+    const stub = store(name);
+    const sid = "abcdefghijklmnopqrst";
+    const socketSid = "tsrqponmlkjihgfedcba";
+    const now = Date.now();
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(`
+        DROP INDEX IF EXISTS realtime_sessions_expiry;
+        DROP TABLE realtime_sessions;
+        CREATE TABLE realtime_sessions (
+          sid TEXT PRIMARY KEY,
+          socket_sid TEXT NOT NULL UNIQUE,
+          engine_protocol INTEGER NOT NULL CHECK (engine_protocol = 4),
+          transport TEXT NOT NULL CHECK (transport = 'polling'),
+          socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
+          authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
+          read_allowed INTEGER NOT NULL DEFAULT 0 CHECK (read_allowed IN (0, 1)),
+          created_at INTEGER NOT NULL,
+          last_seen_at INTEGER NOT NULL,
+          next_ping_at INTEGER NOT NULL,
+          pong_deadline INTEGER,
+          expires_at INTEGER NOT NULL,
+          next_sequence INTEGER NOT NULL DEFAULT 1,
+          outbound_packets INTEGER NOT NULL DEFAULT 0,
+          outbound_bytes INTEGER NOT NULL DEFAULT 0,
+          poll_token TEXT,
+          poll_deadline INTEGER,
+          post_token TEXT,
+          post_deadline INTEGER
+        );
+        CREATE INDEX realtime_sessions_expiry ON realtime_sessions(expires_at, sid);
+      `);
+      state.storage.sql.exec(
+        `INSERT INTO realtime_sessions (
+           sid, socket_sid, engine_protocol, transport, created_at, last_seen_at,
+           next_ping_at, expires_at
+         ) VALUES (?, ?, 4, 'polling', ?, ?, ?, ?)`,
+        sid,
+        socketSid,
+        now,
+        now,
+        now + 25_000,
+        now + 45_000,
+      );
+      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 7");
+      state.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (6)",
+      );
+      state.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (99)",
+      );
+    });
+
+    await evictDurableObject(stub);
+    expect(await stub.realtimeValidateSession(sid)).toEqual({ ok: true, value: null });
+    await runInDurableObject(stub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      expect(repository.requireSession(sid)).toMatchObject({
+        socketSid,
+        transport: "polling",
+      });
+      expect(repository.createSession(now, "websocket").transport).toBe("websocket");
+      const definition = state.storage.sql.exec<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'realtime_sessions'",
+      ).one().sql;
+      expect(definition).toContain("transport IN ('polling', 'websocket')");
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id = 7",
+      ).one().count).toBe(1);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id = 99",
+      ).one().count).toBe(1);
+    });
+
+    await evictDurableObject(stub);
+    expect(await stub.realtimeValidateSession(sid)).toEqual({ ok: true, value: null });
+  });
+});

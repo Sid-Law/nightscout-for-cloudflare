@@ -24,7 +24,10 @@ import {
   type DocumentQuery,
 } from "./document-repository";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
-import { migrateRealtimeSessions } from "./realtime/session-repository";
+import {
+  migrateRealtimeSessions,
+  migrateRealtimeTransportsV7,
+} from "./realtime/session-repository";
 import {
   RealtimeSessionError,
   RealtimeSessionService,
@@ -41,11 +44,15 @@ import {
 } from "./realtime/ddata-snapshot";
 import {
   REALTIME_DEVICE_STATUS_WINDOW_MS,
+  REALTIME_MAX_SESSIONS_PER_TENANT,
   REALTIME_SNAPSHOT_MAX_BYTES,
   REALTIME_SNAPSHOT_MAX_DOCUMENT_DEPTH,
   REALTIME_SNAPSHOT_MAX_DOCUMENTS,
   REALTIME_SNAPSHOT_MAX_NODES,
   REALTIME_SNAPSHOT_MAX_STRING_CHARACTERS,
+  REALTIME_WEBSOCKET_FLUSH_MAX_BYTES,
+  REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES,
+  REALTIME_WEBSOCKET_FLUSH_MAX_SOCKETS,
 } from "./realtime/constants";
 import { nightscoutWebsocketStatus } from "./status";
 
@@ -99,6 +106,20 @@ export type RealtimeRpcResult<T> =
     };
 
 type EntryStoreEnv = Env & { API_SECRET?: string };
+
+const REALTIME_WEBSOCKET_TAG = "eio4-websocket";
+const REALTIME_WEBSOCKET_SID_TAG_PREFIX = "eio4-sid:";
+const REALTIME_WEBSOCKET_ATTACHMENT_VERSION = 1;
+const REALTIME_WEBSOCKET_EVENT_TIMEOUT_MS = 15_000;
+const REALTIME_SID = /^[A-Za-z0-9_-]{20}$/;
+
+interface RealtimeWebSocketAttachment {
+  version: typeof REALTIME_WEBSOCKET_ATTACHMENT_VERSION;
+  objectId: string;
+  sid: string;
+}
+
+type RealtimeWebSocketCloseResult = "inactive" | "closed" | "failed";
 
 function randomObjectId(): string {
   const bytes = new Uint8Array(12);
@@ -293,9 +314,11 @@ class RealtimeJsonBudget {
 
 export class EntryStore extends DurableObject<EntryStoreEnv> {
   private readonly realtime: RealtimeSessionService;
+  private readonly activeWebSocketSessions = new Set<string>();
 
   constructor(ctx: DurableObjectState, env: EntryStoreEnv) {
     super(ctx, env);
+    ctx.setHibernatableWebSocketEventTimeout(REALTIME_WEBSOCKET_EVENT_TIMEOUT_MS);
     this.realtime = new RealtimeSessionService(ctx.storage, {
       snapshot: (now) => this.realtimeSnapshot(now),
       retroDeviceStatus: (now) => this.realtimeRetroDeviceStatus(now),
@@ -383,7 +406,6 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       if (version < 5) {
         this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (5)");
       }
-
       // Run the actual Entries repair on every activation. The marker records
       // provenance only: another branch may already have advanced MAX(id), and
       // an old identifier-UNIQUE table must still be repaired and imported.
@@ -391,7 +413,300 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (6)",
       );
+
+      migrateRealtimeTransportsV7(this.ctx.storage);
+      // MAX(id) is not proof that this specific repair marker exists: a later
+      // independent migration may already have a higher id.
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (7)",
+      );
     });
+  }
+
+  override async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (
+      request.method !== "GET" ||
+      request.headers.get("Upgrade")?.toLowerCase() !== "websocket" ||
+      url.searchParams.get("EIO") !== "4" ||
+      url.searchParams.get("transport") !== "websocket" ||
+      url.searchParams.has("sid") ||
+      url.searchParams.has("j")
+    ) {
+      return Response.json(
+        { code: 3, message: "Bad request" },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    // Reap a bounded batch of durable closure tombstones before enforcing the
+    // attachment cap so stale hibernated sockets cannot wedge new handshakes.
+    this.flushRealtimeWebSockets();
+    if (
+      this.ctx.getWebSockets(REALTIME_WEBSOCKET_TAG).length >=
+      REALTIME_MAX_SESSIONS_PER_TENANT
+    ) {
+      return Response.json(
+        { code: 3, message: "Bad request" },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    let opened: { sid: string; frame: string } | null = null;
+    try {
+      opened = this.realtime.createWebSocketHandshake();
+      const attachment: RealtimeWebSocketAttachment = {
+        version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
+        objectId: this.ctx.id.toString(),
+        sid: opened.sid,
+      };
+      this.ctx.acceptWebSocket(server, [
+        REALTIME_WEBSOCKET_TAG,
+        `${REALTIME_WEBSOCKET_SID_TAG_PREFIX}${opened.sid}`,
+      ]);
+      server.serializeAttachment(attachment);
+      server.send(opened.frame);
+      this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+      return new Response(null, { status: 101, webSocket: client });
+    } catch (error) {
+      if (opened !== null) this.realtime.closeWebSocketSession(opened.sid);
+      this.safeCloseWebSocket(server, 1011, "handshake failed");
+      this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+      if (error instanceof RealtimeSessionError && error.code === "capacity") {
+        return Response.json(
+          { code: 3, message: "Bad request" },
+          { status: 503, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      throw error;
+    }
+  }
+
+  override async webSocketMessage(
+    ws: WebSocket,
+    message: string | ArrayBuffer,
+  ): Promise<void> {
+    const attachment = this.realtimeWebSocketAttachment(ws);
+    if (attachment === null) {
+      this.closeInvalidRealtimeWebSocket(ws);
+      this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+      return;
+    }
+    if (this.activeWebSocketSessions.has(attachment.sid)) {
+      this.realtime.closeWebSocketSession(attachment.sid);
+      this.safeCloseWebSocket(ws, 1008, "concurrent frame");
+      this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+      return;
+    }
+
+    this.activeWebSocketSessions.add(attachment.sid);
+    try {
+      if (typeof message !== "string") {
+        this.realtime.closeWebSocketSession(attachment.sid);
+        this.safeCloseWebSocket(ws, 1003, "binary packets unsupported");
+        return;
+      }
+      const result = await this.realtime.submitWebSocketFrame(attachment.sid, message);
+      if (result.closed) this.safeCloseWebSocket(ws, 1000, "transport close");
+    } catch (error) {
+      this.realtime.closeWebSocketSession(attachment.sid);
+      const oversized =
+        error instanceof RealtimeSessionError &&
+        error.code === "bad_packet" &&
+        error.message.includes("too_large");
+      const unavailable =
+        error instanceof RealtimeSessionError && error.code === "unknown_sid";
+      this.safeCloseWebSocket(
+        ws,
+        oversized ? 1009 : unavailable ? 1008 : 1002,
+        oversized ? "packet too large" : unavailable ? "session unavailable" : "bad packet",
+      );
+    } finally {
+      this.activeWebSocketSessions.delete(attachment.sid);
+      this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+    }
+  }
+
+  override async webSocketClose(
+    ws: WebSocket,
+    _code: number,
+    _reason: string,
+    _wasClean: boolean,
+  ): Promise<void> {
+    const sid = this.trustedRealtimeWebSocketSid(ws);
+    if (sid !== null) this.realtime.closeWebSocketSession(sid);
+    this.flushRealtimeWebSockets();
+    await this.synchronizeRealtimeAlarm();
+  }
+
+  override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
+    const sid = this.trustedRealtimeWebSocketSid(ws);
+    if (sid !== null) this.realtime.closeWebSocketSession(sid);
+    console.error(JSON.stringify({ message: "realtime websocket transport error" }));
+    this.safeCloseWebSocket(ws, 1011, "transport error");
+    this.flushRealtimeWebSockets();
+    await this.synchronizeRealtimeAlarm();
+  }
+
+  private trustedRealtimeWebSocketSid(ws: WebSocket): string | null {
+    let tags: string[];
+    try {
+      tags = this.ctx.getTags(ws);
+    } catch {
+      return null;
+    }
+    const sidTags = tags.filter((tag) => tag.startsWith(REALTIME_WEBSOCKET_SID_TAG_PREFIX));
+    if (sidTags.length !== 1) return null;
+    const sid = sidTags[0]!.slice(REALTIME_WEBSOCKET_SID_TAG_PREFIX.length);
+    return REALTIME_SID.test(sid) ? sid : null;
+  }
+
+  private realtimeWebSocketAttachment(
+    ws: WebSocket,
+  ): RealtimeWebSocketAttachment | null {
+    let attachment: unknown;
+    try {
+      attachment = ws.deserializeAttachment();
+    } catch {
+      return null;
+    }
+    if (typeof attachment !== "object" || attachment === null || Array.isArray(attachment)) {
+      return null;
+    }
+    const value = attachment as Record<string, unknown>;
+    const trustedSid = this.trustedRealtimeWebSocketSid(ws);
+    if (
+      value.version !== REALTIME_WEBSOCKET_ATTACHMENT_VERSION ||
+      value.objectId !== this.ctx.id.toString() ||
+      typeof value.sid !== "string" ||
+      value.sid !== trustedSid ||
+      !REALTIME_SID.test(value.sid)
+    ) {
+      return null;
+    }
+    return {
+      version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
+      objectId: value.objectId,
+      sid: value.sid,
+    };
+  }
+
+  private closeInvalidRealtimeWebSocket(ws: WebSocket): void {
+    const sid = this.trustedRealtimeWebSocketSid(ws);
+    if (sid !== null) this.realtime.closeWebSocketSession(sid);
+    this.safeCloseWebSocket(ws, 1008, "invalid session attachment");
+  }
+
+  private safeCloseWebSocket(
+    ws: WebSocket,
+    code: number,
+    reason: string,
+  ): RealtimeWebSocketCloseResult {
+    if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
+      return "inactive";
+    }
+    try {
+      ws.close(code, reason);
+      return "closed";
+    } catch {
+      // Transport teardown is best-effort after durable session cleanup.
+      return "failed";
+    }
+  }
+
+  private flushRealtimeWebSockets(): void {
+    let remainingSockets = REALTIME_WEBSOCKET_FLUSH_MAX_SOCKETS;
+    let remainingFrames = REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES;
+    let remainingBytes = REALTIME_WEBSOCKET_FLUSH_MAX_BYTES;
+    let remainingClosureRows = REALTIME_WEBSOCKET_FLUSH_MAX_SOCKETS;
+
+    // Take one tombstone at a time. A corrupt duplicate SID tag may map one
+    // durable closure to many physical sockets, so bulk-taking rows before an
+    // early budget return could otherwise lose unprocessed tombstones.
+    while (remainingSockets > 0 && remainingClosureRows > 0) {
+      const closure = this.realtime.takeWebSocketClosures(1)[0];
+      if (closure === undefined) break;
+      remainingClosureRows -= 1;
+      const sockets = this.ctx.getWebSockets(
+        `${REALTIME_WEBSOCKET_SID_TAG_PREFIX}${closure.sid}`,
+      );
+      const activeSockets = sockets.filter((ws) =>
+        ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING
+      );
+      const selectedSockets = activeSockets.slice(0, remainingSockets);
+      let closeFailed = false;
+      for (const ws of selectedSockets) {
+        const result = this.safeCloseWebSocket(ws, closure.code, closure.reason);
+        if (result === "inactive") continue;
+        remainingSockets -= 1;
+        if (result === "failed") closeFailed = true;
+      }
+      if (activeSockets.length > selectedSockets.length || closeFailed) {
+        this.realtime.requeueWebSocketClosure(closure);
+      }
+    }
+    if (remainingSockets === 0) return;
+
+    const queuedSids = this.realtime.queuedWebSocketSessionIds(
+      remainingSockets,
+    );
+
+    for (const sid of queuedSids) {
+      const sockets = this.ctx.getWebSockets(
+        `${REALTIME_WEBSOCKET_SID_TAG_PREFIX}${sid}`,
+      );
+      if (sockets.length !== 1) {
+        this.realtime.closeWebSocketSession(sid);
+        for (const socket of sockets) {
+          if (remainingSockets === 0) break;
+          const result = this.safeCloseWebSocket(
+            socket,
+            1008,
+            "ambiguous session attachment",
+          );
+          if (result === "inactive") continue;
+          remainingSockets -= 1;
+        }
+        if (remainingSockets === 0) return;
+        continue;
+      }
+
+      const ws = sockets[0]!;
+      remainingSockets -= 1;
+      const attachment = this.realtimeWebSocketAttachment(ws);
+      if (attachment === null || attachment.sid !== sid) {
+        this.closeInvalidRealtimeWebSocket(ws);
+        continue;
+      }
+      try {
+        const frames = this.realtime.drainWebSocketFrames(
+          sid,
+          remainingFrames,
+          remainingBytes,
+        );
+        if (frames.length === 0) break;
+        for (const frame of frames) {
+          const frameBytes = realtimeJsonEncoder.encode(frame).byteLength;
+          if (frameBytes > remainingBytes || remainingFrames === 0) {
+            throw new Error("websocket flush budget invariant failed");
+          }
+          ws.send(frame);
+          remainingBytes -= frameBytes;
+          remainingFrames -= 1;
+        }
+      } catch {
+        this.realtime.closeWebSocketSession(sid);
+        this.safeCloseWebSocket(ws, 1011, "outbound queue failure");
+      }
+      if (remainingSockets === 0 || remainingFrames === 0 || remainingBytes === 0) break;
+    }
   }
 
   private documentRepository(): SqliteDocumentRepository {
@@ -731,8 +1046,21 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       if (currentAlarm !== null) await this.ctx.storage.deleteAlarm();
       return;
     }
-    if (currentAlarm !== nextDeadline) {
-      await this.ctx.storage.setAlarm(nextDeadline);
+    // A durable outbound frame records its FIFO creation time, which is often
+    // already in the past by the time this turn yields. Cloudflare treats a
+    // newly written past alarm as immediately due; scheduling one short turn
+    // ahead keeps it observable/persistent while still prompting the next
+    // bounded flush turn without a polling timer.
+    const promptDeadline = Date.now() + 100;
+    const isDue = nextDeadline <= promptDeadline;
+    const scheduledDeadline = isDue ? promptDeadline : nextDeadline;
+    // Do not postpone an already-prompt alarm on every busy WebSocket turn;
+    // otherwise a steady input stream could starve durable pending output.
+    const shouldReplace = isDue
+      ? currentAlarm === null || currentAlarm > scheduledDeadline
+      : currentAlarm !== scheduledDeadline;
+    if (shouldReplace) {
+      await this.ctx.storage.setAlarm(scheduledDeadline);
     }
   }
 
@@ -750,6 +1078,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       }
       throw error;
     } finally {
+      this.flushRealtimeWebSockets();
       await this.synchronizeRealtimeAlarm();
     }
   }
@@ -758,6 +1087,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     // Alarm delivery is at-least-once. processAlarm commits every durable
     // transition transactionally before this derived schedule is replaced.
     this.realtime.processAlarm();
+    this.flushRealtimeWebSockets();
     await this.synchronizeRealtimeAlarm();
   }
 

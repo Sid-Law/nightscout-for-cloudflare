@@ -122,7 +122,7 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
     });
 
     const unknownTransport = await SELF.fetch(
-      `https://example.test/socket.io/?EIO=4&transport=websocket&tenant=${name}`,
+      `https://example.test/socket.io/?EIO=4&transport=unknown&tenant=${name}`,
     );
     expect(unknownTransport.status).toBe(400);
     expect(await unknownTransport.json()).toEqual({ code: 0, message: "Transport unknown" });

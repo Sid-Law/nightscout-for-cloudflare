@@ -13,12 +13,14 @@ import {
   REALTIME_PING_INTERVAL_MS,
   REALTIME_PING_TIMEOUT_MS,
   REALTIME_TRANSPORT,
+  type RealtimeTransport,
 } from "./constants";
 
 interface SessionRow {
   [key: string]: SqlStorageValue;
   sid: string;
   socket_sid: string;
+  transport: RealtimeTransport;
   socket_connected: number;
   authorized: number;
   read_allowed: number;
@@ -43,6 +45,19 @@ interface QueueRow {
   byte_length: number;
 }
 
+interface WebSocketClosureRow {
+  [key: string]: SqlStorageValue;
+  sid: string;
+  close_code: number;
+  close_reason: string;
+}
+
+export interface RealtimeWebSocketClosure {
+  sid: string;
+  code: number;
+  reason: string;
+}
+
 interface CountRow {
   [key: string]: SqlStorageValue;
   count: number;
@@ -61,6 +76,7 @@ interface SidRow {
 export interface RealtimeSession {
   sid: string;
   socketSid: string;
+  transport: RealtimeTransport;
   socketConnected: boolean;
   authorized: boolean;
   readAllowed: boolean;
@@ -94,6 +110,7 @@ function sessionFromRow(row: SessionRow): RealtimeSession {
   return {
     sid: row.sid,
     socketSid: row.socket_sid,
+    transport: row.transport,
     socketConnected: row.socket_connected === 1,
     authorized: row.authorized === 1,
     readAllowed: row.read_allowed === 1,
@@ -130,7 +147,7 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
       sid TEXT PRIMARY KEY,
       socket_sid TEXT NOT NULL UNIQUE,
       engine_protocol INTEGER NOT NULL CHECK (engine_protocol = 4),
-      transport TEXT NOT NULL CHECK (transport = 'polling'),
+      transport TEXT NOT NULL CHECK (transport IN ('polling', 'websocket')),
       socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
       authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
       read_allowed INTEGER NOT NULL DEFAULT 0 CHECK (read_allowed IN (0, 1)),
@@ -159,13 +176,84 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
     );
     CREATE INDEX IF NOT EXISTS realtime_outbound_by_session
       ON realtime_outbound_packets(sid, sequence);
+    CREATE TABLE IF NOT EXISTS realtime_websocket_closures (
+      sid TEXT PRIMARY KEY,
+      close_code INTEGER NOT NULL,
+      close_reason TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS realtime_websocket_closures_created
+      ON realtime_websocket_closures(created_at, sid);
+  `);
+}
+
+interface SchemaRow {
+  [key: string]: SqlStorageValue;
+  sql: string | null;
+}
+
+/**
+ * v5 created `realtime_sessions` with a polling-only CHECK constraint. SQLite
+ * cannot alter that constraint in place, so v7 rebuilds only this bounded
+ * table while retaining the existing FIFO packet table.
+ */
+export function migrateRealtimeTransportsV7(storage: DurableObjectStorage): void {
+  const definition = storage.sql
+    .exec<SchemaRow>(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'realtime_sessions'",
+    )
+    .one().sql;
+  if (definition?.includes("transport IN ('polling', 'websocket')")) return;
+
+  storage.sql.exec(`
+    DROP INDEX IF EXISTS realtime_sessions_expiry;
+    ALTER TABLE realtime_sessions RENAME TO realtime_sessions_polling_v5;
+    CREATE TABLE realtime_sessions (
+      sid TEXT PRIMARY KEY,
+      socket_sid TEXT NOT NULL UNIQUE,
+      engine_protocol INTEGER NOT NULL CHECK (engine_protocol = 4),
+      transport TEXT NOT NULL CHECK (transport IN ('polling', 'websocket')),
+      socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
+      authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
+      read_allowed INTEGER NOT NULL DEFAULT 0 CHECK (read_allowed IN (0, 1)),
+      created_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      next_ping_at INTEGER NOT NULL,
+      pong_deadline INTEGER,
+      expires_at INTEGER NOT NULL,
+      next_sequence INTEGER NOT NULL DEFAULT 1,
+      outbound_packets INTEGER NOT NULL DEFAULT 0,
+      outbound_bytes INTEGER NOT NULL DEFAULT 0,
+      poll_token TEXT,
+      poll_deadline INTEGER,
+      post_token TEXT,
+      post_deadline INTEGER
+    );
+    INSERT INTO realtime_sessions (
+      sid, socket_sid, engine_protocol, transport, socket_connected,
+      authorized, read_allowed, created_at, last_seen_at, next_ping_at,
+      pong_deadline, expires_at, next_sequence, outbound_packets,
+      outbound_bytes, poll_token, poll_deadline, post_token, post_deadline
+    )
+    SELECT
+      sid, socket_sid, engine_protocol, transport, socket_connected,
+      authorized, read_allowed, created_at, last_seen_at, next_ping_at,
+      pong_deadline, expires_at, next_sequence, outbound_packets,
+      outbound_bytes, poll_token, poll_deadline, post_token, post_deadline
+    FROM realtime_sessions_polling_v5;
+    DROP TABLE realtime_sessions_polling_v5;
+    CREATE INDEX realtime_sessions_expiry
+      ON realtime_sessions(expires_at, sid);
   `);
 }
 
 export class SqliteRealtimeSessionRepository {
   constructor(private readonly storage: DurableObjectStorage) {}
 
-  createSession(now: number): RealtimeSession {
+  createSession(
+    now: number,
+    transport: RealtimeTransport = REALTIME_TRANSPORT,
+  ): RealtimeSession {
     const count = this.storage.sql
       .exec<CountRow>("SELECT COUNT(*) AS count FROM realtime_sessions")
       .one().count;
@@ -188,7 +276,7 @@ export class SqliteRealtimeSessionRepository {
       sid,
       socketSid,
       REALTIME_ENGINE_PROTOCOL,
-      REALTIME_TRANSPORT,
+      transport,
       now,
       now,
       nextPingAt,
@@ -200,7 +288,7 @@ export class SqliteRealtimeSessionRepository {
   getSession(sid: string): RealtimeSession | null {
     const row = this.storage.sql
       .exec<SessionRow>(
-        `SELECT sid, socket_sid, socket_connected, authorized, read_allowed,
+        `SELECT sid, socket_sid, transport, socket_connected, authorized, read_allowed,
                 created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
                 next_sequence, outbound_packets, outbound_bytes,
                 poll_token, poll_deadline, post_token, post_deadline
@@ -224,6 +312,15 @@ export class SqliteRealtimeSessionRepository {
   }
 
   deleteSessionInTransaction(sid: string): void {
+    this.storage.sql.exec(
+      `INSERT OR IGNORE INTO realtime_websocket_closures
+         (sid, close_code, close_reason, created_at)
+       SELECT sid, 1008, 'session unavailable', ?
+       FROM realtime_sessions
+       WHERE sid = ? AND transport = 'websocket'`,
+      Date.now(),
+      sid,
+    );
     this.storage.sql.exec("DELETE FROM realtime_outbound_packets WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_sessions WHERE sid = ?", sid);
   }
@@ -244,7 +341,7 @@ export class SqliteRealtimeSessionRepository {
     const boundedLimit = Math.max(1, Math.min(REALTIME_CLEANUP_BATCH, Math.trunc(limit)));
     const expired = this.storage.sql
       .exec<SessionRow>(
-        `SELECT sid, socket_sid, socket_connected, authorized, read_allowed,
+        `SELECT sid, socket_sid, transport, socket_connected, authorized, read_allowed,
                 created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
                 next_sequence, outbound_packets, outbound_bytes,
                 poll_token, poll_deadline, post_token, post_deadline
@@ -295,6 +392,14 @@ export class SqliteRealtimeSessionRepository {
            SELECT post_deadline AS deadline
            FROM realtime_sessions
            WHERE post_deadline IS NOT NULL
+           UNION ALL
+           SELECT MIN(packet.created_at) AS deadline
+           FROM realtime_outbound_packets AS packet
+           INNER JOIN realtime_sessions AS session ON session.sid = packet.sid
+           WHERE session.transport = 'websocket'
+           UNION ALL
+           SELECT MIN(created_at) AS deadline
+           FROM realtime_websocket_closures
          )`,
       )
       .one().deadline;
@@ -349,21 +454,88 @@ export class SqliteRealtimeSessionRepository {
       .one().count;
   }
 
-  listConnectedSessionIds(): string[] {
+  listConnectedSessionIds(transport?: RealtimeTransport): string[] {
+    const transportClause = transport === undefined ? "" : " AND transport = ?";
+    const bindings: SqlStorageValue[] = transport === undefined
+      ? [REALTIME_MAX_SESSIONS_PER_TENANT]
+      : [transport, REALTIME_MAX_SESSIONS_PER_TENANT];
     return this.storage.sql
       .exec<SessionRow>(
-        `SELECT sid, socket_sid, socket_connected, authorized, read_allowed,
+        `SELECT sid, socket_sid, transport, socket_connected, authorized, read_allowed,
                 created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
                 next_sequence, outbound_packets, outbound_bytes,
                 poll_token, poll_deadline, post_token, post_deadline
          FROM realtime_sessions
-         WHERE socket_connected = 1
+         WHERE socket_connected = 1${transportClause}
          ORDER BY created_at, sid
          LIMIT ?`,
-        REALTIME_MAX_SESSIONS_PER_TENANT,
+        ...bindings,
       )
       .toArray()
       .map((row) => row.sid);
+  }
+
+  listQueuedWebSocketSessionIds(limit: number): string[] {
+    const boundedLimit = Math.max(
+      1,
+      Math.min(REALTIME_MAX_SESSIONS_PER_TENANT, Math.trunc(limit)),
+    );
+    return this.storage.sql
+      .exec<SidRow>(
+        `SELECT session.sid AS sid
+         FROM realtime_sessions AS session
+         INNER JOIN realtime_outbound_packets AS packet ON packet.sid = session.sid
+         WHERE session.transport = 'websocket'
+         GROUP BY session.sid
+         ORDER BY MIN(packet.created_at), session.sid
+         LIMIT ?`,
+        boundedLimit,
+      )
+      .toArray()
+      .map((row) => row.sid);
+  }
+
+  takeWebSocketClosures(limit: number): RealtimeWebSocketClosure[] {
+    const boundedLimit = Math.max(
+      1,
+      Math.min(REALTIME_MAX_SESSIONS_PER_TENANT, Math.trunc(limit)),
+    );
+    const rows = this.storage.sql
+      .exec<WebSocketClosureRow>(
+        `SELECT sid, close_code, close_reason
+         FROM realtime_websocket_closures
+         ORDER BY created_at, sid
+         LIMIT ?`,
+        boundedLimit,
+      )
+      .toArray();
+    for (const row of rows) {
+      this.storage.sql.exec(
+        "DELETE FROM realtime_websocket_closures WHERE sid = ?",
+        row.sid,
+      );
+    }
+    return rows.map((row) => ({
+      sid: row.sid,
+      code: row.close_code,
+      reason: row.close_reason,
+    }));
+  }
+
+  requeueWebSocketClosure(closure: RealtimeWebSocketClosure): void {
+    this.storage.sql.exec(
+      `INSERT INTO realtime_websocket_closures
+         (sid, close_code, close_reason, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(sid) DO UPDATE SET
+         close_code = excluded.close_code,
+         close_reason = excluded.close_reason,
+         created_at = MIN(realtime_websocket_closures.created_at, excluded.created_at)`,
+      closure.sid,
+      closure.code,
+      closure.reason,
+      Date.now(),
+    );
   }
 
   enqueueFrames(sid: string, frames: readonly string[], now: number): void {
@@ -420,9 +592,21 @@ export class SqliteRealtimeSessionRepository {
     );
   }
 
-  dequeuePayload(sid: string): string | null {
+  dequeueFrames(
+    sid: string,
+    maxPackets = REALTIME_MAX_QUEUE_PACKETS,
+    maxBytes = REALTIME_MAX_PAYLOAD_BYTES,
+  ): string[] {
     const session = this.requireSession(sid);
-    if (session.outboundPackets === 0) return null;
+    if (session.outboundPackets === 0) return [];
+    const boundedPackets = Math.max(
+      1,
+      Math.min(REALTIME_MAX_QUEUE_PACKETS, Math.trunc(maxPackets)),
+    );
+    const boundedBytes = Math.max(
+      1,
+      Math.min(REALTIME_MAX_PAYLOAD_BYTES, Math.trunc(maxBytes)),
+    );
     const rows = this.storage.sql
       .exec<QueueRow>(
         `SELECT sequence, packet, byte_length
@@ -431,35 +615,54 @@ export class SqliteRealtimeSessionRepository {
          ORDER BY sequence
          LIMIT ?`,
         sid,
-        REALTIME_MAX_QUEUE_PACKETS,
+        boundedPackets,
       )
       .toArray();
     if (rows.length === 0) {
       throw new Error("realtime queue counters do not match stored packets");
     }
 
-    const payload = rows.map((row) => row.packet).join(ENGINE_IO_V4_POLLING_SEPARATOR);
+    const selected: QueueRow[] = [];
+    let selectedBytes = 0;
+    for (const row of rows) {
+      if (selectedBytes + row.byte_length > boundedBytes) break;
+      selected.push(row);
+      selectedBytes += row.byte_length;
+    }
+    // Leave a large first frame durable when the caller has already spent its
+    // global turn budget. A fresh alarm invocation can send it with a full
+    // budget without reordering later frames.
+    if (selected.length === 0) return [];
+
+    const frames = selected.map((row) => row.packet);
+    const payload = frames.join(ENGINE_IO_V4_POLLING_SEPARATOR);
     const payloadBytes = new TextEncoder().encode(payload).byteLength;
     if (payloadBytes > REALTIME_MAX_PAYLOAD_BYTES) {
       throw new Error("stored realtime payload exceeds the advertised maxPayload");
     }
-    for (const row of rows) {
+    for (const row of selected) {
       this.storage.sql.exec(
         "DELETE FROM realtime_outbound_packets WHERE sid = ? AND sequence = ?",
         sid,
         row.sequence,
       );
     }
-    const removedBytes = rows.reduce((total, row) => total + row.byte_length, 0);
     this.storage.sql.exec(
       `UPDATE realtime_sessions
        SET outbound_packets = outbound_packets - ?,
            outbound_bytes = outbound_bytes - ?
        WHERE sid = ?`,
-      rows.length,
-      removedBytes,
+      selected.length,
+      selectedBytes,
       sid,
     );
-    return payload;
+    return frames;
+  }
+
+  dequeuePayload(sid: string): string | null {
+    const frames = this.dequeueFrames(sid);
+    return frames.length === 0
+      ? null
+      : frames.join(ENGINE_IO_V4_POLLING_SEPARATOR);
   }
 }
