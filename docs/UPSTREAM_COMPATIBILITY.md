@@ -123,11 +123,11 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v2 authorization | `lib/authorization/**`, `lib/api/verifyauth.js` | **Partial JWT-compatible core.** Role/subject CRUD, per-tenant persisted signing keys, eight-hour HS256 issuance/refresh, signature/expiry verification, live subject/role lookup, upstream `shiro-trie` 0.4.10 matching and `verifyauth` shapes are implemented. Access-token derivation/prefix matching, body credentials and the IP delay list remain missing. | Port `storage.js` token-format fixtures and `delaylist.js` persistence/alarm behavior; add body-token/body-secret contracts. |
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/api2/notifications-v2.js` | **Missing.** | Reuse upstream processors without adding medical logic; add notification acknowledgement/persistence tests. |
 | API v3 version/status | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.basic.test.js` | **Compatible named subset.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. | Local valid/missing/bad/eviction/cross-tenant JWT contracts plus remote missing/bad-token smoke; do not infer generic API support from this endpoint. |
-| API v3 treatments JSON/lastModified/history | `lib/api3/generic/**`, `specific/lastModified.js` | **Partial JSON vertical.** The eight locked treatments routes plus GET `/lastModified` are wired with JWT-only auth, JSON envelopes, conditional headers, dynamic create/update permission selection inside the mutation transaction, soft/permanent delete, ordered sort and both history cursors. READ/ordinary SEARCH virtually resolve legacy missing srv fields only after raw filtering; srv-field SEARCH and HISTORY see only persisted srv fields. The locked history-fields header fallback and repeated `permanent` scalar behavior are tested. CSV/XML return 406 and only treatments contributes to lastModified. | Add byte-compatible `csv-stringify`/`easyxml` renderers, the other five generic collections, full mixed-type query parity and whole-file upstream API3 execution. Do not mark any complete `api3.*` test file adapted from this named slice alone. |
-| Main Socket.IO namespace | `lib/server/websocket.js` | **Partial read-only EIO4 polling slice.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted EIO4 sessions/queues, heartbeat, SIO5 root CONNECT, `clients`, read-only authorize/dataUpdate/ACK and loadRetro are tested across eviction and tenant boundaries. The official page still loads the REST shim, so this is not a homepage realtime completion claim. | Switch the page only after safe tenant propagation and `/alarm`; add WebSocket, EIO3 HTTP if retained, root writes, persisted-change broadcasts and browser workflows. |
+| API v3 generic collections/lastModified/history | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js` | **Partial two-collection vertical.** The 16 locked treatments/device-status routes plus GET `/lastModified` are wired with JWT-only auth, conditional headers, transactional create/update permission selection, collection-specific legacy fallback dedupe, soft/permanent delete, ordered sort and both history cursors. JSON/CSV/XML use the exact locked renderer dependency versions and Accept ordering. READ/DELETE retain the broad ObjectId fallback while PUT/PATCH restrict it to identifier-absent v1 rows. Device status and treatments independently contribute to lastModified. | Add entries, food, profile and settings; implement large-result CPU/memory adaptation, full mixed-type/nested/regex query parity and whole-file upstream API3 execution. Do not mark any complete `api3.*` test file adapted from this named slice alone. |
+| Main Socket.IO namespace | `lib/server/websocket.js` | **Partial read-only EIO4 polling slice.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted EIO4 sessions/queues, heartbeat, SIO5 root CONNECT, `clients`, read-only authorize/dataUpdate/ACK and loadRetro are tested across eviction and tenant boundaries. A SQL-derived DO alarm now persists ping/pong/session/poll/POST deadlines and cleanup across eviction. The official page still loads the REST shim, so this is not a homepage realtime completion claim. | Switch the page only after safe tenant propagation and `/alarm`; add WebSocket, EIO3 HTTP if retained, root writes, persisted-change broadcasts and browser workflows. |
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Missing.** | Namespace authorization, room subscription, create/update/delete events and alarm lifecycle tests. |
 | Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Partial persistence only.** Treatments mutations persist `document_changes` atomically with the current document, including rollback-on-change-failure coverage. No transport consumes or broadcasts those rows; the browser still polls. | Define cursors/retention and broadcast only after commit; test eviction, reconnect and multi-client delivery. |
-| Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Missing.** | One-alarm task table, retry/idempotency tests and bounded Free-plan scheduling. |
+| Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime alarm foundation only.** The DO single alarm currently derives only transport heartbeat/session/lease work from SQLite and is retry-idempotent. API3 pruning, delay-list cleanup and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
 | Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Profile Editor loads, its authenticated Save succeeds, and closing it returns to a homepage that consumes that profile without the basal missing-profile redirect. The polling adapter is content-addressed so the upstream service worker cannot retain an older payload contract. Real-browser render smokes now cover Admin, Food, Report and the color clock, but their mutations/report generation and live-update workflows are not complete. | Browser scenarios for profile delete, food/admin mutations, report generation, split/clock updates and pushed live updates, with console/network assertions. |
@@ -149,24 +149,25 @@ The same evidence rule applies to future contradictions: actual locked source
 and tests take priority unless a deliberate compatibility fix is named,
 documented and contract-tested.
 
-### API v3 treatments controlled differences
+### API v3 implemented-collection controlled differences
 
-The treatments JSON vertical keeps the route, JWT, permission-branch,
-validation, tombstone, history and JSON-envelope contracts named above. It is
-not byte-for-byte generic API v3 compatibility. The remaining or deliberate
+The treatments/device-status verticals keep the route, JWT, permission-branch,
+validation, tombstone, history and renderer contracts named above. They are
+not complete generic API v3 compatibility. The remaining or deliberate
 differences are:
 
 - request JSON is capped at 512 KiB; locked `body-parser` is configured for
   50 MiB;
 - top-level JSON primitives return the treatments 400 envelope; the locked
   strict body-parser/error-middleware path returns 500;
-- multiple operators for one field are combined with SQL `AND`; the locked
-  Mongo filter object lets a later query item replace the earlier operator
-  object;
+- multiple operators for one field now match the locked object-overwrite
+  behavior: the later query item replaces the earlier operator object, and the
+  adapter-owned valid-row condition replaces caller `isValid`;
 - a parsed zero limit, including `limit=0x10`, is capped at 1,000 rows instead
   of using Mongo's unlimited `cursor.limit(0)` behavior;
-- CSV/XML reads return 406 until locked `csv-stringify` and `easyxml` output,
-  headers and negotiation have differential fixtures;
+- JSON/CSV/XML small and medium responses have locked differential fixtures,
+  but CSV/XML still buffer the complete result; Free-plan CPU and 128 MB memory
+  behavior for worst-case 1,000-row/nested results is not closed;
 - `$re` returns a stable 400 because SQLite `LIKE` is not Mongo `$regex`;
 - unsafe field syntax and SQLite's 100-binding/100,000-byte statement limits
   return controlled 400 responses;
@@ -179,17 +180,18 @@ differences are:
 - `srvModified` allocation is strictly monotonic across same-millisecond writes
   and DO eviction, an intentional platform enhancement over upstream's direct
   clock value;
-- `/lastModified` exposes treatments only because the other five API v3
-  collections are not implemented.
+- `/lastModified` exposes treatments and device status only because entries,
+  food, profile and settings are not implemented through generic API v3.
 
 Extension middleware is not collapsed into renderer support. The adapter uses
 the locked `mime` 2.6.0 table: malformed JSON fails before extension handling;
 unknown MIME extensions return 406 before route authentication; known MIME
 extensions are stripped and can reach JSON write handlers. Resolved
 `application/json` aliases, including `.map` and `.JSON`, use the JSON renderer.
-Known non-JSON read formats authenticate/query first and then return the
-controlled renderer 406. Renderer-generated 406 responses vary on `Accept`.
-The 512 KiB and query-limit errors are platform controls, not upstream claims.
+Known unsupported read formats authenticate/query first and then return the
+controlled renderer 406. Negotiated responses and renderer-generated 406
+responses vary on `Accept`. The 512 KiB and query-limit errors are platform
+controls, not upstream claims.
 
 ## Current deployed evidence
 

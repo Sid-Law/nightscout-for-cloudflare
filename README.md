@@ -23,12 +23,13 @@ for diagnosis, dosing, or medical decisions.
 - Tenant-local, SQLite-persisted HS256 JWT signing, the upstream eight-hour
   authorization-token lifetime, locked `shiro-trie` permission matching and
   corrected `verifyauth` behavior.
-- The public API v3 version envelope, JWT-protected status endpoint and a
-  treatments-only JSON HTTP vertical: collection search/create, resource
-  read/replace/patch/delete, both history forms and treatments-aware
-  `lastModified`.
-- A treatments-focused SQLite schema-v4/repository for legacy/API3 identity,
-  ordered search, branch-sensitive mutation permissions, server timestamps,
+- The public API v3 version envelope, JWT-protected status endpoint and two
+  generic collection verticals for treatments and device status: collection
+  search/create, resource read/replace/patch/delete, both history forms and
+  collection-aware `lastModified` in the locked JSON, CSV and XML formats.
+- A shared SQLite schema-v4/repository for treatments and device-status
+  legacy/API3 identity, collection-specific fallback dedupe, ordered search,
+  branch-sensitive mutation permissions, server timestamps,
   tombstones/history and atomic change snapshots.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
@@ -39,6 +40,10 @@ for diagnosis, dosing, or medical decisions.
   HTTP polling and the read-only SIO5 root namespace. Sessions, heartbeat state,
   authorization state and bounded outbound queues persist in the existing
   `EntryStore` SQLite Durable Object across eviction.
+- A tenant-local Durable Object alarm derived from persisted realtime
+  deadlines. It survives eviction and drives server ping, pong timeout,
+  session expiry and abandoned poll/POST lease cleanup without relying on a
+  process-lifetime `setInterval`.
 - Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs. Only EIO4
   polling is routed: the endpoint advertises `upgrades: []`, rejects EIO3, and
   does not implement binary packets.
@@ -53,12 +58,14 @@ for diagnosis, dosing, or medical decisions.
 ## What is not complete
 
 This is not yet a drop-in Nightscout server. Important missing work includes
-the complete v1/v2/v3 route and error surface, API v3 collections other than
-treatments, API v3 CSV/XML rendering, the authorization delay list and
+the complete v1/v2/v3 route and error surface, the four remaining API v3
+generic collections, large-response CSV/XML resource adaptation, the
+authorization delay list and
 legacy access-token derivation, Mongo query/collection parity,
 WebSocket upgrade, EIO3 HTTP transport, `/storage` and `/alarm` namespaces,
 root write handlers, real-time database-change broadcasts, bounded change
-outbox retention, Durable Object alarms, server plugin execution,
+outbox retention, the general background-task scheduler, server plugin
+execution,
 notification/summary persistence and end-to-end verification of every official
 page workflow. The polling shim only keeps the official browser bundle supplied
 with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
@@ -132,7 +139,8 @@ is not access control.
 The current deployment is a public simulated-data lab, not a personal
 Nightscout deployment.
 Current v1/v2 writes require a Nightscout-compatible API-secret digest or an
-authorized subject credential; API v3 treatments writes require a Bearer JWT.
+authorized subject credential; API v3 treatments and device-status operations
+require a Bearer JWT.
 The tenant selector provides storage routing, not authorization. Missing or
 shorter-than-12-character `API_SECRET` configuration
 fails closed with HTTP 503 for API-secret writes. A request must carry the
@@ -169,8 +177,8 @@ code as `env.API_SECRET`.
 
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
 into an issue. Most current GET endpoints remain publicly readable. API v3
-`/status`, `/lastModified` and every treatments operation require a valid
-Bearer JWT.
+`/status`, `/lastModified` and every treatments/device-status operation require
+a valid Bearer JWT.
 
 If Nightscout says `Wrong API secret`, verify that the Worker setting has no
 leading/trailing spaces, save it, wait for the deployment to finish, then enter
@@ -212,10 +220,11 @@ failure modes, the implemented entries and document CRUD subset, activity
 conditional requests, JWT issue/verify/expiry/tamper/cross-tenant behavior,
 Shiro permission matching, `verifyauth`, the API v3 version/status envelopes,
 SQLite persistence across eviction, tenant isolation and invalid input. It also
-covers schema-v4 repair, v1/API3 treatment time separation, UUID query handling,
-API3 materialization and rollback, the treatments JSON HTTP workflow, and the
+covers schema-v4 repair, v1/API3 treatment/device-status identity and time
+separation, UUID/ObjectId query handling, API3 materialization and rollback,
+JSON/CSV/XML workflows for both generic collections, and the
 EIO4 polling HTTP/session boundary: packet ordering, root authorization,
-heartbeat, eviction, overlap, body/session/queue caps, cursor-bounded
+alarm-driven heartbeat/expiry, eviction, overlap, body/session/queue caps, cursor-bounded
 initial/retro snapshots, byte/node/document truncation, removal of the fixed
 100-status cutoff, deterministic older-tail
 truncation and cross-tenant SID rejection. The locked upstream has 111

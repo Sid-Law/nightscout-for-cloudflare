@@ -36,6 +36,7 @@ Embedded SQLite
   - per-collection sort and lookup indexes
   - tenant-local JWT signing material
   - persisted EIO4 sessions and bounded outbound packet queues
+  - one SQL-derived Durable Object alarm for realtime deadlines
   - local schema migration table
 ```
 
@@ -77,6 +78,10 @@ SQLite database, while only an in-flight long-poll waiter is ephemeral. DO
 eviction therefore does not lose protocol authority or queued packets. This
 endpoint is independently tested but is not loaded by the official homepage;
 the built `/socket.io/socket.io.js` remains the REST shim described above.
+Server ping, pong timeout, session expiry and abandoned poll/POST lease
+deadlines are derived from those SQLite rows and multiplexed through the DO's
+single persistent alarm. The handler is transactional and idempotent under
+at-least-once delivery; process-lifetime timers are not authoritative.
 
 The official v15.0.7 service worker uses a cache-first list that includes
 `/socket.io/socket.io.js`. A cache key derived only from the upstream release
@@ -116,9 +121,9 @@ This remains a partial authorization port. The current subject access token is
 a stored random value rather than the upstream API-secret/ObjectId-derived
 format, and body-carried credentials, historical prefix matching and the
 per-source-IP failure delay list are not yet implemented. Most current GET
-routes remain public. API v3 `/status`, `/lastModified` and all treatments
-routes accept only a verified Bearer JWT; API secrets and query tokens are not
-API v3 credentials.
+routes remain public. API v3 `/status`, `/lastModified` and all treatments and
+device-status routes accept only a verified Bearer JWT; API secrets and query
+tokens are not API v3 credentials.
 
 The Worker is otherwise stateless. An optional `tenant` query parameter is
 validated and passed to `ENTRY_STORE.getByName()`. The default is `demo`. A
@@ -209,8 +214,9 @@ JSON. Required behavior includes:
 SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
-The first treatments-focused vertical slice is now implemented in the tenant
-`EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
+The first two generic vertical slices—treatments and device status—are now
+implemented in the tenant `EntryStore` Durable Object. Internal SQL schema
+version 4 extends `documents`
 with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
 `is_valid`, `fallback_key`, `revision` and `srv_metadata_version`; adds
 `collection_clocks` and `document_changes`; and adds non-unique lookup/history
@@ -219,7 +225,7 @@ body. It is not an upload-time surrogate for legacy documents.
 `identifier_present` preserves the Mongo distinction between a missing field
 and an explicitly stored `null` or empty string. API v3 fallback dedupe may
 therefore require a genuinely absent identifier without conflating those
-three states. `identifier` and the treatments fallback identity are
+three states. `identifier` and each collection's fallback identity are
 deliberately **not** unique because the locked Mongo adapter only creates
 ordinary indexes and resolves legacy duplicates at lookup time.
 
@@ -239,9 +245,12 @@ separate older-v4 fixture proves structural repair with marker 4 already
 present and recomputes legacy offset-bearing fallback keys without rewriting
 their preserved bodies.
 
-Treatments now have an internal SQLite repository and DO RPC boundary for:
+Treatments and device status now share an internal SQLite repository and DO RPC
+boundary for:
 
-- lookup by server `_id`, client `identifier`, or `created_at + eventType`;
+- lookup by server `_id`, client `identifier`, or collection fallback
+  (`created_at + eventType` for treatments and `created_at + device` for device
+  status);
 - v1 treatments upsert selector priority (`identifier`, then `_id`, then
   `created_at + eventType`) after the locked `prepareData` time normalization,
   numeric coercion and cleanup, plus API v3 create dedupe against genuinely
@@ -258,6 +267,12 @@ Treatments now have an internal SQLite repository and DO RPC boundary for:
   pushed down with the locked four-day default window and `created_at` order.
   Regex, nested and unsupported operator forms return a stable HTTP 400 rather
   than being approximated or silently truncated.
+
+PUT/PATCH deliberately use the locked `identifyingFilter()` distinction rather
+than the broader READ/DELETE lookup: a 24-hex `_id` fallback may mutate only a
+legacy row whose `identifier` field is genuinely absent. A modern API3 row
+cannot be updated through its internal storage ID. This differs from READ and
+DELETE, whose upstream `filterForOne()` still permits that ObjectId fallback.
 
 Legacy and API v3 policies are separate. API v1 mutations store and return the
 locked legacy body (including normalized `created_at`, `utcOffset`, and removed
@@ -287,14 +302,14 @@ delete tombstones. It does not use audit timestamps or virtual `created_at`
 fallbacks. Permanent deletion removes the document and its snapshots together,
 matching upstream history behavior for `permanent=true`.
 
-### API v3 treatments JSON boundary
+### API v3 treatments and device-status boundary
 
-The HTTP adapter now exposes exactly the eight locked treatments routes: GET
-and POST on `/api/v3/treatments`; GET on both history forms; and GET, PUT,
-PATCH and DELETE on an identifier. GET `/api/v3/lastModified` reports the
-treatments collection when the subject can read it. Unmatched API v3 routes use
-the locked `{status,message}` 404 envelope rather than falling into the older
-adapter error shape.
+The HTTP adapter now exposes exactly the eight locked generic routes for each
+of treatments and device status: GET/POST on the collection, GET on both
+history forms, and GET/PUT/PATCH/DELETE on an identifier. GET
+`/api/v3/lastModified` reports each of those collections independently when the
+subject can read it. Unmatched API v3 routes use the locked `{status,message}`
+404 envelope rather than falling into the older adapter error shape.
 
 The public request still accepts only one `sort` or `sort$desc` value. Internally
 it preserves the locked ordered chain—requested field, `identifier`,
@@ -313,14 +328,17 @@ Soft delete stores `modifiedBy`; permanent delete removes current and change
 rows. Mutation and change-row failure rolls back the document, history and
 monotonic clock together.
 
-Only the JSON renderer is implemented in this vertical slice. CSV and XML
-requests return controlled 406 responses until locked `csv-stringify` and
-`easyxml` byte-level fixtures are ported. The upstream `mime` 2.6.0 extension
-middleware is preserved separately: an unknown extension is rejected after
-JSON parsing but before routing/authentication, while a known MIME extension is
-stripped and may reach a write handler (whose upstream response is JSON). The
-resolved MIME type, rather than the literal suffix, drives reads, so aliases
-such as `.map` and case variants such as `.JSON` use JSON. A known but
+The read boundary uses the same locked renderer dependencies as Nightscout:
+`accepts@1.3.8`/`negotiator@0.6.3` select JSON, CSV or XML in Express order;
+`csv-stringify@5.6.5` and `easyxml@2.0.1` produce the response bytes. JSON keeps
+the `{status:200,result}` envelope while CSV/XML return raw bodies and all
+negotiated responses set `Vary: Accept`. Serializer failures preserve the
+already-selected media type just as Express does. The upstream `mime` 2.6.0
+extension middleware is preserved separately: an unknown extension is rejected
+after JSON parsing but before routing/authentication, while a known MIME
+extension is stripped and may reach a write handler (whose upstream response is
+JSON). The resolved MIME type, rather than the literal suffix, drives reads, so
+aliases such as `.map` and case variants such as `.JSON` use JSON. A known but
 unsupported read format reaches authentication/querying and then returns 406.
 
 Other deliberate or unresolved platform differences are explicit:
@@ -328,9 +346,9 @@ Other deliberate or unresolved platform differences are explicit:
 - JSON bodies are bounded at 512 KiB rather than upstream's 50 MiB;
 - top-level JSON primitives return the stable treatments 400 envelope, while
   locked `body-parser` passes them into the upstream 500 error middleware;
-- multiple operators for the same field are combined with SQL `AND`, while
-  the locked Mongo filter object lets the later query item replace the earlier
-  operator object;
+- multiple operators for the same field preserve the locked object-overwrite
+  behavior: the later query item replaces the earlier operator object, and the
+  server's `isValid != false` condition replaces any caller `isValid` filter;
 - a parsed API v3 limit of zero (for example, from `limit=0x10`) is capped at
   1,000 rows; locked Mongo treats `cursor.limit(0)` as unlimited;
 - API v3 `$re` is rejected with 400 instead of silently approximating Mongo
@@ -342,15 +360,17 @@ Other deliberate or unresolved platform differences are explicit:
   integer binding;
 - SQLite/Mongo comparison and ordering across mixed JSON types, nested
   projection behavior and array semantics are not yet claimed compatible;
-- only treatments is represented by API v3 `lastModified`; the other five
-  generic collections remain unimplemented.
+- treatments and device status are represented by API v3 `lastModified`; the
+  remaining entries, food, profile and settings collections are unimplemented.
 
 The locked history projection quirk is retained: when `fields` excludes
 `srvModified`, the response body excludes it and Last-Modified/ETag are derived
-from the always-projected treatments `created_at` fallback. Legacy documents
+from the always-projected collection `created_at` fallback. Legacy documents
 can be read with virtual srv fields but do not match raw srv filters or HISTORY.
-This is a treatments JSON vertical slice, not completion of generic API v3 or
-of any whole upstream `api3.*` test file.
+These are two generic collection vertical slices, not completion of API v3 or
+of any whole upstream `api3.*` test file. CSV/XML currently serialize an entire
+bounded result in memory; large-result CPU and 128 MB memory adaptation remains
+open even though byte-level small/medium contracts are green.
 
 ### SQLite limits and change-retention risk
 
@@ -409,12 +429,22 @@ The current server boundary is explicit:
   controlled 400/code-3 response;
 - 256 sessions per tenant, 128 queued packets and a 1,000,000-byte whole
   polling payload per session; incoming POST bodies are counted while streamed;
-- 32-session opportunity cleanup on normal requests, with no new alarm;
+- 32-session opportunity cleanup on normal requests plus a persistent alarm
+  derived from the earliest ping, pong, expiry, poll or POST deadline;
 - `/storage` and `/alarm` return SIO5 `CONNECT_ERROR` and do not terminate an
   already connected root namespace;
 - root `subscribe` and all write events have no handler or ACK, matching the
   locked root's lack of `subscribe` while deliberately exposing no mutation;
 - no `document_changes` row is consumed and no database mutation is broadcast.
+
+Every realtime state transition recomputes the single persisted alarm from SQL.
+The handler cleans all due sessions/leases, enqueues due pings, handles queue
+overflow and broadcasts the surviving client count inside one synchronous
+SQLite transaction, then schedules the next derived deadline. Repeated delivery
+does not duplicate pings or deletions because `pong_deadline` and row removal
+are durable idempotency state. This alarm currently owns realtime deadlines
+only; API3 pruning, authorization delay cleanup and server-plugin jobs still
+need a shared persisted task table before using the same one-alarm slot.
 
 Initial authorization data mirrors `dataWithRecentStatuses()`. `loadRetro`
 uses a separate unfiltered device-status view over the same one-day raw SQL

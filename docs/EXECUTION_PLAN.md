@@ -41,14 +41,14 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
 | 2. Official browser assets/pages | Partial | Profile save/close is verified and Admin/Food/Report/color-clock render smokes pass; add their mutation/report workflows, split view and pushed live updates. |
-| 3. SQLite collection compatibility | In progress | Treatments schema-v4/repository slice is implemented; extend the contract to every collection and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. |
+| 3. SQLite collection compatibility | In progress | Treatments and device status share the schema-v4/API3 repository; extend it to every collection, close Mongo mixed-type/nested/regex parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. |
 | 4. API v1 | In progress | Activity CRUD is implemented; complete entries utilities/types/errors and the remaining document routes. |
 | 5. API v2 | Partial | JWT issuance/refresh is implemented; complete body credentials, delay-list behavior, summary, notifications and full ddata/properties behavior. |
-| 6. API v3 | Partial JSON treatments slice | Public `/version`, JWT-protected `/status`, the eight locked treatments routes and treatments-aware `/lastModified` are implemented for JSON; add locked CSV/XML renderer parity before generalizing to the other five collections. |
+| 6. API v3 | Partial treatments + device-status slice | Public `/version`, JWT-protected `/status`, 16 locked generic routes and two-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering; add entries, food, profile and settings plus large-response resource controls and full query parity. |
 | 7. Authentication/admin | Partial | Tenant JWT keys, eight-hour HS256 tokens, live subject/role lookup, Shiro matching and `verifyauth` are implemented; port derived access-token and persistent IP delay-list behavior. |
-| 8. Engine.IO/Socket.IO | Partial read-only polling slice | Strict EIO4 polling is routed to tenant `EntryStore` DOs with persisted sessions/queues, EIO4 heartbeat, SIO5 root CONNECT, read-only authorize ACK/dataUpdate, loadRetro and clients-count events. Complete the official-page switch only after `/alarm` and tenant propagation; WebSocket, EIO3 HTTP, `/storage`, writes and change broadcasts remain missing. |
+| 8. Engine.IO/Socket.IO | Partial read-only polling slice | Strict EIO4 polling is routed to tenant `EntryStore` DOs with persisted sessions/queues, EIO4 heartbeat, SIO5 root CONNECT, read-only authorize ACK/dataUpdate, loadRetro and clients-count events. A persisted DO alarm now survives eviction for heartbeat/session/lease deadlines. Complete the official-page switch only after `/alarm` and tenant propagation; WebSocket, EIO3 HTTP, `/storage`, writes and change broadcasts remain missing. |
 | 9. Real-time storage updates | Storage foundation only | Treatments persist an atomic change snapshot, but no transport consumes it; define bounded outbox retention, cursors and reconnect/eviction tests before broadcasting. |
-| 10. Alarms/background tasks | Not started | One-alarm SQLite task scheduler for heartbeat, cleanup, API v3 pruning and server-plugin evaluation. |
+| 10. Alarms/background tasks | Realtime foundation only | The DO's single alarm is derived from persisted realtime deadlines and is idempotent across eviction/retry; add a persisted multi-kind task table before API v3 pruning, authorization delay cleanup and server-plugin evaluation share it. |
 | 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
 | 12. Upstream regression suite | Tracked, execution not started | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; 109 files remain unresolved and two are fixed-scope exclusions. |
 
@@ -182,9 +182,10 @@ error logs.
 
 1. Finish v1 entries and document routes from Express registration and Swagger.
 2. Finish v2 properties, ddata, summary, notifications and authorization.
-3. Extend the implemented treatments JSON search/create/read/update/patch/
-   delete/history and lastModified slice to the other collections, then add
-   byte-compatible locked CSV/XML renderers.
+3. **Complete for treatments and device status:** generic search/create/read/
+   update/patch/delete/history, two-collection lastModified and byte-compatible
+   JSON/CSV/XML rendering. Extend the same upstream contract to entries, food,
+   profile and settings, including bounded large-response handling.
 4. Port upstream API tests in module order and record any fixed-scope exclusion.
 
 ### Milestone D — real-time transport
@@ -193,8 +194,9 @@ error logs.
    polling requests to the tenant DO without intercepting the static
    `/socket.io/socket.io.js` shim asset.
 2. **Partial:** EIO4/SIO5 polling sessions, server-ping/client-pong, persisted
-   queues and root CONNECT are implemented. EIO3/SIO4 remains codec-only and
-   is deliberately rejected by the HTTP endpoint; `upgrades` is empty.
+   queues, root CONNECT and a SQL-derived DO alarm for ping/pong/session/lease
+   deadlines are implemented. EIO3/SIO4 remains codec-only and is deliberately
+   rejected by the HTTP endpoint; `upgrades` is empty.
 3. Add hibernatable WebSocket upgrade and reconnect.
 4. Extend beyond the read-only `/` subset to `/storage` and `/alarm`, including
    authorization, subscriptions and room behavior.
@@ -207,7 +209,8 @@ error logs.
 
 ### Milestone E — background/server behavior
 
-1. Add a SQLite task table and one-alarm scheduler.
+1. Extend the existing realtime-owned single alarm with a persisted SQLite task
+   table so every job kind participates in one derived schedule.
 2. Port heartbeat, admin-notify cleanup and API v3 auto-prune.
 3. Generate the official server plugin registry at build time.
 4. Execute official dataloader/sandbox/plugin/notification modules through a
