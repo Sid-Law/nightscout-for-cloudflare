@@ -307,6 +307,17 @@ document. This slice must therefore
 not be described as suitable for indefinite Free-plan retention until a
 locked-compatible history cursor and pruning policy are defined and tested.
 
+The selected resolution stays inside the fixed SQLite-DO footprint: this table
+will become a bounded, short-lived real-time delivery outbox rather than a
+second permanent history store. API v3 HISTORY continues to use the current
+documents/tombstones required by upstream. Before any transport consumes the
+outbox, the adapter must add per-tenant age/count bounds, an acknowledged
+cursor, alarm-driven pruning and a reconnect fallback that reloads current
+state when a cursor has expired. This policy is a design decision, not current
+runtime behavior; the present unbounded snapshots remain a known limitation.
+R2 is not required for this transient coordination data and is outside the
+fixed deployment footprint.
+
 ### Real-time transport
 
 `platform/socket-io-polling-shim.js` currently creates browser-side `connect`,

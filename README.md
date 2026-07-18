@@ -25,11 +25,16 @@ for diagnosis, dosing, or medical decisions.
   corrected `verifyauth` behavior.
 - The public API v3 version envelope and JWT-protected status endpoint; the
   generic API v3 collection surface is not implemented.
+- A treatments-focused SQLite schema-v4/repository foundation for legacy/API3
+  identity, query, mutation, server timestamps, tombstones/history and atomic
+  change snapshots; its generic API v3 HTTP routes are not wired yet.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
 - A transport-only polling shim for the upstream client's Socket.IO surface;
   it loads one aggregate data payload and emits the upstream `dataUpdate`.
+- Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs, isolated from
+  routing until a tenant-DO polling/WebSocket session server is complete.
 - Content-addressed loading for that platform shim, so an older upstream
   service worker cannot keep serving an obsolete adapter after deployment.
 - A response-header adapter that preserves upstream asset bytes while supplying
@@ -43,8 +48,9 @@ for diagnosis, dosing, or medical decisions.
 This is not yet a drop-in Nightscout server. Important missing work includes
 the complete v1/v2/v3 route and error surface, the authorization delay list and
 legacy access-token derivation, Mongo query/collection parity,
-Engine.IO/Socket.IO polling and WebSocket protocols, real-time write
-broadcasts, Durable Object alarms, server plugin execution,
+Engine.IO/Socket.IO polling sessions, WebSocket upgrade and namespaces,
+real-time write broadcasts, bounded outbox retention, Durable Object alarms,
+server plugin execution,
 notification/summary persistence and end-to-end verification of every official
 page workflow. The polling shim only keeps the official browser bundle supplied
 with aggregate data; it is not a Socket.IO implementation.

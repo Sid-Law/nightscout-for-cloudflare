@@ -121,13 +121,13 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/api2/notifications-v2.js` | **Missing.** | Reuse upstream processors without adding medical logic; add notification acknowledgement/persistence tests. |
 | API v3 version/status | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.basic.test.js` | **Compatible named subset.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. | Local valid/missing/bad/eviction/cross-tenant JWT contracts plus remote missing/bad-token smoke; do not infer generic API support from this endpoint. |
 | API v3 generic/lastModified/history | `lib/api3/generic/**`, `specific/lastModified.js` | **Partial storage foundation, routes missing.** Treatments have an API3-only persisted monotonic allocator, current-document lastModified with `created_at` fallback, all 11 immutable-field checks, dedupe/tombstone exceptions and soft/permanent deletion behind DO RPCs. READ/ordinary SEARCH virtually resolve legacy missing srv fields from `created_at` after filtering; srv-field SEARCH and ascending HISTORY see only actually persisted srv fields. API3 materialization removes `_id`. No `/api/v3/treatments` CRUD/history or `/api/v3/lastModified` route is wired. | Add the authenticated HTTP adapter, common-field validation, exact envelopes/conditional headers/renderers, then port all upstream `api3.*.test.js` workflows. |
-| Main Socket.IO namespace | `lib/server/websocket.js` | **Missing.** `platform/socket-io-polling-shim.js` only polls REST every 15 seconds and fabricates client events. Real EIO4 and legacy EIO3 session handshakes are not routed. | Engine.IO polling/WebSocket lifecycle, authorize/loadRetro/dbAdd/dbUpdate/dbRemove, acknowledgements, reconnect and multi-client broadcast tests. |
+| Main Socket.IO namespace | `lib/server/websocket.js` | **Protocol core only.** Official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs are isolated and tested, but `platform/socket-io-polling-shim.js` still polls REST every 15 seconds and fabricates client events. No Engine.IO session handshake is routed. | Engine.IO polling/WebSocket lifecycle on the tenant DO, authorize/loadRetro/dbAdd/dbUpdate/dbRemove, acknowledgements, reconnect and multi-client broadcast tests. |
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Missing.** | Namespace authorization, room subscription, create/update/delete events and alarm lifecycle tests. |
 | Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Partial persistence only.** Treatments mutations persist `document_changes` atomically with the current document, including rollback-on-change-failure coverage. No transport consumes or broadcasts those rows; the browser still polls. | Define cursors/retention and broadcast only after commit; test eviction, reconnect and multi-client delivery. |
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Missing.** | One-alarm task table, retry/idempotency tests and bounded Free-plan scheduling. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Profile Editor loads, its authenticated Save persists a current profile, and closing it returns to a homepage that consumes that profile without the basal missing-profile redirect. The polling adapter is content-addressed so the upstream service worker cannot retain an older payload contract. The remaining page workflows are not proven by HTTP 200. | Browser scenarios for profile delete, food, admin, report, clock, split and live updates, with console/network assertions. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Profile Editor loads, its authenticated Save succeeds, and closing it returns to a homepage that consumes that profile without the basal missing-profile redirect. The polling adapter is content-addressed so the upstream service worker cannot retain an older payload contract. Real-browser render smokes now cover Admin, Food, Report and the color clock, but their mutations/report generation and live-update workflows are not complete. | Browser scenarios for profile delete, food/admin mutations, report generation, split/clock updates and pushed live updates, with console/network assertions. |
 | Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; compatibility unresolved.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations, but no whole upstream file is yet claimed green against the DO adapter. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
@@ -150,8 +150,9 @@ documented and contract-tested.
 
 The public deployment at
 `https://nscf-phase1.nscf-lab-20260717.workers.dev/` was rechecked on
-2026-07-18 after version `b5d23db9-7ace-430d-ae13-65e753a774e5` reached
-100% traffic:
+2026-07-18 after version `e3e9b197-bd1d-45b1-b2c8-a5b18b907e90`
+(deployment `f2d15877-631a-4645-b43a-24be65a4818d`, code commit
+`78502a01c624d3f8b38e207abd5b7c9d1cea50c8`) reached 100% traffic:
 
 - `/`, `/admin/`, `/profile/`, `/food/`, `/report/` and
   `/clock/clock-color/` returned HTTP 200.
@@ -170,8 +171,9 @@ The public deployment at
   result.
 - `/api/v1/activity?count=2` returned HTTP 200 and an empty list for the
   simulated default tenant.
-- A real `/socket.io/?EIO=3&transport=polling` handshake still returned HTTP
-  404, as the matrix requires until Engine.IO is implemented.
+- A real `/socket.io/?EIO=4&transport=polling` handshake still returned HTTP
+  404, as the matrix requires until the isolated protocol codecs are backed by
+  a routed tenant-DO session server.
 - A real Chrome session loaded the official Profile Editor from `Not loaded`
   to `Values loaded`. Its already-authorized browser session completed a real
   profile Save, and the current-profile API confirmed persistence.
@@ -182,8 +184,11 @@ The public deployment at
   bypassed that old cache without manual clearing. Repeating the exact
   `/profile` → `X` workflow stayed at `/`, showed no dialog or redirect, and
   rendered `BASAL 0.100U` from the saved profile.
-- A fresh real-Chrome reload after the JWT deployment again stayed on `/`,
-  rendered `BASAL 0.100U`, and produced no warning/error console entries.
+- A fresh real-Chrome reload stayed on `/`, rendered `BASAL 0.100U`, did not
+  reopen Profile Editor and had no JavaScript dialog. Admin, Food, Report and
+  the color clock also rendered their official controls/states. There were no
+  console errors; standalone pages emitted only the upstream chart-container
+  warning caused by those pages not including the homepage chart.
 - Its data connection still came from the polling shim, not a Socket.IO server.
 - The existing `API_SECRET` was retained with `--keep-vars` and used only by
   the official browser's existing authentication state; its value was never

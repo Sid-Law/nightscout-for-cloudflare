@@ -40,14 +40,14 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | Profile save/close is now verified; add food, admin, report, clock, split and live-update workflows. |
-| 3. SQLite collection compatibility | In progress | General collection contract for ObjectId/UUID, indexes, query operators, upsert, API v3 timestamps/tombstones and atomic change events. |
+| 2. Official browser assets/pages | Partial | Profile save/close is verified and Admin/Food/Report/color-clock render smokes pass; add their mutation/report workflows, split view and pushed live updates. |
+| 3. SQLite collection compatibility | In progress | Treatments schema-v4/repository slice is implemented; extend the contract to every collection and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. |
 | 4. API v1 | In progress | Complete entries utilities/types/errors and all document routes; activity CRUD is the latest completed increment. |
 | 5. API v2 | Partial | JWT issuance/refresh is implemented; complete body credentials, delay-list behavior, summary, notifications and full ddata/properties behavior. |
-| 6. API v3 | Started | Public `/version` and JWT-protected `/status` are implemented; generic CRUD, lastModified, history and formats remain. |
+| 6. API v3 | Started | Public `/version`, JWT-protected `/status` and a treatments storage foundation are implemented; wire the authenticated treatments HTTP vertical with exact envelopes, sorting, history and lastModified before generalizing. |
 | 7. Authentication/admin | Partial | Tenant JWT keys, eight-hour HS256 tokens, live subject/role lookup, Shiro matching and `verifyauth` are implemented; port derived access-token and persistent IP delay-list behavior. |
 | 8. Engine.IO/Socket.IO | Protocol core only | EIO4/SIO5 official-path and EIO3/SIO4 legacy codecs are isolated and tested; polling sessions, WebSocket upgrade, namespaces, authorization, acknowledgements and database mutation messages on a tenant DO remain unimplemented. |
-| 9. Real-time storage updates | Not started | Persist-then-broadcast mutation log and reconnect/eviction tests. |
+| 9. Real-time storage updates | Storage foundation only | Treatments persist an atomic change snapshot, but no transport consumes it; define bounded outbox retention, cursors and reconnect/eviction tests before broadcasting. |
 | 10. Alarms/background tasks | Not started | One-alarm SQLite task scheduler for heartbeat, cleanup, API v3 pruning and server-plugin evaluation. |
 | 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
 | 12. Upstream regression suite | Tracked, execution not started | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; 109 files remain unresolved and two are fixed-scope exclusions. |
@@ -87,53 +87,40 @@ relabeled as scope exclusions.
 
 ## Current verified baseline
 
-Repository baseline before this increment:
+Code commit `78502a01c624d3f8b38e207abd5b7c9d1cea50c8` is deployed as Worker
+version `e3e9b197-bd1d-45b1-b2c8-a5b18b907e90`. Its gate passed the official
+v15.0.7 Webpack build, type generation/typecheck, the deterministic 161-route /
+111-test-file audit, 14/14 audit-tool tests, 75/75 Workers-runtime tests and the
+Wrangler dry run.
 
-- official v15.0.7 Webpack/UI build and secondary pages;
-- one tenant-sharded SQLite Durable Object;
-- page-used SGV/document CRUD, API-secret and opaque subject-token subset;
-- aggregate REST polling through a browser-side Socket.IO-shaped shim;
-- 15 Workers integration tests.
+The current baseline includes:
 
-The 2026-07-18 audit established:
+- the locked official v15.0.7 UI/pages/assets with no replacement UI;
+- one tenant-sharded SQLite Durable Object and Workers Static Assets only;
+- page-used entries, food, profile, treatments, device-status, activity,
+  role/subject/token subsets and aggregate REST polling;
+- the content-addressed polling adapter/service-worker cache fix;
+- tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
+  `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
+- v1 activity CRUD and conditional request behavior;
+- treatments schema-v4 migration and repository contracts for legacy/API3
+  identity, query, mutation, monotonic timestamps, tombstones/history and
+  atomic change snapshots;
+- isolated, tested official EIO4/SIO5 and legacy EIO3/SIO4 protocol codecs.
 
-- upstream Express and `node:fs` are no longer automatic blockers on current
-  Workers; the permanent Node process model remains incompatible;
-- the remote deployment returned 404 for API v3 version, activity and a real
-  Engine.IO polling handshake;
-- the official Profile Editor loaded in a real browser with no JavaScript
-  errors, after the empty-data homepage redirected there;
-- the shim's “connected” event was synthetic and not Socket.IO evidence.
+Post-deploy API smoke passed. A real existing Chrome session saved the official
+Profile Editor, closed it to `/`, stayed there for six seconds and remained on
+the homepage after reload with `BASAL 0.100U`; it did not reopen Profile Editor
+or show a dialog. The same browser rendered Admin, Food, Report and color-clock
+pages with no console errors. Their official chart-container warnings on
+standalone pages are recorded in `DEPLOYMENT.md`.
 
-This increment is deployed and verified:
-
-- v1 activity create/list/filter/conditional GET/update/delete, including the
-  upstream empty-array create behavior;
-- the public API v3 `/version` envelope with SQLite adapter metadata;
-- two new Workers integration tests, bringing the local suite to 17;
-- remote public API smoke and a real-browser Profile Editor save;
-- a Profile/homepage compatibility fix: the first aggregate `dataUpdate`
-  follows upstream authorization ordering, and the Cloudflare adapter uses a
-  content-addressed URL that cannot be shadowed by the old upstream
-  service-worker cache;
-- a real Chrome save/close workflow that remained on the official homepage,
-  had no JavaScript dialog or redirect, and rendered the persisted basal value.
-
-The next authorization increment is also deployed and verified:
-
-- a random JWT signing key stored separately in every tenant's DO SQLite
-  database and retained across DO eviction;
-- upstream-shaped eight-hour HS256 JWT issuance and refresh, Web Crypto
-  signature/expiry validation, cross-tenant isolation and live subject/role
-  lookup;
-- the exact locked `shiro-trie` 0.4.10 permission matcher and corrected
-  `verifyauth`/authorization failure response shapes;
-- JWT-only API v3 `/status`, while preserving the locked v15.0.7
-  permission-loop bug (`api:undefined:<action>` is checked for every registered
-  collection) rather than silently changing release behavior;
-- the then-current 19/19 Workers-runtime tests, a successful deployment dry-run, public remote
-  API smoke, and a real Chrome homepage check with no dialog, redirect or
-  console warning.
+This is still not a full port. The treatments API3 HTTP routes, ordered
+multi-field sort, Engine.IO sessions/WebSocket upgrade, namespace handlers,
+bounded outbox/broadcasts, other collections, alarms, server plugins,
+notifications and most upstream test files remain incomplete. A real EIO4
+polling handshake intentionally returns 404 rather than advertising a
+half-implemented session server.
 
 ## Ordered implementation milestones
 
