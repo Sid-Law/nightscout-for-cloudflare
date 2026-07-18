@@ -429,6 +429,15 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 `loadRetro` require exactly one object payload; this is a resource/safety
 tightening over permissive upstream JavaScript call shapes.
 
+This endpoint is live in Cloudflare version
+`6cffd451-08e1-4dd5-b582-df7e5e6cbb6e`. A remote transport smoke completed
+EIO4 open, SIO5 root CONNECT, read-only `authorize`, `dataUpdate`, `status` and
+ACK over the tenant DO. The official homepage intentionally still uses the
+REST polling shim, so this proves the separate server slice rather than a page
+transport switch. The one remaining named HTTP edge difference is admission at
+the 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
+while locked Node can count the replacement-decoded text differently.
+
 The target transport persists a change record in the same DO turn as each
 mutation, then broadcasts only after the write succeeds. Hibernated sessions
 restore their tenant, namespace, authorization and subscription information

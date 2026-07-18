@@ -42,7 +42,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
 | 2. Official browser assets/pages | Partial | Profile save/close is verified and Admin/Food/Report/color-clock render smokes pass; add their mutation/report workflows, split view and pushed live updates. |
 | 3. SQLite collection compatibility | In progress | Treatments schema-v4/repository slice is implemented; extend the contract to every collection and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. |
-| 4. API v1 | In progress | Complete entries utilities/types/errors and all document routes; activity CRUD is the latest completed increment. |
+| 4. API v1 | In progress | Activity CRUD is implemented; complete entries utilities/types/errors and the remaining document routes. |
 | 5. API v2 | Partial | JWT issuance/refresh is implemented; complete body credentials, delay-list behavior, summary, notifications and full ddata/properties behavior. |
 | 6. API v3 | Partial JSON treatments slice | Public `/version`, JWT-protected `/status`, the eight locked treatments routes and treatments-aware `/lastModified` are implemented for JSON; add locked CSV/XML renderer parity before generalizing to the other five collections. |
 | 7. Authentication/admin | Partial | Tenant JWT keys, eight-hour HS256 tokens, live subject/role lookup, Shiro matching and `verifyauth` are implemented; port derived access-token and persistent IP delay-list behavior. |
@@ -85,57 +85,51 @@ Mongo-to-SQLite, Express-to-Worker, process-lifecycle, Socket.IO,
 notification-state and browser adaptations remain required work and must not be
 relabeled as scope exclusions.
 
-## Last deployed baseline and current local increment
+## Current deployed increment
 
-Code commit `78502a01c624d3f8b38e207abd5b7c9d1cea50c8` is deployed as Worker
-version `e3e9b197-bd1d-45b1-b2c8-a5b18b907e90`. Its gate passed the official
-v15.0.7 Webpack build, type generation/typecheck, the deterministic 161-route /
-111-test-file audit, 14/14 audit-tool tests, 75/75 Workers-runtime tests and the
-Wrangler dry run.
+Code commit `08b2970b129104a2bdbb293502abd9aa025a19a5` is deployed at 100%
+traffic as Cloudflare Worker version
+`6cffd451-08e1-4dd5-b582-df7e5e6cbb6e` (2026-07-18 06:15:46 UTC). The release
+gate passed the official v15.0.7 Webpack build with 248 asset entries, Wrangler
+type generation and TypeScript, the deterministic 161-route/111-test-file
+audit, 14/14 audit-tool tests, 130/130 Workers-runtime tests and a 287.80 KiB
+(62.47 KiB gzip) dry run. The dry run declared only the `ENTRY_STORE` Durable
+Object and `ASSETS` binding. Deployment used `--keep-vars`; the existing
+`API_SECRET` value was neither read nor printed.
 
-The current baseline includes:
+The deployed increment includes:
 
 - the locked official v15.0.7 UI/pages/assets with no replacement UI;
 - one tenant-sharded SQLite Durable Object and Workers Static Assets only;
 - page-used entries, food, profile, treatments, device-status, activity,
   role/subject/token subsets and aggregate REST polling;
-- the content-addressed polling adapter/service-worker cache fix;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
-- v1 activity CRUD and conditional request behavior;
-- treatments schema-v4 migration and repository contracts for legacy/API3
-  identity, query, mutation, monotonic timestamps, tombstones/history and
-  atomic change snapshots;
-- isolated, tested official EIO4/SIO5 and legacy EIO3/SIO4 protocol codecs.
+- the eight treatments-only API v3 JSON routes, including branch-sensitive
+  permissions, ordered search, conditional read, history, lastModified,
+  tombstones, permanent delete and atomic rollback;
+- strict tenant-local EIO4 polling with persisted sessions/queues, heartbeat,
+  SIO5 root CONNECT, read-only authorization/data snapshots and bounded
+  resource handling.
 
-The unreleased branch adds a treatments-only API v3 JSON HTTP vertical. It does
-not change the deployed evidence above: no deployment, remote smoke or browser
-claim has been made for these routes. The local contracts cover JWT-only
-authentication, dynamic create/update permission branches, ordered sorting,
-conditional read, both history cursors, lastModified, tombstones, permanent
-delete and transaction rollback. Its local gate passed the official v15.0.7 UI
-build, Wrangler type generation/TypeScript check, the 161-route/111-test-file
-audit, 14/14 audit-tool tests, 99/99 Workers-runtime tests and deployment
-dry-run. The dry-run created no deployment.
+Remote smoke verified public v3 version metadata, v1 entries, missing-JWT 401
+responses for v3 status and treatments, official page HTTP responses, and the
+full EIO4 open -> SIO5 CONNECT -> authorize -> dataUpdate/status/read-only ACK
+sequence. Real Chromium rendered the homepage/chart, Profile Editor
+(`Values loaded`, `Asia/Shanghai`), Food Editor (`Database loaded`), Admin,
+Report and color clock. A temporary client-only title change saved, closed
+Settings and did not rebound after a fresh navigation; the title was restored.
+No page emitted a console error. Standalone Admin/Report/Profile/Food retained
+only the locked upstream missing-`#chartContainer` warning.
 
-Post-deploy API smoke passed. A real existing Chrome session saved the official
-Profile Editor, closed it to `/`, stayed there for six seconds and remained on
-the homepage after reload with `BASAL 0.100U`; it did not reopen Profile Editor
-or show a dialog. The same browser rendered Admin, Food, Report and color-clock
-pages with no console errors. Their official chart-container warnings on
-standalone pages are recorded in `DEPLOYMENT.md`.
+This is still not a full port: API v3 CSV/XML renderers, five generic
+collections, broader Mongo query/type parity, WebSocket upgrade, EIO3 HTTP,
+`/storage` and `/alarm`, root writes, persisted change broadcasts, alarms,
+server plugins, notifications and most upstream test files remain incomplete.
+The homepage still consumes the REST polling shim and does not yet use the
+separate EIO4 server.
 
-That deployed version predates the current local real-time increment and still
-returns 404 for a real EIO4 handshake. The current branch now routes
-`/socket.io` and `/socket.io/` to the tenant DO and implements a bounded,
-read-only EIO4/SIO5 polling root slice. It has not been deployed or browser-
-switched in this increment. This is still not a full port: API v3 CSV/XML
-renderers, five generic collections, broader Mongo query/type parity, WebSocket
-upgrade, EIO3 HTTP, `/storage` and `/alarm`, root write handlers, change
-broadcasts, alarms, server plugins, notifications and most upstream test files
-remain incomplete.
-
-The local polling slice is intentionally bounded to 256 sessions per tenant,
+The deployed polling slice is intentionally bounded to 256 sessions per tenant,
 128 queued packets and one 1,000,000-byte polling payload per session. It uses
 25-second server pings, 20-second pong timeouts, strict non-binary request
 shapes and opportunity cleanup in batches of 32; it adds no DO alarm. Root

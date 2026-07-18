@@ -216,8 +216,8 @@ covers schema-v4 repair, v1/API3 treatment time separation, UUID query handling,
 API3 materialization and rollback, the treatments JSON HTTP workflow, and the
 EIO4 polling HTTP/session boundary: packet ordering, root authorization,
 heartbeat, eviction, overlap, body/session/queue caps, cursor-bounded
-initial/retro snapshots, byte/node/document
-truncation, removal of the fixed 100-status cutoff, deterministic older-tail
+initial/retro snapshots, byte/node/document truncation, removal of the fixed
+100-status cutoff, deterministic older-tail
 truncation and cross-tenant SID rejection. The locked upstream has 111
 JavaScript test files and about 873 test cases; the local adapter tests do not
 prove complete Nightscout compatibility.
@@ -225,8 +225,16 @@ prove complete Nightscout compatibility.
 The current simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally
 limited and must not receive real health data. Deployment resources, remote
-smoke evidence, CPU measurements and rollback details are documented in
+smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+The current deployed code is commit `08b2970b129104a2bdbb293502abd9aa025a19a5`
+(Cloudflare version `6cffd451-08e1-4dd5-b582-df7e5e6cbb6e`). Its release gate
+rebuilt 248 official asset entries, passed the 161-route/111-test-file audit,
+14/14 audit-tool tests and 130/130 Workers-runtime tests, then passed remote
+API/EIO4 polling smoke and real-Chromium homepage, Settings, Profile, Food,
+Admin, Report and color-clock checks. These counts cover only the named adapter
+subset; they are not evidence of a complete Nightscout port.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

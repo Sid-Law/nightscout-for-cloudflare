@@ -193,8 +193,10 @@ The 512 KiB and query-limit errors are platform controls, not upstream claims.
 
 ## Current deployed evidence
 
-The read-only EIO4 polling server described above is a local, not-yet-deployed
-increment. Its current bounds and named differences are:
+The read-only EIO4 polling server described above is deployed in code commit
+`08b2970b129104a2bdbb293502abd9aa025a19a5`, Cloudflare Worker version
+`6cffd451-08e1-4dd5-b582-df7e5e6cbb6e`. It remains separate from the homepage
+REST shim. Its current bounds and named differences are:
 
 - strict `EIO=4`, `transport=polling`, non-binary payloads and `upgrades: []`;
 - exact `application/octet-stream` POSTs close the SID with a controlled
@@ -221,50 +223,44 @@ increment. Its current bounds and named differences are:
   safety/resource tightening.
 
 The public deployment at
-`https://nscf-phase1.nscf-lab-20260717.workers.dev/` was rechecked on
-2026-07-18 after version `e3e9b197-bd1d-45b1-b2c8-a5b18b907e90`
-(deployment `f2d15877-631a-4645-b43a-24be65a4818d`, code commit
-`78502a01c624d3f8b38e207abd5b7c9d1cea50c8`) reached 100% traffic:
+`https://nscf-phase1.nscf-lab-20260717.workers.dev/` reached 100% traffic at
+2026-07-18 06:15:46 UTC. Its gate completed the official v15.0.7 build with
+248 asset entries, the 161-route/111-test-file audit, 14/14 audit-tool tests,
+130/130 integrated Workers tests, and a 287.80 KiB raw / 62.47 KiB gzip dry
+run declaring only `ENTRY_STORE` and `ASSETS`.
 
-- `/`, `/admin/`, `/profile/`, `/food/`, `/report/` and
-  `/clock/clock-color/` returned HTTP 200.
-- `/api/v1/status.json`, `/api/v1/entries.json`, `/api/v2/properties` and
-  `/api/v2/ddata/at` returned HTTP 200.
-- `/api/v3/version` returned HTTP 200 with the v15.0.7/API 3.0.3-alpha
-  envelope and SQLite DO adapter metadata.
-- `/api/v3/status` returned the exact upstream 401 body for both a missing JWT
-  and a malformed Bearer token. Valid JWT, expiry, tamper, DO-eviction and
-  cross-tenant cases are covered locally without exposing a deployed
-  credential.
-- `/api/v2/authorization/request/not-a-subject` returned HTTP 401 with the
-  upstream `description: "Invalid/Missing"` field, proving that the new
-  authorization handler reached the deployed tenant DO.
-- Anonymous `/api/v1/verifyauth` returned the upstream-shaped DEFAULT/read-only
-  result.
-- `/api/v1/activity?count=2` returned HTTP 200 and an empty list for the
-  simulated default tenant.
-- A real `/socket.io/?EIO=4&transport=polling` handshake still returned HTTP
-  404 because that deployed version predates the current routed local slice.
-- A real Chrome session loaded the official Profile Editor from `Not loaded`
-  to `Values loaded`. Its already-authorized browser session completed a real
-  profile Save, and the current-profile API confirmed persistence.
-- The same existing browser originally reproduced a post-save loop: the
-  upstream service worker still served an old adapter that omitted `profiles`,
-  so the official basal plugin warned that no treatment profile existed and
-  redirected back to `/profile`. The deployed content-addressed adapter
-  bypassed that old cache without manual clearing. Repeating the exact
-  `/profile` → `X` workflow stayed at `/`, showed no dialog or redirect, and
-  rendered `BASAL 0.100U` from the saved profile.
-- A fresh real-Chrome reload stayed on `/`, rendered `BASAL 0.100U`, did not
-  reopen Profile Editor and had no JavaScript dialog. Admin, Food, Report and
-  the color clock also rendered their official controls/states. There were no
-  console errors; standalone pages emitted only the upstream chart-container
-  warning caused by those pages not including the homepage chart.
-- Its data connection still came from the polling shim, not a Socket.IO server.
-- The existing `API_SECRET` was retained with `--keep-vars` and used only by
-  the official browser's existing authentication state; its value was never
-  inspected or printed. Credentialed activity CRUD remains a local contract
-  test rather than a fabricated remote result.
+- `/`, `/admin`, `/profile`, `/food`, `/report` and `/clock/clock-color`
+  returned HTTP 200 and rendered official Nightscout surfaces.
+- `/api/v1/entries.json` returned HTTP 200. `/api/v3/version` returned the
+  v15.0.7/API 3.0.3-alpha envelope and SQLite DO adapter metadata.
+- Missing-JWT `/api/v3/status` and `/api/v3/treatments` both returned HTTP 401.
+  Valid JWT, permission, mutation, expiry, tamper, eviction and cross-tenant
+  contracts remain covered locally; this smoke did not invent an authenticated
+  remote mutation.
+- A real EIO4 polling handshake advertised no upgrades, a 25-second ping
+  interval, 20-second timeout and 1,000,000-byte maximum. SIO5 root CONNECT and
+  read-only authorize completed, and the following poll contained
+  `dataUpdate`, `status` and an ACK with read true/write false.
+- Real Chromium rendered the homepage chart and `BASAL 0.100U`, Profile Editor
+  (`Values loaded`, `Asia/Shanghai`), Food Editor (`Database loaded`), Admin,
+  Report and the empty color-clock state. The official About panel showed
+  version 15.0.7.
+- A temporary client-only Settings title change saved, closed the panel and did
+  not rebound after a fresh navigation. The title was restored to `Nightscout`.
+- Home and color clock had zero console errors or warnings. Admin, Report,
+  Profile and Food had zero errors and only the locked upstream
+  missing-`#chartContainer` warning on standalone pages.
+- The homepage data connection still came from the REST polling shim; the new
+  EIO4 endpoint was exercised separately.
+- The existing `API_SECRET` was retained unchanged with `--keep-vars`; its
+  value and browser credential storage were never inspected or printed.
+
+An earlier deployed version completed an authenticated Profile Editor save and
+introduced the content-addressed shim/service-worker cache fix after reproducing
+the original post-save redirect loop. The latest deployment reloaded that
+persisted simulated profile successfully, but the earlier credentialed action
+is historical regression context rather than a credentialed claim for this
+release.
 
 These observations prove only the named increment. They are not a full-port
 completion claim.
