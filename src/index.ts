@@ -23,7 +23,12 @@ import { ApiError, parseEntryPayload, parseHistoryQuery } from "./model";
 import type { PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
 import { handleSocketIo } from "./realtime/http-adapter";
-import { nightscoutStatus } from "./status";
+import {
+  nightscoutStatus,
+  normalizeConfiguredDisplayUnits,
+  normalizeProfileUnits,
+  type NightscoutDisplayUnits,
+} from "./status";
 import {
   handleApi3DeviceStatus,
   handleApi3Entries,
@@ -96,6 +101,11 @@ type AppEnv = Env & {
   API_SECRET?: string;
   AUTH_DEFAULT_ROLES?: string;
   AUTH_FAIL_DELAY?: string;
+  DISPLAY_UNITS?: string;
+  BG_HIGH?: string;
+  BG_TARGET_TOP?: string;
+  BG_TARGET_BOTTOM?: string;
+  BG_LOW?: string;
 };
 
 function corsHeaders(): Record<string, string> {
@@ -213,12 +223,16 @@ async function servePlatformPage(
   return null;
 }
 
-function resolveTenant(_request: Request, url: URL): string {
+function resolveTenantFromUrl(url: URL): string {
   const tenant = url.searchParams.get("tenant") ?? "demo";
   if (!TENANT.test(tenant)) {
     throw new ApiError(400, "invalid_tenant", "tenant must match [a-z0-9][a-z0-9_-]{0,63}");
   }
   return tenant;
+}
+
+function resolveTenant(_request: Request, url: URL): string {
+  return resolveTenantFromUrl(url);
 }
 
 function safeLogPath(pathname: string): string {
@@ -685,13 +699,252 @@ function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
   };
 }
 
-function statusForResolution(
+const DEFAULT_STATUS_THRESHOLDS = {
+  bgHigh: 260,
+  bgTargetTop: 180,
+  bgTargetBottom: 80,
+  bgLow: 55,
+};
+
+function profileDisplayUnits(profile: JsonDocument | undefined): NightscoutDisplayUnits | null {
+  if (profile === undefined) return null;
+  const recordUnits = normalizeProfileUnits(profile.units);
+  if (recordUnits !== null) return recordUnits;
+
+  const defaultProfile = profile.defaultProfile;
+  const store = profile.store;
+  if (
+    typeof defaultProfile !== "string"
+    || typeof store !== "object"
+    || store === null
+    || Array.isArray(store)
+  ) {
+    return null;
+  }
+  const selected = (store as Record<string, unknown>)[defaultProfile];
+  if (typeof selected !== "object" || selected === null || Array.isArray(selected)) return null;
+  return normalizeProfileUnits((selected as Record<string, unknown>).units);
+}
+
+function configuredStatusThresholds(
   env: AppEnv,
+  units: NightscoutDisplayUnits,
+): typeof DEFAULT_STATUS_THRESHOLDS | undefined {
+  const configured = [env.BG_HIGH, env.BG_TARGET_TOP, env.BG_TARGET_BOTTOM, env.BG_LOW];
+  if (configured.every((value) => value === undefined)) return undefined;
+
+  function numberOr(value: string | undefined, fallback: number): number {
+    if (value === undefined || value.trim() === "") return fallback;
+    const parsed = Number(value.replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  const thresholds = {
+    bgHigh: numberOr(env.BG_HIGH, DEFAULT_STATUS_THRESHOLDS.bgHigh),
+    bgTargetTop: numberOr(env.BG_TARGET_TOP, DEFAULT_STATUS_THRESHOLDS.bgTargetTop),
+    bgTargetBottom: numberOr(env.BG_TARGET_BOTTOM, DEFAULT_STATUS_THRESHOLDS.bgTargetBottom),
+    bgLow: numberOr(env.BG_LOW, DEFAULT_STATUS_THRESHOLDS.bgLow),
+  };
+
+  // Locked settings.js accepts mmol thresholds, but keeps legacy mg/dl values
+  // when bgHigh is already above the mmol range.
+  if (units === "mmol" && thresholds.bgHigh < 50) {
+    thresholds.bgHigh = Math.round(thresholds.bgHigh * 18.01559);
+    thresholds.bgTargetTop = Math.round(thresholds.bgTargetTop * 18.01559);
+    thresholds.bgTargetBottom = Math.round(thresholds.bgTargetBottom * 18.01559);
+    thresholds.bgLow = Math.round(thresholds.bgLow * 18.01559);
+  }
+  if (thresholds.bgTargetBottom >= thresholds.bgTargetTop) {
+    thresholds.bgTargetBottom = thresholds.bgTargetTop - 1;
+  }
+  if (thresholds.bgTargetTop <= thresholds.bgTargetBottom) {
+    thresholds.bgTargetTop = thresholds.bgTargetBottom + 1;
+  }
+  if (thresholds.bgLow >= thresholds.bgTargetBottom) {
+    thresholds.bgLow = thresholds.bgTargetBottom - 1;
+  }
+  if (thresholds.bgHigh <= thresholds.bgTargetTop) {
+    thresholds.bgHigh = thresholds.bgTargetTop + 1;
+  }
+  return thresholds;
+}
+
+async function statusForResolution(
+  env: AppEnv,
+  url: URL,
   resolution: AuthorizationResolution,
-): Record<string, unknown> {
-  const status = nightscoutStatus(new Date(), configuredAuthDefaultRoles(env));
-  if (resolution.authorized !== null) status.authorized = resolution.authorized;
+): Promise<Record<string, unknown>> {
+  let units: NightscoutDisplayUnits;
+  if (env.DISPLAY_UNITS !== undefined) {
+    units = normalizeConfiguredDisplayUnits(env.DISPLAY_UNITS);
+  } else {
+    let storedUnits: NightscoutDisplayUnits | null = null;
+    if (env.ENTRY_STORE !== undefined) {
+      try {
+        const store = env.ENTRY_STORE.getByName(resolveTenantFromUrl(url));
+        const profiles = parseDocuments(await store.listDocuments("profile", 1));
+        storedUnits = profileDisplayUnits(profiles[0]);
+      } catch {
+        // Profile lookup is an adapter fallback, not an upstream dependency of
+        // /status. A damaged optional profile must not make server status fail.
+      }
+    }
+    // This fallback is the Cloudflare adapter's only intentional source
+    // extension: locked Node Nightscout reads DISPLAY_UNITS only, while an
+    // existing profile is the sole persisted unit setting available here.
+    units = storedUnits ?? "mg/dl";
+  }
+
+  const thresholds = configuredStatusThresholds(env, units);
+  const settingsOverrides = thresholds === undefined
+    ? { units, authFailDelay: configuredAuthFailDelay(env) }
+    : { units, authFailDelay: configuredAuthFailDelay(env), thresholds };
+  const status = nightscoutStatus(
+    new Date(),
+    configuredAuthDefaultRoles(env),
+    settingsOverrides,
+  );
+  if (resolution.authorized !== null) {
+    // Preserve locked status.js key order: authorized precedes runtimeState.
+    const runtimeState = status.runtimeState;
+    delete status.runtimeState;
+    status.authorized = resolution.authorized;
+    status.runtimeState = runtimeState;
+  }
   return status;
+}
+
+type StatusFormat = "html" | "png" | "svg" | "js" | "text" | "json";
+
+interface AcceptPreference {
+  quality: number;
+  specificity: number;
+  order: number;
+}
+
+function acceptedPreference(accept: string, mediaType: string): AcceptPreference | null {
+  const [wantedType, wantedSubtype] = mediaType.toLowerCase().split("/");
+  let best: AcceptPreference | null = null;
+  for (const [order, range] of accept.toLowerCase().split(",").entries()) {
+    const [rawType, ...parameters] = range.trim().split(";");
+    const [type, subtype] = rawType!.trim().split("/");
+    if (
+      wantedType === undefined
+      || wantedSubtype === undefined
+      || type === undefined
+      || subtype === undefined
+      || (type !== "*" && type !== wantedType)
+      || (subtype !== "*" && subtype !== wantedSubtype)
+    ) {
+      continue;
+    }
+    let quality = 1;
+    for (const parameter of parameters) {
+      const match = /^\s*q\s*=\s*(0(?:\.\d+)?|1(?:\.0+)?)\s*$/.exec(parameter);
+      if (match !== null) quality = Number(match[1]);
+    }
+    if (quality <= 0) continue;
+    const preference = {
+      quality,
+      specificity: (type === "*" ? 0 : 1) + (subtype === "*" ? 0 : 1),
+      order,
+    };
+    if (
+      best === null
+      || preference.quality > best.quality
+      || (
+        preference.quality === best.quality
+        && preference.specificity > best.specificity
+      )
+      || (
+        preference.quality === best.quality
+        && preference.specificity === best.specificity
+        && preference.order < best.order
+      )
+    ) {
+      best = preference;
+    }
+  }
+  return best;
+}
+
+function negotiatedStatusFormat(request: Request): StatusFormat | null {
+  const accept = request.headers.get("Accept") ?? "*/*";
+  const offered = [
+    ["html", "text/html"],
+    ["png", "image/png"],
+    ["svg", "image/svg+xml"],
+    ["js", "application/javascript"],
+    ["text", "text/plain"],
+    ["json", "application/json"],
+  ] as const;
+  let selected: StatusFormat | null = null;
+  let selectedPreference: AcceptPreference | null = null;
+  for (const [format, mediaType] of offered) {
+    const preference = acceptedPreference(accept, mediaType);
+    if (
+      preference !== null
+      && (
+        selectedPreference === null
+        || preference.quality > selectedPreference.quality
+        || (
+          preference.quality === selectedPreference.quality
+          && preference.specificity > selectedPreference.specificity
+        )
+        || (
+          preference.quality === selectedPreference.quality
+          && preference.specificity === selectedPreference.specificity
+          && preference.order < selectedPreference.order
+        )
+      )
+    ) {
+      selected = format;
+      selectedPreference = preference;
+    }
+  }
+  return selected;
+}
+
+function statusText(body: string, contentType: string): Response {
+  const headers = new Headers(corsHeaders());
+  headers.set("Content-Type", `${contentType}; charset=utf-8`);
+  headers.set("Cache-Control", "no-store");
+  return new Response(body, { headers });
+}
+
+function statusRedirect(extension: "png" | "svg"): Response {
+  const headers = new Headers(corsHeaders());
+  headers.set("Location", `http://img.shields.io/badge/Nightscout-OK-green.${extension}`);
+  headers.set("Cache-Control", "no-store");
+  return new Response(null, { status: 302, headers });
+}
+
+function renderStatus(
+  status: Record<string, unknown>,
+  format: StatusFormat,
+): Response {
+  switch (format) {
+    case "html":
+      return statusText("<h1>STATUS OK</h1>", "text/html");
+    case "png":
+    case "svg":
+      return statusRedirect(format);
+    case "js":
+      return javascript(`this.serverSettings = ${JSON.stringify(status)};`);
+    case "text":
+      return statusText("STATUS OK", "text/plain");
+    case "json":
+      return json(status);
+  }
+}
+
+function withoutBodyForHead(request: Request, response: Response): Response {
+  if (request.method !== "HEAD") return response;
+  return new Response(null, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 function entryDeleteBoundary(url: URL, name: string): number | null {
@@ -1255,29 +1508,42 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     }
   }
 
-  if (
-    request.method === "GET" &&
-    /^\/api\/v[12]\/status(?:\.json)?\/?$/.test(url.pathname)
-  ) {
+  const statusMatch = /^\/api\/v[12]\/status(?:\.(json|html|txt|png|svg|js|csv|tsv))?\/?$/i.exec(
+    url.pathname,
+  );
+  if ((request.method === "GET" || request.method === "HEAD") && statusMatch !== null) {
     const resolution = await requirePermission(
       request,
       env,
       url,
       "api:status:read",
     );
-    return json(statusForResolution(env, resolution));
-  }
-
-  if (request.method === "GET" && /^\/api\/v[12]\/status\.js\/?$/.test(url.pathname)) {
-    const resolution = await requirePermission(
-      request,
-      env,
-      url,
-      "api:status:read",
-    );
-    return javascript(
-      `this.serverSettings = ${JSON.stringify(statusForResolution(env, resolution))};`,
-    );
+    const extension = statusMatch[1]?.toLowerCase();
+    if (extension === "csv" || extension === "tsv") {
+      return withoutBodyForHead(
+        request,
+        json(
+          { status: 406, message: "Not Acceptable" },
+          { status: 406, headers: { Vary: "Accept" } },
+        ),
+      );
+    }
+    const format: StatusFormat | null = extension === undefined
+      ? negotiatedStatusFormat(request)
+      : extension === "txt"
+        ? "text"
+        : extension as StatusFormat;
+    if (format === null) {
+      return withoutBodyForHead(
+        request,
+        json(
+          { status: 406, message: "Not Acceptable" },
+          { status: 406, headers: { Vary: "Accept" } },
+        ),
+      );
+    }
+    const status = await statusForResolution(env, url, resolution);
+    return withoutBodyForHead(request, renderStatus(status, format));
   }
 
   if (request.method === "GET" && url.pathname === "/api/versions") {
