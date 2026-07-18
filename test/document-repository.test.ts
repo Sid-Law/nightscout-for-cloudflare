@@ -3,6 +3,8 @@ import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { EntryStore, JsonDocument } from "../src/entry-store";
 import type {
+  Api3MutationDecision,
+  Api3MutationOptions,
   DocumentDeleteResult,
   DocumentHistoryQuery,
   DocumentMutationResult,
@@ -10,6 +12,14 @@ import type {
 } from "../src/document-repository";
 
 interface TreatmentRpc {
+  api3CreateTreatment(documentJson: string, optionsJson: string): Promise<string>;
+  api3ReplaceTreatment(identity: string, documentJson: string, optionsJson: string): Promise<string>;
+  api3PatchTreatment(identity: string, patchJson: string, optionsJson: string): Promise<string>;
+  api3DeleteTreatment(
+    identity: string,
+    permanent: boolean,
+    actor: string | null,
+  ): Promise<DocumentDeleteResult>;
   createTreatment(documentJson: string): Promise<string>;
   upsertTreatment(documentJson: string): Promise<string>;
   replaceTreatment(identity: string, documentJson: string): Promise<string>;
@@ -35,6 +45,10 @@ function store(prefix: string) {
 function treatment(identifier: string, createdAt: string, extra = {}) {
   return {
     identifier,
+    date: Date.parse(createdAt),
+    utcOffset: 0,
+    app: "repository-test",
+    device: "test-device",
     eventType: "Correction Bolus",
     created_at: createdAt,
     insulin: 1,
@@ -90,6 +104,30 @@ async function treatmentHistory(
   query: DocumentHistoryQuery,
 ): Promise<JsonDocument[]> {
   return decode<JsonDocument[]>(await stub.treatmentHistory(JSON.stringify(query)));
+}
+
+async function api3Create(
+  stub: TreatmentRpc,
+  document: JsonDocument,
+  options: Api3MutationOptions,
+): Promise<Api3MutationDecision> {
+  return decode<Api3MutationDecision>(await stub.api3CreateTreatment(
+    JSON.stringify(document),
+    JSON.stringify(options),
+  ));
+}
+
+async function api3Replace(
+  stub: TreatmentRpc,
+  identity: string,
+  document: JsonDocument,
+  options: Api3MutationOptions,
+): Promise<Api3MutationDecision> {
+  return decode<Api3MutationDecision>(await stub.api3ReplaceTreatment(
+    identity,
+    JSON.stringify(document),
+    JSON.stringify(options),
+  ));
 }
 
 async function storedId(stub: ReturnType<typeof store>, identifier: string): Promise<string> {
@@ -511,13 +549,20 @@ describe("SQLite collection contract v4", () => {
       notes: "other document",
     });
 
-    const retransmitted = await createTreatment(stub, {
-      _id: conflictingId,
-      identifier: "priority-id",
-      eventType: "Correction Bolus",
-      created_at: createdAt,
-      insulin: 2,
+    await runInDurableObject(stub, async (instance: EntryStore) => {
+      await expect(instance.createTreatment(JSON.stringify({
+        _id: conflictingId,
+        identifier: "priority-id",
+        eventType: "Correction Bolus",
+        created_at: createdAt,
+        insulin: 2,
+      }))).rejects.toThrow("immutable field _id");
     });
+    const retransmitted = await createTreatment(stub, treatment(
+      "priority-id",
+      createdAt,
+      { insulin: 2 },
+    ));
     expect(await storedId(stub, "priority-id")).toBe(primaryId);
     expect(primaryId).not.toBe(conflictingId);
     expect(retransmitted.document).not.toHaveProperty("_id");
@@ -819,6 +864,175 @@ describe("SQLite collection contract v4", () => {
     });
   });
 
+  it("keeps API3 POST candidate lookup and create-only permission selection atomic", async () => {
+    const stub = store("api3-create-only-race");
+    const document = treatment(
+      "create-only-race",
+      "2026-04-10T00:00:00.000Z",
+      { notes: "must remain revision one" },
+    );
+    const createOnly: Api3MutationOptions = {
+      canCreate: true,
+      canUpdate: false,
+      actor: "creator-a",
+      ifUnmodifiedSince: null,
+    };
+
+    const decisions = await Promise.all([
+      api3Create(stub, document, createOnly),
+      api3Create(stub, document, createOnly),
+    ]);
+    const successes = decisions.filter(
+      (decision): decision is Extract<Api3MutationDecision, { ok: true }> => decision.ok,
+    );
+    const failures = decisions.filter(
+      (decision): decision is Extract<Api3MutationDecision, { ok: false }> => !decision.ok,
+    );
+
+    expect(successes).toHaveLength(1);
+    expect(successes[0]?.mutation).toMatchObject({ created: true, revision: 1 });
+    expect(failures).toEqual([{ ok: false, reason: "missing-update-permission" }]);
+    expect(await findByIdentifier(stub, "create-only-race")).toMatchObject({
+      notes: "must remain revision one",
+      subject: "creator-a",
+    });
+  });
+
+  it("keeps API3 PUT existence lookup and update-only permission selection atomic", async () => {
+    const stub = store("api3-update-only-branch");
+    const existing = treatment("put-existing", "2026-04-11T00:00:00.000Z", {
+      notes: "before",
+    });
+    await api3Create(stub, existing, {
+      canCreate: true,
+      canUpdate: true,
+      actor: "creator-b",
+      ifUnmodifiedSince: null,
+    });
+    const updateOnly: Api3MutationOptions = {
+      canCreate: false,
+      canUpdate: true,
+      actor: "updater-b",
+      ifUnmodifiedSince: null,
+    };
+
+    const updated = await api3Replace(stub, "put-existing", {
+      ...existing,
+      notes: "after",
+    }, updateOnly);
+    expect(updated).toMatchObject({ ok: true, mutation: { created: false, revision: 2 } });
+
+    const missing = await Promise.all([
+      api3Replace(stub, "put-missing-a", {
+        ...existing,
+        identifier: "put-missing-a",
+      }, updateOnly),
+      api3Replace(stub, "put-missing-b", {
+        ...existing,
+        identifier: "put-missing-b",
+      }, updateOnly),
+    ]);
+    expect(missing).toEqual([
+      { ok: false, reason: "missing-create-permission" },
+      { ok: false, reason: "missing-create-permission" },
+    ]);
+    expect(await findByIdentifier(stub, "put-missing-a")).toBeNull();
+    expect(await findByIdentifier(stub, "put-missing-b")).toBeNull();
+  });
+
+  it("does not treat an arbitrary API3 body _id as an extra deduplication selector", async () => {
+    const stub = store("api3-body-id-not-dedup");
+    const legacyId = "1234567890abcdef12345678";
+    await upsertTreatment(stub, {
+      _id: legacyId,
+      eventType: "Note",
+      created_at: "2026-04-12T00:00:00.000Z",
+      notes: "legacy must survive",
+    });
+
+    await runInDurableObject(stub, async (instance: EntryStore) => {
+      const decision = decode<Api3MutationDecision>(await instance.api3CreateTreatment(JSON.stringify({
+        ...treatment("unrelated-api3-identifier", "2026-04-13T00:00:00.000Z"),
+        _id: legacyId,
+        eventType: "Note",
+        notes: "must not overwrite by body id",
+      }), JSON.stringify({
+        canCreate: true,
+        canUpdate: true,
+        actor: "creator-c",
+        ifUnmodifiedSince: null,
+        validate: true,
+      } satisfies Api3MutationOptions)));
+      expect(decision).toMatchObject({
+        ok: false,
+        reason: "operation-error",
+        message: expect.stringContaining("UNIQUE constraint failed"),
+      });
+    });
+
+    expect(await findById(stub, legacyId, true)).toMatchObject({
+      identifier: legacyId,
+      notes: "legacy must survive",
+    });
+    expect(await findByIdentifier(stub, "unrelated-api3-identifier", true)).toBeNull();
+  });
+
+  it("records distinct API3 create, patch, and soft-delete actors", async () => {
+    const stub = store("api3-mutation-actors");
+    const document = treatment("actor-chain", "2026-04-14T00:00:00.000Z");
+    await api3Create(stub, document, {
+      canCreate: true,
+      canUpdate: true,
+      actor: "creator-d",
+      ifUnmodifiedSince: null,
+    });
+    const patched = decode<Api3MutationDecision>(await stub.api3PatchTreatment(
+      "actor-chain",
+      JSON.stringify({ notes: "changed by a second subject" }),
+      JSON.stringify({
+        canCreate: false,
+        canUpdate: true,
+        actor: "updater-d",
+        ifUnmodifiedSince: null,
+      } satisfies Api3MutationOptions),
+    ));
+    expect(patched).toMatchObject({
+      ok: true,
+      mutation: { document: { subject: "creator-d", modifiedBy: "updater-d" } },
+    });
+
+    expect(await stub.api3DeleteTreatment("actor-chain", false, "deleter-d")).toMatchObject({
+      deleted: true,
+      permanent: false,
+    });
+    expect(await findByIdentifier(stub, "actor-chain", true)).toMatchObject({
+      subject: "creator-d",
+      modifiedBy: "deleter-d",
+      isValid: false,
+    });
+  });
+
+  it("keeps locked treatment-duration base precedence across replacement", async () => {
+    const stub = store("api3-duration-order");
+    const fallbackMills = Date.parse("2026-04-15T00:00:00.000Z");
+    await createTreatment(stub, treatment(
+      "duration-order",
+      "2026-04-14T00:00:00.000Z",
+      { mills: fallbackMills },
+    ));
+    const replacementCreatedAt = "2026-04-16T00:00:00.000Z";
+    const replaced = decode<DocumentMutationResult>(await stub.replaceTreatment(
+      "duration-order",
+      JSON.stringify({ created_at: replacementCreatedAt, duration: 10 }),
+    ));
+    expect(replaced.document).toMatchObject({
+      endmills: fallbackMills + 10 * 60_000,
+      durationInMilliseconds: 10 * 60_000,
+      duration: 10,
+    });
+    expect(replaced.document.endmills).not.toBe(Date.parse(replacementCreatedAt) + 10 * 60_000);
+  });
+
   it("enforces API3 immutable fields while preserving deduplication exceptions", async () => {
     const stub = store("immutable");
     const base: JsonDocument = {
@@ -997,6 +1211,10 @@ describe("SQLite collection contract v4", () => {
         filters: [{ field: "notes", operator: "re", value: "x".repeat(48) }],
         limit: 1,
       })))).toEqual([]);
+      await expect(instance.queryTreatments(JSON.stringify({
+        sort: [{ field: "date", direction: "sideways" }],
+        limit: 1,
+      }))).rejects.toThrow("invalid document sort direction sideways");
     });
   });
 

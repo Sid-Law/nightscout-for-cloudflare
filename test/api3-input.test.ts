@@ -1,0 +1,144 @@
+import { describe, expect, it } from "vitest";
+import {
+  API3_MESSAGES,
+  Api3InputError,
+  calculateApi3Identifier,
+  normalizeApi3Date,
+  parseApi3Document,
+  parseApi3History,
+  parseApi3Search,
+  parseApi3Sort,
+  resolveApi3Identifier,
+  validateApi3Common,
+} from "../src/api3/input";
+import { api3FormatFromRequest, api3Json, renderApi3 } from "../src/api3/response";
+
+describe("locked API3 input adapter", () => {
+  it("represents the upstream fixed sort chain as an ordered list", () => {
+    expect(parseApi3Sort(new URL("https://example.test/api/v3/treatments"))).toEqual([
+      { field: "identifier", direction: "asc" },
+      { field: "created_at", direction: "asc" },
+      { field: "date", direction: "asc" },
+    ]);
+    expect(parseApi3Sort(new URL("https://example.test/api/v3/treatments?sort=date"))).toEqual([
+      { field: "date", direction: "asc" },
+      { field: "identifier", direction: "asc" },
+      { field: "created_at", direction: "asc" },
+    ]);
+    expect(
+      parseApi3Sort(new URL("https://example.test/api/v3/treatments?sort%24desc=payload.rank")),
+    ).toEqual([
+      { field: "payload.rank", direction: "desc" },
+      { field: "identifier", direction: "desc" },
+      { field: "created_at", direction: "desc" },
+      { field: "date", direction: "desc" },
+    ]);
+  });
+
+  it("matches Express array-to-property-key coercion without inventing public multi-sort", () => {
+    const repeated = new URL("https://example.test/api/v3/treatments?sort=first&sort=second");
+    expect(parseApi3Sort(repeated)[0]).toEqual({ field: "first,second", direction: "asc" });
+    const comma = new URL("https://example.test/api/v3/treatments?sort=first%2Csecond");
+    expect(parseApi3Sort(comma)[0]).toEqual({ field: "first,second", direction: "asc" });
+  });
+
+  it("preserves the locked combined-sort error and marks SQL-only field rejection as controlled", () => {
+    expect(() => parseApi3Sort(
+      new URL("https://example.test/api/v3/treatments?sort=date&sort%24desc=created_at"),
+    )).toThrowError(API3_MESSAGES.combinedSort);
+    try {
+      parseApi3Sort(new URL("https://example.test/api/v3/treatments?sort=unsafe%5Bpath%5D"));
+      throw new Error("expected controlled rejection");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Api3InputError);
+      expect((error as Api3InputError).controlledDifference).toBe(true);
+      expect((error as Api3InputError).status).toBe(400);
+    }
+  });
+
+  it("parses filters, dates, projection, paging, and excludes the platform tenant selector", () => {
+    const input = parseApi3Search(new URL(
+      "https://example.test/api/v3/treatments?tenant=alpha&carbs%24gte=12.5"
+      + "&created_at%24lt=2026-07-17T08%3A00%3A00%2B02%3A00"
+      + "&eventType%24in=Meal%20Bolus%7CTemp%20Basal&fields=identifier%2Ccarbs&limit=7&skip=2",
+    ));
+    expect(input.filters).toEqual([
+      { field: "carbs", operator: "gte", value: 12.5 },
+      { field: "created_at", operator: "lt", value: "2026-07-17T06:00:00.000Z" },
+      { field: "eventType", operator: "in", value: "Meal Bolus|Temp Basal" },
+    ]);
+    expect(input.fields).toEqual(["identifier", "carbs"]);
+    expect(input.limit).toBe(7);
+    expect(input.skip).toBe(2);
+  });
+
+  it("keeps the two upstream history boundaries distinct", () => {
+    const url = new URL("https://example.test/api/v3/treatments/history?limit=5");
+    expect(parseApi3History(url, undefined, "Fri, 17 Jul 2026 08:00:00 GMT")).toMatchObject({
+      since: Date.UTC(2026, 6, 17, 8),
+      inclusive: true,
+      limit: 5,
+    });
+    expect(parseApi3History(url, "1784275200123", null)).toMatchObject({
+      since: 1_784_275_200_123,
+      inclusive: false,
+      limit: 5,
+    });
+    expect(() => parseApi3History(url, undefined, null)).toThrowError(API3_MESSAGES.badLastModified);
+  });
+
+  it("normalizes API3 dates and calculates the locked UUIDv5 identity", async () => {
+    const document = parseApi3Document({
+      date: "2026-07-17T08:07:08.576+02:00",
+      app: "AAPS",
+      device: "pump",
+      eventType: "Correction Bolus",
+    });
+    normalizeApi3Date(document);
+    validateApi3Common(document);
+    expect(document).toMatchObject({
+      date: Date.UTC(2026, 6, 17, 6, 7, 8, 576),
+      utcOffset: 120,
+      created_at: "2026-07-17T06:07:08.576Z",
+    });
+    const calculated = await calculateApi3Identifier(document);
+    expect(calculated).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    await resolveApi3Identifier(document);
+    expect(document.identifier).toBe(calculated);
+    expect(await calculateApi3Identifier(document)).toBe(calculated);
+  });
+
+  it("rejects array and empty request shapes before any mutation", () => {
+    expect(() => parseApi3Document([])).toThrowError(API3_MESSAGES.badBody);
+    expect(() => parseApi3Document({})).toThrowError(API3_MESSAGES.badBody);
+    expect(() => parseApi3Document({ date: Number.NaN })).toThrowError(API3_MESSAGES.badBody);
+  });
+});
+
+describe("API3 response renderer", () => {
+  it("uses the official JSON envelope and content type", async () => {
+    const response = api3Json({ status: 200, result: [{ identifier: "one" }] });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/json; charset=utf-8");
+    expect(await response.json()).toEqual({ status: 200, result: [{ identifier: "one" }] });
+  });
+
+  it("limits this slice to JSON and rejects unimplemented renderers", async () => {
+    expect(api3FormatFromRequest(new Request("https://example.test"))).toBe("json");
+    expect(() => api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "text/csv" },
+    }))).toThrowError(API3_MESSAGES.unsupportedFormat);
+    expect(() => api3FormatFromRequest(
+      new Request("https://example.test"),
+      "xml",
+    )).toThrowError(API3_MESSAGES.unsupportedFormat);
+    expect(() => api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "font/ttf" },
+    }))).toThrowError(API3_MESSAGES.unsupportedFormat);
+
+    const json = renderApi3("json", { identifier: "one" });
+    expect(json.headers.get("Content-Type")).toBe("application/json; charset=utf-8");
+    expect(json.headers.get("Vary")).toBe("Accept");
+    expect(await json.json()).toEqual({ status: 200, result: { identifier: "one" } });
+  });
+});
