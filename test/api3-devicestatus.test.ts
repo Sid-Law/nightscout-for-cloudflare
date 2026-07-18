@@ -108,6 +108,20 @@ async function result<T = unknown>(response: Response): Promise<T> {
   return body.result;
 }
 
+async function storedDeviceStatusId(tenantName: string, identifier: string): Promise<string> {
+  const stub = env.ENTRY_STORE.getByName(tenantName);
+  return runInDurableObject(stub, async (_instance: EntryStore, state) => {
+    const row = state.storage.sql.exec<{ id: string }>(
+      `SELECT id FROM documents
+       WHERE collection = 'devicestatus' AND identifier = ?
+       ORDER BY updated_at DESC, id ASC LIMIT 1`,
+      identifier,
+    ).toArray()[0];
+    if (row === undefined) throw new Error(`missing devicestatus ${identifier}`);
+    return row.id;
+  });
+}
+
 describe("API v3 devicestatus vertical slice", () => {
   it("requires JWT Bearer auth and enforces collection-specific mutation permissions", async () => {
     const name = tenant("api3-ds-auth");
@@ -309,6 +323,32 @@ describe("API v3 devicestatus vertical slice", () => {
       { headers: { "Last-Modified": "Sat, 01 Jan 2000 00:00:01 GMT" } },
     ))).length).toBe(1);
 
+    const searchCsv = await api3Fetch(
+      name,
+      alice,
+      "/api/v3/devicestatus.csv?fields=identifier%2CuploaderBattery",
+    );
+    expect(searchCsv.status).toBe(200);
+    expect(searchCsv.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
+    expect(searchCsv.headers.get("Vary")).toBe("Accept");
+    expect(await searchCsv.text()).toBe(
+      "identifier,uploaderBattery\nworkflow-device-status,70\n",
+    );
+
+    const readXml = await api3Fetch(
+      name,
+      alice,
+      "/api/v3/devicestatus/workflow-device-status?fields=identifier%2CuploaderBattery",
+      { headers: { Accept: "application/xml" } },
+    );
+    expect(readXml.status).toBe(200);
+    expect(readXml.headers.get("Content-Type")).toBe("application/xml; charset=utf-8");
+    expect(readXml.headers.get("Vary")).toBe("Accept");
+    expect(await readXml.text()).toContain(
+      "<item>\n  <identifier>workflow-device-status</identifier>\n"
+      + "  <uploaderBattery>70</uploaderBattery>\n</item>",
+    );
+
     expect((await api3Fetch(
       name,
       bob,
@@ -438,6 +478,64 @@ describe("API v3 devicestatus vertical slice", () => {
       "/api/v3/devicestatus/modern-device-status?permanent=true",
       { method: "DELETE" },
     )).status).toBe(200);
+  });
+
+  it("does not PUT or PATCH a modern API3 row through its storage ObjectId", async () => {
+    const name = tenant("api3-ds-objectid");
+    const jwt = await issueSubject(name, "ObjectId contract", [
+      "api:devicestatus:create",
+      "api:devicestatus:read",
+      "api:devicestatus:update",
+      "api:devicestatus:delete",
+    ]);
+    const original = deviceStatus(
+      "public-device-status-id",
+      "2026-07-04T00:00:00.000Z",
+      { uploaderBattery: 50 },
+    );
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus",
+      jsonMutation("POST", original),
+    )).status).toBe(201);
+    const storageId = await storedDeviceStatusId(name, "public-device-status-id");
+    expect(storageId).toMatch(/^[0-9a-f]{24}$/);
+
+    const patchByStorageId = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/devicestatus/${storageId}`,
+      jsonMutation("PATCH", { uploaderBattery: 49 }),
+    );
+    expect(patchByStorageId.status).toBe(404);
+
+    const putByStorageId = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/devicestatus/${storageId}`,
+      jsonMutation("PUT", deviceStatus(
+        storageId,
+        "2026-07-04T00:01:00.000Z",
+        { uploaderBattery: 48 },
+      )),
+    );
+    expect(putByStorageId.status).toBe(201);
+    expect(await putByStorageId.json()).toMatchObject({
+      status: 201,
+      identifier: storageId,
+    });
+
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/public-device-status-id",
+    ))).toMatchObject({ uploaderBattery: 50 });
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/devicestatus/${storageId}`,
+    ))).toMatchObject({ identifier: storageId, uploaderBattery: 48 });
   });
 
   it("backfills fallback keys for complete pre-slice SQLite rows", async () => {

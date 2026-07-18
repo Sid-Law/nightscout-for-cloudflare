@@ -1010,6 +1010,20 @@ export class SqliteDocumentRepository {
     return this.findByIdentifierRow(identity, collection) ?? this.findByIdRow(identity, collection);
   }
 
+  private findApi3MutationCandidate(
+    identity: string,
+    collection: Api3CollectionName = TREATMENTS,
+  ): DbDocumentV4 | undefined {
+    const identified = this.findByIdentifierRow(identity, collection);
+    if (identified !== undefined) return identified;
+    // Locked identifyingFilter() uses an ObjectId fallback for PUT/PATCH only
+    // when the stored legacy document genuinely has no identifier field. READ
+    // and DELETE use the broader filterForOne() contract represented above.
+    return OBJECT_ID.test(identity)
+      ? this.findLegacyByIdRow(identity.toLowerCase(), collection)
+      : undefined;
+  }
+
   private findApi3CreateCandidate(
     document: JsonDocument,
     collection: Api3CollectionName = TREATMENTS,
@@ -1419,7 +1433,7 @@ export class SqliteDocumentRepository {
     collection: Api3CollectionName = TREATMENTS,
   ): Api3MutationDecision {
     return this.storage.transactionSync(() => {
-      const existing = this.findByIdentity(identity, collection);
+      const existing = this.findApi3MutationCandidate(identity, collection);
       if (existing === undefined) {
         if (!options.canCreate) return { ok: false, reason: "missing-create-permission" };
         const document = normalizeTreatmentIdentity({ ...input, identifier: identity });
@@ -1505,7 +1519,7 @@ export class SqliteDocumentRepository {
   ): Api3MutationDecision {
     return this.storage.transactionSync(() => {
       if (!options.canUpdate) return { ok: false, reason: "missing-update-permission" };
-      const existing = this.findByIdentity(identity, collection);
+      const existing = this.findApi3MutationCandidate(identity, collection);
       if (existing === undefined) return { ok: false, reason: "not-found" };
       if (existing.is_valid === 0) return { ok: false, reason: "gone" };
       if (this.preconditionFailed(existing, options.ifUnmodifiedSince)) {

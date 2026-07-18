@@ -764,6 +764,45 @@ describe("SQLite collection contract v4", () => {
     });
   });
 
+  it("uses the legacy-only ObjectId fallback for API3 PUT and PATCH", async () => {
+    const stub = store("api3-mutation-objectid-fallback");
+    const createdAt = "2026-03-19T00:00:00.000Z";
+    await createTreatment(stub, treatment("visible-identifier", createdAt));
+    const internalId = await storedId(stub, "visible-identifier");
+    expect(internalId).toMatch(/^[0-9a-f]{24}$/);
+
+    const options: Api3MutationOptions = {
+      canCreate: true,
+      canUpdate: true,
+      actor: "contract-test",
+      ifUnmodifiedSince: null,
+      validate: true,
+    };
+    const patch = decode<Api3MutationDecision>(await stub.api3PatchTreatment(
+      internalId,
+      JSON.stringify({ notes: "must not patch by modern storage id" }),
+      JSON.stringify(options),
+    ));
+    expect(patch).toEqual({ ok: false, reason: "not-found" });
+
+    const replacement = await api3Replace(
+      stub,
+      internalId,
+      treatment(internalId, "2026-03-19T00:01:00.000Z"),
+      options,
+    );
+    expect(replacement).toMatchObject({
+      ok: true,
+      mutation: {
+        created: true,
+        document: { identifier: internalId },
+      },
+    });
+    const original = await findByIdentifier(stub, "visible-identifier");
+    expect(original).toMatchObject({ identifier: "visible-identifier" });
+    expect(original).not.toHaveProperty("notes");
+  });
+
   it("distinguishes a missing identifier from explicit null and empty values", async () => {
     const stub = store("identifier-presence");
     const missing = await upsertTreatment(stub, {
@@ -840,8 +879,10 @@ describe("SQLite collection contract v4", () => {
       created_at: "2026-03-24T00:00:00.000Z",
     });
     expect(await findByIdentifier(stub, explicitNullId)).toMatchObject({ identifier: explicitNullId });
-    expect((await patchTreatment(stub, explicitNullId, { notes: "path identity fallback" }))?.document)
-      .toMatchObject({ identifier: explicitNullId, notes: "path identity fallback" });
+    // API3 READ uses filterForOne() and may expose the ObjectId virtually, but
+    // PUT/PATCH identifyingFilter() only falls back to `_id` when identifier
+    // is genuinely absent. An explicit null therefore must not be mutated.
+    expect(await patchTreatment(stub, explicitNullId, { notes: "must not patch" })).toBeNull();
     const hexIdentifier = await createTreatment(stub, {
       identifier: explicitNullId,
       eventType: "Note",
