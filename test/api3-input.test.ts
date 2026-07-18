@@ -138,7 +138,7 @@ describe("API3 response renderer", () => {
     expect(await response.json()).toEqual({ status: 200, result: [{ identifier: "one" }] });
   });
 
-  it("limits this slice to JSON and rejects unimplemented renderers", async () => {
+  it("negotiates the three locked renderer formats and rejects unsupported media", async () => {
     expect(api3FormatFromRequest(new Request("https://example.test"))).toBe("json");
     expect(api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "Application/JSON" },
@@ -151,19 +151,22 @@ describe("API3 response renderer", () => {
     expect(() => api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "application/json;q=0" },
     }))).toThrowError(API3_MESSAGES.unsupportedFormat);
-    expect(() => api3FormatFromRequest(new Request("https://example.test", {
+    expect(api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "application/json;q=0, */*;q=1" },
-    }))).toThrowError(API3_MESSAGES.unsupportedFormat);
-    expect(() => api3FormatFromRequest(new Request("https://example.test", {
+    }))).toBe("csv");
+    expect(api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "text/csv, application/json;q=0.5" },
-    }))).toThrowError(API3_MESSAGES.unsupportedFormat);
-    expect(() => api3FormatFromRequest(new Request("https://example.test", {
+    }))).toBe("csv");
+    expect(api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "text/csv" },
-    }))).toThrowError(API3_MESSAGES.unsupportedFormat);
-    expect(() => api3FormatFromRequest(
+    }))).toBe("csv");
+    expect(api3FormatFromRequest(
       new Request("https://example.test"),
       "xml",
-    )).toThrowError(API3_MESSAGES.unsupportedFormat);
+    )).toBe("xml");
+    expect(api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "application/xml" },
+    }))).toBe("xml");
     expect(() => api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "font/ttf" },
     }))).toThrowError(API3_MESSAGES.unsupportedFormat);
@@ -172,5 +175,21 @@ describe("API3 response renderer", () => {
     expect(json.headers.get("Content-Type")).toBe("application/json; charset=utf-8");
     expect(json.headers.get("Vary")).toBe("Accept");
     expect(await json.json()).toEqual({ status: 200, result: { identifier: "one" } });
+
+    const csv = renderApi3("csv", { identifier: "one", notes: "a,b" });
+    expect(csv.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
+    expect(csv.headers.get("Vary")).toBe("Accept");
+    expect(await csv.text()).toBe('identifier,notes\none,"a,b"\n');
+
+    const xml = renderApi3("xml", { identifier: "one", notes: "a&b" });
+    expect(xml.headers.get("Content-Type")).toBe("application/xml; charset=utf-8");
+    expect(xml.headers.get("Vary")).toBe("Accept");
+    expect(await xml.text()).toBe(
+      "<?xml version='1.0' encoding='utf-8'?>\n"
+      + "<item>\n"
+      + "  <identifier>one</identifier>\n"
+      + "  <notes>a&amp;b</notes>\n"
+      + "</item>\n",
+    );
   });
 });

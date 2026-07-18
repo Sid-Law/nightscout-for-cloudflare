@@ -1,8 +1,10 @@
+import csvStringifySync from "csv-stringify/lib/sync.js";
+import EasyXml from "easyxml";
 import { API3_MESSAGES, Api3InputError } from "./input";
 
-export type Api3Format = "json";
+export type Api3Format = "json" | "csv" | "xml";
 
-type NegotiatedFormat = Api3Format | "csv" | "xml";
+type NegotiatedFormat = Api3Format;
 
 interface MediaRange {
   type: string;
@@ -20,8 +22,7 @@ interface FormatPriority {
   formatOrder: number;
 }
 
-// Negotiate against the locked renderer's full order. If CSV/XML wins, this
-// JSON-only slice must return 406 instead of silently falling back to JSON.
+// Express' locked res.format() order is JSON, CSV, then XML.
 const NEGOTIABLE_FORMATS: ReadonlyArray<{
   format: NegotiatedFormat;
   type: string;
@@ -203,19 +204,40 @@ export function api3Result(result: unknown, initHeaders?: HeadersInit): Response
   return api3Json({ status: 200, result }, 200, initHeaders);
 }
 
-export function renderApi3(_format: Api3Format, data: unknown, initHeaders?: HeadersInit): Response {
+export function renderApi3(format: Api3Format, data: unknown, initHeaders?: HeadersInit): Response {
   const headers = new Headers(initHeaders);
   varyOnAccept(headers);
-  return api3Result(data, headers);
+  if (format === "json") return api3Result(data, headers);
+
+  const renderedHeaders = responseHeaders(headers);
+  if (format === "csv") {
+    renderedHeaders.set("Content-Type", "text/csv; charset=utf-8");
+    const source = Array.isArray(data) ? data : [data];
+    return new Response(csvStringifySync(source, { header: true }), {
+      status: 200,
+      headers: renderedHeaders,
+    });
+  }
+
+  renderedHeaders.set("Content-Type", "application/xml; charset=utf-8");
+  const serializer = new EasyXml({
+    rootElement: "item",
+    dateFormat: "ISO",
+    manifest: true,
+  });
+  return new Response(serializer.render(data), { status: 200, headers: renderedHeaders });
 }
 
 export function api3FormatFromRequest(request: Request, extensionMimeType?: string): Api3Format {
   if (extensionMimeType !== undefined) {
     const normalized = extensionMimeType.toLowerCase();
     if (normalized === "json" || normalized === "application/json") return "json";
+    if (normalized === "csv" || normalized === "text/csv") return "csv";
+    if (normalized === "xml" || normalized === "application/xml") return "xml";
     throw new Api3InputError(406, API3_MESSAGES.unsupportedFormat, true);
   }
 
-  if (negotiateFormat(request.headers.get("Accept")) === "json") return "json";
+  const negotiated = negotiateFormat(request.headers.get("Accept"));
+  if (negotiated !== null) return negotiated;
   throw new Api3InputError(406, API3_MESSAGES.unsupportedFormat, true);
 }

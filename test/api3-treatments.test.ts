@@ -276,21 +276,25 @@ describe("API v3 treatments vertical slice", () => {
     );
     expect(knownUnsupported.status).toBe(406);
     expect(knownUnsupported.headers.get("Vary")).toBe("Accept");
-    const csvUnsupported = await api3Fetch(
+    const csvSupported = await api3Fetch(
       name,
       jwt,
       "/api/v3/treatments/known-mime-write.csv",
     );
-    expect(csvUnsupported.status).toBe(406);
-    expect(csvUnsupported.headers.get("Vary")).toBe("Accept");
-    const acceptUnsupported = await api3Fetch(
+    expect(csvSupported.status).toBe(200);
+    expect(csvSupported.headers.get("Content-Type")).toMatch(/text\/csv/);
+    expect(csvSupported.headers.get("Vary")).toBe("Accept");
+    expect(await csvSupported.text()).toContain("known-mime-write");
+    const acceptXml = await api3Fetch(
       name,
       jwt,
       "/api/v3/treatments/known-mime-write",
       { headers: { Accept: "application/xml" } },
     );
-    expect(acceptUnsupported.status).toBe(406);
-    expect(acceptUnsupported.headers.get("Vary")).toBe("Accept");
+    expect(acceptXml.status).toBe(200);
+    expect(acceptXml.headers.get("Content-Type")).toMatch(/application\/xml/);
+    expect(acceptXml.headers.get("Vary")).toBe("Accept");
+    expect(await acceptXml.text()).toContain("<identifier>known-mime-write</identifier>");
     expect((await api3Fetch(
       name,
       jwt,
@@ -654,6 +658,70 @@ describe("API v3 treatments vertical slice", () => {
       alice,
       "/api/v3/treatments/history/946684800001",
     ))).toEqual([]);
+  });
+
+  it("renders READ, SEARCH, and HISTORY through the locked CSV/XML libraries", async () => {
+    const name = tenant("api3-renderers");
+    const jwt = await issueSubject(name, "Renderer user", [
+      "api:treatments:create",
+      "api:treatments:read",
+      "api:treatments:delete",
+    ]);
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments",
+      jsonMutation("POST", treatment(
+        "format-treatment",
+        "2026-06-02T01:00:00.000Z",
+        { notes: "a,b" },
+      )),
+    )).status).toBe(201);
+
+    const readCsv = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/format-treatment.csv?fields=identifier%2Cnotes",
+    );
+    expect(readCsv.status).toBe(200);
+    expect(readCsv.headers.get("Content-Type")).toMatch(/text\/csv/);
+    expect(await readCsv.text()).toBe('identifier,notes\nformat-treatment,"a,b"\n');
+
+    const readXml = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/format-treatment?fields=identifier%2Cnotes",
+      { headers: { Accept: "application/xml" } },
+    );
+    expect(readXml.status).toBe(200);
+    expect(await readXml.text()).toContain(
+      "<item>\n  <identifier>format-treatment</identifier>\n  <notes>a,b</notes>\n</item>",
+    );
+
+    const searchXml = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments.xml?identifier=format-treatment&fields=identifier%2Cnotes",
+    );
+    expect(searchXml.status).toBe(200);
+    expect(await searchXml.text()).toContain(
+      "<items>\n  <item>\n    <identifier>format-treatment</identifier>",
+    );
+
+    const historyCsv = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/history/946684800001.csv?fields=identifier%2Cnotes",
+    );
+    expect(historyCsv.status).toBe(200);
+    expect(await historyCsv.text()).toBe('identifier,notes\nformat-treatment,"a,b"\n');
+
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/format-treatment?permanent=true",
+      { method: "DELETE" },
+    )).status).toBe(200);
   });
 
   it("uses the locked single public sort and complete ordered tie-break chain", async () => {
