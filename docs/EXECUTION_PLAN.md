@@ -20,6 +20,12 @@ Fixed exclusions:
   lab; mocked internal mapping, validation, deduplication, cancellation and
   multi-key contracts remain required.
 
+First-release onboarding is limited to fresh NSCF deployments for new-family
+use. No external Nightscout/MongoDB history importer is delivered in that
+release. Users who require existing history in the new instance must not
+switch yet. This product-scope deferral does not weaken the requirement for
+safe, forward-compatible upgrades of existing NSCF Durable Object data.
+
 ## Evidence standard
 
 A module is complete only when:
@@ -112,9 +118,10 @@ was preserved without recording its contents. This policy is acceptable for
 the pre-1.0 simulated lab, but it is not a general migration path for an
 existing Nightscout database.
 Fresh deployment is the planned release path for the initial new-user/new-family
-audience; an external legacy-history importer is explicitly deferred and is not
-a launch gate. It means initially creating a new Worker/SQLite DO namespace or
-using an empty tenant. A code redeploy to the same Worker preserves Durable
+audience; an external legacy-history importer is not provided in the first
+release and has no claimed delivery date. It means initially creating a new
+Worker/SQLite DO namespace or using an empty tenant. A code redeploy to the
+same Worker preserves Durable
 Object data; it is not a database reset, so the current lab keeps its canonical
 profile and other documents. This does not authorize real CGM/uploader/closed-
 loop use: the deployed increment remains simulated-data only.

@@ -70,15 +70,18 @@ and other collections, including profile, are preserved. A read-only check at
 again returned zero Entries and one profile, without inspecting or recording
 the profile contents. This lab therefore had no simulated Entry row to lose.
 
-This is not a migration guarantee for an existing Nightscout/MongoDB database.
-The initial release path for new families is a fresh Worker/SQLite Durable
-Object namespace or an empty tenant. Importing years of external history is an
-optional later tool and is not a first-release blocker.
+The first release does not provide external Nightscout/MongoDB history import.
+It is intended only for a fresh Worker/SQLite Durable Object namespace or an
+empty tenant. A family that needs its existing history to remain available in
+the new instance should keep the existing Nightscout deployment and should not
+switch yet.
 
 An ordinary Wrangler redeploy updates code and Static Assets but preserves the
-existing Durable Object namespace. It does not reset stored profile or document
-data. A truly empty reset would require a new namespace or an explicitly
-destructive deletion.
+existing Durable Object namespace; it is not a reset. Every supported NSCF
+schema upgrade must remain forward-compatible, idempotent and data-preserving.
+Deferring external history import does not permit dropping existing NSCF data.
+A truly empty reset requires a new namespace or an explicitly destructive
+operation.
 
 V1 Entries keeps the locked four-day default window; realtime/ddata uses a
 two-day window. Unindexed or `dateString` candidate sets above 10,000 return a
@@ -158,6 +161,8 @@ other protected page workflow.
 
 ## Known limitations
 
+- External Nightscout/MongoDB history import is not provided; users who require
+  it in the new instance must not migrate to this release.
 - This remains a simulated-data lab. It must not be connected to a real CGM
   uploader, pump or closed-loop client.
 - API v1 and v2 remain subsets. API v3 has version, JWT status and the generic

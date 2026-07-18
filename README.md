@@ -90,6 +90,12 @@ and UI flow are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Intended one-click setup
 
+The first release is intended only for families starting a fresh NSCF
+deployment. It does not provide an importer for an existing
+Nightscout/MongoDB database or years of historical data. A family that needs
+that history to remain available in the new instance should keep its existing
+Nightscout deployment and should not switch to NSCF yet.
+
 The release deployment flow has one user-facing setting:
 
 > Set a family access password (at least 12 characters), then enter the same
@@ -273,16 +279,17 @@ has no old simulated Entry row to carry forward. This is not a general
 legacy-data migration guarantee.
 
 The planned first-release onboarding path is a fresh deployment for a new
-family.
-Importing years of data from an external Nightscout/MongoDB installation is an
-optional later tool, not a release gate for that path.
-“Fresh” means initially creating a new Worker/SQLite Durable Object namespace
-or otherwise empty NSCF tenant. Redeploying code to the same Worker updates
-code and Static Assets but does not erase its Durable Object; the current
-public lab's preserved profile therefore remains across this release. A truly
-empty reset would require a new namespace or an explicitly destructive delete.
-This is still a simulated-data development release: it must not be connected
-to a real CGM uploader, pump or closed-loop system.
+family. “Fresh” means a new Worker/SQLite Durable Object namespace or an
+otherwise empty NSCF tenant. External Nightscout/MongoDB history import is not
+included in the first release. A family that needs that history in the new
+instance should not switch yet. Redeploying code to the same Worker updates
+Worker code and Static Assets but does not erase or replace the existing
+Durable Object namespace; the current public lab's preserved profile therefore
+remains across this release. NSCF-internal schema upgrades are a separate
+release requirement and must preserve data covered by supported NSCF schema
+contracts. A truly empty reset requires a new namespace or an explicitly
+destructive delete. This is still a simulated-data development release: it
+must not receive real uploader, CGM, pump or closed-loop traffic.
 
 The current simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally

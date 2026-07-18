@@ -302,6 +302,14 @@ does not replace or clear an existing namespace. Correct NSCF-internal schema
 activation remains mandatory even though external Mongo history import is
 deferred.
 
+External Nightscout/MongoDB import and NSCF-internal schema activation are
+separate contracts. The former is absent from the first release; the latter
+must be forward-compatible and idempotent for every supported prior NSCF
+schema. A fresh-family onboarding policy must never justify destructive
+activation of an existing supported Durable Object. The only `fresh-only`
+repair currently described here is the incompatible pre-1.0 narrow Entries
+shadow above, not the database as a whole.
+
 V1 Entries preserves the locked four-day default date window and keeps
 `dateString` as a distinct string field rather than folding it into numeric
 `date`. Realtime/ddata loading uses a separate two-day canonical-document
