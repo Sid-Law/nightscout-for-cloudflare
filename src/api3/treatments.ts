@@ -609,7 +609,10 @@ async function handleApi3Collection(
     return api3Status(404, "Bad operation or collection");
   } catch (error) {
     if (error instanceof Api3RenderError) {
-      console.error(JSON.stringify({ message: "API3 treatments render failed", error: error.message }));
+      console.error(JSON.stringify({
+        message: `API3 ${collection} render failed`,
+        error: error.message,
+      }));
       return api3Status(500, STORAGE_ERROR, undefined, error.responseHeaders);
     }
     const response = operationError(error);
