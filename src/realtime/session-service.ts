@@ -166,6 +166,14 @@ export class RealtimeSessionService {
     return { sid: session.sid, payload };
   }
 
+  validateSession(sid: string): void {
+    const now = this.now();
+    this.cleanup(now);
+    this.storage.transactionSync(() => {
+      this.requireLiveSession(sid, now);
+    });
+  }
+
   beginPost(sid: string): string {
     const now = this.now();
     this.cleanup(now);
@@ -195,6 +203,39 @@ export class RealtimeSessionService {
       session.postDeadline = null;
       this.repository.updateSession(session);
     });
+  }
+
+  rejectPost(sid: string, token: string): void {
+    const now = this.now();
+    this.cleanup(now);
+    const result = this.storage.transactionSync((): {
+      error: RealtimeSessionError | null;
+      wakeTargets: string[];
+    } => {
+      const session = this.repository.getSession(sid);
+      if (session === null) {
+        return {
+          error: new RealtimeSessionError("unknown_sid", "session ID is unknown"),
+          wakeTargets: [],
+        };
+      }
+      const leaseIsValid =
+        session.postToken === token && (session.postDeadline ?? 0) > now;
+      const wasConnected = session.socketConnected;
+      this.repository.deleteSessionInTransaction(sid);
+      return {
+        error: leaseIsValid
+          ? null
+          : new RealtimeSessionError(
+              "invalid_post_lease",
+              "polling POST lease is invalid",
+            ),
+        wakeTargets: wasConnected ? this.enqueueClientsForConnectedSessions(now) : [],
+      };
+    });
+    this.wake(sid);
+    for (const targetSid of result.wakeTargets) this.wake(targetSid);
+    if (result.error !== null) throw result.error;
   }
 
   async submitPost(sid: string, token: string, payload: string): Promise<void> {

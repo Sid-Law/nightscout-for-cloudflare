@@ -382,6 +382,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return this.realtimeResult(() => this.realtime.createHandshake());
   }
 
+  realtimeValidateSession(sid: string): RealtimeRpcResult<null> {
+    return this.realtimeResult(() => {
+      this.realtime.validateSession(sid);
+      return null;
+    });
+  }
+
   realtimeBeginPost(sid: string): RealtimeRpcResult<string> {
     return this.realtimeResult(() => this.realtime.beginPost(sid));
   }
@@ -389,6 +396,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   realtimeAbortPost(sid: string, token: string): RealtimeRpcResult<null> {
     return this.realtimeResult(() => {
       this.realtime.abortPost(sid, token);
+      return null;
+    });
+  }
+
+  realtimeRejectPost(sid: string, token: string): RealtimeRpcResult<null> {
+    return this.realtimeResult(() => {
+      this.realtime.rejectPost(sid, token);
       return null;
     });
   }

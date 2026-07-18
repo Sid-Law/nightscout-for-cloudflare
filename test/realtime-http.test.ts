@@ -78,6 +78,7 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
       `https://example.test/socket.io/?EIO=3&transport=polling&tenant=${name}`,
     );
     expect(unsupported.status).toBe(400);
+    expect(unsupported.headers.get("Content-Type")).toBe("application/json");
     expect(await unsupported.json()).toEqual({
       code: 5,
       message: "Unsupported protocol version",
@@ -96,6 +97,16 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
     const wrongMethod = await SELF.fetch(endpoint(name, `&sid=${sid}`), { method: "PUT" });
     expect(wrongMethod.status).toBe(500);
     expect(await wrongMethod.text()).toBe("");
+
+    const unknownWrongMethod = await SELF.fetch(endpoint(name, "&sid=unknown-sid"), {
+      method: "PUT",
+    });
+    expect(unknownWrongMethod.status).toBe(400);
+    expect(unknownWrongMethod.headers.get("Content-Type")).toBe("application/json");
+    expect(await unknownWrongMethod.json()).toEqual({
+      code: 1,
+      message: "Session ID unknown",
+    });
 
     const options = await SELF.fetch(endpoint(name), { method: "OPTIONS" });
     expect(options.status).toBe(204);
@@ -200,13 +211,44 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
     );
     expect(binary.status).toBe(400);
     expect(await binary.json()).toEqual({ code: 3, message: "Bad request" });
-    await send(
+
+    const binaryClosed = await poll(contentTypeTenant, contentTypeSid);
+    expect(binaryClosed.status).toBe(400);
+    expect(await binaryClosed.json()).toEqual({
+      code: 1,
+      message: "Session ID unknown",
+    });
+    const unknownBinary = await send(
       contentTypeTenant,
-      contentTypeSid,
-      clientPayload({ type: "connect", namespace: "/" }),
-      { "Content-Type": "text/plain;charset=UTF-8" },
+      "unknown-sid",
+      "4binary",
+      { "Content-Type": "application/octet-stream" },
     );
-    expect((await poll(contentTypeTenant, contentTypeSid)).status).toBe(200);
+    expect(unknownBinary.status).toBe(400);
+    expect(await unknownBinary.json()).toEqual({
+      code: 1,
+      message: "Session ID unknown",
+    });
+
+    const textTenant = tenant("eio-content-type-text");
+    const textSid = (await open(textTenant)).sid;
+    await send(
+      textTenant,
+      textSid,
+      clientPayload({ type: "connect", namespace: "/" }),
+      { "Content-Type": "application/json" },
+    );
+    expect((await poll(textTenant, textSid)).status).toBe(200);
+
+    const parameterTenant = tenant("eio-content-type-parameter");
+    const parameterSid = (await open(parameterTenant)).sid;
+    expect((await send(
+      parameterTenant,
+      parameterSid,
+      clientPayload({ type: "connect", namespace: "/" }),
+      { "Content-Type": "application/octet-stream; charset=UTF-8" },
+    )).status).toBe(200);
+    expect((await poll(parameterTenant, parameterSid)).status).toBe(200);
 
     const largeTenant = tenant("eio-large");
     const largeSid = (await open(largeTenant)).sid;
@@ -223,9 +265,15 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
       headers: { "Content-Type": "text/plain" },
       body: new Uint8Array([0xff]),
     });
-    expect(invalidUtf8.status).toBe(400);
-    await send(utf8Tenant, utf8Sid, clientPayload({ type: "connect", namespace: "/" }));
-    expect((await poll(utf8Tenant, utf8Sid)).status).toBe(200);
+    expect(invalidUtf8.status).toBe(200);
+    expect(invalidUtf8.headers.get("Content-Type")).toBe("text/html");
+    expect(await invalidUtf8.text()).toBe("ok");
+    const invalidUtf8Closed = await poll(utf8Tenant, utf8Sid);
+    expect(invalidUtf8Closed.status).toBe(400);
+    expect(await invalidUtf8Closed.json()).toEqual({
+      code: 1,
+      message: "Session ID unknown",
+    });
   });
 
   it("returns 200 ok for a malformed protocol POST, then makes the closed SID unknown", async () => {

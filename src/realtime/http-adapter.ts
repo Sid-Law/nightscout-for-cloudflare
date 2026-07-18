@@ -29,7 +29,7 @@ function pollingHeaders(contentType?: string): Headers {
 function engineError(code: EngineErrorCode, status = 400): Response {
   return new Response(JSON.stringify({ code, message: ENGINE_ERROR_MESSAGES[code] }), {
     status,
-    headers: pollingHeaders("application/json; charset=UTF-8"),
+    headers: pollingHeaders("application/json"),
   });
 }
 
@@ -55,8 +55,9 @@ function rpcFailure(error: RealtimeRpcError): Response {
 
 function pollingPostContentType(request: Request): boolean {
   const raw = request.headers.get("Content-Type");
-  if (raw === null || raw.trim() === "") return true;
-  return raw.split(";", 1)[0]?.trim().toLowerCase() === "text/plain";
+  // Locked engine.io 6.2.1 treats only this exact media type as binary.
+  // Every other value is decoded through the text packet parser.
+  return raw !== "application/octet-stream";
 }
 
 async function readPollingBody(request: Request): Promise<string | null> {
@@ -88,11 +89,9 @@ async function readPollingBody(request: Request): Promise<string | null> {
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(body);
-  } catch {
-    return null;
-  }
+  // Node's request text path replaces malformed UTF-8 before Engine.IO parses
+  // it. The parser then closes the SID while the polling POST is still ACKed.
+  return new TextDecoder().decode(body);
 }
 
 /**
@@ -133,12 +132,17 @@ export async function handleSocketIoPolling(
       headers: pollingHeaders("text/plain; charset=UTF-8"),
     });
   }
-  if (request.method !== "POST") return empty(500);
+  if (request.method !== "POST") {
+    const validated = await store.realtimeValidateSession(sid);
+    if (!validated.ok) return rpcFailure(validated.error);
+    return empty(500);
+  }
 
   const lease = await store.realtimeBeginPost(sid);
   if (!lease.ok) return rpcFailure(lease.error);
   if (!pollingPostContentType(request)) {
-    await store.realtimeAbortPost(sid, lease.value);
+    const rejected = await store.realtimeRejectPost(sid, lease.value);
+    if (!rejected.ok) return rpcFailure(rejected.error);
     return engineError(3);
   }
 
