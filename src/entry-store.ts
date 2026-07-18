@@ -1,5 +1,14 @@
 import { DurableObject } from "cloudflare:workers";
 import {
+  apiSecretDigestMatches,
+  authorizationDerivationMarker,
+  boundedTokenCandidates,
+  deriveSubjectCredential,
+  subjectCredentialMatches,
+  type PresentedToken,
+  type SubjectCredential,
+} from "./authorization";
+import {
   createJwtSecret,
   issueJwt as signJwt,
   verifyJwt as validateJwt,
@@ -139,7 +148,36 @@ function toDocument(row: DbDocument): JsonDocument {
   return JSON.parse(row.body) as JsonDocument;
 }
 
+function publicAuthorizationSubject(subject: JsonDocument): JsonDocument {
+  const result: JsonDocument = {};
+  for (const field of ["_id", "name", "accessToken", "roles"] as const) {
+    const value = subject[field];
+    if (value !== undefined) result[field] = value;
+  }
+  if (result.roles === undefined) result.roles = [];
+  return result;
+}
+
+function publicAuthorizationSubjectMutation(subject: JsonDocument): JsonDocument {
+  const result = { ...subject };
+  // Locked Nightscout derives accessToken while loading subjects. Its create
+  // and update responses are the database document, so a newly derived token
+  // is obtained from the subjects GET rather than leaked by the mutation.
+  for (const field of Object.keys(result)) {
+    if (
+      field === "accessToken" ||
+      field === "digest" ||
+      field === "accessTokenDigest" ||
+      field.startsWith("_nscf")
+    ) {
+      delete result[field];
+    }
+  }
+  return result;
+}
+
 const realtimeJsonEncoder = new TextEncoder();
+const AUTHORIZATION_SUBJECT_LIMIT = 256;
 
 function realtimeJsonBytes(value: unknown): number {
   const serialized = JSON.stringify(value);
@@ -363,6 +401,151 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return new SqliteDocumentRepository(this.ctx.storage);
   }
 
+  private configuredApiSecret(): string | null {
+    const secret = this.env.API_SECRET;
+    return secret !== undefined && secret.length >= 12 ? secret : null;
+  }
+
+  private async deriveAuthorizationSubject(
+    document: JsonDocument,
+  ): Promise<(JsonDocument & SubjectCredential) | null> {
+    const configured = this.configuredApiSecret();
+    const subjectId = document._id;
+    const subjectName = document.name;
+    if (
+      configured === null ||
+      typeof subjectId !== "string" ||
+      typeof subjectName !== "string"
+    ) {
+      return null;
+    }
+    return {
+      ...document,
+      ...await deriveSubjectCredential(configured, subjectId, subjectName),
+    };
+  }
+
+  private authorizationSubjectRows(): DbDocument[] {
+    return this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'subjects'
+       ORDER BY json_extract(body, '$.name') ASC, id ASC
+       LIMIT ?`,
+      AUTHORIZATION_SUBJECT_LIMIT,
+    ).toArray();
+  }
+
+  private async ensureAuthorizationSubjectsCurrent(): Promise<boolean> {
+    const configured = this.configuredApiSecret();
+    if (configured === null) throw new Error("API_SECRET is not configured");
+    const marker = await authorizationDerivationMarker(
+      this.getOrCreateJwtSecret(),
+      configured,
+    );
+    const storedMarker = this.ctx.storage.sql.exec<DbSecret>(
+      "SELECT value FROM tenant_secrets WHERE name = 'authorization-subject-marker' LIMIT 1",
+    ).toArray()[0]?.value;
+    if (storedMarker === marker) return true;
+
+    const rows = this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'subjects'
+       ORDER BY json_extract(body, '$.name') ASC, id ASC
+       LIMIT ?`,
+      AUTHORIZATION_SUBJECT_LIMIT + 1,
+    ).toArray();
+    if (rows.length > AUTHORIZATION_SUBJECT_LIMIT) {
+      return false;
+    }
+    const derived = await Promise.all(rows.map(async (row) => ({
+      id: row.id,
+      subject: await this.deriveAuthorizationSubject(toDocument(row)),
+    })));
+    this.ctx.storage.transactionSync(() => {
+      for (const item of derived) {
+        if (item.subject === null) continue;
+        this.ctx.storage.sql.exec(
+          `UPDATE documents SET body = ?
+           WHERE collection = 'subjects' AND id = ?`,
+          JSON.stringify(item.subject),
+          item.id,
+        );
+      }
+      this.ctx.storage.sql.exec(
+        `INSERT INTO tenant_secrets (name, value, created_at)
+         VALUES ('authorization-subject-marker', ?, ?)
+         ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
+        marker,
+        Date.now(),
+      );
+    });
+    return true;
+  }
+
+  async resolveAuthorizationSubject(candidatesJson: string): Promise<string | null> {
+    if (candidatesJson.length > 16 * 1024) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidatesJson);
+    } catch {
+      return null;
+    }
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every((candidate) => typeof candidate === "string")
+    ) {
+      return null;
+    }
+    const candidates = boundedTokenCandidates(parsed as PresentedToken);
+    if (candidates === null) return null;
+    if (!await this.ensureAuthorizationSubjectsCurrent()) return null;
+    for (const candidate of candidates) {
+      const suffix = candidate.split("-").at(-1) ?? "";
+      if (suffix.length < 16) continue;
+      const row = this.ctx.storage.sql.exec<DbDocument>(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = 'subjects'
+           AND (
+             substr(json_extract(body, '$.accessTokenDigest'), 1, length(?)) = ?
+             OR substr(json_extract(body, '$.digest'), 1, length(?)) = ?
+           )
+         ORDER BY json_extract(body, '$.name') ASC, id ASC
+         LIMIT 1`,
+        candidate,
+        candidate,
+        suffix,
+        suffix,
+      ).toArray()[0];
+      if (row === undefined) continue;
+      const subject = toDocument(row) as JsonDocument & SubjectCredential;
+      if (
+        typeof subject.accessToken !== "string" ||
+        typeof subject.accessTokenDigest !== "string" ||
+        typeof subject.digest !== "string"
+      ) {
+        continue;
+      }
+      if (subjectCredentialMatches(subject, candidate)) {
+        return JSON.stringify(publicAuthorizationSubject(subject));
+      }
+    }
+    return null;
+  }
+
+  async listAuthorizationSubjects(): Promise<string | null> {
+    if (!await this.ensureAuthorizationSubjectsCurrent()) return null;
+    const subjects: JsonDocument[] = [];
+    for (const row of this.authorizationSubjectRows()) {
+      const subject = toDocument(row);
+      if (typeof subject.accessToken !== "string") continue;
+      subjects.push(publicAuthorizationSubject(subject));
+    }
+    return JSON.stringify(subjects);
+  }
+
   private realtimeSnapshot(now: number): RealtimeSnapshot {
     const snapshot: RealtimeSnapshot = {
       devicestatus: [],
@@ -507,63 +690,32 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       return { read: true, write: false, write_treatment: false };
     }
 
+    const configured = this.configuredApiSecret();
     if (typeof rawSecret === "string" && rawSecret.length <= 4096) {
-      const configured = this.env.API_SECRET;
-      if (configured !== undefined && configured.length >= 12) {
-        const encoder = new TextEncoder();
-        const [sha1, sha512] = await Promise.all([
-          crypto.subtle.digest("SHA-1", encoder.encode(configured)),
-          crypto.subtle.digest("SHA-512", encoder.encode(configured)),
-        ]);
-        const hex = (value: ArrayBuffer): string =>
-          Array.from(
-            new Uint8Array(value),
-            (byte) => byte.toString(16).padStart(2, "0"),
-          ).join("");
-        const presented = rawSecret.toLowerCase();
-        if (
-          await this.timingSafeRealtimeCredential(presented, hex(sha1)) ||
-          await this.timingSafeRealtimeCredential(presented, hex(sha512))
-        ) {
-          return { read: true, write: false, write_treatment: false };
-        }
+      if (await apiSecretDigestMatches(rawSecret, configured)) {
+        return { read: true, write: false, write_treatment: false };
       }
-
-      const subject = await this.findDocumentByField("subjects", "accessToken", rawSecret);
-      if (subject !== null) {
+      if (
+        configured !== null &&
+        await this.resolveAuthorizationSubject(JSON.stringify([rawSecret])) !== null
+      ) {
         return { read: true, write: false, write_treatment: false };
       }
     }
 
     if (typeof rawToken === "string" && rawToken.length <= 4096) {
       const claims = await validateJwt(this.getOrCreateJwtSecret(), rawToken);
-      if (claims !== null) {
-        const subject = await this.findDocumentByField(
-          "subjects",
-          "accessToken",
-          claims.accessToken,
-        );
-        if (subject !== null) {
-          return { read: true, write: false, write_treatment: false };
-        }
+      if (
+        claims !== null &&
+        configured !== null &&
+        await this.resolveAuthorizationSubject(
+          JSON.stringify([claims.accessToken]),
+        ) !== null
+      ) {
+        return { read: true, write: false, write_treatment: false };
       }
     }
     return null;
-  }
-
-  private async timingSafeRealtimeCredential(left: string, right: string): Promise<boolean> {
-    const encoder = new TextEncoder();
-    const [leftDigest, rightDigest] = await Promise.all([
-      crypto.subtle.digest("SHA-256", encoder.encode(left)),
-      crypto.subtle.digest("SHA-256", encoder.encode(right)),
-    ]);
-    const leftBytes = new Uint8Array(leftDigest);
-    const rightBytes = new Uint8Array(rightDigest);
-    let difference = 0;
-    for (let index = 0; index < leftBytes.length; index += 1) {
-      difference |= leftBytes[index]! ^ rightBytes[index]!;
-    }
-    return difference === 0;
   }
 
   private async synchronizeRealtimeAlarm(): Promise<void> {
@@ -805,6 +957,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async listDocuments(collection: DocumentCollection, limit = 5000): Promise<string> {
+    if (collection === "subjects") return await this.listAuthorizationSubjects() ?? "[]";
     const boundedLimit = Math.max(1, Math.min(10000, Math.trunc(limit)));
     if (collection === "treatments") {
       return JSON.stringify(this.documentRepository().queryLegacyTreatments({ limit: boundedLimit }));
@@ -828,7 +981,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     collection: DocumentCollection,
     documentsJson: string,
   ): Promise<string> {
-    const documents = JSON.parse(documentsJson) as JsonDocument[];
+    let documents = JSON.parse(documentsJson) as JsonDocument[];
     if (collection === "treatments") {
       return JSON.stringify(
         documents.map((document) => this.documentRepository().upsertTreatment(document).document),
@@ -839,6 +992,34 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         documents.map((document) =>
           this.documentRepository().createLegacyDocument(collection, document).document),
       );
+    }
+    if (collection === "subjects" || collection === "roles") {
+      documents = documents.map((document) =>
+        Object.prototype.hasOwnProperty.call(document, "created_at")
+          ? document
+          : { ...document, created_at: new Date().toISOString() }
+      );
+    }
+    if (collection === "subjects") {
+      if (!await this.ensureAuthorizationSubjectsCurrent()) {
+        throw new Error(`authorization subject limit ${AUTHORIZATION_SUBJECT_LIMIT} exceeded`);
+      }
+      const currentCount = this.ctx.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM documents WHERE collection = 'subjects'",
+      ).one().count;
+      if (currentCount + documents.length > AUTHORIZATION_SUBJECT_LIMIT) {
+        throw new Error(
+          `authorization subject limit ${AUTHORIZATION_SUBJECT_LIMIT} exceeded`,
+        );
+      }
+      const derived: JsonDocument[] = [];
+      for (const document of documents) {
+        const id = typeof document._id === "string" ? document._id : randomObjectId();
+        const subject = await this.deriveAuthorizationSubject({ ...document, _id: id });
+        if (subject === null) throw new Error("cannot derive subject access token");
+        derived.push(subject);
+      }
+      documents = derived;
     }
     const now = Date.now();
     const stored: JsonDocument[] = [];
@@ -857,14 +1038,18 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       );
       stored.push(normalized);
     }
-    return JSON.stringify(stored);
+    return JSON.stringify(
+      collection === "subjects"
+        ? stored.map(publicAuthorizationSubjectMutation)
+        : stored,
+    );
   }
 
   async saveDocuments(
     collection: DocumentCollection,
     documentsJson: string,
   ): Promise<string> {
-    const documents = JSON.parse(documentsJson) as JsonDocument[];
+    let documents = JSON.parse(documentsJson) as JsonDocument[];
     if (collection === "treatments") {
       return JSON.stringify(
         documents.map((document) => this.documentRepository().upsertTreatment(document).document),
@@ -875,6 +1060,25 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         documents.map((document) =>
           this.documentRepository().saveLegacyDocument(collection, document).document),
       );
+    }
+    if (collection === "subjects" || collection === "roles") {
+      documents = documents.map((document) =>
+        document.created_at
+          ? document
+          : { ...document, created_at: new Date().toISOString() }
+      );
+    }
+    if (collection === "subjects") {
+      if (!await this.ensureAuthorizationSubjectsCurrent()) {
+        throw new Error(`authorization subject limit ${AUTHORIZATION_SUBJECT_LIMIT} exceeded`);
+      }
+      const derived: JsonDocument[] = [];
+      for (const document of documents) {
+        const subject = await this.deriveAuthorizationSubject(document);
+        if (subject === null) throw new Error("cannot derive subject access token");
+        derived.push(subject);
+      }
+      documents = derived;
     }
     const now = Date.now();
     for (const document of documents) {
@@ -894,7 +1098,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         now,
       );
     }
-    return JSON.stringify(documents);
+    return JSON.stringify(
+      collection === "subjects"
+        ? documents.map(publicAuthorizationSubjectMutation)
+        : documents,
+    );
   }
 
   async deleteDocuments(collection: DocumentCollection, ids: string[]): Promise<number> {

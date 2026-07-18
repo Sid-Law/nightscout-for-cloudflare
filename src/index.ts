@@ -2,6 +2,13 @@ import { EntryStore } from "./entry-store";
 import mime from "mime";
 import type { DocumentCollection, JsonDocument } from "./entry-store";
 import {
+  apiSecretDigestMatches,
+  boundedTokenCandidates,
+  extractRequestCredentials,
+  type PresentedToken,
+  type RequestCredentials,
+} from "./authorization";
+import {
   filterDocuments,
   normalizeTreatmentNumbers,
   parseDocumentPayload,
@@ -172,10 +179,6 @@ function resolveTenant(_request: Request, url: URL): string {
   return tenant;
 }
 
-function apiSecretCredential(request: Request, url: URL): string | null {
-  return request.headers.get("api-secret") ?? url.searchParams.get("secret");
-}
-
 function safeLogPath(pathname: string): string {
   const authorizationRequest = "/api/v2/authorization/request/";
   return pathname.startsWith(authorizationRequest)
@@ -183,55 +186,9 @@ function safeLogPath(pathname: string): string {
     : pathname;
 }
 
-async function digestHex(algorithm: "SHA-1" | "SHA-512", value: string): Promise<string> {
-  const digest = await crypto.subtle.digest(algorithm, new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function timingSafeTextEqual(left: string, right: string): Promise<boolean> {
-  const encoder = new TextEncoder();
-  const [leftDigest, rightDigest] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(left)),
-    crypto.subtle.digest("SHA-256", encoder.encode(right)),
-  ]);
-  const subtle = crypto.subtle as SubtleCrypto & {
-    timingSafeEqual?: (
-      leftValue: ArrayBuffer | ArrayBufferView,
-      rightValue: ArrayBuffer | ArrayBufferView,
-    ) => boolean;
-  };
-  if (typeof subtle.timingSafeEqual === "function") {
-    return subtle.timingSafeEqual(leftDigest, rightDigest);
-  }
-
-  const leftBytes = new Uint8Array(leftDigest);
-  const rightBytes = new Uint8Array(rightDigest);
-  let difference = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    difference |= leftBytes[index]! ^ rightBytes[index]!;
-  }
-  return difference === 0;
-}
-
 function configuredApiSecret(env: AppEnv): string | null {
   const secret = env.API_SECRET;
   return secret !== undefined && secret.length >= MIN_API_SECRET_LENGTH ? secret : null;
-}
-
-async function hasWriteAccess(request: Request, env: AppEnv, url: URL): Promise<boolean> {
-  const secret = configuredApiSecret(env);
-  const provided = apiSecretCredential(request, url)?.toLowerCase();
-  if (secret === null || provided === undefined || provided === null) return false;
-
-  const [sha1, sha512] = await Promise.all([
-    digestHex("SHA-1", secret),
-    digestHex("SHA-512", secret),
-  ]);
-  const [matchesSha1, matchesSha512] = await Promise.all([
-    timingSafeTextEqual(provided, sha1),
-    timingSafeTextEqual(provided, sha512),
-  ]);
-  return matchesSha1 || matchesSha512;
 }
 
 interface AuthorizedSubject {
@@ -284,6 +241,7 @@ function rolePermissions(name: string, storedRoles: JsonDocument[]): string[] {
   const role =
     storedRoles.find((candidate) => candidate.name === name) ??
     DEFAULT_ROLES.find((candidate) => candidate.name === name);
+  if (typeof role?.permissions === "string") return [role.permissions];
   return Array.isArray(role?.permissions)
     ? role.permissions.filter((permission): permission is string => typeof permission === "string")
     : [];
@@ -333,39 +291,18 @@ function parseAuthorizedSubject(value: string): AuthorizedSubject {
   };
 }
 
-async function credentialFromRequest(
-  request: Request,
-  url: URL,
-  store: DurableObjectStub<EntryStore>,
-): Promise<PresentedCredential | null> {
-  const bearer = bearerToken(request);
-  if (bearer !== null) {
-    const claimsJson = await store.verifyAccessJwt(bearer);
-    if (claimsJson === null) return null;
-    return { ...parseAccessJwtClaims(claimsJson), token: bearer };
-  }
-
-  const presented = url.searchParams.get("token") ?? apiSecretCredential(request, url);
-  if (!presented) return null;
-  const claimsJson = await store.verifyAccessJwt(presented);
-  return claimsJson === null
-    ? { accessToken: presented, token: null, iat: 0, exp: 0 }
-    : { ...parseAccessJwtClaims(claimsJson), token: presented };
-}
-
 async function authorizeCredential(
   store: DurableObjectStub<EntryStore>,
-  credential: PresentedCredential,
+  accessTokens: PresentedToken,
+  credential: PresentedCredential | null = null,
   refreshJwt = false,
 ): Promise<AuthorizedSubject | null> {
-  const subjectJson = await store.findDocumentByField(
-    "subjects",
-    "accessToken",
-    credential.accessToken,
-  );
+  const candidates = boundedTokenCandidates(accessTokens);
+  if (candidates === null) return null;
+  const subjectJson = await store.resolveAuthorizationSubject(JSON.stringify(candidates));
   if (subjectJson === null) return null;
   const subject = parseDocument(subjectJson);
-  if (typeof subject.name !== "string") return null;
+  if (typeof subject.name !== "string" || typeof subject.accessToken !== "string") return null;
   const storedRoles = parseDocuments(await store.listDocuments("roles"));
   const names = Array.isArray(subject.roles)
     ? subject.roles.filter((role): role is string => typeof role === "string")
@@ -373,7 +310,7 @@ async function authorizeCredential(
   if (!names.includes("readable")) names.push("readable");
 
   let authorization: AuthorizedSubject;
-  if (credential.token !== null && !refreshJwt) {
+  if (credential !== null && credential.token !== null && !refreshJwt) {
     authorization = {
       token: credential.token,
       sub: subject.name,
@@ -383,7 +320,7 @@ async function authorizeCredential(
     };
   } else {
     authorization = parseAuthorizedSubject(
-      await store.issueAccessJwt(credential.accessToken),
+      await store.issueAccessJwt(subject.accessToken),
     );
     authorization.sub = subject.name;
   }
@@ -393,15 +330,96 @@ async function authorizeCredential(
   return authorization;
 }
 
-async function authorizeSubject(
+interface AuthorizationResolution {
+  admin: boolean;
+  authorized: AuthorizedSubject | null;
+  defaults: boolean;
+}
+
+async function resolveTokenCredential(
+  store: DurableObjectStub<EntryStore>,
+  credentials: RequestCredentials,
+): Promise<{ authorized: AuthorizedSubject | null; attempted: boolean }> {
+  if (credentials.token === null || credentials.tokenSource === null) {
+    return { authorized: null, attempted: false };
+  }
+  const candidates = boundedTokenCandidates(credentials.token);
+  if (candidates === null) {
+    return {
+      authorized: null,
+      attempted: credentials.tokenSource === "bearer",
+    };
+  }
+
+  if (credentials.tokenSource === "bearer") {
+    const bearer = candidates.length === 1 ? candidates[0]! : null;
+    if (bearer === null) return { authorized: null, attempted: true };
+    const claimsJson = await store.verifyAccessJwt(bearer);
+    if (claimsJson === null) return { authorized: null, attempted: true };
+    const claims = parseAccessJwtClaims(claimsJson);
+    return {
+      authorized: await authorizeCredential(
+        store,
+        claims.accessToken,
+        { ...claims, token: bearer },
+      ),
+      attempted: true,
+    };
+  }
+
+  if (candidates.length === 1) {
+    const candidate = candidates[0]!;
+    const claimsJson = await store.verifyAccessJwt(candidate);
+    if (claimsJson !== null) {
+      const claims = parseAccessJwtClaims(claimsJson);
+      const authorized = await authorizeCredential(store, claims.accessToken, null, true);
+      return { authorized, attempted: authorized !== null };
+    }
+  }
+  const authorized = await authorizeCredential(store, candidates, null, true);
+  // Locked extractJWTfromRequest converts only a valid query/body access token
+  // into a JWT. An invalid opaque token therefore falls back to defaults.
+  return { authorized, attempted: authorized !== null };
+}
+
+async function resolveRequestAuthorization(
   request: Request,
   env: AppEnv,
   url: URL,
-): Promise<AuthorizedSubject | null> {
-  const tenant = resolveTenant(request, url);
-  const store = env.ENTRY_STORE.getByName(tenant);
-  const credential = await credentialFromRequest(request, url, store);
-  return credential === null ? null : authorizeCredential(store, credential);
+  body?: unknown,
+): Promise<AuthorizationResolution> {
+  const credentials = extractRequestCredentials(request, url, body);
+  const configured = configuredApiSecret(env);
+  if (await apiSecretDigestMatches(credentials.apiSecret, configured)) {
+    return { admin: true, authorized: null, defaults: false };
+  }
+
+  if (env.ENTRY_STORE === undefined) {
+    return {
+      admin: false,
+      authorized: null,
+      defaults: credentials.apiSecret === null && credentials.tokenSource !== "bearer",
+    };
+  }
+  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+  const token = await resolveTokenCredential(store, credentials);
+  if (token.authorized !== null) {
+    return { admin: false, authorized: token.authorized, defaults: false };
+  }
+
+  if (credentials.apiSecret !== null) {
+    const secretSubject = await authorizeCredential(store, credentials.apiSecret, null, true);
+    return {
+      admin: false,
+      authorized: secretSubject,
+      defaults: false,
+    };
+  }
+  return {
+    admin: false,
+    authorized: null,
+    defaults: !token.attempted,
+  };
 }
 
 async function requirePermission(
@@ -409,8 +427,10 @@ async function requirePermission(
   env: AppEnv,
   url: URL,
   permission: string,
+  body?: unknown,
 ): Promise<void> {
-  if (await hasWriteAccess(request, env, url)) return;
+  const resolution = await resolveRequestAuthorization(request, env, url, body);
+  if (resolution.admin) return;
   if (env.ENTRY_STORE === undefined) {
     if (configuredApiSecret(env) === null) {
       throw new ApiError(
@@ -425,8 +445,10 @@ async function requirePermission(
       "ENTRY_STORE must be configured before writes are enabled",
     );
   }
-  const authorized = await authorizeSubject(request, env, url);
-  if (authorized !== null && permissionGroupsAllow(authorized.permissionGroups, permission)) {
+  if (
+    resolution.authorized !== null &&
+    permissionGroupsAllow(resolution.authorized.permissionGroups, permission)
+  ) {
     return;
   }
   if (configuredApiSecret(env) === null) {
@@ -529,8 +551,8 @@ function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
 
 async function statusForRequest(request: Request, env: AppEnv, url: URL): Promise<Record<string, unknown>> {
   const status = nightscoutStatus();
-  const authorized = await authorizeSubject(request, env, url);
-  if (authorized !== null) status.authorized = authorized;
+  const resolution = await resolveRequestAuthorization(request, env, url);
+  if (resolution.authorized !== null) status.authorized = resolution.authorized;
   return status;
 }
 
@@ -594,9 +616,10 @@ async function handleEntriesApi(
   const id = match[1];
 
   if (request.method === "POST" && id === undefined) {
-    await requirePermission(request, env, url, "api:entries:create");
+    const payload = await readBoundedBody(request);
+    await requirePermission(request, env, url, "api:entries:create", payload);
     const store = env.ENTRY_STORE.getByName(tenant);
-    const entries = parseEntryPayload(await readBoundedBody(request));
+    const entries = parseEntryPayload(payload);
     await store.putEntries(entries);
     return json([], { status: 200 });
   }
@@ -612,7 +635,8 @@ async function handleEntriesApi(
   }
 
   if (request.method === "DELETE") {
-    await requirePermission(request, env, url, "api:entries:delete");
+    const payload = request.body === null ? undefined : await readBoundedBody(request);
+    await requirePermission(request, env, url, "api:entries:delete", payload);
     const store = env.ENTRY_STORE.getByName(tenant);
     if (id !== undefined && id !== "*" && !OBJECT_ID.test(id)) {
       throw new ApiError(400, "invalid_entry", "entry id must be a 24-character hexadecimal string");
@@ -702,8 +726,8 @@ async function handleCollectionApi(
   }
 
   if (request.method === "POST" && segment === undefined) {
-    await requirePermission(request, env, url, `api:${collection}:create`);
     const payload = await readBoundedBody(request);
+    await requirePermission(request, env, url, `api:${collection}:create`, payload);
     if (
       (collection === "activity" || collection === "treatments")
       && Array.isArray(payload)
@@ -716,9 +740,10 @@ async function handleCollectionApi(
   }
 
   if (request.method === "PUT" && segment === undefined) {
-    await requirePermission(request, env, url, `api:${collection}:update`);
+    const payload = await readBoundedBody(request);
+    await requirePermission(request, env, url, `api:${collection}:update`, payload);
     const parsed = parseDocumentPayload(
-      await readBoundedBody(request),
+      payload,
       collection,
       collection !== "activity" && collection !== "profile" && collection !== "treatments",
     );
@@ -736,7 +761,8 @@ async function handleCollectionApi(
   }
 
   if (request.method === "DELETE") {
-    await requirePermission(request, env, url, `api:${collection}:delete`);
+    const payload = request.body === null ? undefined : await readBoundedBody(request);
+    await requirePermission(request, env, url, `api:${collection}:delete`, payload);
     let selected: JsonDocument[];
     if (segment !== undefined && segment !== "*") {
       if (collection === "treatments" && (OBJECT_ID.test(segment) || UUID.test(segment))) {
@@ -776,6 +802,28 @@ async function mergedRoles(store: DurableObjectStub<EntryStore>): Promise<JsonDo
   );
 }
 
+function publicAuthorizationSubjectMutation(subject: JsonDocument): JsonDocument {
+  const result = { ...subject };
+  for (const field of Object.keys(result)) {
+    if (
+      field === "accessToken" ||
+      field === "digest" ||
+      field === "accessTokenDigest" ||
+      field.startsWith("_nscf")
+    ) {
+      delete result[field];
+    }
+  }
+  return result;
+}
+
+function authorizationMongoError(description: string): Response {
+  return json(
+    { status: 500, message: "Mongo Error", description },
+    { status: 500 },
+  );
+}
+
 async function handleAuthorizationApi(
   request: Request,
   env: AppEnv,
@@ -788,11 +836,21 @@ async function handleAuthorizationApi(
 
   if (request.method === "GET" && path.startsWith("request/")) {
     const presented = decodeURIComponent(path.slice("request/".length));
-    const claimsJson = await store.verifyAccessJwt(presented);
-    const credential: PresentedCredential = claimsJson === null
-      ? { accessToken: presented, token: null, iat: 0, exp: 0 }
+    const presentedAllowed = boundedTokenCandidates(presented) !== null;
+    const claimsJson = presentedAllowed
+      ? await store.verifyAccessJwt(presented)
+      : null;
+    const credential: PresentedCredential | null = claimsJson === null
+      ? null
       : { ...parseAccessJwtClaims(claimsJson), token: presented };
-    const authorized = await authorizeCredential(store, credential, true);
+    const authorized = presentedAllowed
+      ? await authorizeCredential(
+          store,
+          credential?.accessToken ?? presented,
+          credential,
+          true,
+        )
+      : null;
     return authorized === null
       ? json(
           { status: 401, message: "Unauthorized", description: "Invalid/Missing" },
@@ -805,7 +863,11 @@ async function handleAuthorizationApi(
     await requirePermission(request, env, url, "admin:api:permissions:read");
     const permissions = Array.from(
       new Set((await mergedRoles(store)).flatMap((role) =>
-        Array.isArray(role.permissions) ? role.permissions.filter((item): item is string => typeof item === "string") : [],
+        typeof role.permissions === "string"
+          ? [role.permissions]
+          : Array.isArray(role.permissions)
+            ? role.permissions.filter((item): item is string => typeof item === "string")
+            : [],
       )),
     );
     return json(path.endsWith("/trie") ? { permissions } : permissions);
@@ -819,28 +881,64 @@ async function handleAuthorizationApi(
     request.method === "GET" ? "read" :
       request.method === "POST" ? "create" :
         request.method === "PUT" ? "update" : "delete";
-  await requirePermission(request, env, url, `admin:api:${collection}:${permissionAction}`);
+  const payload = request.method === "POST" || request.method === "PUT"
+    ? await readBoundedBody(request)
+    : request.method === "DELETE" && request.body !== null
+      ? await readBoundedBody(request)
+      : undefined;
+  await requirePermission(
+    request,
+    env,
+    url,
+    `admin:api:${collection}:${permissionAction}`,
+    payload,
+  );
 
   if (request.method === "GET") {
+    const subjectsJson = collection === "subjects"
+      ? await store.listAuthorizationSubjects()
+      : null;
+    if (collection === "subjects" && subjectsJson === null) {
+      throw new Error("authorization subject limit exceeded");
+    }
     return json(
       collection === "roles"
         ? await mergedRoles(store)
-        : parseDocuments(await store.listDocuments(collection)),
+        : parseDocuments(subjectsJson!),
     );
   }
   if (request.method === "POST" && id === undefined) {
-    const parsed = parseDocumentPayload(await readBoundedBody(request), collection, false);
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+      return authorizationMongoError("Authorization document must be a single object");
+    }
+    const parsed = parseDocumentPayload(payload, collection, false);
     const created = parseDocuments(
       await store.createDocuments(collection, JSON.stringify(parsed.documents)),
     );
-    return json(parsed.inputWasArray ? created : created[0]);
+    const response = collection === "subjects"
+      ? created.map(publicAuthorizationSubjectMutation)
+      : created;
+    return json(parsed.inputWasArray ? response : response[0]);
   }
   if (request.method === "PUT" && id === undefined) {
-    const parsed = parseDocumentPayload(await readBoundedBody(request), collection, true);
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+      return authorizationMongoError("Missing _id for update");
+    }
+    const rawId = (payload as Record<string, unknown>)._id;
+    if (rawId === undefined || rawId === null || rawId === "") {
+      return authorizationMongoError("Missing _id for update");
+    }
+    if (typeof rawId !== "string" || !OBJECT_ID.test(rawId)) {
+      return authorizationMongoError(`Invalid _id format: ${String(rawId)}`);
+    }
+    const parsed = parseDocumentPayload(payload, collection, true);
     const saved = parseDocuments(
       await store.saveDocuments(collection, JSON.stringify(parsed.documents)),
     );
-    return json(parsed.inputWasArray ? saved : saved[0]);
+    const response = collection === "subjects"
+      ? saved.map(publicAuthorizationSubjectMutation)
+      : saved;
+    return json(parsed.inputWasArray ? response : response[0]);
   }
   if (request.method === "DELETE" && id !== undefined) {
     if (!OBJECT_ID.test(id)) throw new ApiError(400, "invalid_document", "invalid document id");
@@ -927,6 +1025,9 @@ async function authenticateApi3(
   if (bearer === null) {
     return { ok: false, response: api3Error(401, "Missing or bad access token or JWT") };
   }
+  if (boundedTokenCandidates(bearer) === null) {
+    return { ok: false, response: api3Error(401, "Bad access token or JWT") };
+  }
 
   const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
   const claimsJson = await store.verifyAccessJwt(bearer);
@@ -934,7 +1035,11 @@ async function authenticateApi3(
     return { ok: false, response: api3Error(401, "Bad access token or JWT") };
   }
   const claims = parseAccessJwtClaims(claimsJson);
-  const authorized = await authorizeCredential(store, { ...claims, token: bearer });
+  const authorized = await authorizeCredential(
+    store,
+    claims.accessToken,
+    { ...claims, token: bearer },
+  );
   return authorized === null
     ? { ok: false, response: api3Error(401, "Bad access token or JWT") }
     : { ok: true, authorized, store };
@@ -1089,29 +1194,23 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   }
 
   if (request.method === "GET" && /^\/api\/v[12]\/verifyauth\/?$/.test(url.pathname)) {
-    const admin = await hasWriteAccess(request, env, url);
-    const credentialAttempted =
-      bearerToken(request) !== null ||
-      url.searchParams.has("token") ||
-      apiSecretCredential(request, url) !== null;
-    const authorized = admin ? null : await authorizeSubject(request, env, url);
-    const permissionGroups = admin
+    const resolution = await resolveRequestAuthorization(request, env, url);
+    const permissionGroups = resolution.admin
       ? [["*"]]
-      : authorized?.permissionGroups ??
-        (credentialAttempted ? [] : [rolePermissions("readable", [])]);
+      : resolution.authorized?.permissionGroups ??
+        (resolution.defaults ? [rolePermissions("readable", [])] : []);
     const canRead = permissionGroupsAllow(permissionGroups, "*:*:read");
     const canWrite = permissionGroupsAllow(permissionGroups, "*:*:write");
     const isAdmin = permissionGroupsAllow(permissionGroups, "*:*:admin");
-    const defaults = !credentialAttempted;
     return json({
       status: 200,
       message: {
         canRead,
         canWrite,
         isAdmin,
-        permissions: defaults ? "DEFAULT" : "ROLE",
-        rolefound: authorized === null ? "NOTFOUND" : "FOUND",
-        message: canRead && !defaults ? "OK" : "UNAUTHORIZED",
+        permissions: resolution.defaults ? "DEFAULT" : "ROLE",
+        rolefound: resolution.authorized === null ? "NOTFOUND" : "FOUND",
+        message: canRead && !resolution.defaults ? "OK" : "UNAUTHORIZED",
       },
     });
   }
@@ -1163,6 +1262,12 @@ export default {
       return withUtf8Charset(await env.ASSETS.fetch(request));
     } catch (error) {
       if (error instanceof ApiError) {
+        if (error.status === 401 && error.code === "unauthorized") {
+          return json(
+            { status: 401, message: "Unauthorized", description: "Invalid/Missing" },
+            { status: 401 },
+          );
+        }
         return json({ error: { code: error.code, message: error.message } }, { status: error.status });
       }
       console.error(

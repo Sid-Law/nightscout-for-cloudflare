@@ -874,7 +874,16 @@ describe("Nightscout compatibility API", () => {
       name: "Phone",
       roles: ["uploader"],
     });
-    const subject = await subjectResponse.json<Record<string, unknown>>();
+    const createdSubject = await subjectResponse.json<Record<string, unknown>>();
+    expect(createdSubject).not.toHaveProperty("accessToken");
+    expect(createdSubject).not.toHaveProperty("digest");
+    expect(createdSubject).not.toHaveProperty("accessTokenDigest");
+    const listedSubjects = await SELF.fetch(
+      `https://example.test/api/v2/authorization/subjects?tenant=${name}`,
+      { headers: { "api-secret": await secretDigest() } },
+    );
+    const [subject] = await listedSubjects.json<Array<Record<string, unknown>>>();
+    if (subject === undefined) throw new Error("created subject was not listed");
     expect(subject.accessToken).toEqual(expect.any(String));
 
     const authorized = await SELF.fetch(

@@ -54,7 +54,16 @@ async function issueSubject(
     { name: subjectName, roles: [roleName] },
   );
   expect(subjectResponse.status).toBe(200);
-  const subject = await subjectResponse.json<JsonObject>();
+  const created = await subjectResponse.json<JsonObject>();
+  const subjectsResponse = await SELF.fetch(
+    `https://example.test/api/v2/authorization/subjects?tenant=${tenantName}`,
+    { headers: { "api-secret": await secretDigest() } },
+  );
+  expect(subjectsResponse.status).toBe(200);
+  const subject = (await subjectsResponse.json<JsonObject[]>()).find(
+    (candidate) => candidate._id === created._id,
+  );
+  if (subject === undefined) throw new Error("created API3 subject was not listed");
   const authorization = await SELF.fetch(
     `https://example.test/api/v2/authorization/request/${encodeURIComponent(String(subject.accessToken))}?tenant=${tenantName}`,
   );

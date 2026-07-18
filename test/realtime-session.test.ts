@@ -141,21 +141,32 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
 
   it("accepts only tenant-valid explicit realtime credentials and always ACKs read-only", async () => {
     const stub = store("realtime-explicit-auth");
-    const accessToken = `viewer-${crypto.randomUUID()}`;
-    await stub.createDocuments("subjects", JSON.stringify([{ name: "viewer", accessToken }]));
-    const issued = JSON.parse(await stub.issueAccessJwt(accessToken)) as { token: string };
-    const digest = await crypto.subtle.digest(
-      "SHA-1",
-      new TextEncoder().encode("nscf-test-secret-20260717"),
+    const createdJson = await stub.createDocuments(
+      "subjects",
+      JSON.stringify([{ name: "viewer", roles: [] }]),
     );
-    const apiSecretDigest = Array.from(
-      new Uint8Array(digest),
+    const [created] = JSON.parse(createdJson) as Array<{ _id: string }>;
+    const listedJson = await stub.listAuthorizationSubjects();
+    if (listedJson === null) throw new Error("authorization subject limit exceeded");
+    const [listed] = JSON.parse(listedJson) as Array<{ accessToken: string }>;
+    if (created === undefined || listed === undefined) throw new Error("viewer subject was not created");
+    const accessToken = listed.accessToken;
+    const issued = JSON.parse(await stub.issueAccessJwt(accessToken)) as { token: string };
+    const digest = async (algorithm: "SHA-1" | "SHA-512") => Array.from(
+      new Uint8Array(await crypto.subtle.digest(
+        algorithm,
+        new TextEncoder().encode("nscf-test-secret-20260717"),
+      )),
       (byte) => byte.toString(16).padStart(2, "0"),
     ).join("");
+    const apiSecretDigest = await digest("SHA-1");
+    const apiSecretDigest512 = await digest("SHA-512");
+    const cosmeticAlias = `cosmetic-viewer-${accessToken.split("-").at(-1)!}`;
 
     const credentials: Array<Record<string, unknown>> = [
-      { secret: apiSecretDigest },
-      { secret: accessToken },
+      { secret: apiSecretDigest.toUpperCase() },
+      { secret: apiSecretDigest512 },
+      { secret: cosmeticAlias },
       { token: issued.token },
     ];
     for (const [index, credential] of credentials.entries()) {
@@ -181,20 +192,43 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       });
     }
 
-    const invalid = await stub.realtimeHandshake();
-    if (!invalid.ok) throw new Error(invalid.error.message);
-    await rpcPost(stub, invalid.value.sid, clientPayload({ type: "connect", namespace: "/" }));
-    await stub.realtimePoll(invalid.value.sid);
-    await rpcPost(stub, invalid.value.sid, clientPayload({
+    for (const [index, secret] of [
+      "invalid-explicit-value",
+      apiSecretDigest512.toUpperCase(),
+    ].entries()) {
+      const invalid = await stub.realtimeHandshake();
+      if (!invalid.ok) throw new Error(invalid.error.message);
+      await rpcPost(stub, invalid.value.sid, clientPayload({ type: "connect", namespace: "/" }));
+      await stub.realtimePoll(invalid.value.sid);
+      await rpcPost(stub, invalid.value.sid, clientPayload({
+        type: "event",
+        namespace: "/",
+        id: 30 + index,
+        data: ["authorize", { client: "web", secret }],
+      }));
+      const rejected = await stub.realtimePoll(invalid.value.sid);
+      if (!rejected.ok) throw new Error(rejected.error.message);
+      expect(
+        decodeEngineIoV4PollingPayload(rejected.value)
+          .map((packet) => unwrapSocketIoV5Packet(packet)),
+      ).toEqual([{ type: "disconnect", namespace: "/" }]);
+    }
+
+    await stub.deleteDocuments("subjects", [created._id]);
+    const revoked = await stub.realtimeHandshake();
+    if (!revoked.ok) throw new Error(revoked.error.message);
+    await rpcPost(stub, revoked.value.sid, clientPayload({ type: "connect", namespace: "/" }));
+    await stub.realtimePoll(revoked.value.sid);
+    await rpcPost(stub, revoked.value.sid, clientPayload({
       type: "event",
       namespace: "/",
-      id: 30,
-      data: ["authorize", { client: "web", secret: "invalid-explicit-value" }],
+      id: 40,
+      data: ["authorize", { client: "web", token: issued.token }],
     }));
-    const rejected = await stub.realtimePoll(invalid.value.sid);
-    if (!rejected.ok) throw new Error(rejected.error.message);
+    const revokedResult = await stub.realtimePoll(revoked.value.sid);
+    if (!revokedResult.ok) throw new Error(revokedResult.error.message);
     expect(
-      decodeEngineIoV4PollingPayload(rejected.value)
+      decodeEngineIoV4PollingPayload(revokedResult.value)
         .map((packet) => unwrapSocketIoV5Packet(packet)),
     ).toEqual([{ type: "disconnect", namespace: "/" }]);
   });

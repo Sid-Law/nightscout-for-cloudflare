@@ -77,9 +77,6 @@ function normalizeDocument(
   if ((collection === "activity" || collection === "treatments") && !document.created_at) {
     document.created_at = new Date().toISOString();
   }
-  if (collection === "subjects" && !document.accessToken) {
-    document.accessToken = crypto.randomUUID().replaceAll("-", "");
-  }
   return document;
 }
 
