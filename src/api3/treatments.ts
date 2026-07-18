@@ -1,5 +1,6 @@
 import type { EntryStore, JsonDocument } from "../entry-store";
 import type {
+  Api3CollectionName,
   Api3MutationDecision,
   Api3MutationOptions,
   DocumentMutationResult,
@@ -34,10 +35,12 @@ export interface Api3Authorization {
   permissionGroups: string[][];
 }
 
-export type Api3TreatmentRoute =
+export type Api3CollectionRoute =
   | { kind: "collection"; extension?: string }
   | { kind: "resource"; identifier: string; extension?: string }
   | { kind: "history"; lastModified?: string; extension?: string };
+
+export type Api3TreatmentRoute = Api3CollectionRoute;
 
 export function splitApi3Extension(pathname: string): { pathname: string; extension?: string } {
   const slash = pathname.lastIndexOf("/");
@@ -59,18 +62,24 @@ function decodedPathSegment(value: string): string | null {
   }
 }
 
-export function matchApi3TreatmentRoute(method: string, pathname: string): Api3TreatmentRoute | null {
+export function matchApi3CollectionRoute(
+  method: string,
+  pathname: string,
+  collection: Api3CollectionName,
+): Api3CollectionRoute | null {
   const trailingTrimmed = pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
   const split = splitApi3Extension(trailingTrimmed);
   if (
-    split.pathname === "/api/v3/treatments"
+    split.pathname === `/api/v3/${collection}`
     && (method === "GET" || method === "POST")
   ) {
     return { kind: "collection", ...(split.extension === undefined ? {} : { extension: split.extension }) };
   }
 
   if (method === "GET") {
-    const history = /^\/api\/v3\/treatments\/history(?:\/([^/]+))?$/.exec(split.pathname);
+    const history = new RegExp(`^/api/v3/${collection}/history(?:/([^/]+))?$`).exec(
+      split.pathname,
+    );
     if (history !== null) {
       const lastModified = history[1] === undefined ? undefined : decodedPathSegment(history[1]);
       if (lastModified === null) return null;
@@ -83,7 +92,7 @@ export function matchApi3TreatmentRoute(method: string, pathname: string): Api3T
   }
 
   if (!["GET", "PUT", "PATCH", "DELETE"].includes(method)) return null;
-  const resource = /^\/api\/v3\/treatments\/([^/]+)$/.exec(split.pathname);
+  const resource = new RegExp(`^/api/v3/${collection}/([^/]+)$`).exec(split.pathname);
   if (resource === null) return null;
   const identifier = decodedPathSegment(resource[1]!);
   if (identifier === null) return null;
@@ -94,15 +103,33 @@ export function matchApi3TreatmentRoute(method: string, pathname: string): Api3T
   };
 }
 
-function allowed(authorization: Api3Authorization, action: string): boolean {
+export function matchApi3TreatmentRoute(
+  method: string,
+  pathname: string,
+): Api3TreatmentRoute | null {
+  return matchApi3CollectionRoute(method, pathname, "treatments");
+}
+
+export function matchApi3DeviceStatusRoute(
+  method: string,
+  pathname: string,
+): Api3CollectionRoute | null {
+  return matchApi3CollectionRoute(method, pathname, "devicestatus");
+}
+
+function allowed(
+  authorization: Api3Authorization,
+  collection: Api3CollectionName,
+  action: string,
+): boolean {
   return permissionGroupsAllow(
     authorization.permissionGroups,
-    `api:treatments:${action}`,
+    `api:${collection}:${action}`,
   );
 }
 
-function forbidden(action: string): Response {
-  return api3Status(403, `Missing permission api:treatments:${action}`);
+function forbidden(collection: Api3CollectionName, action: string): Response {
+  return api3Status(403, `Missing permission api:${collection}:${action}`);
 }
 
 async function readJsonBody(request: Request): Promise<unknown> {
@@ -193,24 +220,28 @@ function parseDecision(value: string): Api3MutationDecision {
 function mutationOptions(
   authorization: Api3Authorization,
   request: Request,
+  collection: Api3CollectionName,
 ): Api3MutationOptions {
   return {
-    canCreate: allowed(authorization, "create"),
-    canUpdate: allowed(authorization, "update"),
+    canCreate: allowed(authorization, collection, "create"),
+    canUpdate: allowed(authorization, collection, "update"),
     actor: authorization.sub || null,
     ifUnmodifiedSince: ifUnmodifiedSince(request),
     validate: true,
   };
 }
 
-function mutationFailure(decision: Extract<Api3MutationDecision, { ok: false }>): Response {
+function mutationFailure(
+  collection: Api3CollectionName,
+  decision: Extract<Api3MutationDecision, { ok: false }>,
+): Response {
   switch (decision.reason) {
     case "operation-error":
       return operationError(new Error(decision.message)) ?? api3Status(500, STORAGE_ERROR);
     case "missing-create-permission":
-      return forbidden("create");
+      return forbidden(collection, "create");
     case "missing-update-permission":
-      return forbidden("update");
+      return forbidden(collection, "update");
     case "not-found":
       return api3Status(404);
     case "gone":
@@ -226,10 +257,13 @@ function lastModifiedHeaders(modified: number | null): Headers {
   return headers;
 }
 
-function mutationIdentifier(mutation: DocumentMutationResult): string {
+function mutationIdentifier(
+  collection: Api3CollectionName,
+  mutation: DocumentMutationResult,
+): string {
   const identifier = mutation.document.identifier;
   if (typeof identifier !== "string" || identifier.length === 0) {
-    throw new Error("API3 treatment mutation returned no identifier");
+    throw new Error(`API3 ${collection} mutation returned no identifier`);
   }
   return identifier;
 }
@@ -300,20 +334,22 @@ async function createTreatment(
   request: Request,
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
+  collection: Api3CollectionName,
 ): Promise<Response> {
   const document = parseApi3Document(await readJsonBody(request));
   normalizeApi3Date(document);
   await resolveApi3Identifier(document);
-  const decision = parseDecision(await store.api3CreateTreatment(
+  const decision = parseDecision(await store.api3CreateDocument(
+    collection,
     JSON.stringify(document),
-    JSON.stringify(mutationOptions(authorization, request)),
+    JSON.stringify(mutationOptions(authorization, request, collection)),
   ));
-  if (!decision.ok) return mutationFailure(decision);
+  if (!decision.ok) return mutationFailure(collection, decision);
 
-  const identifier = mutationIdentifier(decision.mutation);
+  const identifier = mutationIdentifier(collection, decision.mutation);
   const modified = decision.mutation.srvModified;
   const headers = lastModifiedHeaders(modified);
-  headers.set("Location", `/api/v3/treatments/${identifier}`);
+  headers.set("Location", `/api/v3/${collection}/${identifier}`);
   if (decision.mutation.created) {
     return api3Json({ status: 201, identifier, lastModified: modified }, 201, headers);
   }
@@ -334,24 +370,26 @@ async function replaceTreatment(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   identifier: string,
+  collection: Api3CollectionName,
 ): Promise<Response> {
   const document = parseApi3Document(await readJsonBody(request));
   normalizeApi3Date(document);
   await resolveApi3Identifier(document);
   document.identifier = identifier;
-  const decision = parseDecision(await store.api3ReplaceTreatment(
+  const decision = parseDecision(await store.api3ReplaceDocument(
+    collection,
     identifier,
     JSON.stringify(document),
-    JSON.stringify(mutationOptions(authorization, request)),
+    JSON.stringify(mutationOptions(authorization, request, collection)),
   ));
-  if (!decision.ok) return mutationFailure(decision);
+  if (!decision.ok) return mutationFailure(collection, decision);
 
   const modified = decision.mutation.srvModified;
   const headers = lastModifiedHeaders(modified);
   if (decision.mutation.created) {
-    const actualIdentifier = mutationIdentifier(decision.mutation);
+    const actualIdentifier = mutationIdentifier(collection, decision.mutation);
     // insert() joins req.path and identifier even for PUT in the locked handler.
-    headers.set("Location", `/api/v3/treatments/${identifier}/${actualIdentifier}`);
+    headers.set("Location", `/api/v3/${collection}/${identifier}/${actualIdentifier}`);
     return api3Json(
       { status: 201, identifier: actualIdentifier, lastModified: modified },
       201,
@@ -366,14 +404,16 @@ async function patchTreatment(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   identifier: string,
+  collection: Api3CollectionName,
 ): Promise<Response> {
   const patch = parseApi3Document(await readJsonBody(request));
-  const decision = parseDecision(await store.api3PatchTreatment(
+  const decision = parseDecision(await store.api3PatchDocument(
+    collection,
     identifier,
     JSON.stringify(patch),
-    JSON.stringify(mutationOptions(authorization, request)),
+    JSON.stringify(mutationOptions(authorization, request, collection)),
   ));
-  if (!decision.ok) return mutationFailure(decision);
+  if (!decision.ok) return mutationFailure(collection, decision);
   return api3Json(
     { status: 200 },
     200,
@@ -386,9 +426,15 @@ async function deleteTreatment(
   authorization: Api3Authorization,
   identifier: string,
   permanent: boolean,
+  collection: Api3CollectionName,
 ): Promise<Response> {
-  if (!allowed(authorization, "delete")) return forbidden("delete");
-  const result = await store.api3DeleteTreatment(identifier, permanent, authorization.sub || null);
+  if (!allowed(authorization, collection, "delete")) return forbidden(collection, "delete");
+  const result = await store.api3DeleteDocument(
+    collection,
+    identifier,
+    permanent,
+    authorization.sub || null,
+  );
   return result.deleted ? api3Status(200) : api3Status(404);
 }
 
@@ -398,10 +444,12 @@ async function readTreatment(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   route: Extract<Api3TreatmentRoute, { kind: "resource" }>,
+  collection: Api3CollectionName,
 ): Promise<Response> {
-  if (!allowed(authorization, "read")) return forbidden("read");
+  if (!allowed(authorization, collection, "read")) return forbidden(collection, "read");
   const fields = parseApi3Fields(url);
-  const value = await store.findTreatmentForApi3Read(
+  const value = await store.findApi3Document(
+    collection,
     route.identifier,
     JSON.stringify(fields ?? null),
   );
@@ -423,8 +471,9 @@ async function searchTreatments(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   extension: string | undefined,
+  collection: Api3CollectionName,
 ): Promise<Response> {
-  if (!allowed(authorization, "read")) return forbidden("read");
+  if (!allowed(authorization, collection, "read")) return forbidden(collection, "read");
   const input = parseApi3Search(url);
   const query: DocumentQuery = {
     filters: input.filters,
@@ -434,7 +483,10 @@ async function searchTreatments(
     includeDeleted: false,
   };
   if (input.fields !== undefined) query.fields = input.fields;
-  const decision = JSON.parse(await store.api3QueryTreatments(JSON.stringify(query))) as
+  const decision = JSON.parse(await store.api3QueryCollection(
+    collection,
+    JSON.stringify(query),
+  )) as
     | { ok: true; result: JsonDocument[] }
     | { ok: false; message: string };
   if (!decision.ok) throw new Error(decision.message);
@@ -448,8 +500,9 @@ async function historyTreatments(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   route: Extract<Api3TreatmentRoute, { kind: "history" }>,
+  collection: Api3CollectionName,
 ): Promise<Response> {
-  if (!allowed(authorization, "read")) return forbidden("read");
+  if (!allowed(authorization, collection, "read")) return forbidden(collection, "read");
   const input = parseApi3History(
     url,
     route.lastModified,
@@ -467,7 +520,7 @@ async function historyTreatments(
     ]));
   }
   const result = JSON.parse(
-    await store.treatmentHistory(JSON.stringify(storageInput)),
+    await store.api3CollectionHistory(collection, JSON.stringify(storageInput)),
   ) as JsonDocument[];
   const headers = new Headers();
   if (result.length > 0) {
@@ -493,34 +546,56 @@ async function historyTreatments(
   return renderApi3(api3FormatFromRequest(request, route.extension), rendered, headers);
 }
 
-export async function handleApi3Treatments(
+async function handleApi3Collection(
   request: Request,
   url: URL,
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
-  route: Api3TreatmentRoute,
+  route: Api3CollectionRoute,
+  collection: Api3CollectionName,
 ): Promise<Response> {
   try {
     if (route.kind === "collection") {
       if (request.method === "GET") {
-        return await searchTreatments(request, url, store, authorization, route.extension);
+        return await searchTreatments(
+          request,
+          url,
+          store,
+          authorization,
+          route.extension,
+          collection,
+        );
       }
-      if (request.method === "POST") return await createTreatment(request, store, authorization);
+      if (request.method === "POST") {
+        return await createTreatment(request, store, authorization, collection);
+      }
       return api3Status(404, "Bad operation or collection");
     }
     if (route.kind === "history") {
       return request.method === "GET"
-        ? await historyTreatments(request, url, store, authorization, route)
+        ? await historyTreatments(request, url, store, authorization, route, collection)
         : api3Status(404, "Bad operation or collection");
     }
     if (request.method === "GET") {
-      return await readTreatment(request, url, store, authorization, route);
+      return await readTreatment(request, url, store, authorization, route, collection);
     }
     if (request.method === "PUT") {
-      return await replaceTreatment(request, store, authorization, route.identifier);
+      return await replaceTreatment(
+        request,
+        store,
+        authorization,
+        route.identifier,
+        collection,
+      );
     }
     if (request.method === "PATCH") {
-      return await patchTreatment(request, store, authorization, route.identifier);
+      return await patchTreatment(
+        request,
+        store,
+        authorization,
+        route.identifier,
+        collection,
+      );
     }
     if (request.method === "DELETE") {
       return await deleteTreatment(
@@ -528,6 +603,7 @@ export async function handleApi3Treatments(
         authorization,
         route.identifier,
         permanentDeleteRequested(url),
+        collection,
       );
     }
     return api3Status(404, "Bad operation or collection");
@@ -538,9 +614,32 @@ export async function handleApi3Treatments(
     }
     const response = operationError(error);
     if (response !== null) return response;
-    console.error(JSON.stringify({ message: "API3 treatments operation failed", error: error instanceof Error ? error.message : String(error) }));
+    console.error(JSON.stringify({
+      message: `API3 ${collection} operation failed`,
+      error: error instanceof Error ? error.message : String(error),
+    }));
     return api3Status(500, STORAGE_ERROR);
   }
+}
+
+export async function handleApi3Treatments(
+  request: Request,
+  url: URL,
+  store: DurableObjectStub<EntryStore>,
+  authorization: Api3Authorization,
+  route: Api3TreatmentRoute,
+): Promise<Response> {
+  return handleApi3Collection(request, url, store, authorization, route, "treatments");
+}
+
+export async function handleApi3DeviceStatus(
+  request: Request,
+  url: URL,
+  store: DurableObjectStub<EntryStore>,
+  authorization: Api3Authorization,
+  route: Api3CollectionRoute,
+): Promise<Response> {
+  return handleApi3Collection(request, url, store, authorization, route, "devicestatus");
 }
 
 export async function handleApi3TreatmentsLastModified(
@@ -548,9 +647,10 @@ export async function handleApi3TreatmentsLastModified(
   authorization: Api3Authorization,
 ): Promise<Response> {
   const collections: Record<string, number> = {};
-  if (allowed(authorization, "read")) {
-    const modified = await store.treatmentsLastModified();
-    if (modified !== null) collections.treatments = modified;
+  for (const collection of ["devicestatus", "treatments"] as const) {
+    if (!allowed(authorization, collection, "read")) continue;
+    const modified = await store.api3CollectionLastModified(collection);
+    if (modified !== null) collections[collection] = modified;
   }
   return api3Result({ srvDate: Date.now(), collections });
 }

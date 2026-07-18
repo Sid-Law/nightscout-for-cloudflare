@@ -7,6 +7,7 @@ import {
 import {
   migrateDocumentsV4,
   SqliteDocumentRepository,
+  type Api3CollectionName,
   type Api3MutationOptions,
   type DocumentDeleteResult,
   type DocumentHistoryQuery,
@@ -821,6 +822,12 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         documents.map((document) => this.documentRepository().upsertTreatment(document).document),
       );
     }
+    if (collection === "devicestatus") {
+      return JSON.stringify(
+        documents.map((document) =>
+          this.documentRepository().createLegacyDocument(collection, document).document),
+      );
+    }
     const now = Date.now();
     const stored: JsonDocument[] = [];
     for (const document of documents) {
@@ -851,6 +858,12 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         documents.map((document) => this.documentRepository().upsertTreatment(document).document),
       );
     }
+    if (collection === "devicestatus") {
+      return JSON.stringify(
+        documents.map((document) =>
+          this.documentRepository().saveLegacyDocument(collection, document).document),
+      );
+    }
     const now = Date.now();
     for (const document of documents) {
       const id = document._id as string;
@@ -873,10 +886,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async deleteDocuments(collection: DocumentCollection, ids: string[]): Promise<number> {
-    if (collection === "treatments") {
+    if (collection === "treatments" || collection === "devicestatus") {
       let deleted = 0;
       for (const id of ids) {
-        if (this.documentRepository().deleteTreatmentById(id)) deleted += 1;
+        if (this.documentRepository().deleteDocumentById(collection, id)) deleted += 1;
       }
       return deleted;
     }
@@ -940,12 +953,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     identifier: string,
     fieldsJson: string,
   ): Promise<string | null> {
-    const parsed = JSON.parse(fieldsJson) as string[] | null;
-    const document = this.documentRepository().findTreatmentForApi3Read(
-      identifier,
-      parsed ?? undefined,
-    );
-    return document === null ? null : JSON.stringify(document);
+    return this.findApi3Document("treatments", identifier, fieldsJson);
   }
 
   async findTreatmentByFallback(
@@ -966,12 +974,29 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return JSON.stringify(this.documentRepository().queryTreatments(query));
   }
 
-  async api3QueryTreatments(queryJson = "{}"): Promise<string> {
+  async findApi3Document(
+    collection: Api3CollectionName,
+    identifier: string,
+    fieldsJson: string,
+  ): Promise<string | null> {
+    const parsed = JSON.parse(fieldsJson) as string[] | null;
+    const document = this.documentRepository().findDocumentForApi3Read(
+      collection,
+      identifier,
+      parsed ?? undefined,
+    );
+    return document === null ? null : JSON.stringify(document);
+  }
+
+  async api3QueryCollection(
+    collection: Api3CollectionName,
+    queryJson = "{}",
+  ): Promise<string> {
     try {
       const query = JSON.parse(queryJson) as DocumentQuery;
       return JSON.stringify({
         ok: true,
-        result: this.documentRepository().queryTreatments(query),
+        result: this.documentRepository().queryDocumentsForApi3(collection, query),
       });
     } catch (error) {
       return JSON.stringify({
@@ -979,6 +1004,110 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  async api3CreateDocument(
+    collection: Api3CollectionName,
+    documentJson: string,
+    optionsJson: string,
+  ): Promise<string> {
+    const document = JSON.parse(documentJson) as JsonDocument;
+    const options = JSON.parse(optionsJson) as Api3MutationOptions;
+    try {
+      return JSON.stringify(
+        this.documentRepository().createDocumentForApi3(collection, document, options),
+      );
+    } catch (error) {
+      return JSON.stringify({
+        ok: false,
+        reason: "operation-error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  async api3ReplaceDocument(
+    collection: Api3CollectionName,
+    identity: string,
+    documentJson: string,
+    optionsJson: string,
+  ): Promise<string> {
+    const document = JSON.parse(documentJson) as JsonDocument;
+    const options = JSON.parse(optionsJson) as Api3MutationOptions;
+    try {
+      return JSON.stringify(
+        this.documentRepository().replaceDocumentForApi3(
+          collection,
+          identity,
+          document,
+          options,
+        ),
+      );
+    } catch (error) {
+      return JSON.stringify({
+        ok: false,
+        reason: "operation-error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  async api3PatchDocument(
+    collection: Api3CollectionName,
+    identity: string,
+    patchJson: string,
+    optionsJson: string,
+  ): Promise<string> {
+    const patch = JSON.parse(patchJson) as JsonDocument;
+    const options = JSON.parse(optionsJson) as Api3MutationOptions;
+    try {
+      return JSON.stringify(
+        this.documentRepository().patchDocumentForApi3(
+          collection,
+          identity,
+          patch,
+          options,
+        ),
+      );
+    } catch (error) {
+      return JSON.stringify({
+        ok: false,
+        reason: "operation-error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  async api3DeleteDocument(
+    collection: Api3CollectionName,
+    identity: string,
+    permanent: boolean,
+    actor: string | null,
+  ): Promise<DocumentDeleteResult> {
+    return this.documentRepository().deleteDocumentForApi3(
+      collection,
+      identity,
+      permanent,
+      actor,
+    );
+  }
+
+  async api3CollectionLastModified(
+    collection: Api3CollectionName,
+  ): Promise<number | null> {
+    return this.documentRepository().collectionLastModified(collection);
+  }
+
+  async api3CollectionHistory(
+    collection: Api3CollectionName,
+    queryJson: string,
+  ): Promise<string> {
+    const query = JSON.parse(queryJson) as DocumentHistoryQuery;
+    return JSON.stringify(this.documentRepository().documentHistory(collection, query));
+  }
+
+  async api3QueryTreatments(queryJson = "{}"): Promise<string> {
+    return this.api3QueryCollection("treatments", queryJson);
   }
 
   async queryLegacyTreatments(queryJson = "{}"): Promise<string> {
@@ -1000,17 +1129,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     documentJson: string,
     optionsJson: string,
   ): Promise<string> {
-    const document = JSON.parse(documentJson) as JsonDocument;
-    const options = JSON.parse(optionsJson) as Api3MutationOptions;
-    try {
-      return JSON.stringify(this.documentRepository().createTreatmentForApi3(document, options));
-    } catch (error) {
-      return JSON.stringify({
-        ok: false,
-        reason: "operation-error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
+    return this.api3CreateDocument("treatments", documentJson, optionsJson);
   }
 
   async replaceTreatment(
@@ -1026,19 +1145,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     documentJson: string,
     optionsJson: string,
   ): Promise<string> {
-    const document = JSON.parse(documentJson) as JsonDocument;
-    const options = JSON.parse(optionsJson) as Api3MutationOptions;
-    try {
-      return JSON.stringify(
-        this.documentRepository().replaceTreatmentForApi3(identity, document, options),
-      );
-    } catch (error) {
-      return JSON.stringify({
-        ok: false,
-        reason: "operation-error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
+    return this.api3ReplaceDocument("treatments", identity, documentJson, optionsJson);
   }
 
   async patchTreatment(
@@ -1055,19 +1162,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     patchJson: string,
     optionsJson: string,
   ): Promise<string> {
-    const patch = JSON.parse(patchJson) as JsonDocument;
-    const options = JSON.parse(optionsJson) as Api3MutationOptions;
-    try {
-      return JSON.stringify(
-        this.documentRepository().patchTreatmentForApi3(identity, patch, options),
-      );
-    } catch (error) {
-      return JSON.stringify({
-        ok: false,
-        reason: "operation-error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
+    return this.api3PatchDocument("treatments", identity, patchJson, optionsJson);
   }
 
   async deleteTreatment(identity: string, permanent = false): Promise<DocumentDeleteResult> {
@@ -1079,7 +1174,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     permanent: boolean,
     actor: string | null,
   ): Promise<DocumentDeleteResult> {
-    return this.documentRepository().deleteTreatment(identity, permanent, actor);
+    return this.api3DeleteDocument("treatments", identity, permanent, actor);
   }
 
   async deleteLegacyTreatment(identity: string): Promise<boolean> {
@@ -1087,11 +1182,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async treatmentsLastModified(): Promise<number | null> {
-    return this.documentRepository().treatmentsLastModified();
+    return this.api3CollectionLastModified("treatments");
   }
 
   async treatmentHistory(queryJson: string): Promise<string> {
-    const query = JSON.parse(queryJson) as DocumentHistoryQuery;
-    return JSON.stringify(this.documentRepository().treatmentHistory(query));
+    return this.api3CollectionHistory("treatments", queryJson);
   }
 }

@@ -1,6 +1,9 @@
 import type { JsonDocument, JsonValue } from "./entry-store";
 
-const TREATMENTS = "treatments";
+export type Api3CollectionName = "devicestatus" | "treatments";
+
+const TREATMENTS: Api3CollectionName = "treatments";
+const DEVICESTATUS: Api3CollectionName = "devicestatus";
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FIELD_NAME = /^[A-Za-z0-9_,.-]+$/;
@@ -192,16 +195,21 @@ function canonicalCreatedAt(value: JsonValue | undefined): JsonValue | undefined
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value;
 }
 
-function fallbackKey(document: JsonDocument): string | null {
+function fallbackKey(
+  document: JsonDocument,
+  collection: Api3CollectionName = TREATMENTS,
+): string | null {
   const createdAt = canonicalCreatedAt(document.created_at);
-  const eventType = document.eventType;
+  const distinguishingValue = collection === DEVICESTATUS
+    ? document.device
+    : document.eventType;
   if (
     (typeof createdAt !== "string" && typeof createdAt !== "number") ||
-    (typeof eventType !== "string" && typeof eventType !== "number")
+    (typeof distinguishingValue !== "string" && typeof distinguishingValue !== "number")
   ) {
     return null;
   }
-  return JSON.stringify([createdAt, eventType]);
+  return JSON.stringify([createdAt, distinguishingValue]);
 }
 
 function hasOwn(document: JsonDocument, field: string): boolean {
@@ -831,6 +839,9 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     FROM documents
     WHERE identifier_present IS NULL OR srv_metadata_version IS NULL
        OR is_valid IS NULL OR revision IS NULL
+       OR (collection = 'devicestatus' AND fallback_key IS NULL
+           AND json_type(body, '$.created_at') IS NOT NULL
+           AND json_type(body, '$.device') IS NOT NULL)
        OR NOT EXISTS (
          SELECT 1 FROM document_changes
          WHERE document_changes.collection = documents.collection
@@ -852,11 +863,11 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     const identity = identifierMetadata(document);
     const identifierPresent = identity.present;
     const identifier = identity.identifier;
-    // Older v4 builds stored the literal created_at offset in fallback_key.
-    // Recompute treatment metadata from the preserved body so equivalent
-    // -05:00 and Z retransmissions converge after upgrade.
-    const documentFallback = collection === TREATMENTS
-      ? fallbackKey(document)
+    // Recompute the locked collection-specific API3 fallback key from the
+    // preserved body. This also backfills devicestatus rows written before
+    // that collection joined the generic SQLite API3 adapter.
+    const documentFallback = collection === TREATMENTS || collection === DEVICESTATUS
+      ? fallbackKey(document, collection)
       : row.fallback_key;
     const revision = row.revision ?? 1;
 
@@ -939,59 +950,80 @@ export class SqliteDocumentRepository {
     return this.storage.sql;
   }
 
-  private findByIdRow(id: string): DbDocumentV4 | undefined {
+  private findByIdRow(
+    id: string,
+    collection: Api3CollectionName = TREATMENTS,
+  ): DbDocumentV4 | undefined {
     return this.sql.exec<DbDocumentV4>(
       `SELECT * FROM documents WHERE collection = ? AND id = ? LIMIT 1`,
-      TREATMENTS,
+      collection,
       id,
     ).toArray()[0];
   }
 
-  private findByIdentifierRow(identifier: string): DbDocumentV4 | undefined {
+  private findByIdentifierRow(
+    identifier: string,
+    collection: Api3CollectionName = TREATMENTS,
+  ): DbDocumentV4 | undefined {
     return this.sql.exec<DbDocumentV4>(
       `SELECT * FROM documents
        WHERE collection = ? AND identifier = ?
        ORDER BY srv_modified DESC, updated_at DESC, id ASC
        LIMIT 1`,
-      TREATMENTS,
+      collection,
       identifier,
     ).toArray()[0];
   }
 
-  private findLegacyByIdRow(id: string): DbDocumentV4 | undefined {
+  private findLegacyByIdRow(
+    id: string,
+    collection: Api3CollectionName = TREATMENTS,
+  ): DbDocumentV4 | undefined {
     return this.sql.exec<DbDocumentV4>(
       `SELECT * FROM documents
        WHERE collection = ? AND id = ? AND identifier_present = 0
        LIMIT 1`,
-      TREATMENTS,
+      collection,
       id,
     ).toArray()[0];
   }
 
-  private findByFallbackRow(key: string, legacyOnly: boolean): DbDocumentV4 | undefined {
+  private findByFallbackRow(
+    key: string,
+    legacyOnly: boolean,
+    collection: Api3CollectionName = TREATMENTS,
+  ): DbDocumentV4 | undefined {
     return this.sql.exec<DbDocumentV4>(
       `SELECT * FROM documents
        WHERE collection = ? AND fallback_key = ? ${legacyOnly ? "AND identifier_present = 0" : ""}
        ORDER BY srv_modified DESC, updated_at DESC, id ASC
        LIMIT 1`,
-      TREATMENTS,
+      collection,
       key,
     ).toArray()[0];
   }
 
-  private findByIdentity(identity: string): DbDocumentV4 | undefined {
-    return this.findByIdentifierRow(identity) ?? this.findByIdRow(identity);
+  private findByIdentity(
+    identity: string,
+    collection: Api3CollectionName = TREATMENTS,
+  ): DbDocumentV4 | undefined {
+    return this.findByIdentifierRow(identity, collection) ?? this.findByIdRow(identity, collection);
   }
 
-  private findApi3CreateCandidate(document: JsonDocument): DbDocumentV4 | undefined {
+  private findApi3CreateCandidate(
+    document: JsonDocument,
+    collection: Api3CollectionName = TREATMENTS,
+  ): DbDocumentV4 | undefined {
     const identifier = requestedIdentifier(document);
     if (identifier !== null) {
-      const identified = this.findByIdentifierRow(identifier)
-        ?? (OBJECT_ID.test(identifier) ? this.findLegacyByIdRow(identifier.toLowerCase()) : undefined);
+      const identified = this.findByIdentifierRow(identifier, collection)
+        ?? (OBJECT_ID.test(identifier)
+          ? this.findLegacyByIdRow(identifier.toLowerCase(), collection)
+          : undefined);
       if (identified !== undefined) return identified;
     }
-    const key = fallbackKey(document);
-    return key === null ? undefined : this.findByFallbackRow(key, true);
+    const key = fallbackKey(document, collection);
+    return key === null ? undefined : this.findByFallbackRow(key, true, collection);
   }
 
   private findTreatmentUpsertCandidate(document: JsonDocument): DbDocumentV4 | undefined {
@@ -1005,17 +1037,20 @@ export class SqliteDocumentRepository {
     return key === null ? undefined : this.findByFallbackRow(key, false);
   }
 
-  private nextSrvModified(now: number): number {
+  private nextSrvModified(
+    now: number,
+    collection: Api3CollectionName = TREATMENTS,
+  ): number {
     const last = this.sql.exec<ClockRow>(
       "SELECT last_srv_modified FROM collection_clocks WHERE collection = ? LIMIT 1",
-      TREATMENTS,
+      collection,
     ).toArray()[0]?.last_srv_modified ?? 0;
     const next = Math.max(Math.trunc(now), last + 1);
     this.sql.exec(
       `INSERT INTO collection_clocks (collection, last_srv_modified)
        VALUES (?, ?)
        ON CONFLICT(collection) DO UPDATE SET last_srv_modified = excluded.last_srv_modified`,
-      TREATMENTS,
+      collection,
       next,
     );
     return next;
@@ -1066,6 +1101,7 @@ export class SqliteDocumentRepository {
     operation: "create" | "replace" | "patch" | "delete",
     policy: MutationPolicy,
     serverSrvCreated?: number,
+    collection: Api3CollectionName = TREATMENTS,
   ): DocumentMutationResult {
     const revision = (existing?.revision ?? 0) + 1;
     const identity = identifierMetadata(document);
@@ -1074,7 +1110,7 @@ export class SqliteDocumentRepository {
     const stored = { ...document };
     stored._id = id;
     const generatedSrvModified = policy === "api3"
-      ? this.nextSrvModified(Date.now())
+      ? this.nextSrvModified(Date.now(), collection)
       : null;
     if (policy === "api3") {
       if (generatedSrvModified === null) throw new Error("API3 srvModified allocation failed");
@@ -1118,7 +1154,7 @@ export class SqliteDocumentRepository {
          fallback_key = excluded.fallback_key,
          revision = excluded.revision,
          srv_metadata_version = excluded.srv_metadata_version`}`,
-      TREATMENTS,
+      collection,
       id,
       body,
       sortTime(stored, existing?.sort_time ?? now),
@@ -1129,7 +1165,7 @@ export class SqliteDocumentRepository {
       srvCreated,
       srvModified,
       isValid,
-      fallbackKey(stored),
+      fallbackKey(stored, collection),
       revision,
     );
     this.sql.exec(
@@ -1137,7 +1173,7 @@ export class SqliteDocumentRepository {
         (collection, id, identifier, identifier_present, body, srv_created, srv_modified,
          is_valid, revision, operation, srv_metadata_version)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      TREATMENTS,
+      collection,
       id,
       identifier,
       identity.present,
@@ -1183,9 +1219,19 @@ export class SqliteDocumentRepository {
   findTreatmentForApi3Read(
     identifier: string,
     fields: string[] | undefined,
+    collection: Api3CollectionName = TREATMENTS,
   ): JsonDocument | null {
-    const row = this.findByIdentifierRow(identifier) ?? this.findByIdRow(identifier);
+    const row = this.findByIdentifierRow(identifier, collection)
+      ?? this.findByIdRow(identifier, collection);
     return row === undefined ? null : materializeApi3WithStorageProjection(row, fields);
+  }
+
+  findDocumentForApi3Read(
+    collection: Api3CollectionName,
+    identifier: string,
+    fields: string[] | undefined,
+  ): JsonDocument | null {
+    return this.findTreatmentForApi3Read(identifier, fields, collection);
   }
 
   findTreatmentByFallback(createdAt: JsonValue, eventType: JsonValue, includeDeleted = false): JsonDocument | null {
@@ -1198,9 +1244,10 @@ export class SqliteDocumentRepository {
   private queryTreatmentRows(
     query: DocumentQuery,
     policy: MaterializationPolicy,
+    collection: Api3CollectionName = TREATMENTS,
   ): DbDocumentV4[] {
     const clauses = ["collection = ?"];
-    const bindings: SqlStorageValue[] = [TREATMENTS];
+    const bindings: SqlStorageValue[] = [collection];
     if (policy === "api3" && query.includeDeleted !== true) clauses.push("is_valid != 0");
     for (const filter of query.filters ?? []) appendFilter(clauses, bindings, filter, policy);
 
@@ -1236,6 +1283,15 @@ export class SqliteDocumentRepository {
       .map((document) => project(document, query.fields));
   }
 
+  queryDocumentsForApi3(
+    collection: Api3CollectionName,
+    query: DocumentQuery = {},
+  ): JsonDocument[] {
+    return this.queryTreatmentRows(query, "api3", collection)
+      .map(materializeApi3)
+      .map((document) => project(document, query.fields));
+  }
+
   queryLegacyTreatments(query: DocumentQuery = {}): JsonDocument[] {
     return this.queryTreatmentRows(query, "legacy")
       .map(materializeLegacy)
@@ -1258,13 +1314,54 @@ export class SqliteDocumentRepository {
     });
   }
 
+  createLegacyDocument(
+    collection: Api3CollectionName,
+    input: JsonDocument,
+  ): DocumentMutationResult {
+    return this.storage.transactionSync(() => {
+      const document = normalizeTreatmentIdentity(input);
+      const id = requestedId(document) ?? randomObjectId();
+      return this.writeSnapshot(
+        id,
+        document,
+        undefined,
+        "create",
+        "legacy",
+        undefined,
+        collection,
+      );
+    });
+  }
+
+  saveLegacyDocument(
+    collection: Api3CollectionName,
+    input: JsonDocument,
+  ): DocumentMutationResult {
+    return this.storage.transactionSync(() => {
+      const document = normalizeTreatmentIdentity(input);
+      const id = requestedId(document);
+      if (id === null) throw new Error("legacy document update requires a valid _id");
+      const existing = this.findByIdRow(id, collection);
+      return this.writeSnapshot(
+        id,
+        document,
+        existing,
+        existing === undefined ? "create" : "replace",
+        "legacy",
+        undefined,
+        collection,
+      );
+    });
+  }
+
   createTreatmentForApi3(
     input: JsonDocument,
     options: Api3MutationOptions,
+    collection: Api3CollectionName = TREATMENTS,
   ): Api3MutationDecision {
     return this.storage.transactionSync(() => {
       const document = normalizeTreatmentIdentity(input);
-      const existing = this.findApi3CreateCandidate(document);
+      const existing = this.findApi3CreateCandidate(document, collection);
       if (existing !== undefined) {
         if (!options.canUpdate) return { ok: false, reason: "missing-update-permission" };
         this.assertClientStorageIdCompatible(existing, document);
@@ -1288,9 +1385,19 @@ export class SqliteDocumentRepository {
           existing,
           existing === undefined ? "create" : "replace",
           "api3",
+          undefined,
+          collection,
         ),
       };
     });
+  }
+
+  createDocumentForApi3(
+    collection: Api3CollectionName,
+    input: JsonDocument,
+    options: Api3MutationOptions,
+  ): Api3MutationDecision {
+    return this.createTreatmentForApi3(input, options, collection);
   }
 
   createTreatment(input: JsonDocument): DocumentMutationResult {
@@ -1309,9 +1416,10 @@ export class SqliteDocumentRepository {
     identity: string,
     input: JsonDocument,
     options: Api3MutationOptions,
+    collection: Api3CollectionName = TREATMENTS,
   ): Api3MutationDecision {
     return this.storage.transactionSync(() => {
-      const existing = this.findByIdentity(identity);
+      const existing = this.findByIdentity(identity, collection);
       if (existing === undefined) {
         if (!options.canCreate) return { ok: false, reason: "missing-create-permission" };
         const document = normalizeTreatmentIdentity({ ...input, identifier: identity });
@@ -1328,6 +1436,8 @@ export class SqliteDocumentRepository {
             undefined,
             "create",
             "api3",
+            undefined,
+            collection,
           ),
         };
       }
@@ -1358,9 +1468,19 @@ export class SqliteDocumentRepository {
           "replace",
           "api3",
           serverSrvCreated ?? undefined,
+          collection,
         ),
       };
     });
+  }
+
+  replaceDocumentForApi3(
+    collection: Api3CollectionName,
+    identity: string,
+    input: JsonDocument,
+    options: Api3MutationOptions,
+  ): Api3MutationDecision {
+    return this.replaceTreatmentForApi3(identity, input, options, collection);
   }
 
   replaceTreatment(identity: string, input: JsonDocument): DocumentMutationResult {
@@ -1381,10 +1501,11 @@ export class SqliteDocumentRepository {
     identity: string,
     patch: JsonDocument,
     options: Api3MutationOptions,
+    collection: Api3CollectionName = TREATMENTS,
   ): Api3MutationDecision {
     return this.storage.transactionSync(() => {
       if (!options.canUpdate) return { ok: false, reason: "missing-update-permission" };
-      const existing = this.findByIdentity(identity);
+      const existing = this.findByIdentity(identity, collection);
       if (existing === undefined) return { ok: false, reason: "not-found" };
       if (existing.is_valid === 0) return { ok: false, reason: "gone" };
       if (this.preconditionFailed(existing, options.ifUnmodifiedSince)) {
@@ -1399,9 +1520,26 @@ export class SqliteDocumentRepository {
       const document = { ...original, ...serverPatch };
       return {
         ok: true,
-        mutation: this.writeSnapshot(existing.id, document, existing, "patch", "api3"),
+        mutation: this.writeSnapshot(
+          existing.id,
+          document,
+          existing,
+          "patch",
+          "api3",
+          undefined,
+          collection,
+        ),
       };
     });
+  }
+
+  patchDocumentForApi3(
+    collection: Api3CollectionName,
+    identity: string,
+    patch: JsonDocument,
+    options: Api3MutationOptions,
+  ): Api3MutationDecision {
+    return this.patchTreatmentForApi3(identity, patch, options, collection);
   }
 
   patchTreatment(identity: string, patch: JsonDocument): DocumentMutationResult | null {
@@ -1423,20 +1561,21 @@ export class SqliteDocumentRepository {
     identity: string,
     permanent = false,
     actor: string | null = null,
+    collection: Api3CollectionName = TREATMENTS,
   ): DocumentDeleteResult {
     return this.storage.transactionSync(() => {
-      const existing = this.findByIdentity(identity);
+      const existing = this.findByIdentity(identity, collection);
       if (existing === undefined) return { deleted: false, permanent };
       this.assertWritable(existing);
       if (permanent) {
         this.sql.exec(
           "DELETE FROM document_changes WHERE collection = ? AND id = ?",
-          TREATMENTS,
+          collection,
           existing.id,
         );
         this.sql.exec(
           "DELETE FROM documents WHERE collection = ? AND id = ?",
-          TREATMENTS,
+          collection,
           existing.id,
         );
         return { deleted: true, permanent: true };
@@ -1444,7 +1583,15 @@ export class SqliteDocumentRepository {
       const document = materializeLegacy(existing);
       document.isValid = false;
       if (actor !== null) document.modifiedBy = actor;
-      const mutation = this.writeSnapshot(existing.id, document, existing, "delete", "api3");
+      const mutation = this.writeSnapshot(
+        existing.id,
+        document,
+        existing,
+        "delete",
+        "api3",
+        undefined,
+        collection,
+      );
       if (mutation.srvModified === null) throw new Error("soft delete has no srvModified");
       return {
         deleted: true,
@@ -1455,14 +1602,27 @@ export class SqliteDocumentRepository {
     });
   }
 
-  deleteTreatmentById(id: string): boolean {
+  deleteDocumentForApi3(
+    collection: Api3CollectionName,
+    identity: string,
+    permanent = false,
+    actor: string | null = null,
+  ): DocumentDeleteResult {
+    return this.deleteTreatment(identity, permanent, actor, collection);
+  }
+
+  deleteDocumentById(collection: Api3CollectionName, id: string): boolean {
     return this.storage.transactionSync(() => {
-      const existing = this.findByIdRow(id);
+      const existing = this.findByIdRow(id, collection);
       if (existing === undefined) return false;
-      this.sql.exec("DELETE FROM document_changes WHERE collection = ? AND id = ?", TREATMENTS, id);
-      this.sql.exec("DELETE FROM documents WHERE collection = ? AND id = ?", TREATMENTS, id);
+      this.sql.exec("DELETE FROM document_changes WHERE collection = ? AND id = ?", collection, id);
+      this.sql.exec("DELETE FROM documents WHERE collection = ? AND id = ?", collection, id);
       return true;
     });
+  }
+
+  deleteTreatmentById(id: string): boolean {
+    return this.deleteDocumentById(TREATMENTS, id);
   }
 
   deleteLegacyTreatment(identity: string): boolean {
@@ -1487,7 +1647,7 @@ export class SqliteDocumentRepository {
     });
   }
 
-  treatmentsLastModified(): number | null {
+  treatmentsLastModified(collection: Api3CollectionName = TREATMENTS): number | null {
     const row = this.sql.exec<MaxModifiedRow>(
       `SELECT MAX(CASE
                     WHEN json_type(body, '$.srvModified') IN ('integer', 'real')
@@ -1501,7 +1661,7 @@ export class SqliteDocumentRepository {
                   END) AS created_at_number
        FROM documents
        WHERE collection = ?`,
-      TREATMENTS,
+      collection,
     ).one();
     const textCreatedAt = this.sql.exec<TextModifiedRow>(
       `SELECT json_extract(body, '$.created_at') AS created_at_text
@@ -1511,7 +1671,7 @@ export class SqliteDocumentRepository {
          AND julianday(json_extract(body, '$.created_at')) IS NOT NULL
        ORDER BY julianday(json_extract(body, '$.created_at')) DESC
        LIMIT 1`,
-      TREATMENTS,
+      collection,
     ).toArray()[0]?.created_at_text;
     const candidates = [
       row.srv_modified,
@@ -1521,7 +1681,14 @@ export class SqliteDocumentRepository {
     return candidates.length === 0 ? null : Math.max(...candidates);
   }
 
-  treatmentHistory(query: DocumentHistoryQuery): JsonDocument[] {
+  collectionLastModified(collection: Api3CollectionName): number | null {
+    return this.treatmentsLastModified(collection);
+  }
+
+  treatmentHistory(
+    query: DocumentHistoryQuery,
+    collection: Api3CollectionName = TREATMENTS,
+  ): JsonDocument[] {
     if (!Number.isFinite(query.since)) throw new Error("history timestamp must be finite");
     const comparison = query.inclusive === true ? ">=" : ">";
     const rows = this.sql.exec<DbDocumentV4>(
@@ -1531,10 +1698,17 @@ export class SqliteDocumentRepository {
          AND srv_modified ${comparison} ?
        ORDER BY srv_modified ASC, id ASC
        LIMIT ?`,
-      TREATMENTS,
+      collection,
       Math.trunc(query.since),
       boundedLimit(query.limit),
     ).toArray();
     return rows.map(materializeApi3).map((document) => project(document, query.fields));
+  }
+
+  documentHistory(
+    collection: Api3CollectionName,
+    query: DocumentHistoryQuery,
+  ): JsonDocument[] {
+    return this.treatmentHistory(query, collection);
   }
 }

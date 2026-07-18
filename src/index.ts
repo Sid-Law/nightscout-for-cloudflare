@@ -13,12 +13,14 @@ import { permissionGroupsAllow } from "./permissions";
 import { handleSocketIoPolling } from "./realtime/http-adapter";
 import { nightscoutStatus } from "./status";
 import {
+  handleApi3DeviceStatus,
   handleApi3Treatments,
   handleApi3TreatmentsLastModified,
+  matchApi3DeviceStatusRoute,
   matchApi3TreatmentRoute,
   api3BodyParserFailure,
   splitApi3Extension,
-  type Api3TreatmentRoute,
+  type Api3CollectionRoute,
 } from "./api3/treatments";
 
 export { EntryStore };
@@ -989,22 +991,35 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       : authentication.response;
   }
 
-  const matchedApi3TreatmentRoute = matchApi3TreatmentRoute(request.method, api3Pathname);
-  const api3TreatmentRoute: Api3TreatmentRoute | null =
-    matchedApi3TreatmentRoute === null || api3ExtensionMimeType === undefined
-      ? matchedApi3TreatmentRoute
-      : { ...matchedApi3TreatmentRoute, extension: api3ExtensionMimeType };
-  if (api3TreatmentRoute !== null) {
+  const matchedTreatmentRoute = matchApi3TreatmentRoute(request.method, api3Pathname);
+  const matchedDeviceStatusRoute = matchApi3DeviceStatusRoute(request.method, api3Pathname);
+  const matchedApi3Route = matchedTreatmentRoute === null
+    ? matchedDeviceStatusRoute === null
+      ? null
+      : { route: matchedDeviceStatusRoute, collection: "devicestatus" as const }
+    : { route: matchedTreatmentRoute, collection: "treatments" as const };
+  const api3CollectionRoute: Api3CollectionRoute | null =
+    matchedApi3Route === null || api3ExtensionMimeType === undefined
+      ? matchedApi3Route?.route ?? null
+      : { ...matchedApi3Route.route, extension: api3ExtensionMimeType };
+  if (matchedApi3Route !== null && api3CollectionRoute !== null) {
     const authentication = await authenticateApi3(request, env, url);
-    return authentication.ok
+    if (!authentication.ok) return authentication.response;
+    return matchedApi3Route.collection === "treatments"
       ? handleApi3Treatments(
         request,
         url,
         authentication.store,
         authentication.authorized,
-        api3TreatmentRoute,
+        api3CollectionRoute,
       )
-      : authentication.response;
+      : handleApi3DeviceStatus(
+        request,
+        url,
+        authentication.store,
+        authentication.authorized,
+        api3CollectionRoute,
+      );
   }
 
   if (isApi3) return api3Error(404, "Bad operation or collection");
