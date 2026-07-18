@@ -72,6 +72,17 @@ describe("locked API3 input adapter", () => {
     expect(input.skip).toBe(2);
   });
 
+  it("matches locked Mongo field overwrite and onlyValid precedence", () => {
+    const input = parseApi3Search(new URL(
+      "https://example.test/api/v3/treatments?rank%24gt=1&other=2"
+      + "&rank%24lte=3&isValid=false",
+    ));
+    expect(input.filters).toEqual([
+      { field: "rank", operator: "lte", value: 3 },
+      { field: "other", operator: "eq", value: 2 },
+    ]);
+  });
+
   it("passes fractional and hexadecimal paging through locked safe-integer fallback", () => {
     expect(parseApi3Search(new URL(
       "https://example.test/api/v3/treatments?limit=.5&skip=.5",

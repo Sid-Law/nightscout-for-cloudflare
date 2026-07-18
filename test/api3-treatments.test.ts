@@ -1027,7 +1027,16 @@ describe("API v3 treatments vertical slice", () => {
       name,
       jwt,
       "/api/v3/treatments?rank%24gt=1&rank%24lt=1",
-    ))).toEqual([]);
+    ))).toEqual([
+      expect.objectContaining({ identifier: "regex-source", rank: 0 }),
+    ]);
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments?isValid=false",
+    ))).toEqual([
+      expect.objectContaining({ identifier: "regex-source" }),
+    ]);
 
     const unsafe = await api3Fetch(
       name,

@@ -241,7 +241,12 @@ export function parseApi3Sort(url: URL): DocumentSort[] {
 }
 
 export function parseApi3Search(url: URL): Api3SearchInput {
-  const filters: DocumentFilter[] = [];
+  // Locked mongoCollection.utils.parseFilter() assigns each condition to an
+  // object property. A later condition for the same field therefore replaces
+  // the earlier one, and its final onlyValid clause replaces a caller-supplied
+  // isValid condition. Preserve those observable semantics before SQL sees the
+  // query instead of incorrectly ANDing every parameter.
+  const filtersByField = new Map<string, DocumentFilter>();
   const parameterNames = new Set(url.searchParams.keys());
   for (const name of parameterNames) {
     if (RESERVED_PARAMETERS.has(name)) continue;
@@ -268,12 +273,18 @@ export function parseApi3Search(url: URL): Api3SearchInput {
     const value = operator === "in" || operator === "nin"
       ? jsPropertyKey(raw)
       : parseFilterValue(field, raw);
-    filters.push({ field, operator: operator as DocumentFilter["operator"], value });
+    if (field !== "isValid") {
+      filtersByField.set(field, {
+        field,
+        operator: operator as DocumentFilter["operator"],
+        value,
+      });
+    }
   }
 
   const fields = parseApi3Fields(url);
   const result: Api3SearchInput = {
-    filters,
+    filters: [...filtersByField.values()],
     sort: parseApi3Sort(url),
     limit: parseLimit(url),
     skip: parseSkip(url),
