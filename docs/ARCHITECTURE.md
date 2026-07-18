@@ -197,8 +197,10 @@ Nightscout behavior must be fixed by upstream-derived contract tests.
 The first treatments-focused vertical slice is now implemented in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
 with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
-`is_valid`, `fallback_key` and `revision`; adds `collection_clocks` and
-`document_changes`; and adds non-unique lookup/history indexes.
+`is_valid`, `fallback_key`, `revision` and `srv_metadata_version`; adds
+`collection_clocks` and `document_changes`; and adds non-unique lookup/history
+indexes. The nullable `srv_*` metadata mirrors fields actually persisted in the
+body. It is not an upload-time surrogate for legacy documents.
 `identifier_present` preserves the Mongo distinction between a missing field
 and an explicitly stored `null` or empty string. API v3 fallback dedupe may
 therefore require a genuinely absent identifier without conflating those
@@ -207,16 +209,20 @@ deliberately **not** unique because the locked Mongo adapter only creates
 ordinary indexes and resolves legacy duplicates at lookup time.
 
 The v4 migration runs in `DurableObjectStorage.transactionSync()`. It leaves the
-legacy `body` and `_id` untouched, derives indexed metadata, snapshots each old
-document once, and records a per-collection allocation clock. The migration
-record, metadata backfill and new tables commit together. Every activation
-checks structural completeness even when marker 4 exists, so an older v4
-installation receives `identifier_present` safely. Complete rows and existing
-change revisions are not replayed. The regression fixture reconstructs the
-exact six-column v3 `documents` DDL with no v4 tables or indexes, migrates it,
-then repeats activation to prove idempotence. A separate older-v4 fixture
-proves structural repair with marker 4 already present and recomputes legacy
-offset-bearing fallback keys without rewriting their preserved bodies.
+legacy `body` and `_id` untouched, derives indexed metadata and snapshots each
+old document once. The migration record, metadata backfill and new tables
+commit together. Every activation checks structural completeness even when
+marker 4 exists, so an older v4 installation receives `identifier_present`,
+nullable change timestamps and the srv-metadata marker safely. Old hidden
+upload-time values are rebuilt from the preserved body; a legacy body without
+srv fields therefore migrates to SQL `NULL`. Existing clock high-water marks
+are retained conservatively, but a legacy-only migration does not invent one.
+Complete rows and existing change revisions are not replayed. The regression
+fixture reconstructs the exact six-column v3 `documents` DDL with no v4 tables
+or indexes, migrates it, then repeats activation to prove idempotence. A
+separate older-v4 fixture proves structural repair with marker 4 already
+present and recomputes legacy offset-bearing fallback keys without rewriting
+their preserved bodies.
 
 Treatments now have an internal SQLite repository and DO RPC boundary for:
 
@@ -226,9 +232,10 @@ Treatments now have an internal SQLite repository and DO RPC boundary for:
   numeric coercion and cleanup, plus API v3 create dedupe against genuinely
   identifier-absent legacy documents;
 - create/upsert, replace, patch, soft delete and permanent delete;
-- strictly increasing server modification-time allocation persisted across
-  eviction, while observable last-modified is recalculated from current
-  documents and falls back after permanent deletion;
+- strictly increasing API v3 server modification-time allocation persisted
+  across eviction; v1 writes do not advance that clock. Observable
+  last-modified is recalculated from current documents and falls back after
+  permanent deletion;
 - ascending, field-projected history with tombstones;
 - live v1 treatments filtering in SQL before sort/limit rather than loading
   5,000 documents first. Scalar equality/comparison, `$in` and `$exists` are
@@ -239,12 +246,17 @@ Treatments now have an internal SQLite repository and DO RPC boundary for:
 Legacy and API v3 policies are separate. API v1 mutations store and return the
 locked legacy body (including normalized `created_at`, `utcOffset`, and removed
 `eventTime`), accept UUID/identifier/fallback PUT identity, and do not
-synthesize `srvCreated`/`srvModified`, hide
-`isValid:false`, or enforce API v3 read-only rules. API v3 repository methods
+synthesize `srvCreated`/`srvModified`; they also do not hide `isValid:false` or
+enforce API v3 read-only rules. API v3 repository methods
 materialize server metadata, hide tombstones in ordinary reads, enforce the 11
 locked immutable fields and preserve the identifier-only dedupe and tombstone
-resurrection exceptions. `/api/v2/ddata` consumes the same legacy treatment
-shape as v1.
+resurrection exceptions. API v3 READ and unfiltered SEARCH virtually resolve a
+legacy document's missing `srvCreated`/`srvModified` from `created_at` only
+after SQL filtering, exactly as locked `resolveDates()` does. Such a document
+therefore does not match an srv-field SEARCH and is not in HISTORY. API v3
+materialization also maps a missing/falsy identifier to the server ID and
+removes Mongo `_id`. `/api/v2/ddata` consumes the same legacy treatment shape
+as v1.
 
 The locked v1 two-document `preBolus` carb fan-out is not implemented in this
 slice. Until that operation can be atomic, the adapter deliberately retains
@@ -252,18 +264,21 @@ carbs on the original treatment instead of applying only the destructive half
 of upstream `prepareData`.
 
 Every create, replace, patch and soft delete writes its current document and a
-`document_changes` snapshot in one synchronous storage transaction. History
-coalesces multiple changes for the same document to its newest post-cursor
-state, matching the generic API's collection-view behavior. Permanent deletion
-removes the document and its snapshots together, matching upstream history
-behavior for `permanent=true`.
+`document_changes` snapshot in one synchronous storage transaction. Generic
+API v3 history is a current-collection view: it reads current documents with a
+real persisted numeric `srvModified`, orders them ascending and includes soft
+delete tombstones. It does not use audit timestamps or virtual `created_at`
+fallbacks. Permanent deletion removes the document and its snapshots together,
+matching upstream history behavior for `permanent=true`.
 
-This is storage infrastructure, not API v3 route completion. No HTTP route was
-added or remapped. The generic API adapter still needs request validation,
-conditional headers, exact envelopes/renderers and authorization before these
-RPCs can be exposed as `/api/v3/treatments/**`. Other document collections also
-remain on the v3-era generic path until they receive collection-specific
-contract slices.
+This is storage infrastructure, not API v3 route completion. No generic API v3
+treatments route was added. Existing `/api/v1/treatments` GET/POST/PUT/DELETE
+handlers and the `/api/v2/ddata` treatment materialization path are already
+wired to the repository, including the v1 UUID query and empty-array batch
+contracts. The generic API adapter still needs request validation, conditional
+headers, exact envelopes/renderers and authorization before these RPCs can be
+exposed as `/api/v3/treatments/**`. Other document collections also remain on
+the v3-era generic path until they receive collection-specific contract slices.
 
 ### SQLite limits and change-retention risk
 
@@ -282,12 +297,13 @@ The idempotent activation repair and clock seeding still scan current document
 metadata, so frequent eviction can consume rows-read allowance even when no
 row needs repair and the guarded clock upsert performs no write.
 
-`document_changes` currently retains a complete JSON body for migration and
-for every create, replace, patch and soft delete. This is deliberate contract
-evidence for history and atomicity, but it creates unbounded write/storage
-amplification proportional to body size times revision count, with additional
-index cost. There is no history retention or pruning policy yet; only permanent
-deletion removes all snapshots for that document. This slice must therefore
+`document_changes` currently retains a complete JSON body for migration,
+atomic audit evidence and every create, replace, patch and soft delete. API v3
+HISTORY reads current documents rather than this journal. Full-body snapshots
+still create unbounded write/storage amplification proportional to body size
+times revision count, with additional index cost. There is no history retention
+or pruning policy yet; only permanent deletion removes all snapshots for that
+document. This slice must therefore
 not be described as suitable for indefinite Free-plan retention until a
 locked-compatible history cursor and pruning policy are defined and tested.
 

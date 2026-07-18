@@ -26,6 +26,8 @@ interface TreatmentRpc {
   deleteTreatment(identity: string, permanent?: boolean): Promise<DocumentDeleteResult>;
 }
 
+type Api3MutationResult = DocumentMutationResult & { srvModified: number };
+
 function store(prefix: string) {
   return env.ENTRY_STORE.getByName(`${prefix}-${crypto.randomUUID()}`);
 }
@@ -44,8 +46,8 @@ function decode<T>(json: string): T {
   return JSON.parse(json) as T;
 }
 
-async function createTreatment(stub: TreatmentRpc, document: JsonDocument): Promise<DocumentMutationResult> {
-  return decode<DocumentMutationResult>(await stub.createTreatment(JSON.stringify(document)));
+async function createTreatment(stub: TreatmentRpc, document: JsonDocument): Promise<Api3MutationResult> {
+  return decode<Api3MutationResult>(await stub.createTreatment(JSON.stringify(document)));
 }
 
 async function upsertTreatment(stub: TreatmentRpc, document: JsonDocument): Promise<DocumentMutationResult> {
@@ -56,9 +58,9 @@ async function patchTreatment(
   stub: TreatmentRpc,
   identity: string,
   patch: JsonDocument,
-): Promise<DocumentMutationResult | null> {
+): Promise<Api3MutationResult | null> {
   const result = await stub.patchTreatment(identity, JSON.stringify(patch));
-  return result === null ? null : decode<DocumentMutationResult>(result);
+  return result === null ? null : decode<Api3MutationResult>(result);
 }
 
 async function findById(
@@ -88,6 +90,19 @@ async function treatmentHistory(
   query: DocumentHistoryQuery,
 ): Promise<JsonDocument[]> {
   return decode<JsonDocument[]>(await stub.treatmentHistory(JSON.stringify(query)));
+}
+
+async function storedId(stub: ReturnType<typeof store>, identifier: string): Promise<string> {
+  return runInDurableObject(stub, async (_instance: EntryStore, state) => {
+    const row = state.storage.sql.exec<{ id: string }>(
+      `SELECT id FROM documents
+       WHERE collection = 'treatments' AND identifier = ?
+       ORDER BY updated_at DESC, id ASC LIMIT 1`,
+      identifier,
+    ).toArray()[0];
+    if (row === undefined) throw new Error(`missing stored treatment ${identifier}`);
+    return row.id;
+  });
 }
 
 describe("SQLite collection contract v4", () => {
@@ -160,16 +175,16 @@ describe("SQLite collection contract v4", () => {
     await evictDurableObject(stub);
     const migrated = await findById(stub, id);
     expect(migrated).toMatchObject({
-      _id: id,
       identifier: "legacy-treatment",
       eventType: "Meal Bolus",
       carbs: 20,
     });
+    expect(migrated).not.toHaveProperty("_id");
     expect(migrated?.srvCreated).toEqual(expect.any(Number));
     expect(migrated?.srvModified).toEqual(expect.any(Number));
 
     await evictDurableObject(stub);
-    expect(await findById(stub, id)).toMatchObject({ _id: id, carbs: 20 });
+    expect(await findById(stub, id)).toMatchObject({ identifier: "legacy-treatment", carbs: 20 });
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
       const storedBody = state.storage.sql.exec<{ body: string }>(
         "SELECT body FROM documents WHERE collection = 'treatments' AND id = ?",
@@ -185,16 +200,44 @@ describe("SQLite collection contract v4", () => {
       ).one().count).toBe(1);
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM collection_clocks WHERE collection = 'treatments'",
-      ).one().count).toBe(1);
+      ).one().count).toBe(0);
       expect(state.storage.sql.exec<{ identifier_present: number }>(
         "SELECT identifier_present FROM documents WHERE collection = 'treatments' AND id = ?",
         id,
       ).one().identifier_present).toBe(1);
+      expect(state.storage.sql.exec<{
+        srv_created: number | null;
+        srv_modified: number | null;
+        srv_metadata_version: number;
+      }>(
+        `SELECT srv_created, srv_modified, srv_metadata_version FROM documents
+         WHERE collection = 'treatments' AND id = ?`,
+        id,
+      ).one()).toEqual({ srv_created: null, srv_modified: null, srv_metadata_version: 1 });
+      expect(state.storage.sql.exec<{
+        srv_created: number | null;
+        srv_modified: number | null;
+        srv_metadata_version: number;
+      }>(
+        `SELECT srv_created, srv_modified, srv_metadata_version FROM document_changes
+         WHERE collection = 'treatments' AND id = ?`,
+        id,
+      ).one()).toEqual({ srv_created: null, srv_modified: null, srv_metadata_version: 1 });
+      const srvColumns = state.storage.sql.exec<{ name: string; notnull: number }>(
+        "PRAGMA table_info(document_changes)",
+      ).toArray()
+        .filter((column) => column.name === "srv_created" || column.name === "srv_modified")
+        .map(({ name, notnull }) => ({ name, notnull }));
+      expect(srvColumns).toEqual([
+        { name: "srv_created", notnull: 0 },
+        { name: "srv_modified", notnull: 0 },
+      ]);
     });
   });
 
   it("repairs identifier presence when an older v4 marker already exists", async () => {
     const stub = store("v4-presence-upgrade");
+    const legacyClockHighWater = 4_102_444_800_999;
     const legacy = await upsertTreatment(stub, {
       identifier: null,
       eventType: "Note",
@@ -221,6 +264,11 @@ describe("SQLite collection contract v4", () => {
 
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
       state.storage.transactionSync(() => {
+        state.storage.sql.exec(
+          `INSERT INTO collection_clocks (collection, last_srv_modified)
+           VALUES ('treatments', ?)`,
+          legacyClockHighWater,
+        );
         state.storage.sql.exec(
           `UPDATE documents SET body = ?, fallback_key = ?
            WHERE collection = 'treatments' AND id = ?`,
@@ -254,7 +302,9 @@ describe("SQLite collection contract v4", () => {
             (collection, id, body, sort_time, created_at, updated_at, identifier,
              srv_created, srv_modified, is_valid, fallback_key, revision)
           SELECT collection, id, body, sort_time, created_at, updated_at, identifier,
-                 srv_created, srv_modified, is_valid, fallback_key, revision
+                 COALESCE(srv_created, 4102444800000),
+                 COALESCE(srv_modified, 4102444800001),
+                 is_valid, fallback_key, revision
           FROM documents;
 
           CREATE TABLE document_changes_old_v4 (
@@ -272,7 +322,9 @@ describe("SQLite collection contract v4", () => {
           INSERT INTO document_changes_old_v4
             (change_id, collection, id, identifier, body, srv_created, srv_modified,
              is_valid, revision, operation)
-          SELECT change_id, collection, id, identifier, body, srv_created, srv_modified,
+          SELECT change_id, collection, id, identifier, body,
+                 COALESCE(srv_created, 4102444800000),
+                 COALESCE(srv_modified, 4102444800001),
                  is_valid, revision, operation
           FROM document_changes;
 
@@ -292,12 +344,11 @@ describe("SQLite collection contract v4", () => {
 
     await evictDurableObject(stub);
     expect(await findById(stub, id, true)).toMatchObject({
-      _id: id,
       identifier: id,
       notes: "explicit null",
     });
     expect(await findById(stub, offsetId, true)).toMatchObject({
-      _id: offsetId,
+      identifier: offsetId,
       created_at: "2026-01-03T07:00:00.000-05:00",
       utcOffset: -300,
     });
@@ -316,6 +367,20 @@ describe("SQLite collection contract v4", () => {
          WHERE collection = 'treatments' AND id = ?`,
         id,
       ).one().count).toBe(1);
+      expect(state.storage.sql.exec<{ srv_created: number | null; srv_modified: number | null }>(
+        `SELECT srv_created, srv_modified FROM documents
+         WHERE collection = 'treatments' AND id = ?`,
+        id,
+      ).one()).toEqual({ srv_created: null, srv_modified: null });
+      expect(state.storage.sql.exec<{ last_srv_modified: number }>(
+        `SELECT last_srv_modified FROM collection_clocks
+         WHERE collection = 'treatments'`,
+      ).one().last_srv_modified).toBe(legacyClockHighWater);
+      expect(state.storage.sql.exec<{ srv_created: number | null; srv_modified: number | null }>(
+        `SELECT srv_created, srv_modified FROM document_changes
+         WHERE collection = 'treatments' AND id = ?`,
+        id,
+      ).one()).toEqual({ srv_created: null, srv_modified: null });
       expect(state.storage.sql.exec<{ fallback_key: string }>(
         `SELECT fallback_key FROM documents
          WHERE collection = 'treatments' AND id = ?`,
@@ -336,9 +401,18 @@ describe("SQLite collection contract v4", () => {
       carbs: 11,
     });
     expect(canonicalRetransmission.document._id).toBe(offsetId);
+    const api3AfterRepair = await createTreatment(stub, {
+      identifier: "post-repair-api3-clock",
+      date: Date.parse("2026-01-04T00:00:00.000Z"),
+      utcOffset: 0,
+      app: "migration-test",
+      eventType: "Note",
+      created_at: "2026-01-04T00:00:00.000Z",
+    });
+    expect(api3AfterRepair.srvModified).toBeGreaterThan(legacyClockHighWater);
 
     await evictDurableObject(stub);
-    expect(await findById(stub, id, true)).toMatchObject({ _id: id, notes: "explicit null" });
+    expect(await findById(stub, id, true)).toMatchObject({ identifier: id, notes: "explicit null" });
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
       expect(state.storage.sql.exec<{ count: number }>(
         `SELECT COUNT(*) AS count FROM document_changes
@@ -428,6 +502,7 @@ describe("SQLite collection contract v4", () => {
     const stub = store("identity");
     const createdAt = "2026-03-01T00:00:00.000Z";
     const primary = await createTreatment(stub, treatment("priority-id", createdAt));
+    const primaryId = await storedId(stub, "priority-id");
     const conflictingId = "aaaaaaaaaaaaaaaaaaaaaaaa";
     await createTreatment(stub, {
       _id: conflictingId,
@@ -443,8 +518,9 @@ describe("SQLite collection contract v4", () => {
       created_at: createdAt,
       insulin: 2,
     });
-    expect(retransmitted.document._id).toBe(primary.document._id);
-    expect(retransmitted.document._id).not.toBe(conflictingId);
+    expect(await storedId(stub, "priority-id")).toBe(primaryId);
+    expect(primaryId).not.toBe(conflictingId);
+    expect(retransmitted.document).not.toHaveProperty("_id");
     expect((await findById(stub, conflictingId))?.notes).toBe("other document");
 
     const replaced = decode<DocumentMutationResult>(await stub.replaceTreatment(
@@ -457,11 +533,11 @@ describe("SQLite collection contract v4", () => {
       }),
     ));
     expect(replaced.document).toMatchObject({
-      _id: primary.document._id,
       identifier: "priority-id",
       insulin: 2.5,
       notes: "replacement",
     });
+    expect(replaced.document).not.toHaveProperty("_id");
     expect(replaced.document.srvCreated).toBe(primary.document.srvCreated);
 
     const legacy = await upsertTreatment(stub, {
@@ -473,7 +549,7 @@ describe("SQLite collection contract v4", () => {
       "2026-03-02T00:00:00.000Z",
       "Meal Bolus",
     );
-    expect(legacyFallback === null ? null : decode<JsonDocument>(legacyFallback)._id)
+    expect(legacyFallback === null ? null : decode<JsonDocument>(legacyFallback).identifier)
       .toBe(legacy.document._id);
     const deduplicated = await createTreatment(stub, {
       identifier: "modern-identifier",
@@ -481,9 +557,12 @@ describe("SQLite collection contract v4", () => {
       created_at: "2026-03-02T00:00:00.000Z",
       carbs: 20,
     });
-    expect(deduplicated.document._id).toBe(legacy.document._id);
+    expect(await storedId(stub, "modern-identifier")).toBe(legacy.document._id);
     expect(deduplicated.deduplicatedIdentifier).toBe(legacy.document._id);
-    expect((await findByIdentifier(stub, "modern-identifier"))?._id).toBe(legacy.document._id);
+    expect(await findByIdentifier(stub, "modern-identifier")).toMatchObject({
+      identifier: "modern-identifier",
+    });
+    expect(await findByIdentifier(stub, "modern-identifier")).not.toHaveProperty("_id");
     const fallback = await stub.findTreatmentByFallback(
       "2026-03-02T00:00:00.000Z",
       "Meal Bolus",
@@ -496,19 +575,21 @@ describe("SQLite collection contract v4", () => {
       created_at: "2026-03-03T00:00:00.000Z",
       carbs: 10,
     });
+    expect(v1Modern.document).not.toHaveProperty("_id");
+    const v1ModernId = await storedId(stub, "v1-existing-identifier");
     const fallbackUpsert = await upsertTreatment(stub, {
       eventType: "Carb Correction",
       created_at: "2026-03-03T00:00:00.000Z",
       carbs: 11,
     });
-    expect(fallbackUpsert.document._id).toBe(v1Modern.document._id);
+    expect(fallbackUpsert.document._id).toBe(v1ModernId);
     const identifierFirst = await upsertTreatment(stub, {
       identifier: "v1-new-identifier",
       eventType: "Carb Correction",
       created_at: "2026-03-03T00:00:00.000Z",
       carbs: 12,
     });
-    expect(identifierFirst.document._id).not.toBe(v1Modern.document._id);
+    expect(identifierFirst.document._id).not.toBe(v1ModernId);
   });
 
   it("normalizes v1 created_at and eventTime before fallback identity lookup", async () => {
@@ -557,6 +638,87 @@ describe("SQLite collection contract v4", () => {
     expect(preBolus.document).toMatchObject({ carbs: 20, preBolus: 15 });
   });
 
+  it("resolves legacy dates before API3 replace and patch validation only", async () => {
+    const stub = store("legacy-api3-update-dates");
+    const replaceCreatedAt = "2002-01-02T03:04:05.000Z";
+    const replaceMillis = Date.parse(replaceCreatedAt);
+    const replaceLegacy = await upsertTreatment(stub, {
+      date: replaceMillis,
+      eventType: "Note",
+      device: "legacy-device",
+      app: "legacy-app",
+      created_at: replaceCreatedAt,
+      notes: "replace source",
+    });
+    const replaceId = String(replaceLegacy.document._id);
+    const replaced = decode<Api3MutationResult>(await stub.replaceTreatment(
+      replaceId,
+      JSON.stringify({
+        date: replaceMillis,
+        utcOffset: 0,
+        eventType: "Note",
+        device: "legacy-device",
+        app: "legacy-app",
+        created_at: replaceCreatedAt,
+        srvCreated: replaceMillis,
+        srvModified: replaceMillis,
+        notes: "replace accepted virtual fields",
+      }),
+    ));
+    expect(replaced.document).toMatchObject({
+      identifier: replaceId,
+      srvCreated: replaceMillis,
+      srvModified: replaced.srvModified,
+    });
+    expect(replaced.srvModified).toBeGreaterThan(replaceMillis);
+    expect(replaced.document).not.toHaveProperty("_id");
+
+    const patchCreatedAt = "2003-02-03T04:05:06.000Z";
+    const patchMillis = Date.parse(patchCreatedAt);
+    const patchLegacy = await upsertTreatment(stub, {
+      date: patchMillis,
+      eventType: "Note",
+      device: "legacy-device",
+      app: "legacy-app",
+      created_at: patchCreatedAt,
+      notes: "patch source",
+    });
+    const patched = await patchTreatment(stub, String(patchLegacy.document._id), {
+      srvCreated: patchMillis,
+      srvModified: patchMillis,
+      notes: "patch accepted virtual fields",
+    });
+    expect(patched?.document).toMatchObject({
+      identifier: patchLegacy.document._id,
+      srvCreated: patchMillis,
+      srvModified: patched?.srvModified,
+    });
+    expect(patched?.srvModified).toBeGreaterThan(patchMillis);
+    expect(patched?.document).not.toHaveProperty("_id");
+
+    const dedupCreatedAt = "2004-03-04T05:06:07.000Z";
+    const dedupMillis = Date.parse(dedupCreatedAt);
+    await upsertTreatment(stub, {
+      date: dedupMillis,
+      eventType: "Meal Bolus",
+      device: "legacy-device",
+      app: "legacy-app",
+      created_at: dedupCreatedAt,
+    });
+    await runInDurableObject(stub, async (instance: EntryStore) => {
+      await expect(instance.createTreatment(JSON.stringify({
+        identifier: "raw-dedup-validation",
+        date: dedupMillis,
+        utcOffset: 0,
+        eventType: "Meal Bolus",
+        device: "legacy-device",
+        app: "legacy-app",
+        created_at: dedupCreatedAt,
+        srvCreated: dedupMillis,
+      }))).rejects.toThrow("Field srvCreated cannot be modified by the client");
+    });
+  });
+
   it("distinguishes a missing identifier from explicit null and empty values", async () => {
     const stub = store("identifier-presence");
     const missing = await upsertTreatment(stub, {
@@ -570,7 +732,8 @@ describe("SQLite collection contract v4", () => {
       created_at: "2026-03-20T00:00:00.000Z",
       carbs: 11,
     });
-    expect(adopted.document._id).toBe(missing.document._id);
+    expect(await storedId(stub, "adopt-missing")).toBe(missing.document._id);
+    expect(adopted.document).not.toHaveProperty("_id");
 
     const explicitNull = await upsertTreatment(stub, {
       identifier: null,
@@ -584,7 +747,8 @@ describe("SQLite collection contract v4", () => {
       created_at: "2026-03-21T00:00:00.000Z",
       carbs: 13,
     });
-    expect(afterNull.document._id).not.toBe(explicitNull.document._id);
+    expect(afterNull.document).not.toHaveProperty("_id");
+    expect(await storedId(stub, "must-not-match-null")).not.toBe(explicitNull.document._id);
     expect(await stub.findTreatmentByFallback(
       "2026-03-21T00:00:00.000Z",
       "Meal Bolus",
@@ -602,7 +766,8 @@ describe("SQLite collection contract v4", () => {
       created_at: "2026-03-22T00:00:00.000Z",
       carbs: 15,
     });
-    expect(afterEmpty.document._id).not.toBe(explicitEmpty.document._id);
+    expect(afterEmpty.document).not.toHaveProperty("_id");
+    expect(await storedId(stub, "must-not-match-empty")).not.toBe(explicitEmpty.document._id);
     expect(await stub.findTreatmentByFallback(
       "2026-03-22T00:00:00.000Z",
       "Meal Bolus",
@@ -619,7 +784,8 @@ describe("SQLite collection contract v4", () => {
       eventType: "Note",
       created_at: "2026-03-23T00:00:00.000Z",
     });
-    expect(adoptedHexIdentifier.document._id).toBe(missingIdentifierId);
+    expect(adoptedHexIdentifier.document).not.toHaveProperty("_id");
+    expect(await storedId(stub, missingIdentifierId)).toBe(missingIdentifierId);
 
     const explicitNullId = "bbbbbbbbbbbbbbbbbbbbbbbb";
     await upsertTreatment(stub, {
@@ -628,15 +794,16 @@ describe("SQLite collection contract v4", () => {
       eventType: "Note",
       created_at: "2026-03-24T00:00:00.000Z",
     });
-    expect((await findByIdentifier(stub, explicitNullId))?._id).toBe(explicitNullId);
+    expect(await findByIdentifier(stub, explicitNullId)).toMatchObject({ identifier: explicitNullId });
     expect((await patchTreatment(stub, explicitNullId, { notes: "path identity fallback" }))?.document)
-      .toMatchObject({ _id: explicitNullId, notes: "path identity fallback" });
+      .toMatchObject({ identifier: explicitNullId, notes: "path identity fallback" });
     const hexIdentifier = await createTreatment(stub, {
       identifier: explicitNullId,
       eventType: "Note",
       created_at: "2026-03-25T00:00:00.000Z",
     });
-    expect(hexIdentifier.document._id).not.toBe(explicitNullId);
+    expect(hexIdentifier.document).not.toHaveProperty("_id");
+    expect(await storedId(stub, explicitNullId)).not.toBe(explicitNullId);
 
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
       const presence = state.storage.sql.exec<{ identifier_present: number; identifier: string | null }>(
@@ -716,7 +883,8 @@ describe("SQLite collection contract v4", () => {
       app: "legacy-app",
       created_at: "2026-03-26T00:00:00.000Z",
     });
-    expect(deduplicated.document._id).toBe(legacy.document._id);
+    expect(deduplicated.document).not.toHaveProperty("_id");
+    expect(await storedId(stub, "adopted-identifier")).toBe(legacy.document._id);
 
     const immutableLegacy = await upsertTreatment(stub, {
       date: Date.parse("2026-03-27T00:00:00.000Z"),
@@ -751,6 +919,8 @@ describe("SQLite collection contract v4", () => {
       app: "app-a",
       created_at: "2026-03-28T00:00:00.000Z",
     });
+    expect(original.document).not.toHaveProperty("_id");
+    const originalId = await storedId(stub, "resurrect");
     await stub.deleteTreatment("resurrect");
     await runInDurableObject(stub, async (instance: EntryStore) => {
       await expect(instance.replaceTreatment("resurrect", JSON.stringify({
@@ -774,13 +944,17 @@ describe("SQLite collection contract v4", () => {
       device: "pump-b",
       app: "app-b",
       created_at: "2026-03-29T00:00:00.000Z",
+      srvCreated: 1,
+      srvModified: 2,
     });
     expect(resurrected.document).toMatchObject({
-      _id: original.document._id,
       identifier: "resurrect",
       eventType: "Meal Bolus",
       device: "pump-b",
+      srvCreated: original.srvModified,
     });
+    expect(resurrected.document).not.toHaveProperty("_id");
+    expect(await storedId(stub, "resurrect")).toBe(originalId);
     expect(resurrected.document.isValid).not.toBe(false);
 
     await upsertTreatment(stub, {
@@ -871,6 +1045,8 @@ describe("SQLite collection contract v4", () => {
   it("returns ascending projected history with visible tombstones and erases permanent deletes", async () => {
     const stub = store("history");
     const first = await createTreatment(stub, treatment("history-a", "2026-05-01T00:00:00.000Z"));
+    expect(first.document).not.toHaveProperty("_id");
+    const firstId = await storedId(stub, "history-a");
     const second = await createTreatment(stub, treatment("history-b", "2026-05-01T00:01:00.000Z"));
     await patchTreatment(stub, "history-a", { insulin: 1.5 });
     const deleted = await stub.deleteTreatment("history-a");
@@ -890,7 +1066,7 @@ describe("SQLite collection contract v4", () => {
     expect(await findByIdentifier(stub, "history-a", true)).toMatchObject({ isValid: false });
 
     expect((await stub.deleteTreatment("history-a", true)).deleted).toBe(true);
-    expect(await findById(stub, String(first.document._id), true)).toBeNull();
+    expect(await findById(stub, firstId, true)).toBeNull();
     expect((await treatmentHistory(stub, { since: 0 })).some(
       (document) => document.identifier === "history-a",
     )).toBe(false);

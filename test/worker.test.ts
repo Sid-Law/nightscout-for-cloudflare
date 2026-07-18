@@ -383,6 +383,134 @@ describe("Nightscout compatibility API", () => {
     expect(await removed.json()).toEqual({ n: 1, ok: 1 });
   });
 
+  it("accepts an empty v1 treatments batch with the locked 200 [] shape", async () => {
+    const name = tenant("empty-treatment-batch");
+    const response = await writeApi(name, "POST", "/api/v1/treatments/", []);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
+    expect(await (
+      await SELF.fetch(`https://example.test/api/v1/treatments.json?tenant=${name}`)
+    ).json()).toEqual([]);
+  });
+
+  it("keeps late v1 uploads virtual and only syncs persisted API3 srvModified values", async () => {
+    const name = tenant("legacy-api3-time-boundary");
+    const createdAt = "2001-02-03T04:05:06.000Z";
+    const createdAtMillis = Date.parse(createdAt);
+    const uploadStarted = Date.now();
+    const response = await writeApi(name, "POST", "/api/v1/treatments/", {
+      eventType: "Note",
+      created_at: createdAt,
+      notes: "uploaded decades later",
+    });
+    expect(response.status).toBe(200);
+    const [legacy] = await response.json<Array<Record<string, unknown>>>();
+    const legacyId = String(legacy?._id);
+    expect(legacy).not.toHaveProperty("srvCreated");
+    expect(legacy).not.toHaveProperty("srvModified");
+
+    const stub = env.ENTRY_STORE.getByName(name);
+    const readJson = await stub.findTreatmentById(legacyId);
+    if (readJson === null) throw new Error("legacy treatment was not materialized");
+    const read = JSON.parse(readJson) as Record<string, unknown>;
+    expect(read).toMatchObject({
+      identifier: legacyId,
+      created_at: createdAt,
+      srvCreated: createdAtMillis,
+      srvModified: createdAtMillis,
+    });
+    expect(read).not.toHaveProperty("_id");
+
+    const search = JSON.parse(await stub.queryTreatments(JSON.stringify({
+      fields: ["_all"],
+      limit: 10,
+    }))) as Array<Record<string, unknown>>;
+    expect(search).toHaveLength(1);
+    expect(search[0]).toMatchObject({
+      identifier: legacyId,
+      srvCreated: createdAtMillis,
+      srvModified: createdAtMillis,
+    });
+    expect(search[0]).not.toHaveProperty("_id");
+
+    for (const field of ["srvCreated", "srvModified"]) {
+      const recent = JSON.parse(await stub.queryTreatments(JSON.stringify({
+        filters: [{ field, operator: "gte", value: uploadStarted }],
+        limit: 10,
+      }))) as unknown[];
+      expect(recent, field).toEqual([]);
+    }
+    expect(JSON.parse(await stub.treatmentHistory(JSON.stringify({ since: 0 })))).toEqual([]);
+    expect(await stub.treatmentsLastModified()).toBe(createdAtMillis);
+
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      expect(state.storage.sql.exec<{ srv_created: number | null; srv_modified: number | null }>(
+        `SELECT srv_created, srv_modified FROM documents
+         WHERE collection = 'treatments' AND id = ?`,
+        legacyId,
+      ).one()).toEqual({ srv_created: null, srv_modified: null });
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM collection_clocks WHERE collection = 'treatments'",
+      ).one().count).toBe(0);
+    });
+
+    const api3CreatedAt = new Date().toISOString();
+    const first = JSON.parse(await stub.createTreatment(JSON.stringify({
+      identifier: "api3-syncable",
+      date: Date.parse(api3CreatedAt),
+      utcOffset: 0,
+      app: "round3-test",
+      eventType: "Note",
+      created_at: api3CreatedAt,
+      notes: "native API3 timestamp",
+      srvCreated: 1,
+      srvModified: 2,
+    }))) as { document: Record<string, unknown>; srvModified: number };
+    expect(first.srvModified).toBeGreaterThanOrEqual(uploadStarted);
+    expect(first.document).toMatchObject({
+      srvCreated: first.srvModified,
+      srvModified: first.srvModified,
+    });
+    expect(first.document).not.toHaveProperty("_id");
+
+    await evictDurableObject(stub);
+    const resumed = env.ENTRY_STORE.getByName(name);
+    const patchedJson = await resumed.patchTreatment(
+      "api3-syncable",
+      JSON.stringify({ notes: "strictly newer after eviction" }),
+    );
+    if (patchedJson === null) throw new Error("API3 treatment disappeared after eviction");
+    const patched = JSON.parse(patchedJson) as {
+      document: Record<string, unknown>;
+      srvModified: number;
+    };
+    expect(patched.srvModified).toBeGreaterThan(first.srvModified);
+    expect(patched.document).not.toHaveProperty("_id");
+
+    const history = JSON.parse(
+      await resumed.treatmentHistory(JSON.stringify({ since: 0 })),
+    ) as Array<Record<string, unknown>>;
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      identifier: "api3-syncable",
+      srvModified: patched.srvModified,
+    });
+    expect(history[0]).not.toHaveProperty("_id");
+    expect(history.some((document) => document.identifier === legacyId)).toBe(false);
+
+    const legacyOverwrite = await writeApi(name, "POST", "/api/v1/treatments/", {
+      identifier: "api3-syncable",
+      eventType: "Note",
+      created_at: api3CreatedAt,
+      notes: "v1 replacement removes persisted srv fields",
+    });
+    expect(legacyOverwrite.status).toBe(200);
+    const [overwritten] = await legacyOverwrite.json<Array<Record<string, unknown>>>();
+    expect(overwritten).not.toHaveProperty("srvCreated");
+    expect(overwritten).not.toHaveProperty("srvModified");
+    expect(JSON.parse(await resumed.treatmentHistory(JSON.stringify({ since: 0 })))).toEqual([]);
+  });
+
   it("supports v1 UUID retransmission plus identifier and fallback PUT identities", async () => {
     const name = tenant("legacy-treatment-uuid");
     const createdAt = new Date(Date.now() - 90_000).toISOString();
@@ -420,6 +548,59 @@ describe("Nightscout compatibility API", () => {
       identifier: uuid,
       notes: "identifier-only PUT",
     });
+
+    const identifierLookup = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}&find[_id]=${uuid}`,
+    );
+    expect(identifierLookup.status).toBe(200);
+    expect(await identifierLookup.json()).toMatchObject([{
+      _id: first?._id,
+      identifier: uuid,
+      notes: "identifier-only PUT",
+    }]);
+
+    const rawUuid = crypto.randomUUID();
+    const rawCreatedAt = "2000-01-02T03:04:05.000Z";
+    const stub = env.ENTRY_STORE.getByName(name);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO documents
+          (collection, id, body, sort_time, created_at, updated_at, identifier,
+           identifier_present, srv_created, srv_modified, is_valid, fallback_key, revision,
+           srv_metadata_version)
+         VALUES ('treatments', ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, 1, NULL, 1, 1)`,
+        rawUuid,
+        JSON.stringify({
+          _id: rawUuid,
+          eventType: "Note",
+          created_at: rawCreatedAt,
+          notes: "raw UUID id",
+        }),
+        Date.parse(rawCreatedAt),
+        Date.now(),
+        Date.now(),
+      );
+    });
+    const rawIdLookup = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}&find[_id]=${rawUuid}`,
+    );
+    expect(rawIdLookup.status).toBe(200);
+    expect(await rawIdLookup.json()).toMatchObject([{
+      _id: rawUuid,
+      notes: "raw UUID id",
+    }]);
+
+    const objectIdLookup = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}&find[_id]=${String(first?._id)}`,
+    );
+    expect(objectIdLookup.status).toBe(200);
+    expect(await objectIdLookup.json()).toMatchObject([{ _id: first?._id, identifier: uuid }]);
+
+    const missingLookup = await SELF.fetch(
+      `https://example.test/api/v1/treatments.json?tenant=${name}&find[_id]=${crypto.randomUUID()}`,
+    );
+    expect(missingLookup.status).toBe(200);
+    expect(await missingLookup.json()).toEqual([]);
 
     const fallbackCreatedAt = new Date(Date.now() - 30_000).toISOString();
     const fallbackCreate = await writeApi(name, "POST", "/api/v1/treatments/", {

@@ -3,6 +3,7 @@ import type { DocumentFilter, DocumentQuery } from "./document-repository";
 import { ApiError } from "./model";
 
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FIND_PARAMETER = /^find\[([A-Za-z0-9_.-]+)\](?:\[(\$gt|\$gte|\$lt|\$lte|\$ne|\$exists|\$in)\])?$/;
 const SORT_PARAMETER = /^sort\[([A-Za-z0-9_.-]+)\]$/;
 const RESERVED_KEYS = new Set(["__proto__", "prototype", "constructor"]);
@@ -213,6 +214,7 @@ function treatmentQueryScalar(field: string, value: string): string | number {
     }
     return new Date(parsed).toISOString();
   }
+  if (field === "_id" && OBJECT_ID.test(value)) return value.toLowerCase();
   return value;
 }
 
@@ -223,6 +225,15 @@ function legacyExpressionBindings(field: string): number {
 function assertTreatmentQueryBindings(query: DocumentQuery): void {
   let bindings = 3; // collection + LIMIT + OFFSET
   for (const filter of query.filters ?? []) {
+    if (
+      filter.field === "_id"
+      && filter.operator === "eq"
+      && typeof filter.value === "string"
+      && UUID.test(filter.value)
+    ) {
+      bindings += 2;
+      continue;
+    }
     const expression = legacyExpressionBindings(filter.field);
     switch (filter.operator) {
       case "eq":

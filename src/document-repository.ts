@@ -72,7 +72,7 @@ export interface DocumentMutationResult {
   created: boolean;
   deduplicated: boolean;
   revision: number;
-  srvModified: number;
+  srvModified: number | null;
   deduplicatedIdentifier?: string;
 }
 
@@ -97,19 +97,7 @@ interface DbDocumentV4 {
   is_valid: number | null;
   fallback_key: string | null;
   revision: number | null;
-}
-
-interface DbChange {
-  [key: string]: SqlStorageValue;
-  change_id: number;
-  id: string;
-  identifier: string | null;
-  identifier_present: number;
-  body: string;
-  srv_created: number;
-  srv_modified: number;
-  is_valid: number;
-  revision: number;
+  srv_metadata_version: number | null;
 }
 
 interface ClockRow {
@@ -302,16 +290,22 @@ function normalizeLegacyTreatment(document: JsonDocument): JsonDocument {
   return normalized;
 }
 
-function materializeApi3(row: Pick<DbDocumentV4, "id" | "body" | "identifier" | "srv_created" | "srv_modified" | "is_valid">): JsonDocument {
-  if (row.srv_created === null || row.srv_modified === null || row.is_valid === null) {
-    throw new Error("document metadata is incomplete");
-  }
+function materializeApi3(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument {
   const document = parseBody(row.body);
-  document._id = row.id;
-  document.identifier = row.identifier || row.id;
-  document.srvCreated = row.srv_created;
-  document.srvModified = row.srv_modified;
-  if (row.is_valid === 0) document.isValid = false;
+  if (!document.identifier) document.identifier = row.id;
+  delete document._id;
+
+  // Locked API3 resolves fallback dates only after the storage query. This is
+  // deliberately virtual: created_at can appear as srv* in a response without
+  // making a legacy document match srv* search or history predicates.
+  if (!document.srvModified) {
+    const fallback = timestamp(document.created_at);
+    if (fallback !== null) document.srvModified = fallback;
+  }
+  if (document.srvModified && !document.srvCreated) {
+    const modified = timestamp(document.srvModified);
+    if (modified !== null) document.srvCreated = modified;
+  }
   return document;
 }
 
@@ -319,17 +313,6 @@ function materializeLegacy(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument
   const document = parseBody(row.body);
   document._id = row.id;
   return document;
-}
-
-function materializeChange(row: DbChange): JsonDocument {
-  return materializeApi3({
-    id: row.id,
-    body: row.body,
-    identifier: row.identifier,
-    srv_created: row.srv_created,
-    srv_modified: row.srv_modified,
-    is_valid: row.is_valid,
-  });
 }
 
 function project(document: JsonDocument, fields: string[] | undefined): JsonDocument {
@@ -387,14 +370,9 @@ function fieldExpression(field: string, policy: MaterializationPolicy): FieldExp
         existsBindings: [],
       };
     case "srvCreated":
-      if (policy === "api3") {
-        return { sql: "srv_created", bindings: [], existsSql: "1", existsBindings: [] };
-      }
-      break;
     case "srvModified":
-      if (policy === "api3") {
-        return { sql: "srv_modified", bindings: [], existsSql: "1", existsBindings: [] };
-      }
+      // API3 filters the raw Mongo document before resolveDates() adds any
+      // created_at fallback. Query the preserved body to keep that ordering.
       break;
     case "isValid":
       if (policy === "api3") {
@@ -420,6 +398,17 @@ function appendFilter(
   filter: DocumentFilter,
   policy: MaterializationPolicy,
 ): void {
+  if (
+    policy === "legacy"
+    && filter.field === "_id"
+    && filter.operator === "eq"
+    && typeof filter.value === "string"
+    && UUID.test(filter.value)
+  ) {
+    clauses.push("(identifier = ? OR id = ?)");
+    bindings.push(filter.value, filter.value);
+    return;
+  }
   const expression = fieldExpression(filter.field, policy);
   const addExpression = (): void => {
     bindings.push(...expression.bindings);
@@ -551,19 +540,48 @@ function tableColumnNames(sql: SqlStorage, table: "documents" | "document_change
   );
 }
 
+function changeTableNeedsNullableSrvColumns(sql: SqlStorage): boolean {
+  const columns = sql.exec<{ name: string; notnull: number }>(
+    "PRAGMA table_info(document_changes)",
+  ).toArray();
+  return columns.some(
+    (column) => (column.name === "srv_created" || column.name === "srv_modified")
+      && column.notnull !== 0,
+  );
+}
+
+function rebuildChangeTableWithNullableSrvColumns(sql: SqlStorage): void {
+  if (!changeTableNeedsNullableSrvColumns(sql)) return;
+  sql.exec(`
+    ALTER TABLE document_changes RENAME TO document_changes_v4_not_null;
+    CREATE TABLE document_changes (
+      change_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      collection TEXT NOT NULL,
+      id TEXT NOT NULL,
+      identifier TEXT,
+      identifier_present INTEGER,
+      body TEXT NOT NULL,
+      srv_created INTEGER,
+      srv_modified INTEGER,
+      is_valid INTEGER NOT NULL,
+      revision INTEGER NOT NULL,
+      operation TEXT NOT NULL,
+      srv_metadata_version INTEGER
+    );
+    INSERT INTO document_changes
+      (change_id, collection, id, identifier, identifier_present, body,
+       srv_created, srv_modified, is_valid, revision, operation, srv_metadata_version)
+    SELECT change_id, collection, id, identifier, identifier_present, body,
+           srv_created, srv_modified, is_valid, revision, operation, srv_metadata_version
+    FROM document_changes_v4_not_null;
+    DROP TABLE document_changes_v4_not_null;
+  `);
+}
+
 function addColumn(sql: SqlStorage, columns: Set<string>, name: string, definition: string): void {
   if (columns.has(name)) return;
   sql.exec(`ALTER TABLE documents ADD COLUMN ${name} ${definition}`);
   columns.add(name);
-}
-
-function migrationCandidate(row: DbDocumentV4, document: JsonDocument): number {
-  return timestamp(document.srvModified)
-    ?? timestamp(document.created_at)
-    ?? timestamp(document.date)
-    ?? row.updated_at
-    ?? row.sort_time
-    ?? row.created_at;
 }
 
 export function migrateDocumentsV4(sql: SqlStorage): void {
@@ -575,6 +593,7 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
   addColumn(sql, columns, "is_valid", "INTEGER");
   addColumn(sql, columns, "fallback_key", "TEXT");
   addColumn(sql, columns, "revision", "INTEGER");
+  addColumn(sql, columns, "srv_metadata_version", "INTEGER");
 
   sql.exec(`
     CREATE TABLE IF NOT EXISTS collection_clocks (
@@ -586,14 +605,30 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       collection TEXT NOT NULL,
       id TEXT NOT NULL,
       identifier TEXT,
-      identifier_present INTEGER NOT NULL,
+      identifier_present INTEGER,
       body TEXT NOT NULL,
-      srv_created INTEGER NOT NULL,
-      srv_modified INTEGER NOT NULL,
+      srv_created INTEGER,
+      srv_modified INTEGER,
       is_valid INTEGER NOT NULL,
       revision INTEGER NOT NULL,
-      operation TEXT NOT NULL
+      operation TEXT NOT NULL,
+      srv_metadata_version INTEGER
     );
+  `);
+
+  const changeColumns = tableColumnNames(sql, "document_changes");
+  const changePresenceWasMissing = !changeColumns.has("identifier_present");
+  if (changePresenceWasMissing) {
+    sql.exec("ALTER TABLE document_changes ADD COLUMN identifier_present INTEGER");
+    changeColumns.add("identifier_present");
+  }
+  if (!changeColumns.has("srv_metadata_version")) {
+    sql.exec("ALTER TABLE document_changes ADD COLUMN srv_metadata_version INTEGER");
+    changeColumns.add("srv_metadata_version");
+  }
+  rebuildChangeTableWithNullableSrvColumns(sql);
+
+  sql.exec(`
     CREATE INDEX IF NOT EXISTS documents_collection_sort
       ON documents(collection, sort_time DESC);
     CREATE INDEX IF NOT EXISTS documents_collection_identifier
@@ -612,17 +647,12 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       ON document_changes(collection, id, revision);
   `);
 
-  const changeColumns = tableColumnNames(sql, "document_changes");
-  const changePresenceWasMissing = !changeColumns.has("identifier_present");
-  if (changePresenceWasMissing) {
-    sql.exec("ALTER TABLE document_changes ADD COLUMN identifier_present INTEGER");
-  }
-
   const rows = sql.exec<DbDocumentV4>(`
     SELECT collection, id, body, sort_time, created_at, updated_at,
-           identifier, identifier_present, srv_created, srv_modified, is_valid, fallback_key, revision
+           identifier, identifier_present, srv_created, srv_modified, is_valid, fallback_key,
+           revision, srv_metadata_version
     FROM documents
-    WHERE identifier_present IS NULL OR srv_created IS NULL OR srv_modified IS NULL
+    WHERE identifier_present IS NULL OR srv_metadata_version IS NULL
        OR is_valid IS NULL OR revision IS NULL
        OR NOT EXISTS (
          SELECT 1 FROM document_changes
@@ -632,22 +662,15 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
        )
     ORDER BY collection ASC, updated_at ASC, id ASC
   `).toArray();
-  const clocks = new Map<string, number>();
 
   for (const row of rows) {
     const collection = String(row.collection);
     const document = parseBody(row.body);
-    const priorClock = clocks.get(collection)
-      ?? sql.exec<ClockRow>(
-        "SELECT last_srv_modified FROM collection_clocks WHERE collection = ? LIMIT 1",
-        collection,
-      ).toArray()[0]?.last_srv_modified
-      ?? 0;
-    const candidate = migrationCandidate(row, document);
-    const srvModified = row.srv_modified ?? Math.max(candidate, priorClock + 1);
-    const srvCreated = row.srv_created
-      ?? timestamp(document.srvCreated)
-      ?? Math.min(candidate, srvModified);
+    // v4 rows written before this repair may contain an allocator/upload time
+    // even though their preserved body never had srv*. Rebuild the nullable
+    // metadata from the body, which is the locked Mongo-observable source.
+    const srvModified = finiteInteger(document.srvModified);
+    const srvCreated = finiteInteger(document.srvCreated);
     const isValid = row.is_valid ?? (document.isValid === false ? 0 : 1);
     const identity = identifierMetadata(document);
     const identifierPresent = identity.present;
@@ -663,7 +686,7 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     sql.exec(
       `UPDATE documents
        SET identifier = ?, srv_created = ?, srv_modified = ?, is_valid = ?,
-           identifier_present = ?, fallback_key = ?, revision = ?
+           identifier_present = ?, fallback_key = ?, revision = ?, srv_metadata_version = 1
        WHERE collection = ? AND id = ?`,
       identifier,
       srvCreated,
@@ -687,8 +710,8 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       sql.exec(
         `INSERT INTO document_changes
           (collection, id, identifier, identifier_present, body, srv_created, srv_modified,
-           is_valid, revision, operation)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'migrate')`,
+           is_valid, revision, operation, srv_metadata_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'migrate', 1)`,
         collection,
         row.id,
         identifier,
@@ -700,32 +723,23 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
         revision,
       );
     }
-    clocks.set(collection, Math.max(priorClock, srvModified));
   }
 
-  if (changePresenceWasMissing) {
-    const changes = sql.exec<{ change_id: number; body: string }>(
-      "SELECT change_id, body FROM document_changes WHERE identifier_present IS NULL",
-    ).toArray();
-    for (const change of changes) {
-      const identity = identifierMetadata(parseBody(change.body));
-      sql.exec(
-        "UPDATE document_changes SET identifier_present = ? WHERE change_id = ?",
-        identity.present,
-        change.change_id,
-      );
-    }
-  }
-
-  for (const [collection, lastModified] of clocks) {
+  const changes = sql.exec<{ change_id: number; body: string }>(
+    `SELECT change_id, body FROM document_changes
+     WHERE identifier_present IS NULL OR srv_metadata_version IS NULL`,
+  ).toArray();
+  for (const change of changes) {
+    const document = parseBody(change.body);
+    const identity = identifierMetadata(document);
     sql.exec(
-      `INSERT INTO collection_clocks (collection, last_srv_modified)
-       VALUES (?, ?)
-       ON CONFLICT(collection) DO UPDATE SET
-         last_srv_modified = excluded.last_srv_modified
-       WHERE excluded.last_srv_modified > collection_clocks.last_srv_modified`,
-      collection,
-      lastModified,
+      `UPDATE document_changes
+       SET identifier_present = ?, srv_created = ?, srv_modified = ?, srv_metadata_version = 1
+       WHERE change_id = ?`,
+      identity.present,
+      finiteInteger(document.srvCreated),
+      finiteInteger(document.srvModified),
+      change.change_id,
     );
   }
 
@@ -846,11 +860,12 @@ export class SqliteDocumentRepository {
     row: DbDocumentV4,
     document: JsonDocument,
     isDeduplication = false,
+    resolveStoredDates = false,
   ): void {
     this.assertWritable(row);
     if (row.is_valid === 0) return;
-    const stored = materializeLegacy(row);
-    stored.identifier = row.identifier || row.id;
+    const stored = resolveStoredDates ? materializeApi3(row) : materializeLegacy(row);
+    if (!resolveStoredDates) stored.identifier = row.identifier || row.id;
     for (const field of API3_IMMUTABLE_FIELDS) {
       if (field === "identifier" && isDeduplication) continue;
       if (document[field] !== undefined && document[field] !== stored[field]) {
@@ -865,29 +880,45 @@ export class SqliteDocumentRepository {
     existing: DbDocumentV4 | undefined,
     operation: "create" | "replace" | "patch" | "delete",
     policy: MutationPolicy,
+    serverSrvCreated?: number,
   ): DocumentMutationResult {
-    const srvModified = this.nextSrvModified(Date.now());
-    const srvCreated = existing?.srv_created ?? srvModified;
-    if (srvCreated === null) throw new Error("existing document has no srvCreated metadata");
     const revision = (existing?.revision ?? 0) + 1;
     const identity = identifierMetadata(document);
     const identifier = identity.identifier;
     const isValid = document.isValid === false ? 0 : 1;
     const stored = { ...document };
     stored._id = id;
+    const generatedSrvModified = policy === "api3"
+      ? this.nextSrvModified(Date.now())
+      : null;
     if (policy === "api3") {
-      stored.srvCreated = srvCreated;
-      stored.srvModified = srvModified;
+      if (generatedSrvModified === null) throw new Error("API3 srvModified allocation failed");
+      if (operation === "patch" || operation === "delete") {
+        // Locked PATCH and soft DELETE only persist srvModified. If a legacy
+        // document has no srvCreated, READ will resolve it virtually later.
+        stored.srvModified = generatedSrvModified;
+      } else {
+        const rawExisting = existing === undefined ? undefined : parseBody(existing.body);
+        stored.srvCreated = existing === undefined
+          ? generatedSrvModified
+          : serverSrvCreated
+            ?? finiteInteger(rawExisting?.srvCreated)
+            ?? generatedSrvModified;
+        stored.srvModified = generatedSrvModified;
+      }
     }
     if (isValid === 0) stored.isValid = false;
+    const srvCreated = finiteInteger(stored.srvCreated);
+    const srvModified = finiteInteger(stored.srvModified);
     const body = JSON.stringify(stored);
     const now = Date.now();
 
     this.sql.exec(
       `INSERT INTO documents
         (collection, id, body, sort_time, created_at, updated_at, identifier,
-         identifier_present, srv_created, srv_modified, is_valid, fallback_key, revision)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         identifier_present, srv_created, srv_modified, is_valid, fallback_key, revision,
+         srv_metadata_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
        ON CONFLICT(collection, id) DO UPDATE SET
          body = excluded.body,
          sort_time = excluded.sort_time,
@@ -898,11 +929,12 @@ export class SqliteDocumentRepository {
          srv_modified = excluded.srv_modified,
          is_valid = excluded.is_valid,
          fallback_key = excluded.fallback_key,
-         revision = excluded.revision`,
+         revision = excluded.revision,
+         srv_metadata_version = excluded.srv_metadata_version`,
       TREATMENTS,
       id,
       body,
-      sortTime(stored, srvModified),
+      sortTime(stored, existing?.sort_time ?? now),
       existing?.created_at ?? now,
       now,
       identifier,
@@ -916,8 +948,8 @@ export class SqliteDocumentRepository {
     this.sql.exec(
       `INSERT INTO document_changes
         (collection, id, identifier, identifier_present, body, srv_created, srv_modified,
-         is_valid, revision, operation)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         is_valid, revision, operation, srv_metadata_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
       TREATMENTS,
       id,
       identifier,
@@ -935,10 +967,6 @@ export class SqliteDocumentRepository {
         ? materializeApi3({
           id,
           body,
-          identifier,
-          srv_created: srvCreated,
-          srv_modified: srvModified,
-          is_valid: isValid,
         })
         : stored,
       created: existing === undefined,
@@ -1059,8 +1087,20 @@ export class SqliteDocumentRepository {
       const document = normalizeTreatmentIdentity({ ...input });
       document._id = existing.id;
       document.identifier = identity;
-      this.assertApi3ImmutableFields(existing, document);
-      return this.writeSnapshot(existing.id, document, existing, "replace", "api3");
+      this.assertApi3ImmutableFields(existing, document, false, true);
+      const resolvedExisting = materializeApi3(existing);
+      if (resolvedExisting.srvCreated !== undefined) {
+        document.srvCreated = resolvedExisting.srvCreated;
+      }
+      const serverSrvCreated = finiteInteger(resolvedExisting.srvCreated);
+      return this.writeSnapshot(
+        existing.id,
+        document,
+        existing,
+        "replace",
+        "api3",
+        serverSrvCreated ?? undefined,
+      );
     });
   }
 
@@ -1069,7 +1109,7 @@ export class SqliteDocumentRepository {
       const existing = this.findByIdentity(identity);
       if (existing === undefined) return null;
       if (existing.is_valid === 0) throw new Error("document is deleted");
-      this.assertApi3ImmutableFields(existing, patch);
+      this.assertApi3ImmutableFields(existing, patch, false, true);
       const original = materializeLegacy(existing);
       const document = { ...original, ...patch };
       return this.writeSnapshot(existing.id, document, existing, "patch", "api3");
@@ -1097,6 +1137,7 @@ export class SqliteDocumentRepository {
       const document = materializeLegacy(existing);
       document.isValid = false;
       const mutation = this.writeSnapshot(existing.id, document, existing, "delete", "api3");
+      if (mutation.srvModified === null) throw new Error("soft delete has no srvModified");
       return {
         deleted: true,
         permanent: false,
@@ -1175,26 +1216,17 @@ export class SqliteDocumentRepository {
   treatmentHistory(query: DocumentHistoryQuery): JsonDocument[] {
     if (!Number.isFinite(query.since)) throw new Error("history timestamp must be finite");
     const comparison = query.inclusive === true ? ">=" : ">";
-    const rows = this.sql.exec<DbChange>(
-      `WITH ranked AS (
-         SELECT change_id, id, identifier, identifier_present, body, srv_created, srv_modified,
-                is_valid, revision,
-                ROW_NUMBER() OVER (
-                  PARTITION BY id ORDER BY srv_modified DESC, change_id DESC
-                ) AS latest_rank
-         FROM document_changes
-         WHERE collection = ? AND srv_modified ${comparison} ?
-       )
-       SELECT change_id, id, identifier, identifier_present, body, srv_created, srv_modified,
-              is_valid, revision
-       FROM ranked
-       WHERE latest_rank = 1
-       ORDER BY srv_modified ASC, change_id ASC
+    const rows = this.sql.exec<DbDocumentV4>(
+      `SELECT *
+       FROM documents
+       WHERE collection = ?
+         AND srv_modified ${comparison} ?
+       ORDER BY srv_modified ASC, id ASC
        LIMIT ?`,
       TREATMENTS,
       Math.trunc(query.since),
       boundedLimit(query.limit),
     ).toArray();
-    return rows.map(materializeChange).map((document) => project(document, query.fields));
+    return rows.map(materializeApi3).map((document) => project(document, query.fields));
   }
 }

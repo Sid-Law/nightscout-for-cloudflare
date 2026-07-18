@@ -685,7 +685,11 @@ async function handleCollectionApi(
   if (request.method === "POST" && segment === undefined) {
     await requirePermission(request, env, url, `api:${collection}:create`);
     const payload = await readBoundedBody(request);
-    if (collection === "activity" && Array.isArray(payload) && payload.length === 0) {
+    if (
+      (collection === "activity" || collection === "treatments")
+      && Array.isArray(payload)
+      && payload.length === 0
+    ) {
       return json([]);
     }
     const parsed = parseDocumentPayload(payload, collection, false);

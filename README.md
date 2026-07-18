@@ -179,15 +179,17 @@ and the `EntryStore` SQLite Durable Object namespace. A normal Wrangler deploy
 requires an authenticated Cloudflare session and a verified Cloudflare account
 email.
 
-The automated suite currently contains 38 Workers-runtime integration tests.
+The automated suite currently contains 41 Workers-runtime integration tests.
 It covers the shipped page routes, dynamic clock template, polling-adapter
 asset/version contracts, implemented status and page-data contracts, API-secret
 failure modes, the implemented entries and document CRUD subset, activity
 conditional requests, JWT issue/verify/expiry/tamper/cross-tenant behavior,
 Shiro permission matching, `verifyauth`, the API v3 version/status envelopes,
 SQLite persistence across eviction, tenant isolation and invalid input. The
-locked upstream has 111 JavaScript test files and about 873 test cases; the 38
-adapter tests do not prove complete Nightscout compatibility.
+suite also covers schema-v4 repair, v1/API3 treatment time separation, UUID
+query handling, API3 `_id` removal and atomic rollback. The locked upstream has
+111 JavaScript test files and about 873 test cases; the 41 adapter tests do not
+prove complete Nightscout compatibility.
 
 The current simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally
