@@ -62,7 +62,10 @@ for diagnosis, dosing, or medical decisions.
 - Content-addressed loading for that platform shim, so an older upstream
   service worker cannot keep serving an obsolete adapter after deployment.
 - A response-header adapter that preserves upstream asset bytes while supplying
-  the UTF-8 charset normally added by Nightscout's Express server.
+  the UTF-8 charset normally added by Nightscout's Express server. The Split
+  route also overrides Cloudflare's incorrect `text/plain` metadata, strips
+  stale conditional validators and returns `no-store`, so an old cached
+  source view is replaced by the official HTML without changing its bytes.
 - Workers-runtime tests plus real-browser verification for API, SQLite,
   persistence, isolation and official-page rendering.
 - No D1, R2, KV, Queues, custom domain or CGM credentials.
@@ -162,8 +165,8 @@ The public deployment is a simulated-data lab, not a personal Nightscout
 deployment. The contracts described below are live in the current Cloudflare
 version, but they remain only a tested compatibility subset.
 Current v1/v2 writes require a Nightscout-compatible API-secret digest or an
-authorized subject credential; API v3 entries, treatments and device-status
-operations require a Bearer JWT.
+authorized subject credential; API v3 entries, treatments, device-status and
+profile operations require a Bearer JWT.
 The tenant selector provides storage routing, not authorization. Missing or
 shorter-than-12-character `API_SECRET` configuration
 fails closed with HTTP 503 for API-secret writes. A request must carry the
@@ -263,31 +266,22 @@ locked upstream has 111
 JavaScript test files and about 873 test cases; the local adapter tests do not
 prove complete Nightscout compatibility.
 
-The next local code candidate is commit
-`3366bc10e25e1c169937fd2a1f57555d42626d02`. After rebuilding the locked
-official UI, its 19-file Workers-runtime suite passes 223/223 tests; both audit
-suites pass 20/20. Wrangler dry-run reads the same 248 official assets, reports
-765.94 KiB raw / 135.92 KiB gzip and still exposes only `ENTRY_STORE` and
-`ASSETS`. This candidate adds the complete named API v3 Profile vertical,
-v1/API3 shared Profile storage and idempotent legacy metadata repair. It does
-not add the `/storage` realtime namespace and is not closed-loop completion.
-
-The deployed code candidate is commit
-`d8e406d13b87b2e304b1db4dc075af18ae463022`; deployment ran from repository
-HEAD `ac0947dc6139d16e424cc212e3757dde0c7c088b`. Its 18-file Workers-runtime
-suite passes 215/215 tests. It adds the strict Status, authorization, direct
-EIO4 WebSocket and API v3 Entries slices described above. The official
-upstream build completed with its three known Webpack size warnings, and
-Wrangler read 248 assets and reported only `ENTRY_STORE` and `ASSETS` bindings
-(764.00 KiB raw / 135.65 KiB gzip). Deployment used `--keep-vars`; the
-configured secret was neither read nor printed. Its Entries migration is intentionally
+The deployed code candidate and Git HEAD used by Wrangler are commit
+`39761161590977570a46a64976f9e59bc99d84f4`. After rebuilding the locked
+official UI, its 19-file Workers-runtime suite passes 224/224 tests and both
+audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
+reports 766.80 KiB raw / 136.08 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment includes the named API v3 Profile vertical,
+v1/API3 shared Profile storage, idempotent legacy metadata repair and the Split
+HTML/cache boundary repair. It does not add `/storage` realtime broadcasts and
+is not closed-loop completion. Deployment used `--keep-vars`; the configured
+secret was neither read nor printed. Entries migration remains intentionally
 fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
 being imported, while canonical documents and other collections such as
-profile are preserved. A read-only check at 2026-07-18 14:51 UTC found zero
-Entries and one profile in the public tenant, and the post-deployment smoke
-again returned zero Entries and one profile. This particular lab therefore
-has no old simulated Entry row to carry forward. This is not a general
-legacy-data migration guarantee.
+profile are preserved. A read-only check found zero Entries and one profile in
+the public tenant, and post-deployment reads preserved those counts without
+recording profile contents. This is not a general legacy-data migration
+guarantee.
 
 The planned first-release onboarding path is a fresh deployment for a new
 family. “Fresh” means a new Worker/SQLite Durable Object namespace or an
@@ -308,25 +302,28 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `65db0a2f-9f4e-4c41-8edf-de85bb49c31d` reached 100% traffic
-at 2026-07-18T15:13:42.775Z with a reported 20 ms startup. No asset bytes
+Cloudflare version `6336334e-002c-4ccf-9e9f-ddb7f2191b10` reached 100% traffic
+at 2026-07-18T17:00:31.552157Z with a reported 21 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
-Remote smoke returned HTTP 200 for health, API v3 version, v1 Entries, the
-preserved one-element Profile response, strict Status text negotiation and
-`/api/v2/ddata/at`; unknown Status extensions returned 404 and API v3 Entries
-without a token returned 401. EIO4 polling and direct WebSocket each completed
-open, SIO5 connect, `clients`, read-only authorize, `dataUpdate` and ACK. The
-polling open advertised no upgrades, a 25-second ping interval, 20-second
-timeout and 1,000,000-byte maximum.
+Final remote smoke returned HTTP 200 for health, the homepage, Split, v1
+Entries/Profile reads and `/api/v2/ddata/at`; Split reported
+`text/html; charset=utf-8`, while API v3 Profile without a token correctly
+returned 401. The previously verified EIO4 polling and direct WebSocket flows
+each completed open, SIO5 connect, `clients`, read-only authorize,
+`dataUpdate` and ACK. The polling open advertised no upgrades, a 25-second
+ping interval, 20-second timeout and 1,000,000-byte maximum.
 
-A real Playwright browser run rendered the official homepage chart and About
-version 15.0.7. Settings stayed closed across several 15-second `dataUpdate`
-rounds rather than rebounding. Profile Values loaded, while Admin, Food,
-Report and the color clock rendered their official controls. There were zero
-console errors and only known upstream/browser warnings. No credentialed Save
-or other protected mutation was attempted, so this is not proof that every
-protected page workflow is complete. These counts and observations cover only
-the named adapter subset; they are not evidence of a complete Nightscout port.
+A real browser run rendered the official homepage chart and completed a full
+17-second polling interval with Settings closed and no new warning/error. The
+Profile Editor reported `Values loaded.` and exposed its official Save control;
+no credentialed Save was attempted. Admin, Food, Report, both clock views and
+both Swagger pages rendered. The same browser reproduced the old cached Split
+source view, then verified that returning through the homepage replaced it:
+the original `/split/` URL reported `text/html`, title `Nightscout multiframe
+view`, a table root and no literal HTML source. Secondary-page observations
+retained the upstream bundle's known `#chartContainer` warning. These checks do
+not prove
+every protected mutation, report, plugin or realtime workflow.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

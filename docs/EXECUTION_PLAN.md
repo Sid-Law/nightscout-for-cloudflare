@@ -1,6 +1,6 @@
 # Complete Nightscout port execution plan
 
-Last synchronized: 2026-07-18
+Last synchronized: 2026-07-19
 
 ## Goal and fixed scope
 
@@ -46,7 +46,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | The current deployed version has homepage/About, stable Settings close, loaded Profile Values and Admin/Food/Report/color-clock render smokes. Protected Profile Save was not attempted in this release; add that regression plus the remaining mutation/report workflows, split view and pushed live updates. |
+| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. Protected Profile Save was not attempted in this release; add that regression plus the remaining mutation/report and pushed-live-update workflows. |
 | 3. SQLite collection compatibility | In progress | Entries, treatments, device status and profile share the generic API3 repository. Extend it to food/settings, close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress | The Entries create/list/current/model/delete slice now covers locked identity, type, date/dateString and bounded failure behavior; Activity CRUD is implemented. Complete preview/echo/times/count/slice/formats and the remaining document routes. |
 | 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
@@ -93,29 +93,26 @@ relabeled as scope exclusions.
 
 ## Current deployed increment
 
-Integration commit `d8e406d13b87b2e304b1db4dc075af18ae463022`
-combines the strict v1/v2 Status contracts, derived/body credential and
-persisted-delay authorization work, direct Hibernatable EIO4 WebSocket, and API
-v3 Entries as the third generic collection. Deployment ran from repository
-HEAD `ac0947dc6139d16e424cc212e3757dde0c7c088b` and produced Cloudflare Worker
-version `65db0a2f-9f4e-4c41-8edf-de85bb49c31d`, activated at 100% traffic on
-2026-07-18T15:13:42.775Z. The version was created at
-2026-07-18T15:13:42.034Z and Cloudflare reported a 20 ms startup. Wrangler
-processed 248 official asset entries with no updated asset uploads, reported
-764.00 KiB raw / 135.65 KiB gzip, and exposed only `ENTRY_STORE` plus `ASSETS`.
-Deployment used `--keep-vars`; the configured secret was neither read nor
-printed. The 18-file Workers-runtime suite passed 215/215 locally before this
-deployment, which remains subset evidence rather than a full-port claim.
+Integration commit and Git HEAD used by Wrangler
+`39761161590977570a46a64976f9e59bc99d84f4` combine the strict v1/v2 Status,
+authorization, direct Hibernatable EIO4 WebSocket and four generic API v3
+collections, including Profile. Cloudflare Worker version
+`6336334e-002c-4ccf-9e9f-ddb7f2191b10` reached 100% traffic at
+2026-07-18T17:00:31.552157Z with a reported 21 ms startup. Wrangler processed
+248 official asset entries with no asset-byte uploads, reported 766.80 KiB raw
+/ 136.08 KiB gzip, and exposed only `ENTRY_STORE` plus `ASSETS`. Deployment
+used `--keep-vars`; the configured secret was neither read nor printed. The
+19-file Workers-runtime suite passed 224/224, both audit suites passed 20/20,
+and TypeScript plus the official UI build completed before deployment. These
+remain subset facts, not a full-port claim.
 
-The next local code candidate is
-`3366bc10e25e1c169937fd2a1f57555d42626d02`. Its 19-file Workers-runtime
-suite passes 223/223 after rebuilding the official UI, both audit suites pass
-20/20, TypeScript passes, and Wrangler dry-run reports 248 assets, 765.94 KiB
-raw / 135.92 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. It adds API v3
-Profile, AAPS create/retry/new-version behavior, v1/API3 shared storage,
-idempotent legacy metadata repair and common startDate-current selection for
-v1, Status and realtime. Deployment and remote/browser evidence remain pending
-until the post-deploy gate below is rerun.
+This increment includes API v3 Profile, AAPS create/retry/new-version behavior,
+v1/API3 shared storage, idempotent legacy metadata repair and common
+startDate-current selection for v1, Status and realtime. It also corrects the
+Cloudflare HTML boundary for secondary pages. Split discards stale conditional
+asset validators and returns the unchanged official bytes with
+`text/html; charset=utf-8` and `no-store`, replacing an older cached source
+view after the user returns through the homepage.
 
 Entries deliberately follows a fresh-only pre-1.0 policy. If activation finds
 the old narrow `entries` shadow structurally incompatible, it resets that
@@ -150,7 +147,8 @@ The deployed increment includes:
   role/subject/token subsets and aggregate REST polling;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
-- all eight generic API v3 routes for entries, treatments and device status,
+- all eight generic API v3 routes for entries, treatments, device status and
+  profile,
   including branch-sensitive permissions, ordered search, conditional read,
   history, collection-specific legacy fallback/deduplication, lastModified,
   tombstones, permanent delete and atomic rollback; JSON/CSV/XML rendering uses
@@ -161,20 +159,25 @@ The deployed increment includes:
   Durable Object alarm survives eviction and drives ping, pong timeout,
   session/lease expiry, closure retry and client-count updates.
 
-Remote API smoke returned HTTP 200 for health, API v3 version, v1 Entries
-(`[]`), v1 Profile (one element), strict Status text forms and
-`/api/v2/ddata/at`; an unknown Status extension returned 404 and API v3 Entries
-without a token returned 401. EIO4 polling completed open, SIO5 CONNECT,
+Final remote API smoke returned HTTP 200 for health, homepage, Split, v1
+Entries/Profile reads and `/api/v2/ddata/at`; Split reported HTML and API v3
+Profile without a token returned 401. Earlier checks on the same integration
+also verified API v3 version and strict Status forms. The later Split-only
+commits did not change realtime code; its last remote EIO4 polling smoke
+completed open, SIO5 CONNECT,
 `clients`, authorize, `dataUpdate` and read-only ACK. Direct WebSocket completed
 the same sequence. The polling open advertised `upgrades: []`, a 25-second
 ping interval, 20-second timeout and 1,000,000-byte maximum.
 
-A real Playwright run rendered the official homepage/chart and About version
-15.0.7. Settings stayed closed across multiple 15-second `dataUpdate` rounds.
-Profile Values loaded, while Admin, Food, Report and the color clock rendered
-their official controls. No console errors were observed; only known upstream
-or browser warnings appeared. No credentialed Profile Save or other protected
-write was attempted, so those workflows remain unproven for this release.
+A real browser run rendered the official homepage/chart and kept Settings
+closed through a complete 17-second polling interval with no new
+warning/error. Profile reported `Values loaded.` and exposed its official Save
+control. Admin, Food, Report, both clock views and both Swagger pages rendered.
+The browser reproduced an old cached Split source view, returned through the
+homepage, then verified the original `/split/` URL as HTML with the official
+multiframe title/table and no literal source. Secondary pages retain the known
+upstream `#chartContainer` warning. No credentialed Profile Save or other
+protected write was attempted, so those workflows remain unproven.
 
 The code is still not a full port: API v3 food and settings,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
@@ -283,7 +286,8 @@ Token-bearing authorization paths are redacted from adapter error logs.
 
 ### Milestone F — page and upstream closure
 
-1. Browser-test profile, food, admin, report, split and clock workflows.
+1. Browser-test authenticated profile/food/admin mutations and report
+   generation; preserve the deployed Split/clock render regressions.
 2. Verify homepage charts/plugins update from a pushed real-time event.
 3. Classify every upstream test file and make every applicable contract green.
 4. Rebuild from the clean vendor snapshot and verify asset provenance.

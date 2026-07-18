@@ -1,27 +1,20 @@
 # NSCF architecture
 
-Last audited: 2026-07-18
+Last audited: 2026-07-19
 
 This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed code candidate
-`d8e406d13b87b2e304b1db4dc075af18ae463022`. Deployment ran from repository
-HEAD `ac0947dc6139d16e424cc212e3757dde0c7c088b` and produced Cloudflare version
-`65db0a2f-9f4e-4c41-8edf-de85bb49c31d`, active at 100% traffic since
-2026-07-18T15:13:42.775Z. Its 18-file Workers-runtime suite passes 215/215.
-Wrangler processed 248 unchanged official asset entries, reported 764.00 KiB
-raw / 135.65 KiB gzip, and declared only the `ENTRY_STORE` Durable Object and
-`ASSETS` bindings. Cloudflare reported a 20 ms startup. These are release
-facts for the named subset, not evidence of a complete port.
-
-The next local code candidate is
-`3366bc10e25e1c169937fd2a1f57555d42626d02`. It extends the same repository
-and API v3 adapter to Profile, passes 223/223 Workers-runtime tests across 19
-files plus 20/20 audit tests, and produces a 765.94 KiB raw / 135.92 KiB gzip
-Wrangler dry-run with the same two bindings. Deployment evidence is recorded
-only after the remote and browser gates complete.
+“Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
+`39761161590977570a46a64976f9e59bc99d84f4`. It produced Cloudflare version
+`6336334e-002c-4ccf-9e9f-ddb7f2191b10`, active at 100% traffic since
+2026-07-18T17:00:31.552157Z. Its 19-file Workers-runtime suite passes 224/224
+plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
+entries, reported 766.80 KiB raw / 136.08 KiB gzip, and declared only the
+`ENTRY_STORE` Durable Object and `ASSETS` bindings. Cloudflare reported a 21 ms
+startup. These are release facts for the named subset, not evidence of a
+complete port.
 
 ## Current request and data flow
 
@@ -71,8 +64,16 @@ upstream homepage itself has no `<meta charset>`. Cloudflare Static Assets
 normalizes stored HTML and JavaScript media types without that charset. Text
 asset paths therefore run through the Worker first; it streams the unchanged
 asset response and appends `charset=utf-8` to text, JavaScript, JSON, XML and SVG
-media types. Binary assets continue to use the direct Static Assets path. This
-is a platform response-header adaptation, not a source or UI fork.
+media types. Known secondary HTML routes are explicitly marked
+`text/html; charset=utf-8`. Cloudflare initially classified the upstream Split
+frame as `text/plain`; because Static Assets uses a content-hash ETag, changing
+only the Worker MIME could leave an old representation behind a 304. The Split
+route therefore removes incoming conditional validators before its internal
+asset fetch, returns a 200 HTML representation and marks it `no-store`. Binary
+assets continue to use the direct Static Assets path. These are platform
+response/cache adaptations; the upstream HTML bytes and UI are unchanged.
+The default cache and ETag behavior is documented in Cloudflare's
+[Static Assets response headers](https://developers.cloudflare.com/workers/static-assets/headers/).
 
 The official client expects Socket.IO and consumes a `dataUpdate` runtime shape
 rather than loading entries directly. At `/socket.io/socket.io.js`, a thin
@@ -154,10 +155,10 @@ an array can never grant admin, its bounded values are tried as ordered subject
 credentials, and an invalid/oversized array returns 401 and records the
 failure. Two other differences remain named: the Workers request boundary caps
 the actually enforced delay at 60 seconds, and a failed attempt does not yet
-emit the upstream admin notification. Most current GET routes remain public. API v3
-`/status`, `/lastModified` and all entries, treatments and device-status routes
-accept only a verified Bearer JWT; API secrets and query tokens are not API v3
-credentials.
+emit the upstream admin notification. Most current GET routes remain public.
+API v3 `/status`, `/lastModified` and all entries, treatments, device-status
+and profile routes accept only a verified Bearer JWT; API secrets and query
+tokens are not API v3 credentials.
 
 The Worker is otherwise stateless. An optional `tenant` query parameter is
 validated and passed to `ENTRY_STORE.getByName()`. The default is `demo`. A
@@ -260,13 +261,10 @@ JSON. Required behavior includes:
 SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
-The next local candidate
-`3366bc10e25e1c169937fd2a1f57555d42626d02` implements four generic vertical
+The deployed candidate
+`39761161590977570a46a64976f9e59bc99d84f4` implements four generic vertical
 slices—entries, treatments, device status and profile—in the tenant
-`EntryStore` Durable Object. This paragraph and the Profile-specific behavior
-below describe that local candidate, not the still-active three-collection
-Cloudflare version named at the top of this document. Internal SQL schema
-version 4 extends `documents`
+`EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
 with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
 `is_valid`, `fallback_key`, `revision` and `srv_metadata_version`; adds
 `collection_clocks` and `document_changes`; and adds non-unique lookup/history
@@ -396,9 +394,9 @@ delete tombstones. It does not use audit timestamps or virtual `created_at`
 fallbacks. Permanent deletion removes the document and its snapshots together,
 matching upstream history behavior for `permanent=true`.
 
-### Next local candidate: API v3 entries, treatments, device-status and profile
+### Deployed generic slice: API v3 entries, treatments, device-status and profile
 
-The local candidate exposes exactly the eight locked generic routes for each
+The deployed adapter exposes exactly the eight locked generic routes for each
 of entries, treatments, device status and profile: GET/POST on the collection,
 GET on both history forms, and GET/PUT/PATCH/DELETE on an identifier. GET
 `/api/v3/lastModified` reports all four collections independently when the
@@ -562,12 +560,13 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`65db0a2f-9f4e-4c41-8edf-de85bb49c31d`. Remote polling smoke completed EIO4
+`6336334e-002c-4ccf-9e9f-ddb7f2191b10`. The later Split response/cache commits
+did not change realtime code; its last remote polling smoke completed EIO4
 open, SIO5 root CONNECT, `clients`, read-only `authorize`, `dataUpdate` and ACK.
-Direct WebSocket completed open, CONNECT, `clients`, connected authorization,
-`dataUpdate` and ACK. The polling open retained `upgrades: []`, a 25-second
-ping interval, 20-second timeout and 1,000,000-byte maximum. The at-most-once
-dequeue/send crash window described above remains open. The official homepage
+Its last direct-WebSocket smoke completed open, CONNECT, `clients`, connected
+authorization, `dataUpdate` and ACK. The polling open retained `upgrades: []`,
+a 25-second ping interval, 20-second timeout and 1,000,000-byte maximum. The
+at-most-once dequeue/send crash window described above remains open. The official homepage
 intentionally still uses the REST polling shim, so these transport smokes prove
 the separate server slice rather than a page transport switch. The named
 polling HTTP edge difference is admission at the

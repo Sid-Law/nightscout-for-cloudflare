@@ -1,6 +1,6 @@
 # Upstream compatibility matrix
 
-Last audited: 2026-07-18
+Last audited: 2026-07-19
 
 ## Baseline and completion rule
 
@@ -17,26 +17,23 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-Local integration commit `d8e406d13b87b2e304b1db4dc075af18ae463022`
-passes 215/215 tests across 18 Workers-runtime files. The suite includes focused
+Deployed integration commit and Git HEAD used by Wrangler
+`39761161590977570a46a64976f9e59bc99d84f4` pass 224/224 tests across 19
+Workers-runtime files plus 20/20 audit tests. The suite includes focused
 EIO4 polling/direct-Hibernatable-WebSocket protocol, persisted session,
 HTTP-boundary, eviction, authorization, tenant-isolation and resource-cap
 contracts in addition to strict v1/v2 Status, API v3
-entries/treatments/device-status, storage and official-page tests. This is not
-full-port evidence. The same code candidate is deployed from repository HEAD
-`ac0947dc6139d16e424cc212e3757dde0c7c088b` as Cloudflare version
-`65db0a2f-9f4e-4c41-8edf-de85bb49c31d`; exact release evidence is recorded in
+entries/treatments/device-status/profile, storage and official-page tests. This
+is not full-port evidence. The code is deployed as Cloudflare version
+`6336334e-002c-4ccf-9e9f-ddb7f2191b10`; exact release evidence is recorded in
 `DEPLOYMENT.md`. The locked
 upstream has 111 `*.test.js` files and approximately 873 `it(...)` cases. Those
 sets are not directly comparable, and the local suite does not prove full
 compatibility.
 
-The next local code candidate is
-`3366bc10e25e1c169937fd2a1f57555d42626d02`. It passes 223/223 tests across
-19 Workers-runtime files plus 20/20 audit tests and adds the named API v3
-Profile vertical. Its Wrangler dry-run reports 248 official assets, 765.94 KiB
-raw / 135.92 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. These are local
-pre-deployment facts; they are not remote compatibility evidence.
+The final Wrangler dry-run reports 248 official assets, 766.80 KiB raw /
+136.08 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
 
@@ -144,7 +141,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current Playwright pass rendered the homepage/About, kept Settings closed across repeated 15-second updates, loaded Profile Values and rendered Admin, Food, Report and the color clock with zero console errors. It did not authenticate or repeat a protected Save; mutations/report generation and live-update workflows are not complete. The polling adapter is content-addressed so the upstream service worker cannot retain an older payload contract. | Re-run authenticated Profile Save on the current deployment when a credential is explicitly supplied, then add profile delete, food/admin mutations, report generation, split/clock updates and pushed live updates with console/network assertions. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The final browser pass rendered the homepage, kept Settings closed through a complete polling interval, loaded Profile Values, rendered Admin/Food/Report/clock/Swagger and verified Split as real HTML rather than a `text/plain` source view. It did not authenticate or repeat a protected Save; mutations/report generation and pushed live updates are not complete. Secondary pages retain the upstream bundle's known missing-`#chartContainer` warning. | Re-run authenticated Profile Save on the current deployment when a credential is explicitly supplied, then add profile delete, food/admin mutations, report generation and pushed live updates with console/network assertions. |
 | Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; compatibility unresolved.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations, but no whole upstream file is yet claimed green against the DO adapter. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
@@ -211,19 +208,19 @@ controls, not upstream claims.
 
 ## Current deployed integration evidence
 
-Code candidate `d8e406d13b87b2e304b1db4dc075af18ae463022` passes 215/215
-tests in 18 Workers-runtime files. It combines the strict v1/v2 Status contract,
-derived/body credential and persisted-delay authorization work, direct
-Hibernatable EIO4 WebSocket, and API v3 Entries as the third collection.
-Deployment ran from repository HEAD
-`ac0947dc6139d16e424cc212e3757dde0c7c088b`. Cloudflare version
-`65db0a2f-9f4e-4c41-8edf-de85bb49c31d` reached 100% traffic at
-2026-07-18T15:13:42.775Z after being created at
-2026-07-18T15:13:42.034Z; Cloudflare reported a 20 ms startup. Wrangler
-processed 248 unchanged official asset entries, reported 764.00 KiB raw /
-135.65 KiB gzip, and listed only `ENTRY_STORE` and `ASSETS`. Deployment used
-`--keep-vars`; the configured secret was neither read nor printed. The current
-Wrangler output did not display a Deployment ID, so none is inferred.
+Code candidate and Git HEAD used by Wrangler
+`39761161590977570a46a64976f9e59bc99d84f4` pass 224/224 tests in 19
+Workers-runtime files plus 20/20 audit tests. They combine the strict v1/v2
+Status, authorization, direct Hibernatable EIO4 WebSocket and API v3
+entries/treatments/device-status/profile slices with the Split HTML/cache
+boundary repair. Cloudflare version
+`6336334e-002c-4ccf-9e9f-ddb7f2191b10` reached 100% traffic at
+2026-07-18T17:00:31.552157Z; Wrangler reported a 21 ms startup. It processed
+248 unchanged official asset entries, reported 766.80 KiB raw / 136.08 KiB
+gzip, and listed only `ENTRY_STORE` and `ASSETS`. Deployment used `--keep-vars`;
+the configured secret was neither read nor printed. The successful command did
+not separately display a version-creation timestamp or Deployment ID, so none
+is inferred.
 
 Entries is fresh-only for the pre-1.0 lab. An incompatible old narrow
 `entries` shadow is reset without importing its rows, while canonical documents
@@ -280,24 +277,30 @@ homepage REST shim. Their current bounds and named differences are:
   safety/resource tightening.
 
 
-Remote API checks returned HTTP 200 for health, API v3 version, v1 Entries
-count 1 (an empty array), v1 Profile (a one-element array), strict v1/v2 Status
-text forms and `/api/v2/ddata/at`. An unknown Status extension returned 404,
-and API v3 Entries without a Bearer token returned 401. No protected remote
-mutation was attempted.
+Final remote checks returned HTTP 200 for health, homepage, Split, v1
+Entries/Profile reads and `/api/v2/ddata/at`; Split reported
+`text/html; charset=utf-8`, and API v3 Profile without a Bearer token returned
+401. Earlier checks on the same integrated code also covered API v3 version and
+strict v1/v2 Status forms. No protected remote mutation was attempted.
 
-A real EIO4 polling handshake advertised no upgrades, a 25-second ping
+The later Split response/cache commits did not change realtime code. Its last
+remote EIO4 polling handshake advertised no upgrades, a 25-second ping
 interval, 20-second timeout and 1,000,000-byte maximum, then completed SIO5
-root CONNECT, `clients`, read-only authorize, `dataUpdate` and ACK. Direct
-WebSocket completed open, CONNECT, `clients`, connected authorization,
-`dataUpdate` and ACK. These smokes prove the separate routed transport slices,
-not a homepage transport switch.
+root CONNECT, `clients`, read-only authorize, `dataUpdate` and ACK. The last
+direct-WebSocket smoke completed open, CONNECT, `clients`, connected
+authorization, `dataUpdate` and ACK. These smokes prove the separate routed
+transport slices, not a homepage transport switch, and were not repeated after
+the final HTML-only deployment.
 
-A real Playwright run rendered the official homepage chart and About version
-15.0.7. Settings stayed closed across multiple 15-second `dataUpdate` rounds.
-Profile Values loaded, while Admin, Food, Report and color clock rendered their
-official controls. There were zero console errors and only known upstream or
-browser warnings. No authenticated Save or protected mutation was attempted.
+A real browser run rendered the official homepage chart and kept Settings
+closed through a complete 17-second polling interval with no new
+warning/error. Profile reported `Values loaded.` and exposed Save; Admin, Food,
+Report, both clock views and both Swagger pages rendered. The browser
+reproduced the old cached Split source view, returned through the homepage and
+then verified the original `/split/` URL as HTML with the official title/table
+and no literal source. Secondary pages retained only the known upstream
+`#chartContainer` warning. No authenticated Save or protected mutation was
+attempted.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing
