@@ -30,6 +30,8 @@
       "/swagger.json",
       "/swagger.yaml",
       "/api3-swagger.json",
+      "/socket.io",
+      "/socket.io/*",
       "/api/*",
       "/healthz"
     ]

@@ -10,6 +10,7 @@ import {
 import { ApiError, parseEntryPayload, parseHistoryQuery } from "./model";
 import type { PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
+import { handleSocketIoPolling } from "./realtime/http-adapter";
 import { nightscoutStatus } from "./status";
 import {
   handleApi3Treatments,
@@ -1114,6 +1115,14 @@ export default {
     try {
       if (url.pathname === "/healthz") {
         return json({ status: "ok", upstream: "v15.0.7", storage: "sqlite-durable-object" });
+      }
+      if (url.pathname === "/socket.io" || url.pathname === "/socket.io/") {
+        const tenant = resolveTenant(request, url);
+        return await handleSocketIoPolling(
+          request,
+          url,
+          env.ENTRY_STORE.getByName(tenant),
+        );
       }
       if (url.pathname.startsWith("/api/")) {
         return await handleApi(request, env, url);
