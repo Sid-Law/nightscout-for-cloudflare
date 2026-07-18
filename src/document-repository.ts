@@ -487,8 +487,11 @@ function boundedLimit(limit: number | undefined): number {
 
 function boundedSkip(skip: number | undefined): number {
   if (skip === undefined) return 0;
-  if (!Number.isInteger(skip) || skip < 0 || skip > 1_000_000) {
-    throw new Error("skip must be a non-negative integer");
+  if (!Number.isSafeInteger(skip) || skip < 0) {
+    throw new DocumentQueryError(
+      "QUERY_SKIP_INVALID",
+      "document query skip must be a non-negative safe integer",
+    );
   }
   return skip;
 }

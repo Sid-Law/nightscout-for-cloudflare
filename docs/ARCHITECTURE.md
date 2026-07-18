@@ -318,9 +318,10 @@ requests return controlled 406 responses until locked `csv-stringify` and
 `easyxml` byte-level fixtures are ported. The upstream `mime` 2.6.0 extension
 middleware is preserved separately: an unknown extension is rejected after
 JSON parsing but before routing/authentication, while a known MIME extension is
-stripped and may reach a write handler (whose upstream response is JSON). A
-known but unsupported read format reaches authentication/querying and then
-returns 406.
+stripped and may reach a write handler (whose upstream response is JSON). The
+resolved MIME type, rather than the literal suffix, drives reads, so aliases
+such as `.map` and case variants such as `.JSON` use JSON. A known but
+unsupported read format reaches authentication/querying and then returns 406.
 
 Other deliberate or unresolved platform differences are explicit:
 
@@ -336,6 +337,9 @@ Other deliberate or unresolved platform differences are explicit:
   regular expressions with SQLite `LIKE`;
 - unsafe JSON-path field syntax and queries beyond SQLite binding/statement
   limits return controlled 400 responses;
+- non-negative `skip` values through JavaScript's maximum safe integer reach
+  SQLite; larger parsed offsets return controlled 400 rather than an unsafe
+  integer binding;
 - SQLite/Mongo comparison and ordering across mixed JSON types, nested
   projection behavior and array semantics are not yet claimed compatible;
 - only treatments is represented by API v3 `lastModified`; the other five

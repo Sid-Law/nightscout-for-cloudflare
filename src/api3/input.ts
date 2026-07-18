@@ -191,7 +191,11 @@ function parseSkip(url: URL): number {
   const numeric = Number(value);
   if (!Number.isNaN(numeric) && numeric >= 0) {
     const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : 0;
+    if (!Number.isFinite(parsed)) return 0;
+    if (!Number.isSafeInteger(parsed)) {
+      throw new Api3InputError(400, API3_MESSAGES.badSkip, true);
+    }
+    return parsed;
   }
   throw new Api3InputError(400, API3_MESSAGES.badSkip);
 }

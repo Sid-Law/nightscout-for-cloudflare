@@ -219,6 +219,7 @@ describe("API v3 treatments vertical slice", () => {
       jsonMutation("POST", treatment("unknown-mime-must-not-write", "2026-06-01T02:00:00.000Z")),
     );
     expect(unknown.status).toBe(406);
+    expect(unknown.headers.get("Vary")).toBe("Accept");
     expect(await unknown.json()).toEqual({
       status: 406,
       message: "Unsupported output format requested",
@@ -241,27 +242,69 @@ describe("API v3 treatments vertical slice", () => {
       status: 201,
       identifier: "known-mime-write",
     });
+    const jsonAliasWrite = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments.map",
+      jsonMutation(
+        "POST",
+        treatment("json-alias-write", "2026-06-01T01:30:00.000Z"),
+      ),
+    );
+    expect(jsonAliasWrite.status).toBe(201);
+    expect(jsonAliasWrite.headers.get("Content-Type")).toMatch(/application\/json/);
+    for (const alias of ["map", "JSON"]) {
+      const jsonAliasRead = await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/treatments/json-alias-write.${alias}`,
+      );
+      expect(jsonAliasRead.status, alias).toBe(200);
+      expect(await result<JsonObject>(jsonAliasRead)).toMatchObject({
+        identifier: "json-alias-write",
+      });
+    }
     expect((await api3Fetch(
       name,
       null,
       "/api/v3/treatments/known-mime-write.ttf",
     )).status).toBe(401);
-    expect((await api3Fetch(
+    const knownUnsupported = await api3Fetch(
       name,
       jwt,
       "/api/v3/treatments/known-mime-write.ttf",
-    )).status).toBe(406);
-    expect((await api3Fetch(
+    );
+    expect(knownUnsupported.status).toBe(406);
+    expect(knownUnsupported.headers.get("Vary")).toBe("Accept");
+    const csvUnsupported = await api3Fetch(
       name,
       jwt,
       "/api/v3/treatments/known-mime-write.csv",
-    )).status).toBe(406);
-    expect((await api3Fetch(
+    );
+    expect(csvUnsupported.status).toBe(406);
+    expect(csvUnsupported.headers.get("Vary")).toBe("Accept");
+    const acceptUnsupported = await api3Fetch(
       name,
       jwt,
       "/api/v3/treatments/known-mime-write",
       { headers: { Accept: "application/xml" } },
-    )).status).toBe(406);
+    );
+    expect(acceptUnsupported.status).toBe(406);
+    expect(acceptUnsupported.headers.get("Vary")).toBe("Accept");
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/known-mime-write",
+      { headers: { Accept: "Application/JSON" } },
+    )).status).toBe(200);
+    const zeroQuality = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/known-mime-write",
+      { headers: { Accept: "application/json;q=0" } },
+    );
+    expect(zeroQuality.status).toBe(406);
+    expect(zeroQuality.headers.get("Vary")).toBe("Accept");
 
     for (const [path, method] of [
       ["/api/v3/treatments", "PATCH"],
@@ -893,6 +936,25 @@ describe("API v3 treatments vertical slice", () => {
         expect.objectContaining({ identifier: "regex-source" }),
       ]);
     }
+    for (const skip of [1_000_001, Number.MAX_SAFE_INTEGER]) {
+      const response = await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/treatments?skip=${skip}`,
+      );
+      expect(response.status, String(skip)).toBe(200);
+      expect(await result<JsonObject[]>(response)).toEqual([]);
+    }
+    const unsafeSkip = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments?skip=9007199254740992",
+    );
+    expect(unsafeSkip.status).toBe(400);
+    expect(await unsafeSkip.json()).toEqual({
+      status: 400,
+      message: "Parameter skip out of tolerance",
+    });
     expect(await result<JsonObject[]>(await api3Fetch(
       name,
       jwt,

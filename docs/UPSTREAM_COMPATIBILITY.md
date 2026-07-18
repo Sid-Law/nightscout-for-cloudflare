@@ -170,6 +170,9 @@ differences are:
 - `$re` returns a stable 400 because SQLite `LIKE` is not Mongo `$regex`;
 - unsafe field syntax and SQLite's 100-binding/100,000-byte statement limits
   return controlled 400 responses;
+- non-negative `skip` values through JavaScript's maximum safe integer are
+  accepted; larger parsed offsets return controlled 400 instead of reaching an
+  unsafe SQLite integer binding;
 - comparisons, ordering and projection across mixed JSON types, arrays and
   nested values have not completed a Mongo differential matrix;
 - a final server-ID sort key makes exact ties deterministic on SQLite;
@@ -182,8 +185,10 @@ differences are:
 Extension middleware is not collapsed into renderer support. The adapter uses
 the locked `mime` 2.6.0 table: malformed JSON fails before extension handling;
 unknown MIME extensions return 406 before route authentication; known MIME
-extensions are stripped and can reach JSON write handlers. Known non-JSON read
-formats authenticate/query first and then return the controlled renderer 406.
+extensions are stripped and can reach JSON write handlers. Resolved
+`application/json` aliases, including `.map` and `.JSON`, use the JSON renderer.
+Known non-JSON read formats authenticate/query first and then return the
+controlled renderer 406. Renderer-generated 406 responses vary on `Accept`.
 The 512 KiB and query-limit errors are platform controls, not upstream claims.
 
 ## Current deployed evidence

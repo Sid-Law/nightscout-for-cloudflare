@@ -286,6 +286,7 @@ function operationError(error: unknown): Response | null {
   if (
     message.startsWith("invalid query field")
     || message.startsWith("invalid document sort")
+    || message.startsWith("document query skip")
     || message.startsWith("document query exceeds SQLite")
     || message.startsWith("LIKE pattern exceeds SQLite")
   ) {

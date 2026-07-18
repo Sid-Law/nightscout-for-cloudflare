@@ -79,6 +79,12 @@ describe("locked API3 input adapter", () => {
     expect(parseApi3Search(new URL(
       "https://example.test/api/v3/treatments?limit=0x10",
     )).limit).toBe(0);
+    expect(parseApi3Search(new URL(
+      `https://example.test/api/v3/treatments?skip=${Number.MAX_SAFE_INTEGER}`,
+    )).skip).toBe(Number.MAX_SAFE_INTEGER);
+    expect(() => parseApi3Search(new URL(
+      "https://example.test/api/v3/treatments?skip=9007199254740992",
+    ))).toThrowError(API3_MESSAGES.badSkip);
   });
 
   it("keeps the two upstream history boundaries distinct", () => {
@@ -134,6 +140,23 @@ describe("API3 response renderer", () => {
 
   it("limits this slice to JSON and rejects unimplemented renderers", async () => {
     expect(api3FormatFromRequest(new Request("https://example.test"))).toBe("json");
+    expect(api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "Application/JSON" },
+    }))).toBe("json");
+    expect(api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "text/csv;q=0.1, application/json;q=0.9" },
+    }))).toBe("json");
+    expect(api3FormatFromRequest(new Request("https://example.test"), "application/json"))
+      .toBe("json");
+    expect(() => api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "application/json;q=0" },
+    }))).toThrowError(API3_MESSAGES.unsupportedFormat);
+    expect(() => api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "application/json;q=0, */*;q=1" },
+    }))).toThrowError(API3_MESSAGES.unsupportedFormat);
+    expect(() => api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "text/csv, application/json;q=0.5" },
+    }))).toThrowError(API3_MESSAGES.unsupportedFormat);
     expect(() => api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "text/csv" },
     }))).toThrowError(API3_MESSAGES.unsupportedFormat);

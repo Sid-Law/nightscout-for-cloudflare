@@ -1216,6 +1216,14 @@ describe("SQLite collection contract v4", () => {
         sort: [{ field: "date", direction: "sideways" }],
         limit: 1,
       }))).rejects.toThrow("invalid document sort direction sideways");
+      expect(decode(await instance.queryTreatments(JSON.stringify({
+        skip: Number.MAX_SAFE_INTEGER,
+        limit: 1,
+      })))).toEqual([]);
+      await expect(instance.queryTreatments(JSON.stringify({
+        skip: Number.MAX_SAFE_INTEGER + 1,
+        limit: 1,
+      }))).rejects.toThrow("non-negative safe integer");
     });
   });
 

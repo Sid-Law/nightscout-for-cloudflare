@@ -854,7 +854,10 @@ function api3VersionInfo(): Record<string, unknown> {
 }
 
 function api3Error(status: number, message: string): Response {
-  return json({ status, message }, { status });
+  return json(
+    { status, message },
+    { status, ...(status === 406 ? { headers: { Vary: "Accept" } } : {}) },
+  );
 }
 
 async function handleApi3Status(
@@ -933,15 +936,18 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
 
   const isApi3 = url.pathname === "/api/v3" || url.pathname.startsWith("/api/v3/");
   let api3Pathname = url.pathname;
-  let api3Extension: string | undefined;
+  let api3ExtensionMimeType: string | undefined;
   if (isApi3) {
     const parserFailure = await api3BodyParserFailure(request.clone());
     if (parserFailure !== null) return parserFailure;
     const split = splitApi3Extension(url.pathname);
     api3Pathname = split.pathname;
-    api3Extension = split.extension;
-    if (api3Extension !== undefined && mime.getType(api3Extension) === null) {
-      return api3Error(406, "Unsupported output format requested");
+    if (split.extension !== undefined) {
+      const extensionMimeType = mime.getType(split.extension);
+      if (extensionMimeType === null) {
+        return api3Error(406, "Unsupported output format requested");
+      }
+      api3ExtensionMimeType = extensionMimeType;
     }
   }
 
@@ -985,9 +991,9 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
 
   const matchedApi3TreatmentRoute = matchApi3TreatmentRoute(request.method, api3Pathname);
   const api3TreatmentRoute: Api3TreatmentRoute | null =
-    matchedApi3TreatmentRoute === null || api3Extension === undefined
+    matchedApi3TreatmentRoute === null || api3ExtensionMimeType === undefined
       ? matchedApi3TreatmentRoute
-      : { ...matchedApi3TreatmentRoute, extension: api3Extension };
+      : { ...matchedApi3TreatmentRoute, extension: api3ExtensionMimeType };
   if (api3TreatmentRoute !== null) {
     const authentication = await authenticateApi3(request, env, url);
     return authentication.ok

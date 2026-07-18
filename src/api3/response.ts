@@ -2,6 +2,179 @@ import { API3_MESSAGES, Api3InputError } from "./input";
 
 export type Api3Format = "json";
 
+type NegotiatedFormat = Api3Format | "csv" | "xml";
+
+interface MediaRange {
+  type: string;
+  subtype: string;
+  params: Map<string, string>;
+  quality: number;
+  order: number;
+}
+
+interface FormatPriority {
+  format: NegotiatedFormat;
+  quality: number;
+  specificity: number;
+  acceptOrder: number;
+  formatOrder: number;
+}
+
+// Negotiate against the locked renderer's full order. If CSV/XML wins, this
+// JSON-only slice must return 406 instead of silently falling back to JSON.
+const NEGOTIABLE_FORMATS: ReadonlyArray<{
+  format: NegotiatedFormat;
+  type: string;
+  subtype: string;
+}> = [
+  { format: "json", type: "application", subtype: "json" },
+  { format: "csv", type: "text", subtype: "csv" },
+  { format: "xml", type: "application", subtype: "xml" },
+];
+
+function splitQuoted(value: string, separator: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index]!;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\" && quoted) {
+      escaped = true;
+      continue;
+    }
+    if (character === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (character === separator && !quoted) {
+      parts.push(value.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(value.slice(start));
+  return parts;
+}
+
+function unquote(value: string): string {
+  return value.length >= 2 && value.startsWith('"') && value.endsWith('"')
+    ? value.slice(1, -1)
+    : value;
+}
+
+function parseMediaRange(value: string, order: number): MediaRange | null {
+  const match = /^\s*([^\s/;]+)\/([^;\s]+)\s*(?:;(.*))?$/.exec(value);
+  if (match === null) return null;
+  const params = new Map<string, string>();
+  let quality = 1;
+  for (const parameter of splitQuoted(match[3] ?? "", ";")) {
+    if (parameter.trim() === "") continue;
+    const equals = parameter.indexOf("=");
+    const key = (equals < 0 ? parameter : parameter.slice(0, equals)).trim().toLowerCase();
+    const raw = equals < 0 ? "" : parameter.slice(equals + 1).trim();
+    const parsed = unquote(raw);
+    if (key === "q") {
+      quality = Number.parseFloat(parsed);
+      break;
+    }
+    params.set(key, parsed);
+  }
+  return {
+    type: match[1]!.toLowerCase(),
+    subtype: match[2]!.toLowerCase(),
+    params,
+    quality,
+    order,
+  };
+}
+
+function mediaRanges(accept: string | null): MediaRange[] {
+  const source = accept === null || accept.trim() === "" ? "*/*" : accept;
+  const ranges: MediaRange[] = [];
+  for (const [order, value] of splitQuoted(source, ",").entries()) {
+    const parsed = parseMediaRange(value, order);
+    if (parsed !== null) ranges.push(parsed);
+  }
+  return ranges;
+}
+
+function priorityForFormat(
+  format: (typeof NEGOTIABLE_FORMATS)[number],
+  formatOrder: number,
+  ranges: MediaRange[],
+): FormatPriority {
+  let priority: FormatPriority = {
+    format: format.format,
+    quality: 0,
+    specificity: 0,
+    acceptOrder: -1,
+    formatOrder,
+  };
+  for (const range of ranges) {
+    let specificity = 0;
+    if (range.type === format.type) specificity |= 4;
+    else if (range.type !== "*") continue;
+    if (range.subtype === format.subtype) specificity |= 2;
+    else if (range.subtype !== "*") continue;
+    if (range.params.size > 0) {
+      if (![...range.params.values()].every((value) => value === "*")) continue;
+      specificity |= 1;
+    }
+    const candidate: FormatPriority = {
+      format: format.format,
+      quality: range.quality,
+      specificity,
+      acceptOrder: range.order,
+      formatOrder,
+    };
+    if (
+      priority.specificity < candidate.specificity
+      || (
+        priority.specificity === candidate.specificity
+        && (
+          priority.quality < candidate.quality
+          || (
+            priority.quality === candidate.quality
+            && priority.acceptOrder < candidate.acceptOrder
+          )
+        )
+      )
+    ) {
+      priority = candidate;
+    }
+  }
+  return priority;
+}
+
+function negotiateFormat(accept: string | null): NegotiatedFormat | null {
+  const ranges = mediaRanges(accept);
+  const priorities = NEGOTIABLE_FORMATS
+    .map((format, index) => priorityForFormat(format, index, ranges))
+    .filter((priority) => priority.quality > 0)
+    .sort((left, right) => (
+      right.quality - left.quality
+      || right.specificity - left.specificity
+      || left.acceptOrder - right.acceptOrder
+      || left.formatOrder - right.formatOrder
+    ));
+  return priorities[0]?.format ?? null;
+}
+
+function varyOnAccept(headers: Headers): void {
+  const existing = headers.get("Vary");
+  if (existing === null || existing.trim() === "") {
+    headers.set("Vary", "Accept");
+    return;
+  }
+  if (!existing.split(",").some((value) => value.trim().toLowerCase() === "accept")) {
+    headers.set("Vary", `${existing}, Accept`);
+  }
+}
+
 function responseHeaders(init?: HeadersInit): Headers {
   const headers = new Headers(init);
   headers.set("Cache-Control", "no-store");
@@ -21,7 +194,9 @@ export function api3Status(status: number, message?: string, description?: strin
   const body: Record<string, unknown> = { status };
   if (message !== undefined) body.message = message;
   if (description !== undefined) body.description = description;
-  return api3Json(body, status);
+  const headers = new Headers();
+  if (status === 406) varyOnAccept(headers);
+  return api3Json(body, status, headers);
 }
 
 export function api3Result(result: unknown, initHeaders?: HeadersInit): Response {
@@ -30,19 +205,17 @@ export function api3Result(result: unknown, initHeaders?: HeadersInit): Response
 
 export function renderApi3(_format: Api3Format, data: unknown, initHeaders?: HeadersInit): Response {
   const headers = new Headers(initHeaders);
-  headers.set("Vary", "Accept");
+  varyOnAccept(headers);
   return api3Result(data, headers);
 }
 
-export function api3FormatFromRequest(request: Request, extension?: string): Api3Format {
-  if (extension !== undefined) {
-    if (extension === "json") return "json";
+export function api3FormatFromRequest(request: Request, extensionMimeType?: string): Api3Format {
+  if (extensionMimeType !== undefined) {
+    const normalized = extensionMimeType.toLowerCase();
+    if (normalized === "json" || normalized === "application/json") return "json";
     throw new Api3InputError(406, API3_MESSAGES.unsupportedFormat, true);
   }
 
-  const accept = request.headers.get("Accept");
-  if (accept === null || accept.trim() === "" || accept.includes("*/*") || accept.includes("application/json")) {
-    return "json";
-  }
+  if (negotiateFormat(request.headers.get("Accept")) === "json") return "json";
   throw new Api3InputError(406, API3_MESSAGES.unsupportedFormat, true);
 }
