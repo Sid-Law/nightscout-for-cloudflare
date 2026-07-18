@@ -439,6 +439,23 @@ describe("v1/v2 status representations", () => {
     expect(await authorized((url) => {
       url.searchParams.append("token[]", querySubject.accessToken);
     })).toMatchObject({ sub: "Query Viewer" });
+    const bracketUrl = new URL("https://example.test/api/v1/status.json");
+    bracketUrl.searchParams.set("tenant", tenantName);
+    bracketUrl.searchParams.append("token[]", "invalid-presented-first");
+    bracketUrl.searchParams.append("token[]", querySubject.accessToken);
+    const bracketResponse = await worker.fetch(
+      new Request(bracketUrl),
+      {
+        ASSETS: env.ASSETS,
+        ENTRY_STORE: env.ENTRY_STORE,
+        API_SECRET: TEST_API_SECRET,
+        AUTH_DEFAULT_ROLES: "denied",
+        AUTH_FAIL_DELAY: "0",
+      } as unknown as Parameters<typeof worker.fetch>[1],
+    );
+    expect(bracketResponse.status).toBe(200);
+    expect((await bracketResponse.json<Record<string, unknown>>()).authorized)
+      .toMatchObject({ sub: "Query Viewer" });
     const apiSecret = await secretDigest();
     expect(await authorized((url) => {
       url.searchParams.set("token", querySubject.accessToken);

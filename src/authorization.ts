@@ -75,9 +75,17 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 
 function queryCredential(url: URL, name: string): PresentedToken | null {
-  const values = url.searchParams.getAll(name);
+  const values: string[] = [];
+  let arraySyntax = false;
+  for (const [key, value] of url.searchParams) {
+    if (key === name) values.push(value);
+    if (key === `${name}[]`) {
+      arraySyntax = true;
+      values.push(value);
+    }
+  }
   if (values.length === 0) return null;
-  return values.length === 1 ? values[0]! : values;
+  return arraySyntax || values.length > 1 ? values : values[0]!;
 }
 
 function bodyCredential(body: unknown, name: "secret" | "token"): unknown {
