@@ -678,27 +678,29 @@ function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
   };
 }
 
-function selectedStatusQueryCredential(url: URL): string | null {
-  const tokenValues = url.searchParams.getAll("token");
-  const token = tokenValues.length === 0
-    ? null
-    : tokenValues.length === 1
-      ? tokenValues[0]!
-      : tokenValues;
-  const secretValues = url.searchParams.getAll("secret");
-  const secret = secretValues.length === 0
-    ? null
-    : secretValues.length === 1
-      ? secretValues[0]!
-      : secretValues;
+function statusQueryCredential(url: URL, name: "token" | "secret"): PresentedToken | null {
+  const values: string[] = [];
+  let arraySyntax = false;
+  for (const [key, value] of url.searchParams) {
+    if (key === name) values.push(value);
+    if (key === `${name}[]`) {
+      arraySyntax = true;
+      values.push(value);
+    }
+  }
+  if (values.length === 0) return null;
+  return arraySyntax || values.length > 1 ? values : values[0]!;
+}
+
+function selectedStatusQueryCredential(url: URL): PresentedToken | null {
+  const token = statusQueryCredential(url, "token");
+  const secret = statusQueryCredential(url, "secret");
   const selected = token !== null && (Array.isArray(token) || token)
     ? token
     : secret !== null && (Array.isArray(secret) || secret)
       ? secret
       : null;
-  // Express's repeated query key is an array. authorization.authorize()
-  // cannot resolve that array as either a JWT or a stored access token.
-  return typeof selected === "string" && selected.length > 0 ? selected : null;
+  return selected;
 }
 
 async function statusQueryAuthorization(
@@ -708,6 +710,12 @@ async function statusQueryAuthorization(
 ): Promise<AuthorizedSubject | null> {
   const presented = selectedStatusQueryCredential(url);
   if (presented === null || boundedTokenCandidates(presented) === null) return null;
+  // Locked authorization.authorize() asks the enclave to verify only a scalar
+  // JWT. Repeated/[] query values remain an array, and storage.findSubject()
+  // checks those access-token prefixes in their presented order.
+  if (Array.isArray(presented)) {
+    return authorizeCredential(store, presented, configuredDefaultRoles);
+  }
   const claimsJson = await store.verifyAccessJwt(presented);
   const accessToken = claimsJson === null
     ? presented
@@ -935,14 +943,18 @@ function statusNotAcceptable(request: Request): Response {
   // which falls back to a plain-text stack for an unacceptable Accept value.
   const error = new Error("Not Acceptable");
   const body = error.stack ?? error.toString();
+  const encodedBody = new TextEncoder().encode(body);
   const headers = new Headers(corsHeaders());
   headers.set("Content-Type", "text/plain; charset=utf-8");
   headers.set("Vary", "Accept");
   headers.set("X-Content-Type-Options", "nosniff");
   if (request.method !== "HEAD") {
-    headers.set("Content-Length", String(new TextEncoder().encode(body).byteLength));
+    headers.set("Content-Length", String(encodedBody.byteLength));
   }
-  return new Response(request.method === "HEAD" ? null : body, {
+  // A TypedArray is a fixed-length Workers response source. Unlike a manual
+  // Content-Length on a generic stream, the runtime can preserve its length
+  // on the actual HTTP boundary.
+  return new Response(request.method === "HEAD" ? null : encodedBody, {
     status: 406,
     headers,
   });
@@ -1006,12 +1018,16 @@ function expressFinalNotFound(request: Request, url: URL): Response {
     + `<pre>${message}</pre>\n`
     + "</body>\n"
     + "</html>\n";
+  const encodedBody = new TextEncoder().encode(body);
   const headers = new Headers(corsHeaders());
   headers.set("Content-Security-Policy", "default-src 'none'");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Content-Type", "text/html; charset=utf-8");
-  headers.set("Content-Length", String(new TextEncoder().encode(body).byteLength));
-  return new Response(request.method === "HEAD" ? null : body, {
+  headers.set("Content-Length", String(encodedBody.byteLength));
+  // Keep a fixed-length source even for HEAD. The HTTP layer suppresses a
+  // HEAD body while retaining the representation length where the Workers
+  // transport permits it, matching Express's method-specific response.
+  return new Response(encodedBody, {
     status: 404,
     headers,
   });
@@ -1563,8 +1579,6 @@ async function authenticateApi3(
 }
 
 async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Response> {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
-
   const isApi3 = url.pathname === "/api/v3" || url.pathname.startsWith("/api/v3/");
   let api3Pathname = url.pathname;
   let api3ExtensionMimeType: string | undefined;
@@ -1623,6 +1637,17 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       request,
       renderStatus(request, status, format, extension !== undefined),
     );
+  }
+
+  if (isStatusFinalhandlerPath(url.pathname)) {
+    if (/^\/api\/v[12]\/status/i.test(url.pathname)) {
+      await requirePermission(request, env, url, "api:status:read");
+    }
+    return expressFinalNotFound(request, url);
+  }
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders() });
   }
 
   if (request.method === "GET" && url.pathname === "/api/versions") {
@@ -1816,16 +1841,6 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
 
   const authorizationResponse = await handleAuthorizationApi(request, env, url);
   if (authorizationResponse !== null) return authorizationResponse;
-
-  if (
-    (request.method === "GET" || request.method === "HEAD")
-    && isStatusFinalhandlerPath(url.pathname)
-  ) {
-    if (/^\/api\/v[12]\/status/i.test(url.pathname)) {
-      await requirePermission(request, env, url, "api:status:read");
-    }
-    return expressFinalNotFound(request, url);
-  }
 
   return json(
     {

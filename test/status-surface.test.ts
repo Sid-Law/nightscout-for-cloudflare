@@ -67,7 +67,7 @@ async function issueStatusJwt(tenantName: string, accessToken: string): Promise<
   return issued.token;
 }
 
-function finalhandlerBody(method: "GET" | "HEAD", pathname: string): string {
+function finalhandlerBody(method: string, pathname: string): string {
   return "<!DOCTYPE html>\n"
     + '<html lang="en">\n'
     + "<head>\n"
@@ -432,6 +432,13 @@ describe("v1/v2 status representations", () => {
     expect(await authorized((url) => {
       url.searchParams.set("token", queryJwt);
     })).toMatchObject({ sub: "Query Viewer" });
+    expect(await authorized((url) => {
+      url.searchParams.append("token", "invalid-presented-first");
+      url.searchParams.append("token", querySubject.accessToken);
+    })).toMatchObject({ sub: "Query Viewer" });
+    expect(await authorized((url) => {
+      url.searchParams.append("token[]", querySubject.accessToken);
+    })).toMatchObject({ sub: "Query Viewer" });
     const apiSecret = await secretDigest();
     expect(await authorized((url) => {
       url.searchParams.set("token", querySubject.accessToken);
@@ -439,6 +446,10 @@ describe("v1/v2 status representations", () => {
     }, { Authorization: `Bearer ${bearerJwt}` })).toMatchObject({ sub: "Query Viewer" });
     expect(await authorized((url) => {
       url.searchParams.set("secret", apiSecret);
+    })).toBeNull();
+    expect(await authorized((url) => {
+      url.searchParams.append("token[]", "invalid-presented-first");
+      url.searchParams.set("secret", querySubject.accessToken);
     })).toBeNull();
   });
 
@@ -609,6 +620,47 @@ describe("v1/v2 status representations", () => {
         expect(await response.text()).toBe(method === "HEAD" ? "" : expectedBody);
       }
     }
+
+    for (const pathname of ["/api/v1/status", "/api/v2/status.json", "/api/status"]) {
+      for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
+        const response = await SELF.fetch(`https://example.test${pathname}`, { method });
+        expect(response.status).toBe(404);
+        expect(response.headers.get("Content-Security-Policy")).toBe("default-src 'none'");
+        expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(response.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+        const expectedBody = finalhandlerBody(method, pathname);
+        expect(response.headers.get("Content-Length")).toBe(
+          String(new TextEncoder().encode(expectedBody).byteLength),
+        );
+        expect(await response.text()).toBe(expectedBody);
+      }
+    }
+
+    const rejectedBeforeFinalhandler = await SELF.fetch(
+      "https://example.test/api/v1/status",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer invalid-status-jwt" },
+      },
+    );
+    expect(rejectedBeforeFinalhandler.status).toBe(401);
+    expect(await rejectedBeforeFinalhandler.json()).toEqual({
+      status: 401,
+      message: "Unauthorized",
+      description: "Invalid/Missing",
+    });
+
+    const unversionedDoesNotAuthenticate = await SELF.fetch(
+      "https://example.test/api/status",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer invalid-status-jwt" },
+      },
+    );
+    expect(unversionedDoesNotAuthenticate.status).toBe(404);
+    expect(await unversionedDoesNotAuthenticate.text()).toBe(
+      finalhandlerBody("POST", "/api/status"),
+    );
   });
 
   it("inherits GET as HEAD without returning a body", async () => {
