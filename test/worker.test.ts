@@ -122,6 +122,45 @@ describe("official Nightscout UI assets", () => {
       expect(await response.text(), path).toContain(marker);
     }
   });
+
+  it("forces HTML metadata for secondary-page assets and conditional cache hits", async () => {
+    const assetEnv = (status: 200 | 304): Env => ({
+      ENTRY_STORE: env.ENTRY_STORE,
+      ASSETS: {
+        fetch: async () =>
+          new Response(
+            status === 200
+              ? "<html><title>Nightscout multiframe view</title></html>"
+              : null,
+            {
+              status,
+              headers: {
+                "Content-Type": "text/plain",
+                ETag: '"split-v1"',
+              },
+            },
+          ),
+      } as unknown as Fetcher,
+    });
+
+    const normal = await worker.fetch(
+      new Request("https://example.test/split"),
+      assetEnv(200),
+    );
+    expect(normal.status).toBe(200);
+    expect(normal.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(await normal.text()).toContain("Nightscout multiframe view");
+
+    const cached = await worker.fetch(
+      new Request("https://example.test/split", {
+        headers: { "If-None-Match": '"split-v1"' },
+      }),
+      assetEnv(304),
+    );
+    expect(cached.status).toBe(304);
+    expect(cached.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(await cached.text()).toBe("");
+  });
 });
 
 describe("Nightscout compatibility API", () => {

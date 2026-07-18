@@ -141,10 +141,10 @@ function withUtf8Charset(response: Response): Response {
 }
 
 function asHtml(response: Response): Response {
-  if (!response.ok) return response;
+  if (!response.ok && response.status !== 304) return response;
   const headers = new Headers(response.headers);
   headers.set("Content-Type", "text/html; charset=utf-8");
-  return new Response(response.body, {
+  return new Response(response.status === 304 ? null : response.body, {
     status: response.status,
     statusText: response.statusText,
     headers,
