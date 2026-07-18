@@ -52,6 +52,22 @@ async function post(
 }
 
 describe("tenant Durable Object EIO4 polling state machine", () => {
+  it("installs the realtime schema through the EntryStore migration marker", async () => {
+    const stub = store("realtime-schema");
+    await runInDurableObject(stub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const session = repository.createSession(900_000);
+      expect(repository.requireSession(session.sid).sid).toBe(session.sid);
+      expect(
+        state.storage.sql
+          .exec<{ id: number }>(
+            "SELECT id FROM _sql_schema_migrations WHERE id = 5",
+          )
+          .one().id,
+      ).toBe(5);
+    });
+  });
+
   it("persists the official open handshake fields and session authority across eviction", async () => {
     const stub = store("realtime-handshake");
     const handshake = await runInDurableObject(stub, async (_instance, state) => {
@@ -259,4 +275,3 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     });
   });
 });
-

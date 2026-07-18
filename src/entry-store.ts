@@ -13,6 +13,7 @@ import {
   type DocumentQuery,
 } from "./document-repository";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
+import { migrateRealtimeSessions } from "./realtime/session-repository";
 
 export type DocumentCollection =
   | "activity"
@@ -177,6 +178,13 @@ export class EntryStore extends DurableObject<Env> {
       migrateDocumentsV4(this.ctx.storage.sql);
       if (version < 4) {
         this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (4)");
+      }
+
+      // Realtime schema creation remains idempotent after its marker so a
+      // partially initialized Durable Object is repaired on activation.
+      migrateRealtimeSessions(this.ctx.storage);
+      if (version < 5) {
+        this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (5)");
       }
     });
   }
