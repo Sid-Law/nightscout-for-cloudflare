@@ -156,7 +156,7 @@
           "suffix": "",
           "source_file": "vendor/nightscout/lib/api3/generic/search/operation.js",
           "permission": "api:{collection}:read",
-          "auth_note": "Requests for invalid records require api:{collection}:admin."
+          "auth_note": "Collection search requires api:{collection}:read."
         },
         {
           "method": "POST",
@@ -170,14 +170,14 @@
           "suffix": "/history",
           "source_file": "vendor/nightscout/lib/api3/generic/history/operation.js",
           "permission": "api:{collection}:read",
-          "auth_note": "Requests for invalid records require api:{collection}:admin."
+          "auth_note": "Collection history includes tombstones and requires api:{collection}:read."
         },
         {
           "method": "GET",
           "suffix": "/history/:lastModified",
           "source_file": "vendor/nightscout/lib/api3/generic/history/operation.js",
           "permission": "api:{collection}:read",
-          "auth_note": "Requests for invalid records require api:{collection}:admin."
+          "auth_note": "Collection history includes tombstones and requires api:{collection}:read."
         },
         {
           "method": "GET",
@@ -211,6 +211,24 @@
     }
   ],
   "auth_overrides": {
+    "v3 GET /api/v3/settings": {
+      "mode": "jwt",
+      "credential_required": true,
+      "permissions": ["api:settings:admin"],
+      "note": "The locked API3 settings search branch requires api:settings:admin."
+    },
+    "v3 GET /api/v3/settings/history": {
+      "mode": "jwt",
+      "credential_required": true,
+      "permissions": ["api:settings:admin"],
+      "note": "The locked API3 settings history branch requires api:settings:admin; ordinary collection history remains read-protected."
+    },
+    "v3 GET /api/v3/settings/history/:lastModified": {
+      "mode": "jwt",
+      "credential_required": true,
+      "permissions": ["api:settings:admin"],
+      "note": "The locked API3 settings history branch requires api:settings:admin; ordinary collection history remains read-protected."
+    },
     "root GET /api/versions": {
       "mode": "public",
       "credential_required": false,

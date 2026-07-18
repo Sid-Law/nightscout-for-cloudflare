@@ -288,6 +288,17 @@ function routeKey(route) {
   return `${route.api_version} ${route.method} ${route.path}`;
 }
 
+function applyRouteOverrides(routes, overrides) {
+  return routes.map((route) => {
+    const key = routeKey(route);
+    return {
+      ...route,
+      auth: overrides.auth_overrides[key] ?? route.auth,
+      condition: overrides.condition_overrides[key] ?? route.condition,
+    };
+  });
+}
+
 export function assertExactOverlaySet(label, expectedItems, actualItems) {
   const expected = [...expectedItems].sort();
   const actual = [...actualItems].sort();
@@ -323,7 +334,24 @@ function moduleReference(sourceFile, targetFile) {
   return reference;
 }
 
-function mountSourceLine(descriptor, versionPrefix, registeredPath) {
+function sourceAnchor(file, line) {
+  const source = readFileSync(join(REPO_ROOT, file), "utf8");
+  const anchor = source.split("\n")[line - 1];
+  if (anchor === undefined) throw new Error(`Cannot read source anchor ${file}:${line}`);
+  return anchor.trim();
+}
+
+function mountChainEntry(kind, file, line, mountPath) {
+  return {
+    kind,
+    file,
+    line,
+    mount_path: mountPath,
+    anchor: sourceAnchor(file, line),
+  };
+}
+
+function descriptorMountEntry(descriptor, versionPrefix, registeredPath) {
   const source = readFileSync(join(REPO_ROOT, descriptor.registered_by), "utf8");
   const candidates = [];
   if (descriptor.registered_by.endsWith("/server/app.js")) candidates.push(versionPrefix);
@@ -332,12 +360,60 @@ function mountSourceLine(descriptor, versionPrefix, registeredPath) {
   if (firstSegment !== undefined) candidates.push(`/${firstSegment}`);
   for (const candidate of [...new Set(candidates)]) {
     const sourceLine = lineForExpressPath(source, candidate);
-    if (sourceLine !== null) return sourceLine;
+    if (sourceLine !== null) {
+      const registrations = extractRouteRegistrations(source, descriptor.registered_by).routes
+        .filter((route) => route.source_line === sourceLine);
+      const registeredPath = registrations.length === 1
+        ? registrations[0].registered_path
+        : candidate;
+      return mountChainEntry("express-mount", descriptor.registered_by, sourceLine, registeredPath);
+    }
   }
   const reference = moduleReference(descriptor.registered_by, descriptor.source_file);
   const referenceIndex = source.indexOf(reference);
-  if (referenceIndex >= 0) return lineNumber(source, referenceIndex);
+  if (referenceIndex >= 0) {
+    return mountChainEntry(
+      "module-reference",
+      descriptor.registered_by,
+      lineNumber(source, referenceIndex),
+      null,
+    );
+  }
   throw new Error(`Cannot trace mount of ${descriptor.source_file} from ${descriptor.registered_by}`);
+}
+
+function topLevelMountEntry(apiVersion, versionPrefix) {
+  const file = "vendor/nightscout/lib/server/app.js";
+  const source = readFileSync(join(REPO_ROOT, file), "utf8");
+  const line = lineForExpressPath(source, versionPrefix);
+  if (line === null) throw new Error(`Cannot trace ${apiVersion} top-level mount ${versionPrefix}`);
+  return mountChainEntry("express-mount", file, line, versionPrefix);
+}
+
+function sameMountEntry(left, right) {
+  return left.file === right.file && left.line === right.line;
+}
+
+function staticMountChain(descriptor, apiVersion, versionPrefix, registeredPath) {
+  const chain = [topLevelMountEntry(apiVersion, versionPrefix)];
+  if (
+    apiVersion === "v2"
+      && descriptor.registered_by === "vendor/nightscout/lib/api/index.js"
+  ) {
+    const inheritanceFile = "vendor/nightscout/lib/api2/index.js";
+    const inheritanceSource = readFileSync(join(REPO_ROOT, inheritanceFile), "utf8");
+    const inheritanceLine = lineForExpressPath(inheritanceSource, "/");
+    if (inheritanceLine === null) throw new Error("Cannot trace API v2 inheritance of API v1 router");
+    chain.push(mountChainEntry(
+      "router-inheritance",
+      inheritanceFile,
+      inheritanceLine,
+      "/",
+    ));
+  }
+  const descriptorEntry = descriptorMountEntry(descriptor, versionPrefix, registeredPath);
+  if (!sameMountEntry(chain.at(-1), descriptorEntry)) chain.push(descriptorEntry);
+  return chain;
 }
 
 function handlerSourceLine(route, registrationFile, sourceFile) {
@@ -446,6 +522,7 @@ function staticRoutes(overrides, defaultReadablePermissions) {
       for (const route of accepted) {
         const registrationFile = descriptor.source_file;
         const sourceFile = resolveRequiredModule(registrationFile, route.required_module);
+        const sourceLine = handlerSourceLine(route, registrationFile, sourceFile);
         const registeredPath = route.registration_method === "use"
           ? normalizePath(route.registered_path, "*")
           : route.registered_path;
@@ -457,22 +534,23 @@ function staticRoutes(overrides, defaultReadablePermissions) {
           registration_kind: route.registration_method === "use"
             ? "static-express-prefix"
             : "static-express",
-          mount_file: descriptor.registered_by,
-          mount_line: mountSourceLine(descriptor, versionPrefix, route.registered_path),
+          mount_chain: staticMountChain(
+            descriptor,
+            apiVersion,
+            versionPrefix,
+            route.registered_path,
+          ),
           registration_file: registrationFile,
           registration_line: route.source_line,
+          registration_anchor: sourceAnchor(registrationFile, route.source_line),
           source_file: sourceFile,
-          source_line: handlerSourceLine(route, registrationFile, sourceFile),
+          source_line: sourceLine,
+          source_anchor: sourceAnchor(sourceFile, sourceLine),
           condition: descriptor.condition ?? "always",
           auth: defaultAuth(route.permissions, defaultReadablePermissions),
           related_tests: [],
           related_tests_basis: "heuristic-candidate-linkage",
         };
-        const key = routeKey(built);
-        if (overrides.auth_overrides[key] !== undefined) built.auth = overrides.auth_overrides[key];
-        if (overrides.condition_overrides[key] !== undefined) {
-          built.condition = overrides.condition_overrides[key];
-        }
         output.push(built);
       }
     }
@@ -611,6 +689,15 @@ function dynamicRoutes(overrides) {
     const mountIndex = collectionsSource.indexOf("genericSetup(ctx, env, app)");
     if (mountIndex < 0) throw new Error(`Cannot trace generic route setup in ${group.collections_source}`);
     const mountLine = lineNumber(collectionsSource, mountIndex);
+    const mountChain = [
+      topLevelMountEntry(group.api_version, versionPrefix),
+      mountChainEntry(
+        "router-setup",
+        group.collections_source,
+        mountLine,
+        "/{collection}",
+      ),
+    ];
     const registrationSource = readFileSync(join(REPO_ROOT, group.registration_file), "utf8");
     assertLockedSourceHash(group.registration_file, registrationSource, group.registration_sha256);
     const sourceTemplates = extractDynamicRouteTemplates(registrationSource, group.registration_file);
@@ -637,17 +724,19 @@ function dynamicRoutes(overrides) {
           .sort();
         const note = template.auth_note?.replaceAll("{collection}", collection)
           ?? "API v3 authenticates the JWT before checking the collection permission.";
+        const sourceLine = namedFunctionLine(template.source_file, sourceTemplate.handler_name);
         routes.push({
           api_version: group.api_version,
           method: template.method,
           path: normalizePath(versionPrefix, collection, template.suffix),
           registration_kind: "dynamic-expanded",
-          mount_file: group.collections_source,
-          mount_line: mountLine,
+          mount_chain: mountChain,
           registration_file: group.registration_file,
           registration_line: sourceTemplate.registration_line,
+          registration_anchor: sourceAnchor(group.registration_file, sourceTemplate.registration_line),
           source_file: template.source_file,
-          source_line: namedFunctionLine(template.source_file, sourceTemplate.handler_name),
+          source_line: sourceLine,
+          source_anchor: sourceAnchor(template.source_file, sourceLine),
           condition: "collection-enabled",
           auth: {
             mode: "jwt",
@@ -756,18 +845,38 @@ function contentHasRouteNeedle(content, needle) {
   return new RegExp(`(?<![A-Za-z0-9_/-])${escaped}/?(?![A-Za-z0-9_/-])`, "i").test(content);
 }
 
+export function extractLiteralHttpCalls(content) {
+  const calls = [];
+  const expression = /\.(get|post|put|patch|delete|head|options)\s*\(\s*(['"`])([^'"`\r\n]*?)\2/gi;
+  for (const match of content.matchAll(expression)) {
+    calls.push({ method: match[1].toUpperCase(), path: match[3].toLowerCase() });
+  }
+  return calls;
+}
+
+function sourceTextMatchesRoute(content, literalHttpCalls, route, needles) {
+  const matchingCalls = literalHttpCalls.filter((call) => (
+    needles.some((needle) => contentHasRouteNeedle(call.path, needle))
+  ));
+  if (matchingCalls.length > 0) {
+    return route.method === "ALL"
+      || matchingCalls.some((call) => call.method === route.method);
+  }
+  return needles.some((needle) => contentHasRouteNeedle(content, needle));
+}
+
 function associateTests(routes, testFiles) {
-  const testContents = new Map(testFiles.map((testFile) => [
-    testFile,
-    readFileSync(join(REPO_ROOT, testFile), "utf8").toLowerCase(),
-  ]));
+  const testSources = new Map(testFiles.map((testFile) => {
+    const content = readFileSync(join(REPO_ROOT, testFile), "utf8").toLowerCase();
+    return [testFile, { content, literalHttpCalls: extractLiteralHttpCalls(content) }];
+  }));
   for (const route of routes) {
     const needles = routeNeedles(route).map((needle) => needle.toLowerCase());
     const hints = operationTestHints(route);
     route.related_tests = testFiles.filter((testFile) => {
-      const content = testContents.get(testFile);
+      const { content, literalHttpCalls } = testSources.get(testFile);
       const basename = testFile.split("/").at(-1).toLowerCase();
-      return needles.some((needle) => contentHasRouteNeedle(content, needle))
+      return sourceTextMatchesRoute(content, literalHttpCalls, route, needles)
         || hints.some((hint) => basename.includes(hint));
     });
   }
@@ -853,6 +962,75 @@ function validateSourceLocation(file, line, label) {
   if (line > lineCount) throw new Error(`${label} line ${line} exceeds ${file} line count ${lineCount}`);
 }
 
+function validateExactSourceAnchor(file, line, anchor, label) {
+  validateSourceLocation(file, line, label);
+  const actual = sourceAnchor(file, line);
+  if (anchor !== actual) {
+    throw new Error(`${label} anchor mismatch at ${file}:${line}`);
+  }
+}
+
+function expectedStaticMountChain(route, overrides) {
+  const descriptors = overrides.route_modules.filter((descriptor) => (
+    descriptor.api_versions.includes(route.api_version)
+      && descriptor.source_file === route.registration_file
+  ));
+  if (descriptors.length !== 1) {
+    throw new Error(`Cannot resolve one static route descriptor for ${routeKey(route)}`);
+  }
+  const descriptor = descriptors[0];
+  const versionPrefix = overrides.version_prefixes[route.api_version];
+  const source = readFileSync(join(REPO_ROOT, descriptor.source_file), "utf8");
+  const registrations = extractRouteRegistrations(source, descriptor.source_file).routes.filter((registration) => {
+    const registeredPath = registration.registration_method === "use"
+      ? normalizePath(registration.registered_path, "*")
+      : registration.registered_path;
+    return registration.method === route.method
+      && registration.source_line === route.registration_line
+      && normalizePath(versionPrefix, descriptor.mount_path, registeredPath) === route.path;
+  });
+  if (registrations.length !== 1) {
+    throw new Error(`Cannot resolve one static registration for ${routeKey(route)}`);
+  }
+  return staticMountChain(
+    descriptor,
+    route.api_version,
+    versionPrefix,
+    registrations[0].registered_path,
+  );
+}
+
+function expectedDynamicMountChain(route, overrides) {
+  const groups = overrides.dynamic_route_groups.filter((group) => (
+    group.api_version === route.api_version
+      && group.registration_file === route.registration_file
+  ));
+  if (groups.length !== 1) {
+    throw new Error(`Cannot resolve one dynamic route group for ${routeKey(route)}`);
+  }
+  const group = groups[0];
+  const versionPrefix = overrides.version_prefixes[group.api_version];
+  const source = readFileSync(join(REPO_ROOT, group.collections_source), "utf8");
+  const setupIndex = source.indexOf("genericSetup(ctx, env, app)");
+  if (setupIndex < 0) throw new Error(`Cannot trace generic route setup in ${group.collections_source}`);
+  return [
+    topLevelMountEntry(group.api_version, versionPrefix),
+    mountChainEntry(
+      "router-setup",
+      group.collections_source,
+      lineNumber(source, setupIndex),
+      "/{collection}",
+    ),
+  ];
+}
+
+function expectedMountChain(route, overrides) {
+  if (route.registration_kind === "dynamic-expanded") {
+    return expectedDynamicMountChain(route, overrides);
+  }
+  return expectedStaticMountChain(route, overrides);
+}
+
 export function validateManifest(manifest, overrides = readJson(OVERRIDES_PATH)) {
   if (manifest.tests.length !== overrides.expected_test_count) {
     throw new Error(`Expected ${overrides.expected_test_count} tests, found ${manifest.tests.length}`);
@@ -872,9 +1050,33 @@ export function validateManifest(manifest, overrides = readJson(OVERRIDES_PATH))
     throw new Error("Tests are not in deterministic order");
   }
   for (const route of manifest.routes) {
-    validateSourceLocation(route.mount_file, route.mount_line, "route mount");
-    validateSourceLocation(route.registration_file, route.registration_line, "route registration");
-    validateSourceLocation(route.source_file, route.source_line, "route handler");
+    if (!Array.isArray(route.mount_chain) || route.mount_chain.length === 0) {
+      throw new Error(`Missing mount chain for ${routeKey(route)}`);
+    }
+    for (const [index, entry] of route.mount_chain.entries()) {
+      validateExactSourceAnchor(
+        entry.file,
+        entry.line,
+        entry.anchor,
+        `route mount chain ${index} for ${routeKey(route)}`,
+      );
+    }
+    const expectedChain = expectedMountChain(route, overrides);
+    if (JSON.stringify(route.mount_chain) !== JSON.stringify(expectedChain)) {
+      throw new Error(`Mount chain mismatch for ${routeKey(route)}`);
+    }
+    validateExactSourceAnchor(
+      route.registration_file,
+      route.registration_line,
+      route.registration_anchor,
+      `route registration for ${routeKey(route)}`,
+    );
+    validateExactSourceAnchor(
+      route.source_file,
+      route.source_line,
+      route.source_anchor,
+      `route handler for ${routeKey(route)}`,
+    );
     if (route.related_tests_basis !== "heuristic-candidate-linkage") {
       throw new Error(`Unknown related test basis for ${routeKey(route)}`);
     }
@@ -900,6 +1102,13 @@ export function validateManifest(manifest, overrides = readJson(OVERRIDES_PATH))
   for (const overridden of Object.keys(overrides.test_status_overrides)) {
     if (!testNames.has(overridden)) throw new Error(`Status override targets unknown test ${overridden}`);
   }
+  const routeNames = new Set(manifest.routes.map(routeKey));
+  for (const overridden of Object.keys(overrides.auth_overrides)) {
+    if (!routeNames.has(overridden)) throw new Error(`Auth override targets unknown route ${overridden}`);
+  }
+  for (const overridden of Object.keys(overrides.condition_overrides)) {
+    if (!routeNames.has(overridden)) throw new Error(`Condition override targets unknown route ${overridden}`);
+  }
   return manifest;
 }
 
@@ -909,7 +1118,10 @@ export function buildManifest() {
   const defaultReadablePermissions = parseDefaultReadablePermissions();
   const staticResult = staticRoutes(overrides, defaultReadablePermissions);
   const dynamicResult = dynamicRoutes(overrides);
-  const routes = [...staticResult.routes, ...dynamicResult.routes].sort(compareRoutes);
+  const routes = applyRouteOverrides(
+    [...staticResult.routes, ...dynamicResult.routes],
+    overrides,
+  ).sort(compareRoutes);
   const tests = buildTests(overrides, routes);
   const inputPaths = [
     "scripts/audit-upstream-contracts.mjs",
@@ -922,11 +1134,15 @@ export function buildManifest() {
       group.registration_file,
       ...group.routes.map((route) => route.source_file),
     ]),
-    ...routes.flatMap((route) => [route.mount_file, route.registration_file, route.source_file]),
+    ...routes.flatMap((route) => [
+      ...route.mount_chain.map((entry) => entry.file),
+      route.registration_file,
+      route.source_file,
+    ]),
     ...tests.map((test) => test.file),
   ];
   const manifest = {
-    schema_version: 2,
+    schema_version: 3,
     generated_by: "scripts/audit-upstream-contracts.mjs",
     baseline: {
       project: upstream.project,
@@ -941,7 +1157,8 @@ export function buildManifest() {
       default_anonymous_permissions: defaultReadablePermissions,
       fixed_scope: "Only bridge.test.js and mmconnect.test.js are excluded-fixed-scope because they inherently require live real-CGM bridge credentials and traffic. Mocked push transport, message mapping, validation, deduplication, cancellation, persistence, API, auth, realtime, calculations, and UI contracts remain required implementation work.",
       route_method_scope: "The manifest records explicit Express registrations. Express-derived HEAD/OPTIONS behavior and extension middleware variants are not expanded into duplicate rows.",
-      related_test_association: "Route-to-test links are boundary-aware heuristic candidates derived from source text and API3 operation filenames; they are not pass, adapted, or coverage evidence and require human confirmation.",
+      provenance_scope: "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
+      related_test_association: "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation.",
     },
     inputs_sha256: inputDigest(inputPaths),
     statistics: {
@@ -1010,9 +1227,11 @@ function renderMarkdown(manifest) {
   }
   lines.push(
     "",
-    "The check command also rejects duplicate method/path pairs, locked registration-source hash drift, static/dynamic overlay drift, invalid file/line provenance, an upstream test count other than 111, unknown statuses, stale generated output, and nondeterministic ordering.",
+    "The check command also rejects duplicate method/path pairs, locked registration-source hash drift, static/dynamic overlay drift, unknown auth/condition/status override targets, mount-chain or exact source-anchor drift, an upstream test count other than 111, unknown statuses, stale generated output, and nondeterministic ordering.",
     "",
-    "Route/test associations are boundary-aware heuristics based on source text and API3 operation filenames. They are candidate links, not pass/adapted claims or coverage evidence.",
+    "`mount_chain` records re-derived syntactic assembly anchors, not a complete runtime call graph. Registration and handler locations are exact local source anchors; none of these fields prove reachability, middleware order, execution, or coverage.",
+    "",
+    "Route/test associations are boundary-aware heuristics. Static literal HTTP calls are path-locally method-filtered when visible; dynamic paths, plain-text references, prefix ambiguity and API3 filename hints remain risks. Associations are candidate links, not pass/adapted claims or coverage evidence.",
     "",
     "## Complete upstream test-file status",
     "",

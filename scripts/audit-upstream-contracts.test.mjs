@@ -10,6 +10,7 @@ import {
   assertNoDuplicateRoutes,
   buildManifest,
   extractDynamicRouteTemplates,
+  extractLiteralHttpCalls,
   extractRouteRegistrations,
   normalizePath,
   serializeManifest,
@@ -172,6 +173,7 @@ test("the locked repository manifest is stable and validates all 111 test files"
   const first = buildManifest();
   const second = buildManifest();
   validateManifest(first);
+  assert.equal(first.routes.length, 161);
   assert.equal(first.tests.length, 111);
   assert.equal(serializeManifest(first), serializeManifest(second));
   assert.equal(first.tests.filter((item) => item.status === "pass").length, 0);
@@ -242,29 +244,144 @@ test("API3 PUT identifier routes record both conditional upsert permission branc
   }
 });
 
-test("provenance keeps mount, registration, and handler file-line pairs distinct", () => {
+test("API3 settings search and history use the locked admin-only branches", () => {
+  const searchSource = readFileSync(join(
+    REPO_ROOT,
+    "vendor/nightscout/lib/api3/generic/search/operation.js",
+  ), "utf8");
+  assert.match(
+    searchSource,
+    /if \(col\.colName === 'settings'\) \{\s*await security\.demandPermission\(opCtx, `api:\$\{col\.colName\}:admin`\);\s*\} else \{\s*await security\.demandPermission\(opCtx, `api:\$\{col\.colName\}:read`\);/,
+  );
+  assert.match(searchSource, /onlyValid = true/);
+  const historySource = readFileSync(join(
+    REPO_ROOT,
+    "vendor/nightscout/lib/api3/generic/history/operation.js",
+  ), "utf8");
+  assert.match(
+    historySource,
+    /if \(col\.colName === 'settings'\) \{\s*await security\.demandPermission\(opCtx, `api:\$\{col\.colName\}:admin`\);\s*\} else \{\s*await security\.demandPermission\(opCtx, `api:\$\{col\.colName\}:read`\);/,
+  );
+  assert.match(historySource, /onlyValid = false/);
+
   const manifest = buildManifest();
-  const route = manifest.routes.find((item) => item.method === "GET" && item.path === "/api/v3/version");
-  assert.ok(route);
+  const findGet = (path) => manifest.routes.find((route) => (
+    route.method === "GET" && route.path === path
+  ));
+  for (const suffix of ["", "/history", "/history/:lastModified"]) {
+    const route = findGet(`/api/v3/settings${suffix}`);
+    assert.ok(route, suffix);
+    assert.equal(route.auth.mode, "jwt", route.path);
+    assert.equal(route.auth.credential_required, true, route.path);
+    assert.deepEqual(route.auth.permissions, ["api:settings:admin"], route.path);
+    assert.doesNotMatch(route.auth.note, /invalid records/i, route.path);
+  }
+  for (const collection of ["devicestatus", "entries", "food", "profile", "treatments"]) {
+    for (const suffix of ["", "/history", "/history/:lastModified"]) {
+      const route = findGet(`/api/v3/${collection}${suffix}`);
+      assert.ok(route, route?.path ?? `${collection}${suffix}`);
+      assert.deepEqual(route.auth.permissions, [`api:${collection}:read`], route.path);
+      assert.doesNotMatch(route.auth.note, /invalid records/i, route.path);
+      if (suffix.startsWith("/history")) assert.match(route.auth.note, /tombstones/i, route.path);
+    }
+  }
+  assert.deepEqual(
+    findGet("/api/v3/settings/:identifier").auth.permissions,
+    ["api:settings:read"],
+  );
+});
+
+test("auth and condition overrides reject unknown exact route targets", () => {
+  const manifest = buildManifest();
+  const overrides = JSON.parse(readFileSync(join(REPO_ROOT, "upstream/contract-overrides.json"), "utf8"));
+  const badAuth = structuredClone(overrides);
+  badAuth.auth_overrides["v1 GET /api/v1/definitely-missing"] = {
+    mode: "public",
+    credential_required: false,
+    permissions: [],
+    note: "negative test",
+  };
+  assert.throws(
+    () => validateManifest(manifest, badAuth),
+    /Auth override targets unknown route v1 GET \/api\/v1\/definitely-missing/,
+  );
+  const badCondition = structuredClone(overrides);
+  badCondition.condition_overrides["v1 GET /api/v1/definitely-missing"] = "negative-test";
+  assert.throws(
+    () => validateManifest(manifest, badCondition),
+    /Condition override targets unknown route v1 GET \/api\/v1\/definitely-missing/,
+  );
+});
+
+test("provenance records and validates deterministic syntactic mount chains", () => {
+  const manifest = buildManifest();
+  const versionRoute = manifest.routes.find((item) => item.method === "GET" && item.path === "/api/v3/version");
+  assert.ok(versionRoute);
   assert.deepEqual({
-    mount_file: route.mount_file,
-    mount_line: route.mount_line,
-    registration_file: route.registration_file,
-    registration_line: route.registration_line,
-    source_file: route.source_file,
-    source_line: route.source_line,
+    registration_file: versionRoute.registration_file,
+    registration_line: versionRoute.registration_line,
+    registration_anchor: versionRoute.registration_anchor,
+    source_file: versionRoute.source_file,
+    source_line: versionRoute.source_line,
+    source_anchor: versionRoute.source_anchor,
   }, {
-    mount_file: "vendor/nightscout/lib/server/app.js",
-    mount_line: 249,
     registration_file: "vendor/nightscout/lib/api3/index.js",
     registration_line: 78,
+    registration_anchor: "app.get('/version', require('./specific/version')(app, ctx, env));",
     source_file: "vendor/nightscout/lib/api3/specific/version.js",
     source_line: 11,
+    source_anchor: "api.get('/version', async function getVersion (req, res) {",
   });
-  const sourceLine = (file, line) => readFileSync(join(REPO_ROOT, file), "utf8").split("\n")[line - 1];
-  assert.match(sourceLine(route.mount_file, route.mount_line), /app\.use\('\/api\/v3'/);
-  assert.match(sourceLine(route.registration_file, route.registration_line), /app\.get\('\/version'/);
-  assert.match(sourceLine(route.source_file, route.source_line), /api\.get\('\/version'/);
+  assert.deepEqual(versionRoute.mount_chain, [{
+    kind: "express-mount",
+    file: "vendor/nightscout/lib/server/app.js",
+    line: 249,
+    mount_path: "/api/v3",
+    anchor: "app.use('/api/v3', api3);",
+  }]);
+
+  const v2Entries = manifest.routes.find((item) => item.method === "GET" && item.path === "/api/v2/entries");
+  assert.ok(v2Entries);
+  assert.deepEqual(v2Entries.mount_chain, [
+    {
+      kind: "express-mount",
+      file: "vendor/nightscout/lib/server/app.js",
+      line: 248,
+      mount_path: "/api/v2",
+      anchor: "app.use('/api/v2', api2);",
+    },
+    {
+      kind: "router-inheritance",
+      file: "vendor/nightscout/lib/api2/index.js",
+      line: 12,
+      mount_path: "/",
+      anchor: "app.use('/', apiv1);",
+    },
+    {
+      kind: "express-mount",
+      file: "vendor/nightscout/lib/api/index.js",
+      line: 47,
+      mount_path: "/entries*",
+      anchor: "app.all('/entries*', entriesRouter);",
+    },
+  ]);
+  const v1Entries = manifest.routes.find((item) => item.method === "GET" && item.path === "/api/v1/entries");
+  assert.ok(!v1Entries.mount_chain.some((entry) => entry.file.endsWith("/api2/index.js")));
+  const v2Properties = manifest.routes.find((item) => item.method === "GET" && item.path === "/api/v2/properties");
+  assert.deepEqual(v2Properties.mount_chain.map(({ file, line }) => ({ file, line })), [
+    { file: "vendor/nightscout/lib/server/app.js", line: 248 },
+    { file: "vendor/nightscout/lib/api2/index.js", line: 13 },
+  ]);
+
+  const wrongAnchor = structuredClone(manifest);
+  const wrongRoute = wrongAnchor.routes.find((item) => item.method === "GET" && item.path === "/api/v2/entries");
+  wrongRoute.mount_chain[1].line = 13;
+  wrongRoute.mount_chain[1].anchor = "app.use('/properties', ctx.properties);";
+  assert.throws(() => validateManifest(wrongAnchor), /Mount chain mismatch/);
+  const missingLink = structuredClone(manifest);
+  missingLink.routes.find((item) => item.method === "GET" && item.path === "/api/v2/entries")
+    .mount_chain.splice(1, 1);
+  assert.throws(() => validateManifest(missingLink), /Mount chain mismatch/);
 });
 
 test("related route links are boundary-aware heuristic candidates", () => {
@@ -291,4 +408,40 @@ test("related route links are boundary-aware heuristic candidates", () => {
     assert.ok(!route.related_tests.includes("vendor/nightscout/tests/api3.search.test.js"), route.path);
   }
   assert.match(manifest.policy.related_test_association, /heuristic candidates/i);
+});
+
+test("heuristic route candidates use path-local literal HTTP methods when available", () => {
+  assert.deepEqual(extractLiteralHttpCalls(`
+    request(app).post('/api/treatments/');
+    request(app).get('/api/entries?count=1');
+  `), [
+    { method: "POST", path: "/api/treatments/" },
+    { method: "GET", path: "/api/entries?count=1" },
+  ]);
+
+  const manifest = buildManifest();
+  for (const file of [
+    "vendor/nightscout/tests/api.partial-failures.test.js",
+    "vendor/nightscout/tests/api.v1-batch-operations.test.js",
+  ]) {
+    const related = manifest.tests.find((item) => item.file === file).related_routes;
+    assert.ok(related.length > 0, file);
+    assert.deepEqual([...new Set(related.map((key) => key.split(" ")[1]))], ["POST"], file);
+  }
+
+  const shapeRoutes = new Set(manifest.tests.find((item) => (
+    item.file === "vendor/nightscout/tests/api.shape-handling.test.js"
+  )).related_routes);
+  for (const version of ["v1", "v2"]) {
+    assert.ok(shapeRoutes.has(`${version} POST /api/${version}/treatments`));
+    assert.ok(!shapeRoutes.has(`${version} GET /api/${version}/treatments`));
+    assert.ok(!shapeRoutes.has(`${version} PUT /api/${version}/treatments`));
+    assert.ok(!shapeRoutes.has(`${version} DELETE /api/${version}/treatments`));
+    for (const collection of ["food", "activity"]) {
+      assert.ok(shapeRoutes.has(`${version} PUT /api/${version}/${collection}`));
+      assert.ok(!shapeRoutes.has(`${version} GET /api/${version}/${collection}`));
+      assert.ok(!shapeRoutes.has(`${version} POST /api/${version}/${collection}`));
+      assert.ok(!shapeRoutes.has(`${version} DELETE /api/${version}/${collection}`));
+    }
+  }
 });

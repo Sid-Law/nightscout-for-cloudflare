@@ -52,13 +52,27 @@ npm run test:upstream-audit
 
 The checker enforces stable ordering, unique API-version/method/path keys,
 locked registration-source hashes, exact static/dynamic overlay agreement with
-the locked registrations, valid mount/registration/handler file-line
-provenance, exactly 111 upstream test
-files, known status values, non-empty reasons, and byte-for-byte freshness of
-both generated outputs. The
+the locked registrations, exact auth/condition override targets, re-derived
+syntactic `mount_chain` entries, exact registration/handler source anchors,
+exactly 111 upstream test files, known status values, non-empty reasons, and
+byte-for-byte freshness of both generated outputs. A mount chain is not a full
+runtime provenance or call-graph proof: it does not prove reachability,
+middleware order, handler execution, or test coverage, and API v3 dynamic
+chains intentionally stop at the locked `genericSetup` call. The
 default test-file status is `unresolved`. At this audit point, 109 files are
 `unresolved`, two real-CGM bridge files are `excluded-fixed-scope`, and
 zero files are claimed as `pass` or `adapted`.
+
+Route/test associations remain dispatch heuristics. Direct literal HTTP calls
+are filtered by their path-local method when that method can be statically
+seen; dynamic paths, plain-text references, prefix ambiguity, and API v3
+operation-filename hints still require manual confirmation and are not coverage
+evidence. The locked API v3 settings search and both settings-history forms are
+recorded as the explicit `api:settings:admin` exception shown by
+`lib/api3/generic/search/operation.js:20-24` and
+`lib/api3/generic/history/operation.js:131-135`. Ordinary collection
+search/history (including tombstones; history fixes `onlyValid = false` at line
+24) remains read-protected, as does the single-record settings read route.
 
 The two exclusions are limited to the real-CGM bridge modules (`bridge`,
 `mmconnect`). The `maker`, `pushnotify`, and `pushover` tests replace their

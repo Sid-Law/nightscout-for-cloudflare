@@ -58,10 +58,13 @@ Opening a page or serving an official asset does not satisfy this standard.
 `docs/UPSTREAM_TEST_MANIFEST.md` from the locked route registration modules and
 all 111 upstream test files. `npm run upstream:audit:check` is deterministic and
 fails on duplicate routes, locked registration-source hash or static/dynamic
-overlay drift, invalid file-line provenance, count/status drift, unstable
-order, or stale generated output. Route/test links are heuristic dispatch
-candidates and require manual confirmation. `npm test` runs this check and the
-generator's own
+overlay drift, unknown auth/condition override targets, re-derived syntactic
+mount-chain or exact source-anchor drift, count/status drift, unstable order,
+or stale generated output. These anchors do not prove runtime reachability,
+middleware order, execution, or coverage. Route/test links are heuristic
+dispatch candidates; literal request paths are method-filtered when the method
+is statically visible, while dynamic/textual/prefix/API3-filename cases still
+require manual confirmation. `npm test` runs this check and the generator's own
 Node tests before the Workers-runtime suite.
 
 Dispatch upstream compatibility work in the generated numeric workstream order:
