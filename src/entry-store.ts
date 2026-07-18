@@ -566,21 +566,24 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return difference === 0;
   }
 
-  private realtimeResult<T>(operation: () => T): RealtimeRpcResult<T> {
-    try {
-      return { ok: true, value: operation() };
-    } catch (error) {
-      if (error instanceof RealtimeSessionError) {
-        return {
-          ok: false,
-          error: { code: error.code, message: error.message },
-        };
-      }
-      throw error;
+  private async synchronizeRealtimeAlarm(): Promise<void> {
+    // Cloudflare persists one alarm per Durable Object. Derive that alarm from
+    // SQL after every state transition so eviction never makes in-memory timer
+    // state authoritative.
+    const nextDeadline = this.realtime.nextDeadline();
+    const currentAlarm = await this.ctx.storage.getAlarm();
+    if (nextDeadline === null) {
+      if (currentAlarm !== null) await this.ctx.storage.deleteAlarm();
+      return;
+    }
+    if (currentAlarm !== nextDeadline) {
+      await this.ctx.storage.setAlarm(nextDeadline);
     }
   }
 
-  private async realtimeAsyncResult<T>(operation: () => Promise<T>): Promise<RealtimeRpcResult<T>> {
+  private async realtimeScheduledResult<T>(
+    operation: () => T | Promise<T>,
+  ): Promise<RealtimeRpcResult<T>> {
     try {
       return { ok: true, value: await operation() };
     } catch (error) {
@@ -591,33 +594,42 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         };
       }
       throw error;
+    } finally {
+      await this.synchronizeRealtimeAlarm();
     }
   }
 
-  realtimeHandshake(): RealtimeRpcResult<{ sid: string; payload: string }> {
-    return this.realtimeResult(() => this.realtime.createHandshake());
+  override async alarm(_alarmInfo?: AlarmInvocationInfo): Promise<void> {
+    // Alarm delivery is at-least-once. processAlarm commits every durable
+    // transition transactionally before this derived schedule is replaced.
+    this.realtime.processAlarm();
+    await this.synchronizeRealtimeAlarm();
   }
 
-  realtimeValidateSession(sid: string): RealtimeRpcResult<null> {
-    return this.realtimeResult(() => {
+  realtimeHandshake(): Promise<RealtimeRpcResult<{ sid: string; payload: string }>> {
+    return this.realtimeScheduledResult(() => this.realtime.createHandshake());
+  }
+
+  realtimeValidateSession(sid: string): Promise<RealtimeRpcResult<null>> {
+    return this.realtimeScheduledResult(() => {
       this.realtime.validateSession(sid);
       return null;
     });
   }
 
-  realtimeBeginPost(sid: string): RealtimeRpcResult<string> {
-    return this.realtimeResult(() => this.realtime.beginPost(sid));
+  realtimeBeginPost(sid: string): Promise<RealtimeRpcResult<string>> {
+    return this.realtimeScheduledResult(() => this.realtime.beginPost(sid));
   }
 
-  realtimeAbortPost(sid: string, token: string): RealtimeRpcResult<null> {
-    return this.realtimeResult(() => {
+  realtimeAbortPost(sid: string, token: string): Promise<RealtimeRpcResult<null>> {
+    return this.realtimeScheduledResult(() => {
       this.realtime.abortPost(sid, token);
       return null;
     });
   }
 
-  realtimeRejectPost(sid: string, token: string): RealtimeRpcResult<null> {
-    return this.realtimeResult(() => {
+  realtimeRejectPost(sid: string, token: string): Promise<RealtimeRpcResult<null>> {
+    return this.realtimeScheduledResult(() => {
       this.realtime.rejectPost(sid, token);
       return null;
     });
@@ -628,14 +640,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     token: string,
     payload: string,
   ): Promise<RealtimeRpcResult<null>> {
-    return this.realtimeAsyncResult(async () => {
+    return this.realtimeScheduledResult(async () => {
       await this.realtime.submitPost(sid, token, payload);
       return null;
     });
   }
 
   realtimePoll(sid: string): Promise<RealtimeRpcResult<string>> {
-    return this.realtimeAsyncResult(() => this.realtime.poll(sid));
+    return this.realtimeScheduledResult(() => this.realtime.poll(sid));
   }
 
   private getOrCreateJwtSecret(): string {

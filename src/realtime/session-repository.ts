@@ -48,6 +48,16 @@ interface CountRow {
   count: number;
 }
 
+interface DeadlineRow {
+  [key: string]: SqlStorageValue;
+  deadline: number | null;
+}
+
+interface SidRow {
+  [key: string]: SqlStorageValue;
+  sid: string;
+}
+
 export interface RealtimeSession {
   sid: string;
   socketSid: string;
@@ -222,40 +232,90 @@ export class SqliteRealtimeSessionRepository {
     now: number,
     limit = REALTIME_CLEANUP_BATCH,
   ): ExpiredRealtimeSession[] {
-    const boundedLimit = Math.max(1, Math.min(REALTIME_CLEANUP_BATCH, Math.trunc(limit)));
-    return this.storage.transactionSync(() => {
-      const expired = this.storage.sql
-        .exec<SessionRow>(
-          `SELECT sid, socket_sid, socket_connected, authorized, read_allowed,
-                  created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
-                  next_sequence, outbound_packets, outbound_bytes,
-                  poll_token, poll_deadline, post_token, post_deadline
-           FROM realtime_sessions
-           WHERE expires_at <= ? OR (pong_deadline IS NOT NULL AND pong_deadline <= ?)
-           ORDER BY expires_at, sid
-           LIMIT ?`,
-          now,
-          now,
-          boundedLimit,
-        )
-        .toArray()
-        .map((row) => ({ sid: row.sid, socketConnected: row.socket_connected === 1 }));
-      for (const session of expired) this.deleteSessionInTransaction(session.sid);
+    return this.storage.transactionSync(() =>
+      this.cleanupOpportunityInTransaction(now, limit),
+    );
+  }
 
-      this.storage.sql.exec(
-        `UPDATE realtime_sessions
-         SET poll_token = NULL, poll_deadline = NULL
-         WHERE poll_deadline IS NOT NULL AND poll_deadline <= ?`,
+  cleanupOpportunityInTransaction(
+    now: number,
+    limit = REALTIME_CLEANUP_BATCH,
+  ): ExpiredRealtimeSession[] {
+    const boundedLimit = Math.max(1, Math.min(REALTIME_CLEANUP_BATCH, Math.trunc(limit)));
+    const expired = this.storage.sql
+      .exec<SessionRow>(
+        `SELECT sid, socket_sid, socket_connected, authorized, read_allowed,
+                created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
+                next_sequence, outbound_packets, outbound_bytes,
+                poll_token, poll_deadline, post_token, post_deadline
+         FROM realtime_sessions
+         WHERE expires_at <= ? OR (pong_deadline IS NOT NULL AND pong_deadline <= ?)
+         ORDER BY expires_at, sid
+         LIMIT ?`,
         now,
-      );
-      this.storage.sql.exec(
-        `UPDATE realtime_sessions
-         SET post_token = NULL, post_deadline = NULL
-         WHERE post_deadline IS NOT NULL AND post_deadline <= ?`,
         now,
-      );
-      return expired;
-    });
+        boundedLimit,
+      )
+      .toArray()
+      .map((row) => ({ sid: row.sid, socketConnected: row.socket_connected === 1 }));
+    for (const session of expired) this.deleteSessionInTransaction(session.sid);
+
+    this.storage.sql.exec(
+      `UPDATE realtime_sessions
+       SET poll_token = NULL, poll_deadline = NULL
+       WHERE poll_deadline IS NOT NULL AND poll_deadline <= ?`,
+      now,
+    );
+    this.storage.sql.exec(
+      `UPDATE realtime_sessions
+       SET post_token = NULL, post_deadline = NULL
+       WHERE post_deadline IS NOT NULL AND post_deadline <= ?`,
+      now,
+    );
+    return expired;
+  }
+
+  nextDeadline(): number | null {
+    // Ignore the already-fired next_ping_at while a pong is outstanding. Lease
+    // deadlines participate so abandoned polling requests are also reclaimed.
+    return this.storage.sql
+      .exec<DeadlineRow>(
+        `SELECT MIN(deadline) AS deadline
+         FROM (
+           SELECT CASE
+                    WHEN pong_deadline IS NULL THEN MIN(next_ping_at, expires_at)
+                    ELSE MIN(pong_deadline, expires_at)
+                  END AS deadline
+           FROM realtime_sessions
+           UNION ALL
+           SELECT poll_deadline AS deadline
+           FROM realtime_sessions
+           WHERE poll_deadline IS NOT NULL
+           UNION ALL
+           SELECT post_deadline AS deadline
+           FROM realtime_sessions
+           WHERE post_deadline IS NOT NULL
+         )`,
+      )
+      .one().deadline;
+  }
+
+  listDuePingSessionIds(now: number): string[] {
+    return this.storage.sql
+      .exec<SidRow>(
+        `SELECT sid
+         FROM realtime_sessions
+         WHERE pong_deadline IS NULL
+           AND next_ping_at <= ?
+           AND expires_at > ?
+         ORDER BY next_ping_at, sid
+         LIMIT ?`,
+        now,
+        now,
+        REALTIME_MAX_SESSIONS_PER_TENANT,
+      )
+      .toArray()
+      .map((row) => row.sid);
   }
 
   updateSession(session: RealtimeSession): void {

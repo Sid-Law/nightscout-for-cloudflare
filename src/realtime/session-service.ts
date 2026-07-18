@@ -12,6 +12,7 @@ import {
   type SocketIoV5Packet,
 } from "../protocol";
 import {
+  REALTIME_CLEANUP_BATCH,
   REALTIME_MAX_PAYLOAD_BYTES,
   REALTIME_PING_INTERVAL_MS,
   REALTIME_PING_TIMEOUT_MS,
@@ -465,6 +466,59 @@ export class RealtimeSessionService {
     });
   }
 
+  nextDeadline(): number | null {
+    return this.repository.nextDeadline();
+  }
+
+  processAlarm(): void {
+    const now = this.now();
+    const result = this.storage.transactionSync(() => {
+      const closed = new Set<string>();
+      const wakeTargets = new Set<string>();
+      let connectedSessionRemoved = false;
+
+      while (true) {
+        const expired = this.repository.cleanupOpportunityInTransaction(now);
+        for (const session of expired) {
+          closed.add(session.sid);
+          if (session.socketConnected) connectedSessionRemoved = true;
+        }
+        if (expired.length < REALTIME_CLEANUP_BATCH) break;
+      }
+
+      for (const sid of this.repository.listDuePingSessionIds(now)) {
+        const session = this.repository.getSession(sid);
+        if (session === null) continue;
+        try {
+          this.enqueuePingIfDue(session, now);
+          this.repository.updateSession(session);
+          wakeTargets.add(sid);
+        } catch (error) {
+          if (
+            error instanceof RealtimeRepositoryError &&
+            error.code === "queue_overflow"
+          ) {
+            this.repository.deleteSessionInTransaction(sid);
+            closed.add(sid);
+            if (session.socketConnected) connectedSessionRemoved = true;
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (connectedSessionRemoved) {
+        for (const targetSid of this.enqueueClientsForConnectedSessions(now, closed)) {
+          wakeTargets.add(targetSid);
+        }
+      }
+      return { closed: [...closed], wakeTargets: [...wakeTargets] };
+    });
+
+    for (const sid of result.closed) this.wake(sid);
+    for (const sid of result.wakeTargets) this.wake(sid);
+  }
+
   private async processSocketPacket(
     session: RealtimeSession,
     packet: SocketIoV5Packet,
@@ -697,7 +751,10 @@ export class RealtimeSessionService {
     for (const targetSid of targets) this.wake(targetSid);
   }
 
-  private enqueueClientsForConnectedSessions(now: number): string[] {
+  private enqueueClientsForConnectedSessions(
+    now: number,
+    droppedSessions?: Set<string>,
+  ): string[] {
     const enqueued = new Set<string>();
     // A saturated client's removal changes the count. Append a corrected count
     // and repeat until every surviving connected session has received the final
@@ -721,6 +778,7 @@ export class RealtimeSessionService {
             error.code === "queue_overflow"
           ) {
             this.repository.deleteSessionInTransaction(targetSid);
+            droppedSessions?.add(targetSid);
             droppedTarget = true;
             continue;
           }
