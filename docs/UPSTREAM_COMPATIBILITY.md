@@ -196,16 +196,18 @@ controls, not upstream claims.
 ## Current deployed evidence
 
 The read-only EIO4 polling server described above is deployed in code commit
-`08b2970b129104a2bdbb293502abd9aa025a19a5`, Cloudflare Worker version
-`6cffd451-08e1-4dd5-b582-df7e5e6cbb6e`. It remains separate from the homepage
+`0319a8d5e78fc77c4c53c0a94724b706d7ec8255`, Cloudflare Worker version
+`e8e7970b-65bb-412f-ba74-193ce14575c5`. It remains separate from the homepage
 REST shim. Its current bounds and named differences are:
 
 - strict `EIO=4`, `transport=polling`, non-binary payloads and `upgrades: []`;
 - exact `application/octet-stream` POSTs close the SID with a controlled
   400/code-3 response; malformed UTF-8 uses replacement decoding, while
   raw-versus-replacement accounting at the 1,000,000-byte edge remains P2;
-- 256 sessions per tenant, 128 outbound packets, a 1,000,000-byte whole queue/
-  body limit, and opportunity cleanup in batches of 32 without an alarm;
+- 256 sessions per tenant, 128 outbound packets and a 1,000,000-byte whole
+  queue/body limit. Request-time opportunity cleanup remains bounded to 32,
+  while the SQL-derived single DO alarm independently handles all due
+  heartbeat/session/lease work and reschedules idempotently across eviction;
 - tenant-local anonymous/API-secret-digest/access-token/JWT reads, with ACKs
   always fixed to `{read:true, write:false, write_treatment:false}`;
 - invalid authorization disconnects only `/`; unknown namespaces such as
@@ -226,32 +228,31 @@ REST shim. Its current bounds and named differences are:
 
 The public deployment at
 `https://nscf-phase1.nscf-lab-20260717.workers.dev/` reached 100% traffic at
-2026-07-18 06:15:46 UTC. Its gate completed the official v15.0.7 build with
+2026-07-18 08:13:13 UTC. Its gate completed the official v15.0.7 build with
 248 asset entries, the 161-route/111-test-file audit, 14/14 audit-tool tests,
-130/130 integrated Workers tests, and a 287.80 KiB raw / 62.47 KiB gzip dry
+141/141 integrated Workers tests, and a 651.05 KiB raw / 113.32 KiB gzip dry
 run declaring only `ENTRY_STORE` and `ASSETS`.
 
 - `/`, `/admin`, `/profile`, `/food`, `/report` and `/clock/clock-color`
   returned HTTP 200 and rendered official Nightscout surfaces.
 - `/api/v1/entries.json` returned HTTP 200. `/api/v3/version` returned the
   v15.0.7/API 3.0.3-alpha envelope and SQLite DO adapter metadata.
-- Missing-JWT `/api/v3/status` and `/api/v3/treatments` both returned HTTP 401.
+- Missing-JWT `/api/v3/status`, `/api/v3/treatments` and
+  `/api/v3/devicestatus` returned HTTP 401; an unknown device-status extension
+  returned HTTP 406.
   Valid JWT, permission, mutation, expiry, tamper, eviction and cross-tenant
   contracts remain covered locally; this smoke did not invent an authenticated
   remote mutation.
 - A real EIO4 polling handshake advertised no upgrades, a 25-second ping
   interval, 20-second timeout and 1,000,000-byte maximum. SIO5 root CONNECT and
   read-only authorize completed, and the following poll contained
-  `dataUpdate`, `status` and an ACK with read true/write false.
-- Real Chromium rendered the homepage chart and `BASAL 0.100U`, Profile Editor
-  (`Values loaded`, `Asia/Shanghai`), Food Editor (`Database loaded`), Admin,
-  Report and the empty color-clock state. The official About panel showed
-  version 15.0.7.
-- A temporary client-only Settings title change saved, closed the panel and did
-  not rebound after a fresh navigation. The title was restored to `Nightscout`.
-- Home and color clock had zero console errors or warnings. Admin, Report,
-  Profile and Food had zero errors and only the locked upstream
-  missing-`#chartContainer` warning on standalone pages.
+  `dataUpdate`, `status` and an ACK with read true/write false. A subsequent
+  poll held for 26 seconds received the alarm-driven ping; pong and close
+  completed with HTTP 200.
+- The in-app browser rendered the official homepage/chart and version 15.0.7;
+  closing Settings did not rebound. Admin, Report and color clock rendered.
+  Profile and Food rendered their official editors but showed `Not loaded` and
+  `Unauthorized`, so this release does not claim their protected workflows.
 - The homepage data connection still came from the REST polling shim; the new
   EIO4 endpoint was exercised separately.
 - The existing `API_SECRET` was retained unchanged with `--keep-vars`; its
@@ -259,10 +260,10 @@ run declaring only `ENTRY_STORE` and `ASSETS`.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing
-the original post-save redirect loop. The latest deployment reloaded that
-persisted simulated profile successfully, but the earlier credentialed action
-is historical regression context rather than a credentialed claim for this
-release.
+the original post-save redirect loop. The current release was not authenticated
+in the browser and did not repeat that mutation, so the earlier result remains
+historical regression context rather than evidence that the current protected
+Profile/Food workflows are complete.
 
 These observations prove only the named increment. They are not a full-port
 completion claim.

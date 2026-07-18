@@ -460,9 +460,11 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 This endpoint is live in Cloudflare version
-`6cffd451-08e1-4dd5-b582-df7e5e6cbb6e`. A remote transport smoke completed
+`e8e7970b-65bb-412f-ba74-193ce14575c5`. A remote transport smoke completed
 EIO4 open, SIO5 root CONNECT, read-only `authorize`, `dataUpdate`, `status` and
-ACK over the tenant DO. The official homepage intentionally still uses the
+ACK over the tenant DO. A poll held beyond the 25-second interval then received
+the SQL-alarm-driven Engine.IO ping, and the following pong succeeded. The
+official homepage intentionally still uses the
 REST polling shim, so this proves the separate server slice rather than a page
 transport switch. The one remaining named HTTP edge difference is admission at
 the 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,

@@ -12,23 +12,23 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code commit: `08b2970b129104a2bdbb293502abd9aa025a19a5`
-- Cloudflare Version ID: `6cffd451-08e1-4dd5-b582-df7e5e6cbb6e`
+- Deployed code commit: `0319a8d5e78fc77c4c53c0a94724b706d7ec8255`
+- Cloudflare Version ID: `e8e7970b-65bb-412f-ba74-193ce14575c5`
 - Traffic: 100%
-- Activated: 2026-07-18 06:15:46 UTC
-- Separate Deployment ID: not emitted by Wrangler 4.111.0; the Version ID is
-  the recorded rollback handle
+- Activated: 2026-07-18 08:13:13 UTC
+- Deployment ID: `61198de0-8045-4276-b2ee-d21e12907f04`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal additive schema is current through version 5
 - Static Assets: 248 Wrangler asset entries from the official v15.0.7 build
-- Worker startup: Cloudflare reported 6 ms
+- Worker startup: Cloudflare reported 22 ms
 - Observability and invocation logs: enabled
 
-This release deploys the treatments-only API v3 JSON vertical and the bounded,
-persisted, read-only EIO4/SIO5 polling-root slice. The official homepage still
-uses the REST polling shim; deploying the server endpoint is not a homepage
-transport switch. Wrangler retained existing dashboard variables with
-`--keep-vars`. The configured `API_SECRET` value was never read or printed.
+This release deploys the treatments and device-status API v3 generic verticals
+with locked JSON/CSV/XML rendering, plus the bounded persisted read-only
+EIO4/SIO5 polling-root slice and its SQL-derived DO alarm. The official
+homepage still uses the REST polling shim; deploying the server endpoint is not
+a homepage transport switch. Wrangler retained existing dashboard variables
+with `--keep-vars`. The configured `API_SECRET` value was never read or printed.
 
 ## Cloudflare footprint
 
@@ -54,20 +54,20 @@ data or CGM credentials.
 | Audit tool tests | 14/14 Node tests passed |
 | Type generation | `wrangler types` completed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 10 files, 130/130 passed |
-| Worker dry run | 287.80 KiB raw / 62.47 KiB gzip |
+| Workers integration tests | 12 files, 141/141 passed |
+| Worker dry run | 651.05 KiB raw / 113.32 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Git state | clean at deployed code commit |
 
 The locked upstream contains 111 JavaScript test files and approximately 873
-test cases. The 130 Workers tests cover the implemented adapter subset; no
+test cases. The 141 Workers tests cover the implemented adapter subset; no
 whole upstream test file is claimed green. Neither count proves complete
 compatibility.
 
 ## Post-deployment remote evidence
 
-Cloudflare reports version `6cffd451-08e1-4dd5-b582-df7e5e6cbb6e` at 100%
-traffic from 2026-07-18 06:15:46 UTC. The smoke checks response content and
+Cloudflare reports version `e8e7970b-65bb-412f-ba74-193ce14575c5` at 100%
+traffic from 2026-07-18 08:13:13 UTC. The smoke checks response content and
 protocol markers, not only Wrangler command success.
 
 | Check | Result |
@@ -78,9 +78,12 @@ protocol markers, not only Wrangler command success.
 | `/api/v3/version` | HTTP 200; Nightscout `15.0.7`, API `3.0.3-alpha`, SQLite Durable Object adapter metadata |
 | `/api/v3/status` without JWT | HTTP 401 JSON |
 | `/api/v3/treatments` without JWT | HTTP 401 JSON |
+| `/api/v3/devicestatus` without JWT | HTTP 401 JSON |
+| `/api/v3/devicestatus.nscf-unknown` | HTTP 406 |
 | EIO4 polling open | HTTP 200; 20-character SID, `upgrades: []`, 25 s ping, 20 s timeout, 1,000,000-byte maximum |
 | SIO5 root CONNECT | POST 200 `ok`; next poll contained CONNECT |
 | Read-only authorize | POST 200 `ok`; next poll contained `dataUpdate`, `status`, read true/write false ACK |
+| Alarm-driven heartbeat | after a 26 s hold the next poll contained Engine.IO ping; pong and close returned HTTP 200 |
 
 The test process did not inspect or use the configured `API_SECRET`, so this
 release does not claim a fabricated authenticated remote treatment mutation.
@@ -89,29 +92,24 @@ cross-tenant cases are covered by the local Workers/SQLite gate.
 
 ## Real-browser evidence
 
-A fresh, isolated headed Chromium session exercised the deployed official UI:
+A real in-app browser session exercised the deployed official UI without
+reading credential storage or submitting protected mutations:
 
 - the homepage rendered Nightscout, the official chart, `BASAL 0.100U` and the
   About-panel version `15.0.7`;
-- opening Settings, changing the client-only title and pressing Save closed the
-  panel; a fresh navigation did not reopen it. The title was restored to
-  `Nightscout`;
-- Profile Editor reported `Values loaded`, selected the persisted simulated
-  profile and showed `Asia/Shanghai`;
-- Food Editor reported `Database loaded` and rendered its official controls;
+- opening and closing Settings left the panel closed after repeated delayed
+  checks; no save was attempted;
+- Profile Editor and Food Editor rendered their official controls but reported
+  `Not loaded`; their authentication state was `Unauthorized`;
 - Admin rendered its official authentication state; Report rendered its report
   selector and filters; color clock rendered the upstream empty-data state;
-- homepage and color clock had zero console errors or warnings;
-- Admin, Report, Profile and Food had zero console errors and only the locked
-  upstream `Unable to find element for #chartContainer` warning caused by
-  standalone pages not containing the homepage chart.
+- no console error was observed; the only messages were three locked-upstream
+  `Unable to find element for #chartContainer` warnings on standalone pages.
 
-The browser session did not inspect credential storage or use a server-side
-secret. An earlier deployed version completed an authenticated Profile Editor
-save and introduced the content-addressed service-worker/shim cache fix after
-reproducing the original post-save redirect loop. The current release loading
-that persisted simulated profile is regression context, not a new credentialed
-mutation claim.
+This confirms that the Settings close/reopen regression is not reproducing, but
+it does not close the Profile/Food save contract. Their current
+`Not loaded`/`Unauthorized` states are an explicit remaining API/auth gap, not
+a successful workflow claim.
 
 ## Known limitations
 
@@ -123,8 +121,10 @@ mutation claim.
 - At the 1,000,000-byte malformed-UTF-8 edge, NSCF admission counts streamed
   raw bytes while locked Node can count replacement-expanded text differently.
 - API v1 and v2 remain subsets. API v3 implements public version, JWT status,
-  treatments-only JSON search/CRUD/history and treatments-aware
-  `lastModified`; CSV/XML and the other five generic collections are missing.
+  treatment and device-status generic search/CRUD/history, both collections in
+  `lastModified`, and locked small/medium JSON/CSV/XML rendering. Entries,
+  food, profile and settings plus large-response renderer resource controls
+  remain missing.
 - JWT signing, expiry and Shiro permission matching are implemented, but the
   upstream access-token derivation/prefix behavior, request-body credentials
   and persistent per-IP failure delay list are missing.
@@ -143,11 +143,11 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 
 ## Rollback
 
-The immediate prior known version is
-`e3e9b197-bd1d-45b1-b2c8-a5b18b907e90` (code commit
-`78502a01c624d3f8b38e207abd5b7c9d1cea50c8`). It contains the official UI,
-cache fix, JWT/API status, activity and treatments storage foundation, but not
-the deployed treatments JSON HTTP routes or routed EIO4 session server.
+The immediate prior version is
+`6cffd451-08e1-4dd5-b582-df7e5e6cbb6e` (code commit
+`08b2970b129104a2bdbb293502abd9aa025a19a5`). It contains the official UI,
+cache fix, treatments API v3 JSON vertical and read-only EIO4 polling root, but
+not device-status API v3, locked CSV/XML rendering or persistent realtime alarm.
 
 Wrangler version rollback can restore Worker code and assets. SQLite schema
 changes through version 5 are additive; rollback must not attempt a destructive

@@ -87,13 +87,13 @@ relabeled as scope exclusions.
 
 ## Current deployed increment
 
-Code commit `08b2970b129104a2bdbb293502abd9aa025a19a5` is deployed at 100%
+Code commit `0319a8d5e78fc77c4c53c0a94724b706d7ec8255` is deployed at 100%
 traffic as Cloudflare Worker version
-`6cffd451-08e1-4dd5-b582-df7e5e6cbb6e` (2026-07-18 06:15:46 UTC). The release
+`e8e7970b-65bb-412f-ba74-193ce14575c5` (2026-07-18 08:13:13 UTC). The release
 gate passed the official v15.0.7 Webpack build with 248 asset entries, Wrangler
 type generation and TypeScript, the deterministic 161-route/111-test-file
-audit, 14/14 audit-tool tests, 130/130 Workers-runtime tests and a 287.80 KiB
-(62.47 KiB gzip) dry run. The dry run declared only the `ENTRY_STORE` Durable
+audit, 14/14 audit-tool tests, 141/141 Workers-runtime tests and a 651.05 KiB
+(113.32 KiB gzip) dry run. The dry run declared only the `ENTRY_STORE` Durable
 Object and `ASSETS` binding. Deployment used `--keep-vars`; the existing
 `API_SECRET` value was neither read nor printed.
 
@@ -105,35 +105,45 @@ The deployed increment includes:
   role/subject/token subsets and aggregate REST polling;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
-- the eight treatments-only API v3 JSON routes, including branch-sensitive
-  permissions, ordered search, conditional read, history, lastModified,
-  tombstones, permanent delete and atomic rollback;
+- all eight generic API v3 routes for both treatments and device status,
+  including branch-sensitive permissions, ordered search, conditional read,
+  history, collection-specific legacy fallback/deduplication, lastModified,
+  tombstones, permanent delete and atomic rollback; JSON/CSV/XML rendering uses
+  the locked upstream dependency versions and Accept negotiation order;
 - strict tenant-local EIO4 polling with persisted sessions/queues, heartbeat,
   SIO5 root CONNECT, read-only authorization/data snapshots and bounded
-  resource handling.
+  resource handling; a SQL-derived Durable Object alarm now survives eviction
+  and drives ping, pong timeout, session/lease expiry and client-count updates.
 
 Remote smoke verified public v3 version metadata, v1 entries, missing-JWT 401
-responses for v3 status and treatments, official page HTTP responses, and the
+responses for v3 status, treatments and device status, an unknown-format 406,
+official page HTTP responses, and the
 full EIO4 open -> SIO5 CONNECT -> authorize -> dataUpdate/status/read-only ACK
-sequence. Real Chromium rendered the homepage/chart, Profile Editor
-(`Values loaded`, `Asia/Shanghai`), Food Editor (`Database loaded`), Admin,
-Report and color clock. A temporary client-only title change saved, closed
-Settings and did not rebound after a fresh navigation; the title was restored.
-No page emitted a console error. Standalone Admin/Report/Profile/Food retained
-only the locked upstream missing-`#chartContainer` warning.
+sequence. After 26 seconds without an HTTP cleanup opportunity the next poll
+received the alarm-driven Engine.IO ping; pong and close both succeeded. The
+in-app browser rendered the homepage/chart and About version 15.0.7, and
+Settings stayed closed for several seconds without rebounding. Profile and Food
+rendered the official editors but reported `Not loaded` and `Unauthorized`, so
+their protected read/save workflows remain open work. Admin, Report and color
+clock rendered their official empty/unauthorized states. No console error was
+observed; standalone pages emitted only the known missing-`#chartContainer`
+warning.
 
-This is still not a full port: API v3 CSV/XML renderers, five generic
-collections, broader Mongo query/type parity, WebSocket upgrade, EIO3 HTTP,
-`/storage` and `/alarm`, root writes, persisted change broadcasts, alarms,
-server plugins, notifications and most upstream test files remain incomplete.
+This is still not a full port: API v3 entries, food, profile and settings,
+large-response CSV/XML resource adaptation, broader Mongo query/type parity,
+WebSocket upgrade, EIO3 HTTP, `/storage` and `/alarm`, root writes, persisted
+change broadcasts, the shared background-task scheduler, server plugins,
+notifications and most upstream test files remain incomplete.
 The homepage still consumes the REST polling shim and does not yet use the
 separate EIO4 server.
 
 The deployed polling slice is intentionally bounded to 256 sessions per tenant,
 128 queued packets and one 1,000,000-byte polling payload per session. It uses
 25-second server pings, 20-second pong timeouts, strict non-binary request
-shapes and opportunity cleanup in batches of 32; it adds no DO alarm. Root
-authorization always ACKs `write:false` and `write_treatment:false`. Initial
+shapes and request-time opportunity cleanup in batches of 32. Its persisted
+single DO alarm also processes due heartbeat/session/lease work across
+eviction and retry. Root authorization always ACKs `write:false` and
+`write_treatment:false`. Initial
 `dataUpdate` follows locked recent-device-status filtering, while `loadRetro`
 uses the unfiltered runtime-normalized device-status loader over the same
 one-day raw window. Cursor-based snapshot loading applies a shared deterministic
