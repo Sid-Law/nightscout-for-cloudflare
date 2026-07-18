@@ -1,3 +1,17 @@
+declare module "accepts" {
+  interface AcceptsRequest {
+    headers: {
+      accept?: string;
+    };
+  }
+
+  interface AcceptsInstance {
+    types<T extends string>(types: T[]): T | false;
+  }
+
+  export default function accepts(request: AcceptsRequest): AcceptsInstance;
+}
+
 declare module "csv-stringify/lib/sync.js" {
   interface CsvStringifyOptions {
     header?: boolean;

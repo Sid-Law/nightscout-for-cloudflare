@@ -20,6 +20,7 @@ import {
 import {
   api3FormatFromRequest,
   api3Json,
+  Api3RenderError,
   api3Result,
   api3Status,
   renderApi3,
@@ -531,6 +532,10 @@ export async function handleApi3Treatments(
     }
     return api3Status(404, "Bad operation or collection");
   } catch (error) {
+    if (error instanceof Api3RenderError) {
+      console.error(JSON.stringify({ message: "API3 treatments render failed", error: error.message }));
+      return api3Status(500, STORAGE_ERROR, undefined, error.responseHeaders);
+    }
     const response = operationError(error);
     if (response !== null) return response;
     console.error(JSON.stringify({ message: "API3 treatments operation failed", error: error instanceof Error ? error.message : String(error) }));

@@ -678,6 +678,17 @@ describe("API v3 treatments vertical slice", () => {
       )),
     )).status).toBe(201);
 
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments",
+      jsonMutation("POST", treatment(
+        "invalid-xml-attribute",
+        "2026-06-02T01:01:00.000Z",
+        { _bad: { x: 1 } },
+      )),
+    )).status).toBe(201);
+
     const readCsv = await api3Fetch(
       name,
       jwt,
@@ -698,6 +709,16 @@ describe("API v3 treatments vertical slice", () => {
       "<item>\n  <identifier>format-treatment</identifier>\n  <notes>a,b</notes>\n</item>",
     );
 
+    const invalidXml = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/invalid-xml-attribute.xml",
+    );
+    expect(invalidXml.status).toBe(500);
+    expect(invalidXml.headers.get("Content-Type")).toBe("application/xml; charset=utf-8");
+    expect(invalidXml.headers.get("Vary")).toBe("Accept");
+    expect(await invalidXml.text()).toBe('{"status":500,"message":"Database error"}');
+
     const searchXml = await api3Fetch(
       name,
       jwt,
@@ -714,12 +735,22 @@ describe("API v3 treatments vertical slice", () => {
       "/api/v3/treatments/history/946684800001.csv?fields=identifier%2Cnotes",
     );
     expect(historyCsv.status).toBe(200);
-    expect(await historyCsv.text()).toBe('identifier,notes\nformat-treatment,"a,b"\n');
+    expect(await historyCsv.text()).toBe(
+      'identifier,notes\n'
+      + 'format-treatment,"a,b"\n'
+      + 'invalid-xml-attribute,invalid-xml-attribute\n',
+    );
 
     expect((await api3Fetch(
       name,
       jwt,
       "/api/v3/treatments/format-treatment?permanent=true",
+      { method: "DELETE" },
+    )).status).toBe(200);
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/invalid-xml-attribute?permanent=true",
       { method: "DELETE" },
     )).status).toBe(200);
   });

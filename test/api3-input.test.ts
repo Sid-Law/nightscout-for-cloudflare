@@ -152,6 +152,9 @@ describe("API3 response renderer", () => {
   it("negotiates the three locked renderer formats and rejects unsupported media", async () => {
     expect(api3FormatFromRequest(new Request("https://example.test"))).toBe("json");
     expect(api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "" },
+    }))).toBe("json");
+    expect(api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "Application/JSON" },
     }))).toBe("json");
     expect(api3FormatFromRequest(new Request("https://example.test", {
@@ -178,6 +181,30 @@ describe("API3 response renderer", () => {
     expect(api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "application/xml" },
     }))).toBe("xml");
+    expect(api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "application/json;foo" },
+    }))).toBe("json");
+    expect(api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "text/csv;foo=" },
+    }))).toBe("csv");
+    expect(api3FormatFromRequest(new Request("https://example.test", {
+      headers: { Accept: "application/xml;foo=*" },
+    }))).toBe("xml");
+    for (const accept of [" ", "   ", "\t", ",", "application/json;foo=bar", "application/json;q=", "application/json;q=abc"]) {
+      const rawRequest = {
+        headers: { get: (name: string) => name.toLowerCase() === "accept" ? accept : null },
+      } as unknown as Request;
+      expect(() => api3FormatFromRequest(rawRequest)).toThrowError(API3_MESSAGES.unsupportedFormat);
+    }
+    expect(() => api3FormatFromRequest({
+      headers: { get: () => "application/json, application/json;q=abc" },
+    } as unknown as Request)).toThrowError(API3_MESSAGES.unsupportedFormat);
+    expect(api3FormatFromRequest({
+      headers: { get: () => "application/json;q=abc, application/json" },
+    } as unknown as Request)).toBe("json");
+    expect(() => api3FormatFromRequest({
+      headers: { get: () => "application/json ; q = .5" },
+    } as unknown as Request)).toThrowError(API3_MESSAGES.unsupportedFormat);
     expect(() => api3FormatFromRequest(new Request("https://example.test", {
       headers: { Accept: "font/ttf" },
     }))).toThrowError(API3_MESSAGES.unsupportedFormat);
