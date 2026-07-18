@@ -376,6 +376,13 @@ describe("locked Nightscout v15.0.7 authorization compatibility", () => {
     expect(tooShort.status).toBe(401);
     expect(await tooShort.json()).toEqual(UNAUTHORIZED);
 
+    const unicodePrefix = await SELF.fetch(endpoint(
+      `/api/v2/authorization/request/${encodeURIComponent("é".repeat(16))}`,
+      tenantName,
+    ));
+    expect(unicodePrefix.status).toBe(401);
+    expect(await unicodePrefix.json()).toEqual(UNAUTHORIZED);
+
     const ordered = new URL(endpoint("/api/v1/verifyauth", tenantName));
     ordered.searchParams.append("token", "invalid-first");
     ordered.searchParams.append("token", cosmeticAlias);

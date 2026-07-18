@@ -184,16 +184,11 @@ async function timingSafeTextEqual(left: string, right: string): Promise<boolean
 
 async function timingSafePrefixEqual(full: string, prefix: string): Promise<boolean> {
   if (prefix.length > full.length) return false;
-  const subtle = crypto.subtle as SubtleCrypto & {
-    timingSafeEqual(
-      first: ArrayBuffer | ArrayBufferView,
-      second: ArrayBuffer | ArrayBufferView,
-    ): boolean;
-  };
-  return subtle.timingSafeEqual(
-    encoder.encode(full.slice(0, prefix.length)),
-    encoder.encode(prefix),
-  );
+  // Slice with JavaScript's UTF-16 semantics, as upstream does, but compare
+  // fixed-size digests. Comparing the encoded strings directly can throw when
+  // a non-ASCII prefix has the same code-unit length and a different UTF-8
+  // byte length from the stored hexadecimal credential.
+  return timingSafeTextEqual(full.slice(0, prefix.length), prefix);
 }
 
 /** SHA-1 is case-insensitive upstream; SHA-512 is deliberately case-sensitive. */
