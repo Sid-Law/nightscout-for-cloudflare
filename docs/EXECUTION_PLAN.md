@@ -113,7 +113,10 @@ not change the deployed evidence above: no deployment, remote smoke or browser
 claim has been made for these routes. The local contracts cover JWT-only
 authentication, dynamic create/update permission branches, ordered sorting,
 conditional read, both history cursors, lastModified, tombstones, permanent
-delete and transaction rollback.
+delete and transaction rollback. Its local gate passed the official v15.0.7 UI
+build, Wrangler type generation/TypeScript check, the 161-route/111-test-file
+audit, 14/14 audit-tool tests, 99/99 Workers-runtime tests and deployment
+dry-run. The dry-run created no deployment.
 
 Post-deploy API smoke passed. A real existing Chrome session saved the official
 Profile Editor, closed it to `/`, stayed there for six seconds and remained on

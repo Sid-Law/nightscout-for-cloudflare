@@ -284,6 +284,15 @@ describe("API v3 treatments vertical slice", () => {
       status: 404,
       message: "Bad operation or collection",
     });
+    const primitive = await api3Fetch(name, jwt, "/api/v3/treatments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "42",
+    });
+    expect(await primitive.json()).toEqual({
+      status: 400,
+      message: "Bad or missing request body",
+    });
   });
 
   it("orders dynamic permission, existence, precondition, and validation like the locked handlers", async () => {
@@ -807,6 +816,34 @@ describe("API v3 treatments vertical slice", () => {
       jsonMutation("POST", treatment("history-fields", createdAt)),
     )).status).toBe(201);
 
+    const fullRead = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/history-fields",
+    );
+    expect(fullRead.status).toBe(200);
+    const fullLastModified = fullRead.headers.get("Last-Modified");
+    expect(fullLastModified).not.toBe(new Date(createdAt).toUTCString());
+    const projectedRead = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/history-fields?fields=identifier",
+    );
+    expect(await result<JsonObject>(projectedRead)).toEqual({ identifier: "history-fields" });
+    expect(projectedRead.headers.get("Last-Modified")).toBe(new Date(createdAt).toUTCString());
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/history-fields?fields=identifier",
+      { headers: { "If-Modified-Since": new Date(createdAt).toUTCString() } },
+    )).status).toBe(304);
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/history-fields",
+      { headers: { "If-Modified-Since": new Date(createdAt).toUTCString() } },
+    )).status).toBe(200);
+
     const projected = await api3Fetch(
       name,
       jwt,
@@ -829,6 +866,7 @@ describe("API v3 treatments vertical slice", () => {
       "/api/v3/treatments",
       jsonMutation("POST", treatment("regex-source", "2026-06-06T00:00:00.000Z", {
         notes: "Meal Bolus",
+        rank: 0,
       })),
     )).status).toBe(201);
 
@@ -843,6 +881,23 @@ describe("API v3 treatments vertical slice", () => {
       status: 400,
       message: "Filter operator re is not supported by the SQLite adapter",
     });
+
+    for (const paging of ["limit=.5", "limit=0x10", "skip=.5"]) {
+      const response = await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/treatments?${paging}`,
+      );
+      expect(response.status, paging).toBe(200);
+      expect(await result<JsonObject[]>(response)).toEqual([
+        expect.objectContaining({ identifier: "regex-source" }),
+      ]);
+    }
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments?rank%24gt=1&rank%24lt=1",
+    ))).toEqual([]);
 
     const unsafe = await api3Fetch(
       name,

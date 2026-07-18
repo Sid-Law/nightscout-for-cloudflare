@@ -158,6 +158,13 @@ differences are:
 
 - request JSON is capped at 512 KiB; locked `body-parser` is configured for
   50 MiB;
+- top-level JSON primitives return the treatments 400 envelope; the locked
+  strict body-parser/error-middleware path returns 500;
+- multiple operators for one field are combined with SQL `AND`; the locked
+  Mongo filter object lets a later query item replace the earlier operator
+  object;
+- a parsed zero limit, including `limit=0x10`, is capped at 1,000 rows instead
+  of using Mongo's unlimited `cursor.limit(0)` behavior;
 - CSV/XML reads return 406 until locked `csv-stringify` and `easyxml` output,
   headers and negotiation have differential fixtures;
 - `$re` returns a stable 400 because SQLite `LIKE` is not Mongo `$regex`;

@@ -1012,7 +1012,7 @@ describe("SQLite collection contract v4", () => {
     });
   });
 
-  it("keeps locked treatment-duration base precedence across replacement", async () => {
+  it("does not pass the stored treatment as duration fallback during replacement", async () => {
     const stub = store("api3-duration-order");
     const fallbackMills = Date.parse("2026-04-15T00:00:00.000Z");
     await createTreatment(stub, treatment(
@@ -1025,12 +1025,13 @@ describe("SQLite collection contract v4", () => {
       "duration-order",
       JSON.stringify({ created_at: replacementCreatedAt, duration: 10 }),
     ));
+    const replacementBase = Date.parse(replacementCreatedAt);
     expect(replaced.document).toMatchObject({
-      endmills: fallbackMills + 10 * 60_000,
+      endmills: replacementBase + 10 * 60_000,
       durationInMilliseconds: 10 * 60_000,
       duration: 10,
     });
-    expect(replaced.document.endmills).not.toBe(Date.parse(replacementCreatedAt) + 10 * 60_000);
+    expect(replaced.document.endmills).not.toBe(fallbackMills + 10 * 60_000);
   });
 
   it("enforces API3 immutable fields while preserving deduplication exceptions", async () => {

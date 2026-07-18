@@ -707,6 +707,18 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return document === null ? null : JSON.stringify(document);
   }
 
+  async findTreatmentForApi3Read(
+    identifier: string,
+    fieldsJson: string,
+  ): Promise<string | null> {
+    const parsed = JSON.parse(fieldsJson) as string[] | null;
+    const document = this.documentRepository().findTreatmentForApi3Read(
+      identifier,
+      parsed ?? undefined,
+    );
+    return document === null ? null : JSON.stringify(document);
+  }
+
   async findTreatmentByFallback(
     createdAt: string | number,
     eventType: string | number,

@@ -72,6 +72,15 @@ describe("locked API3 input adapter", () => {
     expect(input.skip).toBe(2);
   });
 
+  it("passes fractional and hexadecimal paging through locked safe-integer fallback", () => {
+    expect(parseApi3Search(new URL(
+      "https://example.test/api/v3/treatments?limit=.5&skip=.5",
+    ))).toMatchObject({ limit: 1_000, skip: 0 });
+    expect(parseApi3Search(new URL(
+      "https://example.test/api/v3/treatments?limit=0x10",
+    )).limit).toBe(0);
+  });
+
   it("keeps the two upstream history boundaries distinct", () => {
     const url = new URL("https://example.test/api/v3/treatments/history?limit=5");
     expect(parseApi3History(url, undefined, "Fri, 17 Jul 2026 08:00:00 GMT")).toMatchObject({

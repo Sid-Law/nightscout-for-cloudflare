@@ -404,10 +404,23 @@ function normalizeTreatmentDuration(
   }
 }
 
-function materializeApi3(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument {
-  const document = parseBody(row.body);
+function materializeApi3WithStorageProjection(
+  row: Pick<DbDocumentV4, "id" | "body">,
+  fields: string[] | undefined,
+): JsonDocument {
+  let document = parseBody(row.body);
   if (!document.identifier) document.identifier = row.id;
   delete document._id;
+
+  if (fields !== undefined) {
+    document = project(document, Array.from(new Set([
+      ...fields,
+      "identifier",
+      "srvCreated",
+      "created_at",
+      "date",
+    ])));
+  }
 
   // Locked API3 resolves fallback dates only after the storage query. This is
   // deliberately virtual: created_at can appear as srv* in a response without
@@ -421,6 +434,10 @@ function materializeApi3(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument {
     if (modified !== null) document.srvCreated = modified;
   }
   return document;
+}
+
+function materializeApi3(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument {
+  return materializeApi3WithStorageProjection(row, undefined);
 }
 
 function materializeLegacy(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument {
@@ -459,6 +476,9 @@ function jsonPath(field: string): string {
 
 function boundedLimit(limit: number | undefined): number {
   if (limit === undefined) return 1_000;
+  // Locked Mongo treats cursor.limit(0) as unlimited. Keep the request bounded
+  // to API3's configured maximum on the Free-plan adapter instead of 500ing.
+  if (limit === 0) return 1_000;
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
     throw new Error(`limit must be an integer from 1 to ${MAX_LIMIT}`);
   }
@@ -1157,6 +1177,14 @@ export class SqliteDocumentRepository {
     return materializeApi3(row);
   }
 
+  findTreatmentForApi3Read(
+    identifier: string,
+    fields: string[] | undefined,
+  ): JsonDocument | null {
+    const row = this.findByIdentifierRow(identifier) ?? this.findByIdRow(identifier);
+    return row === undefined ? null : materializeApi3WithStorageProjection(row, fields);
+  }
+
   findTreatmentByFallback(createdAt: JsonValue, eventType: JsonValue, includeDeleted = false): JsonDocument | null {
     const key = fallbackKey({ created_at: createdAt, eventType });
     const row = key === null ? undefined : this.findByFallbackRow(key, true);
@@ -1239,7 +1267,7 @@ export class SqliteDocumentRepository {
         this.assertClientStorageIdCompatible(existing, document);
         this.assertApi3ImmutableFields(existing, document, true);
         if (options.validate !== false) assertApi3Common(document);
-        normalizeTreatmentDuration(document, materializeLegacy(existing));
+        normalizeTreatmentDuration(document);
       } else {
         if (!options.canCreate) return { ok: false, reason: "missing-create-permission" };
         if (options.validate !== false) {
@@ -1311,7 +1339,7 @@ export class SqliteDocumentRepository {
       document.identifier = identity;
       this.assertApi3ImmutableFields(existing, document, false, true);
       if (options.validate !== false) assertApi3Common(document);
-      normalizeTreatmentDuration(document, materializeLegacy(existing));
+      normalizeTreatmentDuration(document);
       if (options.actor !== null) document.subject = options.actor;
       const resolvedExisting = materializeApi3(existing);
       if (resolvedExisting.srvCreated !== undefined) {

@@ -325,6 +325,13 @@ returns 406.
 Other deliberate or unresolved platform differences are explicit:
 
 - JSON bodies are bounded at 512 KiB rather than upstream's 50 MiB;
+- top-level JSON primitives return the stable treatments 400 envelope, while
+  locked `body-parser` passes them into the upstream 500 error middleware;
+- multiple operators for the same field are combined with SQL `AND`, while
+  the locked Mongo filter object lets the later query item replace the earlier
+  operator object;
+- a parsed API v3 limit of zero (for example, from `limit=0x10`) is capped at
+  1,000 rows; locked Mongo treats `cursor.limit(0)` as unlimited;
 - API v3 `$re` is rejected with 400 instead of silently approximating Mongo
   regular expressions with SQLite `LIKE`;
 - unsafe JSON-path field syntax and queries beyond SQLite binding/statement

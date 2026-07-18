@@ -176,7 +176,8 @@ function parseLimit(url: URL): number {
   }
   const numeric = Number(value);
   if (!Number.isNaN(numeric) && numeric > 0 && numeric <= API3_MAX_LIMIT) {
-    return Number.parseInt(value, 10);
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : API3_MAX_LIMIT;
   }
   throw new Api3InputError(400, API3_MESSAGES.badLimit);
 }
@@ -188,7 +189,10 @@ function parseSkip(url: URL): number {
     throw new Api3InputError(400, API3_MESSAGES.badSkip);
   }
   const numeric = Number(value);
-  if (!Number.isNaN(numeric) && numeric >= 0) return Number.parseInt(value, 10);
+  if (!Number.isNaN(numeric) && numeric >= 0) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
   throw new Api3InputError(400, API3_MESSAGES.badSkip);
 }
 

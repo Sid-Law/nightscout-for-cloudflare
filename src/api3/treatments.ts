@@ -398,7 +398,11 @@ async function readTreatment(
   route: Extract<Api3TreatmentRoute, { kind: "resource" }>,
 ): Promise<Response> {
   if (!allowed(authorization, "read")) return forbidden("read");
-  const value = await store.findTreatmentByIdentifier(route.identifier, true);
+  const fields = parseApi3Fields(url);
+  const value = await store.findTreatmentForApi3Read(
+    route.identifier,
+    JSON.stringify(fields ?? null),
+  );
   if (value === null) return api3Status(404);
   const document = JSON.parse(value) as JsonDocument;
   if (document.isValid === false) return api3Status(410);
@@ -408,7 +412,7 @@ async function readTreatment(
     return new Response(null, { status: 304, headers });
   }
   const format = api3FormatFromRequest(request, route.extension);
-  return renderApi3(format, project(document, parseApi3Fields(url)), headers);
+  return renderApi3(format, project(document, fields), headers);
 }
 
 async function searchTreatments(
