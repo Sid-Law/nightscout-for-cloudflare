@@ -1,4 +1,5 @@
 import { EntryStore } from "./entry-store";
+import mime from "mime";
 import type { DocumentCollection, JsonDocument } from "./entry-store";
 import {
   filterDocuments,
@@ -10,6 +11,14 @@ import { ApiError, parseEntryPayload, parseHistoryQuery } from "./model";
 import type { PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
 import { nightscoutStatus } from "./status";
+import {
+  handleApi3Treatments,
+  handleApi3TreatmentsLastModified,
+  matchApi3TreatmentRoute,
+  api3BodyParserFailure,
+  splitApi3Extension,
+  type Api3TreatmentRoute,
+} from "./api3/treatments";
 
 export { EntryStore };
 
@@ -848,25 +857,8 @@ function api3Error(status: number, message: string): Response {
 }
 
 async function handleApi3Status(
-  request: Request,
-  env: AppEnv,
-  url: URL,
+  authorized: AuthorizedSubject,
 ): Promise<Response> {
-  const bearer = bearerToken(request, true);
-  if (bearer === null) {
-    return api3Error(401, "Missing or bad access token or JWT");
-  }
-
-  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
-  const claimsJson = await store.verifyAccessJwt(bearer);
-  if (claimsJson === null) return api3Error(401, "Bad access token or JWT");
-  const claims = parseAccessJwtClaims(claimsJson);
-  const authorized = await authorizeCredential(
-    store,
-    { ...claims, token: bearer },
-  );
-  if (authorized === null) return api3Error(401, "Bad access token or JWT");
-
   let permissions = "";
   for (const [action, abbreviation] of [
     ["create", "c"],
@@ -905,8 +897,52 @@ async function handleApi3Status(
   });
 }
 
+type Api3Authentication =
+  | {
+    ok: true;
+    authorized: AuthorizedSubject;
+    store: DurableObjectStub<EntryStore>;
+  }
+  | { ok: false; response: Response };
+
+async function authenticateApi3(
+  request: Request,
+  env: AppEnv,
+  url: URL,
+): Promise<Api3Authentication> {
+  const bearer = bearerToken(request, true);
+  if (bearer === null) {
+    return { ok: false, response: api3Error(401, "Missing or bad access token or JWT") };
+  }
+
+  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+  const claimsJson = await store.verifyAccessJwt(bearer);
+  if (claimsJson === null) {
+    return { ok: false, response: api3Error(401, "Bad access token or JWT") };
+  }
+  const claims = parseAccessJwtClaims(claimsJson);
+  const authorized = await authorizeCredential(store, { ...claims, token: bearer });
+  return authorized === null
+    ? { ok: false, response: api3Error(401, "Bad access token or JWT") }
+    : { ok: true, authorized, store };
+}
+
 async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Response> {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
+
+  const isApi3 = url.pathname === "/api/v3" || url.pathname.startsWith("/api/v3/");
+  let api3Pathname = url.pathname;
+  let api3Extension: string | undefined;
+  if (isApi3) {
+    const parserFailure = await api3BodyParserFailure(request.clone());
+    if (parserFailure !== null) return parserFailure;
+    const split = splitApi3Extension(url.pathname);
+    api3Pathname = split.pathname;
+    api3Extension = split.extension;
+    if (api3Extension !== undefined && mime.getType(api3Extension) === null) {
+      return api3Error(406, "Unsupported output format requested");
+    }
+  }
 
   if (request.method === "GET" && ["/api/v1/status", "/api/v1/status.json"].includes(url.pathname)) {
     return json(await statusForRequest(request, env, url));
@@ -924,7 +960,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     ]);
   }
 
-  if (request.method === "GET" && url.pathname === "/api/v3/version") {
+  if (request.method === "GET" && api3Pathname === "/api/v3/version") {
     resolveTenant(request, url);
     return json({
       status: 200,
@@ -932,9 +968,39 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     });
   }
 
-  if (request.method === "GET" && url.pathname === "/api/v3/status") {
-    return handleApi3Status(request, env, url);
+  if (request.method === "GET" && api3Pathname === "/api/v3/status") {
+    const authentication = await authenticateApi3(request, env, url);
+    return authentication.ok
+      ? handleApi3Status(authentication.authorized)
+      : authentication.response;
   }
+
+  if (request.method === "GET" && api3Pathname === "/api/v3/lastModified") {
+    const authentication = await authenticateApi3(request, env, url);
+    return authentication.ok
+      ? handleApi3TreatmentsLastModified(authentication.store, authentication.authorized)
+      : authentication.response;
+  }
+
+  const matchedApi3TreatmentRoute = matchApi3TreatmentRoute(request.method, api3Pathname);
+  const api3TreatmentRoute: Api3TreatmentRoute | null =
+    matchedApi3TreatmentRoute === null || api3Extension === undefined
+      ? matchedApi3TreatmentRoute
+      : { ...matchedApi3TreatmentRoute, extension: api3Extension };
+  if (api3TreatmentRoute !== null) {
+    const authentication = await authenticateApi3(request, env, url);
+    return authentication.ok
+      ? handleApi3Treatments(
+        request,
+        url,
+        authentication.store,
+        authentication.authorized,
+        api3TreatmentRoute,
+      )
+      : authentication.response;
+  }
+
+  if (isApi3) return api3Error(404, "Bad operation or collection");
 
   if (
     request.method === "GET" &&

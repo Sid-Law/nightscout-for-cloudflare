@@ -38,6 +38,7 @@
     "wrangler": "latest"
   },
   "dependencies": {
+    "mime": "2.6.0",
     "shiro-trie": "0.4.10"
   }
 }

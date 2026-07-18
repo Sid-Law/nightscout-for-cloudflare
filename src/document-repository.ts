@@ -3,11 +3,15 @@ import type { JsonDocument, JsonValue } from "./entry-store";
 const TREATMENTS = "treatments";
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const FIELD_NAME = /^[A-Za-z0-9_.-]+$/;
+const FIELD_NAME = /^[A-Za-z0-9_,.-]+$/;
+const MAX_FIELD_NAME_LENGTH = 512;
 const MAX_LIMIT = 10_000;
 const MAX_SQL_BINDINGS = 100;
 const MAX_SQL_STATEMENT_BYTES = 100_000;
 const MAX_LIKE_PATTERN_BYTES = 50;
+const API3_MIN_TIMESTAMP = Date.UTC(2000, 0, 1);
+const API3_MIN_UTC_OFFSET = -1_440;
+const API3_MAX_UTC_OFFSET = 1_440;
 
 type FilterOperator =
   | "eq"
@@ -51,9 +55,15 @@ export interface DocumentFilter {
   value: JsonValue;
 }
 
+export interface DocumentSort {
+  field: string;
+  direction: "asc" | "desc";
+}
+
 export interface DocumentQuery {
   filters?: DocumentFilter[];
-  sort?: { field: string; direction: "asc" | "desc" };
+  /** Arrays are the internal ordered representation; a scalar keeps v1 callers compatible. */
+  sort?: DocumentSort | DocumentSort[];
   limit?: number;
   skip?: number;
   fields?: string[];
@@ -81,6 +91,27 @@ export interface DocumentDeleteResult {
   permanent: boolean;
   revision?: number;
   srvModified?: number;
+}
+
+export type Api3MutationFailure =
+  | "missing-create-permission"
+  | "missing-update-permission"
+  | "not-found"
+  | "gone"
+  | "precondition-failed";
+
+export type Api3MutationDecision =
+  | { ok: true; mutation: DocumentMutationResult }
+  | { ok: false; reason: Api3MutationFailure }
+  | { ok: false; reason: "operation-error"; message: string };
+
+export interface Api3MutationOptions {
+  canCreate: boolean;
+  canUpdate: boolean;
+  actor: string | null;
+  ifUnmodifiedSince: number | null;
+  /** HTTP API3 enables branch-sensitive validation; compatibility wrappers opt out. */
+  validate?: boolean;
 }
 
 interface DbDocumentV4 {
@@ -200,6 +231,37 @@ function requestedId(document: JsonDocument): string | null {
     : null;
 }
 
+function assertApi3Common(document: JsonDocument, patching = false): void {
+  if (
+    (!patching || document.date !== undefined)
+    && (typeof document.date !== "number" || document.date <= API3_MIN_TIMESTAMP)
+  ) {
+    throw new Error("Bad or missing date field");
+  }
+  if (
+    (!patching || document.utcOffset !== undefined)
+    && (
+      typeof document.utcOffset !== "number"
+      || document.utcOffset < API3_MIN_UTC_OFFSET
+      || document.utcOffset > API3_MAX_UTC_OFFSET
+    )
+  ) {
+    throw new Error("Bad or missing utcOffset field");
+  }
+  if (
+    (!patching || document.app !== undefined)
+    && (typeof document.app !== "string" || document.app.trim().length === 0)
+  ) {
+    throw new Error("Bad or missing app field");
+  }
+}
+
+function assertApi3Identifier(document: JsonDocument): void {
+  if (typeof document.identifier !== "string" || document.identifier.trim().length === 0) {
+    throw new Error("Bad or missing identifier field");
+  }
+}
+
 function normalizeTreatmentIdentity(document: JsonDocument): JsonDocument {
   const normalized = { ...document };
   if (typeof normalized._id === "string" && !OBJECT_ID.test(normalized._id)) {
@@ -290,6 +352,58 @@ function normalizeLegacyTreatment(document: JsonDocument): JsonDocument {
   return normalized;
 }
 
+function durationMills(value: JsonValue | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (value.trim() !== "" && Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function normalizeTreatmentDuration(
+  document: JsonDocument,
+  fallbackDocument?: JsonDocument,
+): void {
+  const base = durationMills(document.mills)
+    ?? durationMills(fallbackDocument?.mills)
+    ?? durationMills(document.created_at)
+    ?? durationMills(document.date)
+    ?? durationMills(fallbackDocument?.created_at)
+    ?? durationMills(fallbackDocument?.date);
+  if (
+    (document.endmills === undefined || document.endmills === null)
+    && base !== null
+  ) {
+    if (Object.prototype.hasOwnProperty.call(document, "durationInMilliseconds")) {
+      const duration = Number(document.durationInMilliseconds) || 0;
+      if (duration > 0) document.endmills = base + duration;
+    } else if (Object.prototype.hasOwnProperty.call(document, "duration")) {
+      document.endmills = base + (Number(document.duration) || 0) * 60_000;
+    } else if (
+      fallbackDocument !== undefined
+      && Object.prototype.hasOwnProperty.call(fallbackDocument, "durationInMilliseconds")
+    ) {
+      const duration = Number(fallbackDocument.durationInMilliseconds) || 0;
+      if (duration > 0) document.endmills = base + duration;
+    } else if (
+      fallbackDocument !== undefined
+      && Object.prototype.hasOwnProperty.call(fallbackDocument, "duration")
+    ) {
+      document.endmills = base + (Number(fallbackDocument.duration) || 0) * 60_000;
+    }
+  }
+
+  const end = Number(document.endmills);
+  if (base !== null && Number.isFinite(end) && end >= base) {
+    document.durationInMilliseconds = end - base;
+    document.duration = Math.round((end - base) / 60_000);
+  }
+}
+
 function materializeApi3(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument {
   const document = parseBody(row.body);
   if (!document.identifier) document.identifier = row.id;
@@ -326,6 +440,23 @@ function project(document: JsonDocument, fields: string[] | undefined): JsonDocu
   return projected;
 }
 
+function validateFieldName(field: string): void {
+  if (
+    field.length === 0
+    || field.length > MAX_FIELD_NAME_LENGTH
+    || !FIELD_NAME.test(field)
+    || field.startsWith(".")
+    || field.endsWith(".")
+    || field.includes("..")
+  ) {
+    throw new DocumentQueryError("QUERY_FIELD_INVALID", `invalid query field ${field}`);
+  }
+}
+
+function jsonPath(field: string): string {
+  return `$.${field.split(".").map((segment) => `"${segment}"`).join(".")}`;
+}
+
 function boundedLimit(limit: number | undefined): number {
   if (limit === undefined) return 1_000;
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
@@ -356,9 +487,7 @@ interface FieldExpression {
 }
 
 function fieldExpression(field: string, policy: MaterializationPolicy): FieldExpression {
-  if (!FIELD_NAME.test(field)) {
-    throw new DocumentQueryError("QUERY_FIELD_INVALID", `invalid query field ${field}`);
-  }
+  validateFieldName(field);
   switch (field) {
     case "_id":
       return { sql: "id", bindings: [], existsSql: "1", existsBindings: [] };
@@ -382,10 +511,35 @@ function fieldExpression(field: string, policy: MaterializationPolicy): FieldExp
   }
   return {
     sql: "json_extract(body, ?)",
-    bindings: [`$.${field}`],
+    bindings: [jsonPath(field)],
     existsSql: "json_type(body, ?) IS NOT NULL",
-    existsBindings: [`$.${field}`],
+    existsBindings: [jsonPath(field)],
   };
+}
+
+function orderedSorts(sort: DocumentQuery["sort"]): DocumentSort[] {
+  if (sort === undefined) return [];
+  const values: unknown[] = Array.isArray(sort) ? sort : [sort];
+  if (values.length === 0) {
+    throw new DocumentQueryError("QUERY_SORT_EMPTY", "document sort must contain at least one field");
+  }
+  return values.map((value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new DocumentQueryError("QUERY_SORT_INVALID", "invalid document sort");
+    }
+    const candidate = value as Record<string, unknown>;
+    if (typeof candidate.field !== "string") {
+      throw new DocumentQueryError("QUERY_SORT_INVALID", "invalid document sort field");
+    }
+    validateFieldName(candidate.field);
+    if (candidate.direction !== "asc" && candidate.direction !== "desc") {
+      throw new DocumentQueryError(
+        "QUERY_SORT_DIRECTION_INVALID",
+        `invalid document sort direction ${String(candidate.direction)}`,
+      );
+    }
+    return { field: candidate.field, direction: candidate.direction };
+  });
 }
 
 function escapeLike(value: string): string {
@@ -813,11 +967,6 @@ export class SqliteDocumentRepository {
         ?? (OBJECT_ID.test(identifier) ? this.findLegacyByIdRow(identifier.toLowerCase()) : undefined);
       if (identified !== undefined) return identified;
     }
-    const id = requestedId(document);
-    if (id !== null) {
-      const identified = this.findByIdRow(id);
-      if (identified !== undefined) return identified;
-    }
     const key = fallbackKey(document);
     return key === null ? undefined : this.findByFallbackRow(key, true);
   }
@@ -849,6 +998,13 @@ export class SqliteDocumentRepository {
     return next;
   }
 
+  private preconditionFailed(row: DbDocumentV4, ifUnmodifiedSince: number | null): boolean {
+    if (ifUnmodifiedSince === null) return false;
+    const modified = timestamp(materializeApi3(row).srvModified);
+    return modified !== null
+      && Math.floor(modified / 1_000) * 1_000 > ifUnmodifiedSince;
+  }
+
   private assertWritable(row: DbDocumentV4): void {
     const document = materializeLegacy(row);
     if (document.isReadOnly === true || document.readOnly === true || document.readonly === true) {
@@ -871,6 +1027,12 @@ export class SqliteDocumentRepository {
       if (document[field] !== undefined && document[field] !== stored[field]) {
         throw new Error(`Field ${field} cannot be modified by the client`);
       }
+    }
+  }
+
+  private assertClientStorageIdCompatible(row: DbDocumentV4, document: JsonDocument): void {
+    if (document._id !== undefined && document._id !== row.id) {
+      throw new Error("MongoServerError: immutable field _id was altered");
     }
   }
 
@@ -919,7 +1081,9 @@ export class SqliteDocumentRepository {
          identifier_present, srv_created, srv_modified, is_valid, fallback_key, revision,
          srv_metadata_version)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-       ON CONFLICT(collection, id) DO UPDATE SET
+       ${existing === undefined
+    ? ""
+    : `ON CONFLICT(collection, id) DO UPDATE SET
          body = excluded.body,
          sort_time = excluded.sort_time,
          updated_at = excluded.updated_at,
@@ -930,7 +1094,7 @@ export class SqliteDocumentRepository {
          is_valid = excluded.is_valid,
          fallback_key = excluded.fallback_key,
          revision = excluded.revision,
-         srv_metadata_version = excluded.srv_metadata_version`,
+         srv_metadata_version = excluded.srv_metadata_version`}`,
       TREATMENTS,
       id,
       body,
@@ -1013,9 +1177,18 @@ export class SqliteDocumentRepository {
       ? "json_extract(body, '$.created_at') DESC, id ASC"
       : "sort_time DESC, srv_modified DESC, id ASC";
     if (query.sort !== undefined) {
-      const expression = fieldExpression(query.sort.field, policy);
-      order = `${expression.sql} ${query.sort.direction === "asc" ? "ASC" : "DESC"}, id ASC`;
-      bindings.push(...expression.bindings);
+      const sorts = orderedSorts(query.sort);
+      const orderParts: string[] = [];
+      for (const sort of sorts) {
+        const expression = fieldExpression(sort.field, policy);
+        orderParts.push(`${expression.sql} ${sort.direction === "asc" ? "ASC" : "DESC"}`);
+        bindings.push(...expression.bindings);
+      }
+      if (!sorts.some((sort) => sort.field === "_id")) {
+        const tieDirection = sorts[sorts.length - 1]?.direction === "desc" ? "DESC" : "ASC";
+        orderParts.push(`id ${tieDirection}`);
+      }
+      order = orderParts.join(", ");
     }
     bindings.push(boundedLimit(query.limit), boundedSkip(query.skip));
     const statement = `SELECT * FROM documents
@@ -1054,69 +1227,172 @@ export class SqliteDocumentRepository {
     });
   }
 
-  createTreatment(input: JsonDocument): DocumentMutationResult {
+  createTreatmentForApi3(
+    input: JsonDocument,
+    options: Api3MutationOptions,
+  ): Api3MutationDecision {
     return this.storage.transactionSync(() => {
       const document = normalizeTreatmentIdentity(input);
       const existing = this.findApi3CreateCandidate(document);
-      if (existing !== undefined) this.assertApi3ImmutableFields(existing, document, true);
+      if (existing !== undefined) {
+        if (!options.canUpdate) return { ok: false, reason: "missing-update-permission" };
+        this.assertClientStorageIdCompatible(existing, document);
+        this.assertApi3ImmutableFields(existing, document, true);
+        if (options.validate !== false) assertApi3Common(document);
+        normalizeTreatmentDuration(document, materializeLegacy(existing));
+      } else {
+        if (!options.canCreate) return { ok: false, reason: "missing-create-permission" };
+        if (options.validate !== false) {
+          assertApi3Identifier(document);
+          assertApi3Common(document);
+        }
+      }
+      if (options.actor !== null) document.subject = options.actor;
       const id = existing?.id ?? requestedId(document) ?? randomObjectId();
-      return this.writeSnapshot(
-        id,
-        document,
-        existing,
-        existing === undefined ? "create" : "replace",
-        "api3",
-      );
+      return {
+        ok: true,
+        mutation: this.writeSnapshot(
+          id,
+          document,
+          existing,
+          existing === undefined ? "create" : "replace",
+          "api3",
+        ),
+      };
     });
   }
 
-  replaceTreatment(identity: string, input: JsonDocument): DocumentMutationResult {
+  createTreatment(input: JsonDocument): DocumentMutationResult {
+    const decision = this.createTreatmentForApi3(input, {
+      canCreate: true,
+      canUpdate: true,
+      actor: null,
+      ifUnmodifiedSince: null,
+      validate: false,
+    });
+    if (!decision.ok) throw new Error(decision.reason);
+    return decision.mutation;
+  }
+
+  replaceTreatmentForApi3(
+    identity: string,
+    input: JsonDocument,
+    options: Api3MutationOptions,
+  ): Api3MutationDecision {
     return this.storage.transactionSync(() => {
       const existing = this.findByIdentity(identity);
       if (existing === undefined) {
+        if (!options.canCreate) return { ok: false, reason: "missing-create-permission" };
         const document = normalizeTreatmentIdentity({ ...input, identifier: identity });
-        return this.writeSnapshot(
-          requestedId(document) ?? randomObjectId(),
-          document,
-          undefined,
-          "create",
-          "api3",
-        );
+        if (options.validate !== false) {
+          assertApi3Identifier(document);
+          assertApi3Common(document);
+        }
+        if (options.actor !== null) document.subject = options.actor;
+        return {
+          ok: true,
+          mutation: this.writeSnapshot(
+            requestedId(document) ?? randomObjectId(),
+            document,
+            undefined,
+            "create",
+            "api3",
+          ),
+        };
       }
-      if (existing.is_valid === 0) throw new Error("document is deleted");
+      if (existing.is_valid === 0) return { ok: false, reason: "gone" };
+      if (this.preconditionFailed(existing, options.ifUnmodifiedSince)) {
+        return { ok: false, reason: "precondition-failed" };
+      }
+      if (!options.canUpdate) return { ok: false, reason: "missing-update-permission" };
       const document = normalizeTreatmentIdentity({ ...input });
+      this.assertClientStorageIdCompatible(existing, document);
       document._id = existing.id;
       document.identifier = identity;
       this.assertApi3ImmutableFields(existing, document, false, true);
+      if (options.validate !== false) assertApi3Common(document);
+      normalizeTreatmentDuration(document, materializeLegacy(existing));
+      if (options.actor !== null) document.subject = options.actor;
       const resolvedExisting = materializeApi3(existing);
       if (resolvedExisting.srvCreated !== undefined) {
         document.srvCreated = resolvedExisting.srvCreated;
       }
       const serverSrvCreated = finiteInteger(resolvedExisting.srvCreated);
-      return this.writeSnapshot(
-        existing.id,
-        document,
-        existing,
-        "replace",
-        "api3",
-        serverSrvCreated ?? undefined,
-      );
+      return {
+        ok: true,
+        mutation: this.writeSnapshot(
+          existing.id,
+          document,
+          existing,
+          "replace",
+          "api3",
+          serverSrvCreated ?? undefined,
+        ),
+      };
+    });
+  }
+
+  replaceTreatment(identity: string, input: JsonDocument): DocumentMutationResult {
+    const decision = this.replaceTreatmentForApi3(identity, input, {
+      canCreate: true,
+      canUpdate: true,
+      actor: null,
+      ifUnmodifiedSince: null,
+      validate: false,
+    });
+    if (!decision.ok) {
+      throw new Error(decision.reason === "gone" ? "document is deleted" : decision.reason);
+    }
+    return decision.mutation;
+  }
+
+  patchTreatmentForApi3(
+    identity: string,
+    patch: JsonDocument,
+    options: Api3MutationOptions,
+  ): Api3MutationDecision {
+    return this.storage.transactionSync(() => {
+      if (!options.canUpdate) return { ok: false, reason: "missing-update-permission" };
+      const existing = this.findByIdentity(identity);
+      if (existing === undefined) return { ok: false, reason: "not-found" };
+      if (existing.is_valid === 0) return { ok: false, reason: "gone" };
+      if (this.preconditionFailed(existing, options.ifUnmodifiedSince)) {
+        return { ok: false, reason: "precondition-failed" };
+      }
+      this.assertApi3ImmutableFields(existing, patch, false, true);
+      if (options.validate !== false) assertApi3Common(patch, true);
+      const original = materializeLegacy(existing);
+      const serverPatch = { ...patch };
+      if (options.actor !== null) serverPatch.modifiedBy = options.actor;
+      normalizeTreatmentDuration(serverPatch, original);
+      const document = { ...original, ...serverPatch };
+      return {
+        ok: true,
+        mutation: this.writeSnapshot(existing.id, document, existing, "patch", "api3"),
+      };
     });
   }
 
   patchTreatment(identity: string, patch: JsonDocument): DocumentMutationResult | null {
-    return this.storage.transactionSync(() => {
-      const existing = this.findByIdentity(identity);
-      if (existing === undefined) return null;
-      if (existing.is_valid === 0) throw new Error("document is deleted");
-      this.assertApi3ImmutableFields(existing, patch, false, true);
-      const original = materializeLegacy(existing);
-      const document = { ...original, ...patch };
-      return this.writeSnapshot(existing.id, document, existing, "patch", "api3");
+    const decision = this.patchTreatmentForApi3(identity, patch, {
+      canCreate: true,
+      canUpdate: true,
+      actor: null,
+      ifUnmodifiedSince: null,
+      validate: false,
     });
+    if (!decision.ok) {
+      if (decision.reason === "not-found") return null;
+      throw new Error(decision.reason === "gone" ? "document is deleted" : decision.reason);
+    }
+    return decision.mutation;
   }
 
-  deleteTreatment(identity: string, permanent = false): DocumentDeleteResult {
+  deleteTreatment(
+    identity: string,
+    permanent = false,
+    actor: string | null = null,
+  ): DocumentDeleteResult {
     return this.storage.transactionSync(() => {
       const existing = this.findByIdentity(identity);
       if (existing === undefined) return { deleted: false, permanent };
@@ -1136,6 +1412,7 @@ export class SqliteDocumentRepository {
       }
       const document = materializeLegacy(existing);
       document.isValid = false;
+      if (actor !== null) document.modifiedBy = actor;
       const mutation = this.writeSnapshot(existing.id, document, existing, "delete", "api3");
       if (mutation.srvModified === null) throw new Error("soft delete has no srvModified");
       return {

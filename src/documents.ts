@@ -253,7 +253,10 @@ function assertTreatmentQueryBindings(query: DocumentQuery): void {
         bindings += expression + 1;
     }
   }
-  if (query.sort !== undefined) bindings += legacyExpressionBindings(query.sort.field);
+  if (query.sort !== undefined) {
+    const sorts = Array.isArray(query.sort) ? query.sort : [query.sort];
+    for (const sort of sorts) bindings += legacyExpressionBindings(sort.field);
+  }
   if (bindings > SQLITE_MAX_BINDINGS) {
     throw new ApiError(
       400,
