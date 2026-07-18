@@ -124,22 +124,27 @@ describe("official Nightscout UI assets", () => {
   });
 
   it("forces HTML metadata for secondary-page assets and conditional cache hits", async () => {
+    const forwardedValidators: Array<string | null> = [];
     const assetEnv = (status: 200 | 304): Env => ({
       ENTRY_STORE: env.ENTRY_STORE,
       ASSETS: {
-        fetch: async () =>
-          new Response(
-            status === 200
+        fetch: async (request: Request) => {
+          const validator = request.headers.get("If-None-Match");
+          forwardedValidators.push(validator);
+          const effectiveStatus = validator === null ? status : 304;
+          return new Response(
+            effectiveStatus === 200
               ? "<html><title>Nightscout multiframe view</title></html>"
               : null,
             {
-              status,
+              status: effectiveStatus,
               headers: {
                 "Content-Type": "text/plain",
                 ETag: '"split-v1"',
               },
             },
-          ),
+          );
+        },
       } as unknown as Fetcher,
     });
 
@@ -149,17 +154,30 @@ describe("official Nightscout UI assets", () => {
     );
     expect(normal.status).toBe(200);
     expect(normal.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(normal.headers.get("Cache-Control")).toBe("no-store");
+    expect(normal.headers.get("ETag")).toBeNull();
     expect(await normal.text()).toContain("Nightscout multiframe view");
 
     const cached = await worker.fetch(
       new Request("https://example.test/split", {
         headers: { "If-None-Match": '"split-v1"' },
       }),
+      assetEnv(200),
+    );
+    expect(cached.status).toBe(200);
+    expect(cached.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(cached.headers.get("Cache-Control")).toBe("no-store");
+    expect(cached.headers.get("ETag")).toBeNull();
+    expect(await cached.text()).toContain("Nightscout multiframe view");
+    expect(forwardedValidators).toEqual([null, null]);
+
+    const directNotModified = await worker.fetch(
+      new Request("https://example.test/split"),
       assetEnv(304),
     );
-    expect(cached.status).toBe(304);
-    expect(cached.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
-    expect(await cached.text()).toBe("");
+    expect(directNotModified.status).toBe(304);
+    expect(directNotModified.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(await directNotModified.text()).toBe("");
   });
 });
 

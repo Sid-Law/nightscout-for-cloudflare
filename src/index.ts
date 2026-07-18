@@ -140,10 +140,15 @@ function withUtf8Charset(response: Response): Response {
   });
 }
 
-function asHtml(response: Response): Response {
+function asHtml(response: Response, noStore = false): Response {
   if (!response.ok && response.status !== 304) return response;
   const headers = new Headers(response.headers);
   headers.set("Content-Type", "text/html; charset=utf-8");
+  if (noStore) {
+    headers.set("Cache-Control", "no-store");
+    headers.delete("ETag");
+    headers.delete("Last-Modified");
+  }
   return new Response(response.status === 304 ? null : response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -155,14 +160,23 @@ async function assetAt(
   request: Request,
   env: AppEnv,
   pathname: string,
+  ignoreConditionalHeaders = false,
 ): Promise<Response> {
   const assetUrl = new URL(request.url);
   assetUrl.pathname = pathname;
   assetUrl.search = "";
+  const headers = new Headers(request.headers);
+  if (ignoreConditionalHeaders) {
+    headers.delete("If-Match");
+    headers.delete("If-Modified-Since");
+    headers.delete("If-None-Match");
+    headers.delete("If-Range");
+    headers.delete("If-Unmodified-Since");
+  }
   return env.ASSETS.fetch(
     new Request(assetUrl, {
       method: "GET",
-      headers: request.headers,
+      headers,
     }),
   );
 }
@@ -189,7 +203,11 @@ async function servePlatformPage(
 ): Promise<Response | null> {
   const staticPage = /^\/(admin|profile|food|report|split)\/?$/.exec(url.pathname);
   if (staticPage !== null) {
-    return asHtml(await assetAt(request, env, `/${staticPage[1]}/index.html`));
+    const isSplit = staticPage[1] === "split";
+    return asHtml(
+      await assetAt(request, env, `/${staticPage[1]}/index.html`, isSplit),
+      isSplit,
+    );
   }
 
   const clock = /^\/clock\/([a-z0-9-]{1,100})\/?$/.exec(url.pathname);
