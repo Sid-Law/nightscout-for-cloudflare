@@ -40,15 +40,15 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | Profile save/close is verified and Admin/Food/Report/color-clock render smokes pass; add their mutation/report workflows, split view and pushed live updates. |
-| 3. SQLite collection compatibility | In progress | Treatments and device status share the schema-v4/API3 repository; extend it to every collection, close Mongo mixed-type/nested/regex parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. |
-| 4. API v1 | In progress | Activity CRUD is implemented; complete entries utilities/types/errors and the remaining document routes. |
-| 5. API v2 | Partial | JWT issuance/refresh is implemented; complete body credentials, delay-list behavior, summary, notifications and full ddata/properties behavior. |
-| 6. API v3 | Partial treatments + device-status slice | Public `/version`, JWT-protected `/status`, 16 locked generic routes and two-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering; add entries, food, profile and settings plus large-response resource controls and full query parity. |
-| 7. Authentication/admin | Partial | Tenant JWT keys, eight-hour HS256 tokens, live subject/role lookup, Shiro matching and `verifyauth` are implemented; port derived access-token and persistent IP delay-list behavior. |
-| 8. Engine.IO/Socket.IO | Partial read-only polling slice | Strict EIO4 polling is routed to tenant `EntryStore` DOs with persisted sessions/queues, EIO4 heartbeat, SIO5 root CONNECT, read-only authorize ACK/dataUpdate, loadRetro and clients-count events. A persisted DO alarm now survives eviction for heartbeat/session/lease deadlines. Complete the official-page switch only after `/alarm` and tenant propagation; WebSocket, EIO3 HTTP, `/storage`, writes and change broadcasts remain missing. |
-| 9. Real-time storage updates | Storage foundation only | Treatments persist an atomic change snapshot, but no transport consumes it; define bounded outbox retention, cursors and reconnect/eviction tests before broadcasting. |
-| 10. Alarms/background tasks | Realtime foundation only | The DO's single alarm is derived from persisted realtime deadlines and is idempotent across eviction/retry; add a persisted multi-kind task table before API v3 pruning, authorization delay cleanup and server-plugin evaluation share it. |
+| 2. Official browser assets/pages | Partial | An earlier deployed increment supplied authenticated Profile save/close regression evidence, and the current deployed version has Admin/Food/Report/color-clock render smokes. The present candidate still needs post-deployment protected-save retesting; add the remaining mutation/report workflows, split view and pushed live updates. |
+| 3. SQLite collection compatibility | In progress | Entries, treatments and device status share the generic API3 repository. Extend it to food/profile/settings, close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
+| 4. API v1 | In progress | The Entries create/list/current/model/delete slice now covers locked identity, type, date/dateString and bounded failure behavior; Activity CRUD is implemented. Complete preview/echo/times/count/slice/formats and the remaining document routes. |
+| 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
+| 6. API v3 | Partial three-collection slice | Public `/version`, JWT-protected `/status`, the generic routes for entries/treatments/device-status and three-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add food, profile and settings plus large-response resource controls and broader mixed-type query parity. |
+| 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
+| 8. Engine.IO/Socket.IO | Partial read-only polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT, read-only authorize ACK/dataUpdate, loadRetro and clients-count events. One derived alarm survives eviction. Complete the official-page switch only after `/alarm` and tenant propagation; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP, `/storage`, root writes and change broadcasts. |
+| 9. Real-time storage updates | Storage foundation only | Implemented generic mutations persist atomic change snapshots, but no transport consumes them; define bounded outbox retention, cursors and reconnect/eviction tests before broadcasting. |
+| 10. Alarms/background tasks | Realtime/auth foundation only | The DO's single alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share it. |
 | 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
 | 12. Upstream regression suite | Tracked, execution not started | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; 109 files remain unresolved and two are fixed-scope exclusions. |
 
@@ -85,7 +85,46 @@ Mongo-to-SQLite, Express-to-Worker, process-lifecycle, Socket.IO,
 notification-state and browser adaptations remain required work and must not be
 relabeled as scope exclusions.
 
+## Current local candidate (not deployed)
+
+Integration commit `d8e406d13b87b2e304b1db4dc075af18ae463022`
+combines the strict v1/v2 Status contracts, derived/body credential and
+persisted-delay authorization work, direct Hibernatable EIO4 WebSocket, and API
+v3 Entries as the third generic collection. The 18-file Workers-runtime suite
+passes 215/215 locally. That number is local integration evidence only; the
+official v15.0.7 build has also passed with its three known Webpack size
+warnings. Wrangler dry-run read 248 assets, reported 764.00 KiB raw / 135.65 KiB
+gzip, and exposed only `ENTRY_STORE` plus `ASSETS`. The public deployment
+version, remote API/direct-WS smoke and browser workflows still need to be
+executed and recorded before this candidate is called deployed.
+
+Entries deliberately follows a fresh-only pre-1.0 policy. If activation finds
+the old narrow `entries` shadow structurally incompatible, it resets that
+shadow instead of attempting a risky partial import. Canonical documents and
+other collections, including profile, are preserved. At 2026-07-18 14:51 UTC,
+a read-only pre-deployment check found zero Entries and one profile in the
+public lab;
+there is therefore no old simulated Entry row to migrate on that specific
+tenant. This policy is acceptable for the pre-1.0 simulated lab, but it is not
+a general migration path for an existing Nightscout database.
+Fresh deployment is the planned release path for the initial new-user/new-family
+audience; an external legacy-history importer is explicitly deferred and is not
+a launch gate. It means initially creating a new Worker/SQLite DO namespace or
+using an empty tenant. A code redeploy to the same Worker preserves Durable
+Object data; it is not a database reset, so the current lab keeps its canonical
+profile and other documents. This does not authorize real CGM/uploader/closed-
+loop use: the candidate remains simulated-data only.
+
+The Entries bounds are explicit: v1 defaults to a four-day date window;
+realtime/ddata reads use two days; `dateString` and other unindexed candidate
+sets stop with controlled HTTP 413 above 10,000 rows; synchronous delete and
+per-document revision deletion are capped at 128; and `$re` accepts only the
+bounded, case-sensitive subset that can be safely compiled to SQLite `GLOB`.
+
 ## Current deployed increment
+
+The following section intentionally describes the older code that is still
+live. It must not be used as deployment evidence for the local candidate above.
 
 Code commit `0319a8d5e78fc77c4c53c0a94724b706d7ec8255` is deployed at 100%
 traffic as Cloudflare Worker version
@@ -133,7 +172,7 @@ color clock rendered their official empty/unauthorized states. No console error
 was observed; standalone pages emitted only the known
 missing-`#chartContainer` warning.
 
-This is still not a full port: API v3 entries, food, profile and settings,
+The deployed code is still not a full port: API v3 entries, food, profile and settings,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, `/storage` and `/alarm`, root writes, persisted
 change broadcasts, the shared background-task scheduler, server plugins,
@@ -186,20 +225,23 @@ This milestone is the dependency for the rest of API v3 and real-time updates.
 4. Port default roles, admin semantics, failure delay-list and status contracts.
 5. Keep API_SECRET only as the bootstrap/admin credential and never log it.
 
-Items 1–3 and the core of item 4 are complete. Remaining work is the upstream
-API-secret-derived long-token format and prefix lookup, credentials carried in
-request bodies, the persistent per-IP failure delay list, and its shared DO
-alarm cleanup. Token-bearing authorization paths are redacted from adapter
-error logs.
+Items 1–3 and the request-enforcement core of item 4 are complete. The local
+candidate derives the upstream subject credential from API_SECRET/ObjectId,
+preserves prefix lookup, extracts credentials from the locked query/header/body
+precedence, and persists a bounded per-IP failure delay that shares the DO
+alarm. Remaining work is failed-auth admin notification emission. The enforced
+delay is capped at 60 seconds as a named Workers boundary difference.
+Token-bearing authorization paths are redacted from adapter error logs.
 
 ### Milestone C — API completion
 
 1. Finish v1 entries and document routes from Express registration and Swagger.
 2. Finish v2 properties, ddata, summary, notifications and authorization.
-3. **Complete for treatments and device status:** generic search/create/read/
-   update/patch/delete/history, two-collection lastModified and byte-compatible
-   JSON/CSV/XML rendering. Extend the same upstream contract to entries, food,
-   profile and settings, including bounded large-response handling.
+3. **Complete for the named entries, treatments and device-status slices:**
+   generic search/create/read/update/patch/delete/history, three-collection
+   lastModified and byte-compatible JSON/CSV/XML rendering. Extend the same
+   upstream contract to food, profile and settings, including bounded
+   large-response handling.
 4. Port upstream API tests in module order and record any fixed-scope exclusion.
 
 ### Milestone D — real-time transport
@@ -207,11 +249,13 @@ error logs.
 1. **Complete for the named slice:** route exact `/socket.io` and `/socket.io/`
    polling requests to the tenant DO without intercepting the static
    `/socket.io/socket.io.js` shim asset.
-2. **Partial:** EIO4/SIO5 polling sessions, server-ping/client-pong, persisted
-   queues, root CONNECT and a SQL-derived DO alarm for ping/pong/session/lease
-   deadlines are implemented. EIO3/SIO4 remains codec-only and is deliberately
-   rejected by the HTTP endpoint; `upgrades` is empty.
-3. Add hibernatable WebSocket upgrade and reconnect.
+2. **Partial:** EIO4/SIO5 polling sessions and direct Hibernatable WebSocket,
+   server-ping/client-pong, persisted queues, root CONNECT and a SQL-derived DO
+   alarm for ping/pong/session/lease/closure deadlines are implemented.
+   EIO3/SIO4 remains codec-only and is deliberately rejected by the HTTP
+   endpoint; polling advertises `upgrades: []`.
+3. Add the Engine.IO polling-to-WebSocket upgrade path; direct WebSocket open
+   is already implemented and tested across DO eviction.
 4. Extend beyond the read-only `/` subset to `/storage` and `/alarm`, including
    authorization, subscriptions and room behavior.
 5. Extend the implemented root `authorize` and `loadRetro` reads with the
@@ -223,9 +267,10 @@ error logs.
 
 ### Milestone E — background/server behavior
 
-1. Extend the existing realtime-owned single alarm with a persisted SQLite task
-   table so every job kind participates in one derived schedule.
-2. Port heartbeat, admin-notify cleanup and API v3 auto-prune.
+1. Extend the existing realtime/auth-owned single alarm with a persisted SQLite
+   task table so every job kind participates in one derived schedule.
+2. Port failed-auth admin-notify emission and API v3 auto-prune; persisted
+   failure-delay cleanup already shares the alarm.
 3. Generate the official server plugin registry at build time.
 4. Execute official dataloader/sandbox/plugin/notification modules through a
    persisted tenant context.
@@ -280,6 +325,9 @@ After deployment:
 
 The footprint remains one Worker, Workers Static Assets and the `EntryStore`
 SQLite Durable Object namespace. Wrangler version rollback can restore Worker
-code and assets. SQLite schema changes require forward-compatible migrations;
-never use destructive schema rollback on user data. No D1/R2/Queue/custom-domain
-cleanup is needed because those resources are not created.
+code and assets, but neither rollback nor redeployment clears or rolls back the
+SQLite Durable Object. NSCF's own forward-compatible schema activation remains
+a release requirement even though importing an external MongoDB history is
+deferred; never use destructive schema rollback on user data. No
+D1/R2/Queue/custom-domain cleanup is needed because those resources are not
+created.

@@ -30,6 +30,13 @@ homepage still uses the REST polling shim; deploying the server endpoint is not
 a homepage transport switch. Wrangler retained existing dashboard variables
 with `--keep-vars`. The configured `API_SECRET` value was never read or printed.
 
+Newer local integration commit
+`d8e406d13b87b2e304b1db4dc075af18ae463022` is **not deployed** at the time of
+this record. It adds strict v1/v2 Status, the derived/body-credential and
+persisted-delay authorization increment, direct Hibernatable EIO4 WebSocket and
+API v3 Entries. Do not attribute those additions or its 215/215 local tests to
+the Cloudflare Version ID above.
+
 ## Cloudflare footprint
 
 The project uses exactly:
@@ -42,7 +49,46 @@ It does not create or use D1, R2, KV, Queues, a custom domain or a zone route.
 The public instance is for simulated data only and must not receive real health
 data or CGM credentials.
 
-## Pre-deployment gate
+## Pending local candidate
+
+The 18-file Workers-runtime suite at local commit
+`d8e406d13b87b2e304b1db4dc075af18ae463022` passes 215/215. Final build,
+Wrangler dry-run also passed: the official v15.0.7 build emitted only its three
+known size warnings, Wrangler read 248 assets, measured 764.00 KiB raw / 135.65
+KiB gzip, and listed only `ENTRY_STORE` plus `ASSETS`. Deployment, remote
+API/direct-WebSocket smoke and real-browser workflows are still pending and
+must be appended here with the actual new Cloudflare IDs. No version or
+deployment result is predicted in advance.
+Direct WebSocket also retains a named at-most-once crash window between durable
+queue removal and `send()`; the local tests do not turn that into an exactly-
+once delivery claim.
+
+Its Entries storage policy is fresh-only for the pre-1.0 simulated lab. An
+incompatible narrow `entries` shadow is reset instead of imported; canonical
+documents and other collections, including profile, are retained. At
+2026-07-18 14:51 UTC, read-only remote checks returned `[]` (zero records) from
+`/api/v1/entries.json?count=10000` and a one-element array from
+`/api/v1/profile.json`. No profile content was copied. Therefore this particular
+lab has no old simulated Entry row to lose while the existing profile remains
+in the preserved collection. This is not a migration guarantee for an existing
+Nightscout installation.
+
+Wrangler deployment does not clear the existing SQLite Durable Object. The
+planned initial family onboarding model is a newly created Worker/SQLite DO
+namespace or other empty NSCF tenant, not an import of an external MongoDB
+history. This release upgrades the existing public Worker in place, so its
+canonical profile and other documents remain. A truly empty reset would require
+a separate namespace or an explicitly destructive deletion.
+
+The candidate keeps v1 Entries' four-day default window and uses a two-day
+canonical Entries window for realtime/ddata. Unindexed or `dateString`
+candidate sets above 10,000 return controlled 413, synchronous deletion and
+revision cleanup are capped at 128, and only a bounded safe `$re` subset is
+compiled to SQLite `GLOB`. Realtime and authorization-delay cleanup share the
+one alarm available to each DO; failed-auth admin notification remains missing,
+and enforced authorization delay is capped at 60 seconds.
+
+## Deployed release pre-deployment gate
 
 | Check | Result |
 | --- | --- |
@@ -119,20 +165,25 @@ was not re-exercised in this release.
 ## Known limitations
 
 - Public reads and the tenant selector are not a private-health-data security
-  boundary; simulated data only.
-- A deployed persisted EIO4 polling/read-only-root subset exists, but the
-  homepage still uses the REST shim. WebSocket, EIO3 HTTP, `/storage`, `/alarm`,
-  root writes and database-change broadcasts remain missing.
+  boundary; simulated data only. Neither the deployed version nor the local
+  candidate may be connected to a real CGM uploader, pump or closed-loop
+  client.
+- The deployed release has persisted EIO4 polling/read-only-root only. The
+  local candidate adds direct Hibernatable EIO4 WebSocket, but neither version
+  switches the homepage from the REST shim. Polling-to-WebSocket upgrade, EIO3
+  HTTP, `/storage`, `/alarm`, root writes and database-change broadcasts remain
+  missing.
 - At the 1,000,000-byte malformed-UTF-8 edge, NSCF admission counts streamed
   raw bytes while locked Node can count replacement-expanded text differently.
-- API v1 and v2 remain subsets. API v3 implements public version, JWT status,
-  treatment and device-status generic search/CRUD/history, both collections in
-  `lastModified`, and locked small/medium JSON/CSV/XML rendering. Entries,
-  food, profile and settings plus large-response renderer resource controls
-  remain missing.
-- JWT signing, expiry and Shiro permission matching are implemented, but the
-  upstream access-token derivation/prefix behavior, request-body credentials
-  and persistent per-IP failure delay list are missing.
+- API v1 and v2 remain subsets. The deployed API v3 has public version, JWT
+  status, treatments and device status. The local candidate adds Entries as the
+  third generic collection and strict v1/v2 Status. Food, profile, settings and
+  large-response renderer resource controls remain missing.
+- JWT signing, expiry and Shiro permission matching are deployed. The local
+  candidate adds access-token derivation/prefix behavior, request-body
+  credentials and the persisted per-IP delay list. Failed-auth admin
+  notification emission is still missing, and the enforced delay has a named
+  60-second platform cap.
 - MongoDB query, BSON ObjectId, index and update semantics are only partially
   mapped to SQLite.
 - `document_changes` is still an unbounded full-body journal. No transport
@@ -155,6 +206,7 @@ cache fix, treatments API v3 JSON vertical and read-only EIO4 polling root, but
 not device-status API v3, locked CSV/XML rendering or persistent realtime alarm.
 
 Wrangler version rollback can restore Worker code and assets. SQLite schema
-changes through version 5 are additive; rollback must not attempt a destructive
-SQLite downgrade. Deleting the whole lab requires deleting the Worker and then
-its Durable Object namespace. No D1/R2/KV/Queue/custom-domain cleanup is needed.
+changes through version 5 are additive; neither rollback nor redeployment
+clears or rolls back SQLite, and rollback must not attempt a destructive
+downgrade. Deleting the whole lab requires deleting the Worker and then its
+Durable Object namespace. No D1/R2/KV/Queue/custom-domain cleanup is needed.

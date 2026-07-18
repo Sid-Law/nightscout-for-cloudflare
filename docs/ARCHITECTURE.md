@@ -6,6 +6,12 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
+Unless a paragraph explicitly says “deployed,” “current” below describes local
+integration commit `d8e406d13b87b2e304b1db4dc075af18ae463022`. Its 18-file
+Workers-runtime suite passes 215/215, but the public Worker still runs the older
+commit recorded in `DEPLOYMENT.md`; direct WebSocket and API v3 Entries do not
+yet have remote release evidence.
+
 ## Current request and data flow
 
 ```text
@@ -19,7 +25,7 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - API_SECRET, subject access-token and signed-JWT authorization
   - bounded parsing, upstream query subset and tenant routing
   - Socket.IO client-surface polling adapter
-  - strict `/socket.io/` EIO4 polling HTTP adapter
+  - strict `/socket.io/` EIO4 polling and direct-WebSocket adapters
         |
         | ENTRY_STORE.getByName(tenant), typed RPC
         v
@@ -28,15 +34,16 @@ EntryStore Durable Object (one logical instance per tenant)
         | synchronous SQL API
         v
 Embedded SQLite
-  - narrow SGV entries table
-  - unique server id / upstream-style date+type dedupe
-  - descending date index
-  - generic documents table keyed by collection + id
+  - narrow Entries compatibility shadow (fresh-only pre-1.0 reset policy)
+  - generic documents table keyed by collection + id, including canonical Entries
+  - indexed Entries date/dateString/type fields and upstream-style identity
   - food, profile, treatments, devicestatus, activity, roles and subjects
   - per-collection sort and lookup indexes
   - tenant-local JWT signing material
   - persisted EIO4 sessions and bounded outbound packet queues
-  - one SQL-derived Durable Object alarm for realtime deadlines
+  - hibernatable WebSocket attachments backed by persisted session authority
+  - persisted authorization-failure delays
+  - one SQL-derived Durable Object alarm for realtime/auth deadlines
   - local schema migration table
 ```
 
@@ -68,8 +75,9 @@ The adapter dispatches the first `dataUpdate` before completing `authorize`, as
 the upstream `lib/server/websocket.js` path does, so profile-dependent plugins
 can initialize from the first payload.
 
-Separately, exact `/socket.io` and `/socket.io/` requests can now reach a real
-tenant-local Engine.IO 4 polling endpoint. It implements the official open
+Separately, exact `/socket.io` and `/socket.io/` requests can now reach real
+tenant-local Engine.IO 4 polling and direct-WebSocket endpoints. Polling
+implements the official open
 shape with `upgrades: []`, 25-second server ping / 20-second client-pong
 heartbeat, RS payload framing, SIO5 root CONNECT, `clients`, read-only
 `authorize`, initial `dataUpdate`, and `loadRetro`. Sessions, root authorization
@@ -78,10 +86,16 @@ SQLite database, while only an in-flight long-poll waiter is ephemeral. DO
 eviction therefore does not lose protocol authority or queued packets. This
 endpoint is independently tested but is not loaded by the official homepage;
 the built `/socket.io/socket.io.js` remains the REST shim described above.
+Direct WebSocket opens with `EIO=4&transport=websocket`, is accepted by the DO
+through WebSocket Hibernation, and restores its tenant/SID authority from a
+validated attachment plus SQLite state after eviction. It is not an Engine.IO
+upgrade from an existing polling SID: polling continues to advertise no
+upgrade.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
-deadlines are derived from those SQLite rows and multiplexed through the DO's
-single persistent alarm. The handler is transactional and idempotent under
-at-least-once delivery; process-lifetime timers are not authoritative.
+deadlines, bounded WebSocket close retries and stale authorization-failure
+cleanup are multiplexed through the DO's single persistent alarm. The handler
+is transactional and idempotent under at-least-once delivery;
+process-lifetime timers are not authoritative.
 
 The official v15.0.7 service worker uses a cache-first list that includes
 `/socket.io/socket.io.js`. A cache key derived only from the upstream release
@@ -100,11 +114,11 @@ long. It hashes the configured raw passphrase with SHA-1 and SHA-512 through
 Web Crypto and compares the supplied `api-secret` header (or `secret` query
 parameter) with the hexadecimal digests. Each comparison first hashes both
 inputs to a fixed 32-byte value; it uses the runtime's native
-`timingSafeEqual` when available and a fixed-length XOR fallback otherwise.
+`timingSafeEqual` for the comparison.
 Raw passphrases on the request wire are rejected. Missing configuration fails
-closed. Admin-created subjects, roles, permissions and random access tokens are
-stored in the same tenant's SQLite documents table; authorized subject tokens
-may be used according to their persisted permissions.
+closed. Admin-created subjects, roles, permissions and derived access-token
+metadata are stored in the same tenant's SQLite documents table; authorized
+subject tokens may be used according to their persisted permissions.
 
 `/api/v2/authorization/request/<accessToken>` now signs an upstream-shaped
 HS256 JWT whose payload contains `accessToken`, `iat` and `exp`, with the
@@ -117,13 +131,22 @@ existing JWT. Permission checks use the same `shiro-trie` 0.4.10 resolved by
 the locked upstream release, including suffix, wildcard and comma semantics.
 Token-bearing authorization paths are redacted from unhandled-error logs.
 
-This remains a partial authorization port. The current subject access token is
-a stored random value rather than the upstream API-secret/ObjectId-derived
-format, and body-carried credentials, historical prefix matching and the
-per-source-IP failure delay list are not yet implemented. Most current GET
-routes remain public. API v3 `/status`, `/lastModified` and all treatments and
-device-status routes accept only a verified Bearer JWT; API secrets and query
-tokens are not API v3 credentials.
+The local candidate now derives each subject access token from the
+API-secret/ObjectId contract, preserves the locked suffix/digest-prefix lookup,
+and implements the independent secret/token extraction order across query,
+header and the first request-body object. Explicit failures are recorded per
+source IP in SQLite, delay subsequent checks, and are cleaned through the same
+DO alarm. Locked v15.0.7 sends repeated/bracket `secret` arrays into
+`enclave.isApiKey().toLowerCase()`, producing an unhandled asynchronous
+rejection rather than a normal response. NSCF deliberately hardens that edge:
+an array can never grant admin, its bounded values are tried as ordered subject
+credentials, and an invalid/oversized array returns 401 and records the
+failure. Two other differences remain named: the Workers request boundary caps
+the actually enforced delay at 60 seconds, and a failed attempt does not yet
+emit the upstream admin notification. Most current GET routes remain public. API v3
+`/status`, `/lastModified` and all entries, treatments and device-status routes
+accept only a verified Bearer JWT; API secrets and query tokens are not API v3
+credentials.
 
 The Worker is otherwise stateless. An optional `tenant` query parameter is
 validated and passed to `ENTRY_STORE.getByName()`. The default is `demo`. A
@@ -139,6 +162,18 @@ returning. The upstream v15.0.7 rule of one SGV per normalized timestamp/type
 is represented by a unique dedupe key; client UUIDs are preserved as
 `identifier`, while valid 24-hex IDs may be retained as `_id`. Generic document
 records store bounded JSON plus normalized sort/create/update timestamps.
+
+The v1/v2 Status adapter is a deliberately narrow Express-contract boundary.
+It handles the locked txt/json/js/png/svg forms, extensionless Accept
+negotiation, redirects, v2 inheritance, GET-to-HEAD behavior, method fallthrough
+and final 404/406 production shapes before the Worker's general API/CORS path.
+The response body's `authorized` field is independently derived only from query
+`token` and then query `secret`, including Express-style repeated/bracket array
+values; an Authorization header does not populate that field. Local
+Workers-runtime tests lock representation bytes and lengths. A real local
+Wrangler check confirmed fixed `Content-Length` for the production 406, while
+the platform HTTP boundary may still transfer the HTML finalhandler 404 as
+chunked; that transport-level P2 remains a post-deploy smoke item.
 
 ## Target complete-port architecture
 
@@ -214,7 +249,7 @@ JSON. Required behavior includes:
 SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
-The first two generic vertical slices—treatments and device status—are now
+The first three generic vertical slices—entries, treatments and device status—are now
 implemented in the tenant `EntryStore` Durable Object. Internal SQL schema
 version 4 extends `documents`
 with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
@@ -244,6 +279,32 @@ or indexes, migrates it, then repeats activation to prove idempotence. A
 separate older-v4 fixture proves structural repair with marker 4 already
 present and recomputes legacy offset-bearing fallback keys without rewriting
 their preserved bodies.
+
+Entries adds indexed canonical documents plus a narrow compatibility shadow.
+The v6 activation probe is deliberately fresh-only: when it finds an
+incompatible pre-1.0 `entries` table, it drops and recreates only that shadow
+instead of guessing how to import the earlier simulated schema. It does not
+drop canonical documents, profiles or any other collection. Compatible healthy
+activation performs a read-only structural/index probe, so ordinary DO
+eviction does not repeat schema writes. The public lab was checked before this
+candidate's deployment and contained zero Entries and one profile; therefore
+this specific reset has no old simulated Entry row to lose, but the policy is
+not a general legacy Nightscout migration guarantee.
+Deployment to the existing public Worker activates this schema in place and
+retains canonical/profile data. A new family's planned fresh path starts with a
+new Worker/SQLite DO namespace or empty tenant; an ordinary code deployment
+does not replace or clear an existing namespace. Correct NSCF-internal schema
+activation remains mandatory even though external Mongo history import is
+deferred.
+
+V1 Entries preserves the locked four-day default date window and keeps
+`dateString` as a distinct string field rather than folding it into numeric
+`date`. Realtime/ddata loading uses a separate two-day canonical-document
+window. Indexed date/type searches stay in SQLite. A `dateString` scan or other
+unindexed candidate set that would cross 10,000 rows fails closed with HTTP
+413; synchronous delete and per-document revision cleanup are capped at 128.
+These are explicit Free-plan controls rather than claims that SQLite and Mongo
+have identical unbounded behavior.
 
 Treatments and device status now share an internal SQLite repository and DO RPC
 boundary for:
@@ -302,12 +363,12 @@ delete tombstones. It does not use audit timestamps or virtual `created_at`
 fallbacks. Permanent deletion removes the document and its snapshots together,
 matching upstream history behavior for `permanent=true`.
 
-### API v3 treatments and device-status boundary
+### API v3 entries, treatments and device-status boundary
 
 The HTTP adapter now exposes exactly the eight locked generic routes for each
-of treatments and device status: GET/POST on the collection, GET on both
+of entries, treatments and device status: GET/POST on the collection, GET on both
 history forms, and GET/PUT/PATCH/DELETE on an identifier. GET
-`/api/v3/lastModified` reports each of those collections independently when the
+`/api/v3/lastModified` reports all three collections independently when the
 subject can read it. Unmatched API v3 routes use the locked `{status,message}`
 404 envelope rather than falling into the older adapter error shape.
 
@@ -351,8 +412,9 @@ Other deliberate or unresolved platform differences are explicit:
   server's `isValid != false` condition replaces any caller `isValid` filter;
 - a parsed API v3 limit of zero (for example, from `limit=0x10`) is capped at
   1,000 rows; locked Mongo treats `cursor.limit(0)` as unlimited;
-- API v3 `$re` is rejected with 400 instead of silently approximating Mongo
-  regular expressions with SQLite `LIKE`;
+- API v3 `$re` accepts only a bounded, case-sensitive, linear subset compiled
+  to SQLite `GLOB`; unsupported constructs, patterns above 128 UTF-8 bytes or a
+  compiled GLOB above SQLite's 50-byte limit return controlled 400;
 - unsafe JSON-path field syntax and queries beyond SQLite binding/statement
   limits return controlled 400 responses;
 - non-negative `skip` values through JavaScript's maximum safe integer reach
@@ -360,14 +422,14 @@ Other deliberate or unresolved platform differences are explicit:
   integer binding;
 - SQLite/Mongo comparison and ordering across mixed JSON types, nested
   projection behavior and array semantics are not yet claimed compatible;
-- treatments and device status are represented by API v3 `lastModified`; the
-  remaining entries, food, profile and settings collections are unimplemented.
+- entries, treatments and device status are represented by API v3
+  `lastModified`; food, profile and settings remain unimplemented there.
 
 The locked history projection quirk is retained: when `fields` excludes
 `srvModified`, the response body excludes it and Last-Modified/ETag are derived
 from the always-projected collection `created_at` fallback. Legacy documents
 can be read with virtual srv fields but do not match raw srv filters or HISTORY.
-These are two generic collection vertical slices, not completion of API v3 or
+These are three generic collection vertical slices, not completion of API v3 or
 of any whole upstream `api3.*` test file. CSV/XML currently serialize an entire
 bounded result in memory; large-result CPU and 128 MB memory adaptation remains
 open even though byte-level small/medium contracts are green.
@@ -382,10 +444,10 @@ limit and offset. See [Durable Objects limits](https://developers.cloudflare.com
 These bounds do not prove Mongo-compatible mixed-type comparison or sort
 collation; that differential matrix remains open.
 
-The current Free-plan allowances include 100,000 Durable Object requests,
-5,000,000 SQL rows read and 100,000 SQL rows written per day, plus 5 GB of
-SQLite data across the account; exhausted daily categories fail until their
-UTC reset. Index maintenance also counts toward row writes. See
+The current Free-plan SQLite allowances include 5,000,000 rows read and 100,000
+rows written per day, plus 5 GB of SQLite data across the account; exhausted
+daily categories fail until their UTC reset. Index maintenance counts toward
+row writes, and each `setAlarm()` call is billed as one row written. See
 [Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/).
 The idempotent activation repair and clock seeding still scan current document
 metadata, so frequent eviction can consume rows-read allowance even when no
@@ -418,33 +480,40 @@ fixed deployment footprint.
 `authorize`, `subscribe`, `loadRetro` and `dataUpdate` events and polls every
 15 seconds. It still supplies the official page and does not use the new
 server endpoint. The separate endpoint now implements strict EIO4 HTTP polling
-with persisted session/queue state, root namespace CONNECT, read-only
-authorization ACKs, initial/retro data and connection-count broadcasts.
+and direct Hibernatable WebSocket with persisted session/queue state, root
+namespace CONNECT, read-only authorization ACKs, initial/retro data and
+connection-count broadcasts.
 
 The current server boundary is explicit:
 
-- EIO4 polling only; EIO3 HTTP, WebSocket upgrades and binary packets are
-  rejected, and the handshake advertises `upgrades: []`; an exact
+- EIO4 polling and direct WebSocket only; an Engine.IO upgrade from an existing
+  polling SID, EIO3 HTTP and binary packets are rejected, and the polling
+  handshake advertises `upgrades: []`; an exact
   `application/octet-stream` POST closes its leased SID and receives a
   controlled 400/code-3 response;
 - 256 sessions per tenant, 128 queued packets and a 1,000,000-byte whole
   polling payload per session; incoming POST bodies are counted while streamed;
 - 32-session opportunity cleanup on normal requests plus a persistent alarm
   derived from the earliest ping, pong, expiry, poll or POST deadline;
+- direct-WebSocket queue delivery is currently at-most-once across an isolate
+  crash: a failure between durable dequeue and `server.send()` can lose that
+  frame. Closing this P2 requires an acknowledgement/replay contract;
 - `/storage` and `/alarm` return SIO5 `CONNECT_ERROR` and do not terminate an
   already connected root namespace;
 - root `subscribe` and all write events have no handler or ACK, matching the
   locked root's lack of `subscribe` while deliberately exposing no mutation;
 - no `document_changes` row is consumed and no database mutation is broadcast.
 
-Every realtime state transition recomputes the single persisted alarm from SQL.
+Every realtime or authorization-delay state transition recomputes the single
+persisted alarm from SQL.
 The handler cleans all due sessions/leases, enqueues due pings, handles queue
 overflow and broadcasts the surviving client count inside one synchronous
 SQLite transaction, then schedules the next derived deadline. Repeated delivery
 does not duplicate pings or deletions because `pong_deadline` and row removal
-are durable idempotency state. This alarm currently owns realtime deadlines
-only; API3 pruning, authorization delay cleanup and server-plugin jobs still
-need a shared persisted task table before using the same one-alarm slot.
+are durable idempotency state. WebSocket closure tombstones and authorization
+failure rows add their own due times to the same derived minimum. API3 pruning
+and server-plugin jobs still need a shared persisted task table before using
+the same one-alarm slot.
 
 Initial authorization data mirrors `dataWithRecentStatuses()`. `loadRetro`
 uses a separate unfiltered device-status view over the same one-day raw SQL
@@ -459,15 +528,17 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 `loadRetro` require exactly one object payload; this is a resource/safety
 tightening over permissive upstream JavaScript call shapes.
 
-This endpoint is live in Cloudflare version
-`e8e7970b-65bb-412f-ba74-193ce14575c5`. A remote transport smoke completed
-EIO4 open, SIO5 root CONNECT, read-only `authorize`, `dataUpdate`, `status` and
-ACK over the tenant DO. A poll held beyond the 25-second interval then received
-the SQL-alarm-driven Engine.IO ping, and the following pong succeeded. The
-official homepage intentionally still uses the
-REST polling shim, so this proves the separate server slice rather than a page
-transport switch. The one remaining named HTTP edge difference is admission at
-the 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
+The polling portion is live in Cloudflare version
+`e8e7970b-65bb-412f-ba74-193ce14575c5`. Its remote smoke completed EIO4 open,
+SIO5 root CONNECT, read-only `authorize`, `dataUpdate`, `status`, ACK and an
+alarm-driven ping/pong. Direct Hibernatable WebSocket exists only in local
+candidate commit `d8e406d13b87b2e304b1db4dc075af18ae463022` at this writing;
+its 215-test integrated local gate is not remote deployment evidence. The
+at-most-once dequeue/send crash window described above also remains open. The
+official homepage intentionally still uses the REST polling shim, so even a
+future direct-WS smoke will prove the separate server slice rather than a page
+transport switch. The named polling HTTP edge difference is admission at the
+1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
 
 The target transport persists a change record in the same DO turn as each
@@ -506,10 +577,12 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
 ## Runtime and safety boundaries
 
 - Maximum request body: 512 KiB; maximum POST batch: 100 records.
-- EIO4 polling POST body/advertised payload: 1,000,000 UTF-8 bytes; maximum 128
-  queued packets and 256 persisted sessions per tenant.
+- EIO4 polling/direct-WebSocket payload controls: 1,000,000-byte advertised
+  polling maximum, 128 queued packets and 256 persisted sessions per tenant.
 - SGV range accepted by this prototype: integer 20–600 mg/dL.
 - History count defaults to 10 and is capped at 10,000.
+- Entries unindexed/dateString candidates are capped at 10,000 with controlled
+  HTTP 413; synchronous deletion and stored-revision cleanup are capped at 128.
 - Official UI and calculations are not changed; no NSCF dosing logic exists.
 - `API_SECRET` is the bootstrap application credential; subject access tokens
   and role documents are tenant-local SQLite records. The API_SECRET value is a

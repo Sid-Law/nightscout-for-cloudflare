@@ -19,15 +19,20 @@ for diagnosis, dosing, or medical decisions.
 - One SQLite-backed Durable Object class, sharded one instance per tenant.
 - A tested subset of Nightscout entries, food, profile, treatments,
   device-status, activity, roles, subjects, status, authorization and
-  page-data endpoints.
+  page-data endpoints. The v1/v2 Status surface now follows the locked
+  routing, negotiation, redirect, format, authorization and error contracts.
 - Tenant-local, SQLite-persisted HS256 JWT signing, the upstream eight-hour
-  authorization-token lifetime, locked `shiro-trie` permission matching and
-  corrected `verifyauth` behavior.
-- The public API v3 version envelope, JWT-protected status endpoint and two
-  generic collection verticals for treatments and device status: collection
+  authorization-token lifetime, derived subject access tokens and prefix
+  matching, body/query/header credential precedence, persisted per-IP failure
+  delay, locked `shiro-trie` permission matching and corrected `verifyauth`
+  behavior. The enforced delay is deliberately capped at 60 seconds; failed
+  authentication does not yet generate the upstream admin notification.
+- The public API v3 version envelope, JWT-protected status endpoint and three
+  generic collection verticals for entries, treatments and device status:
+  collection
   search/create, resource read/replace/patch/delete, both history forms and
   collection-aware `lastModified` in the locked JSON, CSV and XML formats.
-- A shared SQLite schema-v4/repository for treatments and device-status
+- A shared SQLite repository for entries, treatments and device status
   legacy/API3 identity, collection-specific fallback dedupe, ordered search,
   branch-sensitive mutation permissions, server timestamps,
   tombstones/history and atomic change snapshots.
@@ -40,13 +45,19 @@ for diagnosis, dosing, or medical decisions.
   HTTP polling and the read-only SIO5 root namespace. Sessions, heartbeat state,
   authorization state and bounded outbound queues persist in the existing
   `EntryStore` SQLite Durable Object across eviction.
+- A direct EIO4 WebSocket transport accepted by the same Durable Object through
+  WebSocket Hibernation. It persists protocol authority in SQLite and restores
+  tagged socket attachments after eviction. It does not implement an
+  Engine.IO polling-to-WebSocket upgrade; clients open the direct transport.
 - A tenant-local Durable Object alarm derived from persisted realtime
-  deadlines. It survives eviction and drives server ping, pong timeout,
-  session expiry and abandoned poll/POST lease cleanup without relying on a
-  process-lifetime `setInterval`.
+  deadlines and authorization-delay cleanup. It survives eviction and drives
+  server ping, pong timeout, session expiry, bounded WebSocket closure retry,
+  abandoned poll/POST lease cleanup and stale authorization-failure cleanup
+  without relying on a process-lifetime `setInterval`.
 - Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs. Only EIO4
-  polling is routed: the endpoint advertises `upgrades: []`, rejects EIO3, and
-  does not implement binary packets.
+  polling and direct WebSocket are routed: polling advertises `upgrades: []`,
+  EIO3 and binary packets are rejected, and polling-to-WebSocket upgrade is not
+  implemented.
 - Content-addressed loading for that platform shim, so an older upstream
   service worker cannot keep serving an obsolete adapter after deployment.
 - A response-header adapter that preserves upstream asset bytes while supplying
@@ -58,12 +69,13 @@ for diagnosis, dosing, or medical decisions.
 ## What is not complete
 
 This is not yet a drop-in Nightscout server. Important missing work includes
-the complete v1/v2/v3 route and error surface, the four remaining API v3
-generic collections, large-response CSV/XML resource adaptation, the
-authorization delay list and
-legacy access-token derivation, Mongo query/collection parity,
-WebSocket upgrade, EIO3 HTTP transport, `/storage` and `/alarm` namespaces,
-root write handlers, real-time database-change broadcasts, bounded change
+the complete v1/v2/v3 route and error surface, the three remaining API v3
+generic collections, large-response CSV/XML resource adaptation, failed-auth
+admin notifications, Mongo query/collection parity beyond the tested safe
+subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
+the direct-WebSocket at-most-once crash window, `/storage` and `/alarm`
+namespaces, root write handlers, real-time
+database-change broadcasts, bounded change
 outbox retention, the general background-task scheduler, server plugin
 execution,
 notification/summary persistence and end-to-end verification of every official
@@ -83,10 +95,12 @@ The release deployment flow has one user-facing setting:
 > Set a family access password (at least 12 characters), then enter the same
 > password in the phone's Nightscout data-source settings.
 
-The Deploy to Cloudflare form obtains this value from `.dev.vars.example` and
-the human-readable binding description in `package.json`. Users do not need to
-run a CLI command, visit the Worker settings page, or calculate a hash. The
-internal binding remains `API_SECRET` for Nightscout compatibility.
+The planned Deploy to Cloudflare flow will obtain this value from the
+human-readable binding description in `package.json`, without asking a family
+to calculate a hash. That one-click flow has not yet passed end-to-end release
+testing; current operators still use Wrangler or the Cloudflare dashboard as
+documented below. The internal binding remains `API_SECRET` for Nightscout
+compatibility.
 
 ## Local setup
 
@@ -134,26 +148,35 @@ Tenant names are lowercase letters/numbers followed by up to 63 lowercase
 letters, numbers, `_` or `-`. The selector provides storage isolation only; it
 is not access control.
 
-## Current security boundary
+## Current code security boundary
 
-The current deployment is a public simulated-data lab, not a personal
-Nightscout deployment.
+The public deployment and the newer local candidate are simulated-data labs,
+not personal Nightscout deployments. The newer local candidate adds the
+contracts described below; see the deployment section for the exact older code
+that is still live.
 Current v1/v2 writes require a Nightscout-compatible API-secret digest or an
-authorized subject credential; API v3 treatments and device-status operations
-require a Bearer JWT.
+authorized subject credential; API v3 entries, treatments and device-status
+operations require a Bearer JWT.
 The tenant selector provides storage routing, not authorization. Missing or
 shorter-than-12-character `API_SECRET` configuration
 fails closed with HTTP 503 for API-secret writes. A request must carry the
 SHA-1 or SHA-512 hexadecimal digest in `api-secret` (or `?secret=`); the raw
-passphrase is deliberately rejected on the wire. A subject's long-lived access
-token can obtain an eight-hour HS256 JWT from
+passphrase is deliberately rejected on the wire. A subject's
+API-secret/ObjectId-derived access token can obtain an eight-hour HS256 JWT from
 `/api/v2/authorization/request/<token>`; Bearer authorization verifies the
 signature and expiry, then re-reads the subject and roles from that tenant's
 SQLite Durable Object. Each tenant has a separate random signing key that
-survives DO eviction and is never returned. This is the authorization core, not
-full parity: upstream IP failure delays, body-carried credentials and the
-historical access-token derivation/prefix behavior remain to be ported. The root
-adapter dependency audit is clean, while `npm ci` for the locked upstream
+survives DO eviction and is never returned. Query, header and first-body-object
+credentials follow the locked extraction order, and failed explicit
+credentials participate in a persisted per-IP delay list shared with the DO's
+single alarm. Repeated or bracket-form `secret` arrays are a deliberate
+hardening difference: locked v15.0.7 passes them to a scalar-only API-key check
+and the request does not complete normally; NSCF never treats an array as the
+admin secret, tries its bounded values as subject credentials in order, and
+returns 401 plus a recorded failure when none match. Other explicit differences
+are the 60-second Workers cap on enforced delay and the missing upstream
+failed-auth admin notification. The root adapter dependency audit is clean,
+while `npm ci` for the locked upstream
 v15.0.7 tree currently reports 66 inherited findings (9 low, 18 moderate, 37
 high, 2 critical). They are recorded rather than silently changed because
 `npm audit fix` would mutate the official release dependency graph.
@@ -177,8 +200,8 @@ code as `env.API_SECRET`.
 
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
 into an issue. Most current GET endpoints remain publicly readable. API v3
-`/status`, `/lastModified` and every treatments/device-status operation require
-a valid Bearer JWT.
+`/status`, `/lastModified` and every entries/treatments/device-status operation
+in the local candidate require a valid Bearer JWT.
 
 If Nightscout says `Wrong API secret`, verify that the Worker setting has no
 leading/trailing spaces, save it, wait for the deployment to finish, then enter
@@ -215,21 +238,51 @@ email.
 
 The automated Workers-runtime suite covers the shipped page routes, dynamic
 clock template, polling-adapter
-asset/version contracts, implemented status and page-data contracts, API-secret
-failure modes, the implemented entries and document CRUD subset, activity
-conditional requests, JWT issue/verify/expiry/tamper/cross-tenant behavior,
-Shiro permission matching, `verifyauth`, the API v3 version/status envelopes,
-SQLite persistence across eviction, tenant isolation and invalid input. It also
-covers schema-v4 repair, v1/API3 treatment/device-status identity and time
-separation, UUID/ObjectId query handling, API3 materialization and rollback,
-JSON/CSV/XML workflows for both generic collections, and the
-EIO4 polling HTTP/session boundary: packet ordering, root authorization,
-alarm-driven heartbeat/expiry, eviction, overlap, body/session/queue caps, cursor-bounded
-initial/retro snapshots, byte/node/document truncation, removal of the fixed
-100-status cutoff, deterministic older-tail
-truncation and cross-tenant SID rejection. The locked upstream has 111
+asset/version contracts, strict v1/v2 Status and page-data contracts,
+API-secret failure modes, derived/body credentials and persisted failure delay,
+the implemented entries and document CRUD subset, activity conditional
+requests, JWT issue/verify/expiry/tamper/cross-tenant behavior, Shiro permission
+matching, `verifyauth`, and the API v3 version/status envelopes. It also covers
+fresh-only Entries schema repair, v1/API3 entries/treatments/device-status
+identity and time separation, UUID/ObjectId query handling, API3
+materialization and rollback, safe regular-expression compilation,
+JSON/CSV/XML workflows for all three implemented generic collections, and the
+EIO4 polling/direct-Hibernatable-WebSocket boundary: packet ordering, root
+authorization, alarm-driven heartbeat/expiry, eviction, overlap,
+body/session/queue caps, cursor-bounded initial/retro snapshots,
+byte/node/document truncation, removal of the fixed 100-status cutoff,
+deterministic older-tail truncation and cross-tenant session rejection. The
+locked upstream has 111
 JavaScript test files and about 873 test cases; the local adapter tests do not
 prove complete Nightscout compatibility.
+
+The merged local candidate is commit
+`d8e406d13b87b2e304b1db4dc075af18ae463022`. Its 18-file Workers-runtime suite
+passes 215/215 tests. It adds the strict Status, authorization, direct EIO4
+WebSocket and API v3 Entries slices described above, but it has not yet been
+deployed. The official upstream build completed with its three known Webpack
+size warnings, and Wrangler dry-run read 248 assets and reported only
+`ENTRY_STORE` and `ASSETS` bindings (764.00 KiB raw / 135.65 KiB gzip). Remote
+API/WebSocket smoke and browser evidence still require the deployment. Its
+Entries migration is intentionally
+fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
+being imported, while canonical documents and other collections such as
+profile are preserved. A read-only check at 2026-07-18 14:51 UTC found zero
+Entries and one profile in the current public tenant, so this particular lab
+has no old simulated Entry row to carry forward. This is not a general
+legacy-data migration guarantee.
+
+The planned first-release onboarding path is a fresh deployment for a new
+family.
+Importing years of data from an external Nightscout/MongoDB installation is an
+optional later tool, not a release gate for that path.
+“Fresh” means initially creating a new Worker/SQLite Durable Object namespace
+or otherwise empty NSCF tenant. Redeploying code to the same Worker updates
+code and Static Assets but does not erase its Durable Object; the current
+public lab's preserved profile therefore remains across this release. A truly
+empty reset would require a new namespace or an explicitly destructive delete.
+This is still a simulated-data development release: it must not be connected
+to a real CGM uploader, pump or closed-loop system.
 
 The current simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally
