@@ -14,6 +14,11 @@ import {
 } from "./document-repository";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
 import { migrateRealtimeSessions } from "./realtime/session-repository";
+import {
+  RealtimeSessionError,
+  RealtimeSessionService,
+  type RealtimeSnapshot,
+} from "./realtime/session-service";
 
 export type DocumentCollection =
   | "activity"
@@ -67,6 +72,16 @@ export interface WriteResult {
   entries: PublicEntry[];
 }
 
+export type RealtimeRpcResult<T> =
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      error: {
+        code: RealtimeSessionError["code"];
+        message: string;
+      };
+    };
+
 function randomObjectId(): string {
   const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
@@ -104,8 +119,13 @@ function toDocument(row: DbDocument): JsonDocument {
 }
 
 export class EntryStore extends DurableObject<Env> {
+  private readonly realtime: RealtimeSessionService;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.realtime = new RealtimeSessionService(ctx.storage, {
+      snapshot: (now) => this.realtimeSnapshot(now),
+    });
     ctx.blockConcurrencyWhile(async () => {
       this.migrate();
     });
@@ -191,6 +211,107 @@ export class EntryStore extends DurableObject<Env> {
 
   private documentRepository(): SqliteDocumentRepository {
     return new SqliteDocumentRepository(this.ctx.storage);
+  }
+
+  private realtimeSnapshot(now: number): RealtimeSnapshot {
+    const sgvs = this.ctx.storage.sql
+      .exec<DbEntry>(
+        `SELECT id, identifier, dedupe_key, sgv, date, date_string, direction, device, type
+         FROM entries ORDER BY date DESC LIMIT 1000`,
+      )
+      .toArray()
+      .map((row) => ({
+        _id: row.id,
+        mgdl: row.sgv,
+        mills: row.date,
+        device: row.device,
+        direction: row.direction,
+        type: row.type,
+      }))
+      .reverse();
+    const documents = (collection: DocumentCollection, limit: number): JsonDocument[] =>
+      this.ctx.storage.sql
+        .exec<DbDocument>(
+          `SELECT id, body, sort_time
+           FROM documents
+           WHERE collection = ?
+           ORDER BY sort_time DESC, updated_at DESC
+           LIMIT ?`,
+          collection,
+          limit,
+        )
+        .toArray()
+        .map(toDocument);
+
+    return {
+      lastUpdated: now,
+      sgvs,
+      mbgs: [],
+      cals: [],
+      treatments: this.documentRepository().queryLegacyTreatments({ limit: 1000 }),
+      food: documents("food", 5000),
+      profiles: documents("profile", 10),
+      devicestatus: documents("devicestatus", 100),
+      dbstats: {},
+    };
+  }
+
+  private realtimeResult<T>(operation: () => T): RealtimeRpcResult<T> {
+    try {
+      return { ok: true, value: operation() };
+    } catch (error) {
+      if (error instanceof RealtimeSessionError) {
+        return {
+          ok: false,
+          error: { code: error.code, message: error.message },
+        };
+      }
+      throw error;
+    }
+  }
+
+  private async realtimeAsyncResult<T>(operation: () => Promise<T>): Promise<RealtimeRpcResult<T>> {
+    try {
+      return { ok: true, value: await operation() };
+    } catch (error) {
+      if (error instanceof RealtimeSessionError) {
+        return {
+          ok: false,
+          error: { code: error.code, message: error.message },
+        };
+      }
+      throw error;
+    }
+  }
+
+  realtimeHandshake(): RealtimeRpcResult<{ sid: string; payload: string }> {
+    return this.realtimeResult(() => this.realtime.createHandshake());
+  }
+
+  realtimeBeginPost(sid: string): RealtimeRpcResult<string> {
+    return this.realtimeResult(() => this.realtime.beginPost(sid));
+  }
+
+  realtimeAbortPost(sid: string, token: string): RealtimeRpcResult<null> {
+    return this.realtimeResult(() => {
+      this.realtime.abortPost(sid, token);
+      return null;
+    });
+  }
+
+  realtimeSubmitPost(
+    sid: string,
+    token: string,
+    payload: string,
+  ): Promise<RealtimeRpcResult<null>> {
+    return this.realtimeAsyncResult(async () => {
+      await this.realtime.submitPost(sid, token, payload);
+      return null;
+    });
+  }
+
+  realtimePoll(sid: string): Promise<RealtimeRpcResult<string>> {
+    return this.realtimeAsyncResult(() => this.realtime.poll(sid));
   }
 
   private getOrCreateJwtSecret(): string {

@@ -52,6 +52,31 @@ async function post(
 }
 
 describe("tenant Durable Object EIO4 polling state machine", () => {
+  it("exposes a recoverable EntryStore RPC slice across Durable Object eviction", async () => {
+    const stub = store("realtime-rpc");
+    const opened = await stub.realtimeHandshake();
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) throw new Error(opened.error.message);
+
+    await evictDurableObject(stub);
+    const resumed = env.ENTRY_STORE.getByName(stub.name!);
+    const lease = await resumed.realtimeBeginPost(opened.value.sid);
+    expect(lease.ok).toBe(true);
+    if (!lease.ok) throw new Error(lease.error.message);
+    expect(
+      await resumed.realtimeSubmitPost(
+        opened.value.sid,
+        lease.value,
+        clientPayload({ type: "connect", namespace: "/" }),
+      ),
+    ).toEqual({ ok: true, value: null });
+    const polled = await resumed.realtimePoll(opened.value.sid);
+    expect(polled.ok).toBe(true);
+    if (!polled.ok) throw new Error(polled.error.message);
+    expect(unwrapSocketIoV5Packet(decodeEngineIoV4PollingPayload(polled.value)[0]!))
+      .toMatchObject({ type: "connect", namespace: "/" });
+  });
+
   it("installs the realtime schema through the EntryStore migration marker", async () => {
     const stub = store("realtime-schema");
     await runInDurableObject(stub, async (_instance, state) => {
