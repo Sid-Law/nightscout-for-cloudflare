@@ -474,6 +474,68 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
     expect(await stub.realtimeValidateSession(sid)).toEqual({ ok: true, value: null });
   });
 
+  it("stops an otherwise-small snapshot at exactly the shared document cap", async () => {
+    const name = tenant("eio-snapshot-documents");
+    const stub = env.ENTRY_STORE.getByName(name) as DurableObjectStub<EntryStore>;
+    const now = Date.now();
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `WITH digits(value) AS (
+           VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)
+         ), sequence(value) AS (
+           SELECT ones.value + 10 * tens.value + 100 * hundreds.value + 1000 * thousands.value
+           FROM digits AS ones
+           CROSS JOIN digits AS tens
+           CROSS JOIN digits AS hundreds
+           CROSS JOIN digits AS thousands
+           WHERE ones.value + 10 * tens.value + 100 * hundreds.value + 1000 * thousands.value < 2100
+         )
+         INSERT INTO documents
+           (collection, id, body, sort_time, created_at, updated_at)
+         SELECT 'food',
+                'doccap-' || printf('%04d', value),
+                '{}',
+                ? - value,
+                ?,
+                ?
+         FROM sequence`,
+        now,
+        now,
+        now,
+      );
+    });
+
+    const { sid } = await open(name);
+    expect((await send(name, sid, clientPayload({ type: "connect", namespace: "/" }))).status)
+      .toBe(200);
+    expect((await poll(name, sid)).status).toBe(200);
+    expect((await send(name, sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 55,
+      data: ["authorize", { client: "web" }],
+    }))).status).toBe(200);
+    const authorizedResponse = await poll(name, sid);
+    expect(authorizedResponse.status).toBe(200);
+    const authorized = socketPackets(await authorizedResponse.text());
+    expect(authorized.at(-1)).toEqual({
+      type: "ack",
+      namespace: "/",
+      id: 55,
+      data: [{ read: true, write: false, write_treatment: false }],
+    });
+    const data = eventValue(authorized, "dataUpdate") as RealtimeSnapshot;
+    const foods = data.food as Array<Record<string, unknown>>;
+    expect(foods).toHaveLength(REALTIME_SNAPSHOT_MAX_DOCUMENTS);
+    expect(foods[0]?._id).toBe("doccap-0000");
+    expect(foods.at(-1)?._id).toBe("doccap-1999");
+    expect(foods.every((food) => String(food._id).startsWith("doccap-"))).toBe(true);
+    expect(jsonNodeCount(data)).toBeLessThanOrEqual(REALTIME_SNAPSHOT_MAX_NODES);
+    expect(new TextEncoder().encode(JSON.stringify(data)).byteLength)
+      .toBeLessThan(REALTIME_SNAPSHOT_MAX_BYTES);
+    expect(await stub.realtimeValidateSession(sid)).toEqual({ ok: true, value: null });
+  });
+
   it("keeps SIDs tenant-local and rejects invalid tenant names", async () => {
     const alpha = tenant("eio-alpha");
     const beta = tenant("eio-beta");
