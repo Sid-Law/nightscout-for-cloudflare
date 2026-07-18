@@ -197,6 +197,9 @@ The read-only EIO4 polling server described above is a local, not-yet-deployed
 increment. Its current bounds and named differences are:
 
 - strict `EIO=4`, `transport=polling`, non-binary payloads and `upgrades: []`;
+- exact `application/octet-stream` POSTs close the SID with a controlled
+  400/code-3 response; malformed UTF-8 uses replacement decoding, while
+  raw-versus-replacement accounting at the 1,000,000-byte edge remains P2;
 - 256 sessions per tenant, 128 outbound packets, a 1,000,000-byte whole queue/
   body limit, and opportunity cleanup in batches of 32 without an alarm;
 - tenant-local anonymous/API-secret-digest/access-token/JWT reads, with ACKs
@@ -205,8 +208,13 @@ increment. Its current bounds and named differences are:
   `/alarm` return `CONNECT_ERROR`, while root `subscribe` and every write event
   remain unhandled;
 - initial `dataUpdate` uses the locked recent-device-status shape. `loadRetro`
-  uses raw normalized statuses, but only the latest 100 SQL documents rather
-  than the locked one-day cache;
+  uses raw normalized statuses from the same one-day SQL window; initial
+  filtering keeps the most recent 10 rows per device/type without a blind
+  100-row limit;
+- initial/retro SQL cursors are bounded before large arrays are materialized by
+  a shared 900,000-byte, 8,000-node, 2,000-document budget and a 24-level
+  stored-document depth cap; this may deterministically truncate the older
+  cursor tail, so removing the fixed 100-row limit is not an all-groups claim;
 - websocket status has the locked field set/order, but API/careportal enabled,
   boluscalc disabled, and no active profile are platform assumptions;
 - requiring exactly one object for `authorize` and `loadRetro` is a deliberate

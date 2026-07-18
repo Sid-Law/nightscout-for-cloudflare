@@ -10,6 +10,12 @@ import {
   wrapSocketIoV5Packet,
   type SocketIoV5Packet,
 } from "../src/protocol";
+import {
+  REALTIME_SNAPSHOT_MAX_BYTES,
+  REALTIME_SNAPSHOT_MAX_DOCUMENTS,
+  REALTIME_SNAPSHOT_MAX_NODES,
+} from "../src/realtime/constants";
+import type { RealtimeSnapshot } from "../src/realtime/session-service";
 
 function tenant(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
@@ -45,6 +51,37 @@ async function send(
 
 async function poll(tenantName: string, sid: string): Promise<Response> {
   return SELF.fetch(endpoint(tenantName, `&sid=${sid}`));
+}
+
+function socketPackets(payload: string): SocketIoV5Packet[] {
+  return decodeEngineIoV4PollingPayload(payload).map((packet) =>
+    unwrapSocketIoV5Packet(packet)
+  );
+}
+
+function eventValue(packets: SocketIoV5Packet[], name: string): unknown {
+  const event = packets.find((packet) =>
+    packet.type === "event" && packet.data[0] === name
+  );
+  if (event === undefined || event.type !== "event") {
+    throw new Error(`missing ${name} event`);
+  }
+  return event.data[1];
+}
+
+function jsonNodeCount(value: unknown): number {
+  const work = [value];
+  let nodes = 0;
+  while (work.length > 0) {
+    const current = work.pop();
+    nodes += 1;
+    if (Array.isArray(current)) {
+      work.push(...current);
+    } else if (typeof current === "object" && current !== null) {
+      work.push(...Object.values(current));
+    }
+  }
+  return nodes;
 }
 
 describe("Engine.IO 4 polling HTTP adapter", () => {
@@ -177,6 +214,264 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
       id: 4,
       data: [{ read: true, write: false, write_treatment: false }],
     });
+  });
+
+  it("loads 150 small one-day device groups without the former fixed 100-row cutoff", async () => {
+    const name = tenant("eio-snapshot-bytes");
+    const stub = env.ENTRY_STORE.getByName(name) as DurableObjectStub<EntryStore>;
+    const now = Date.now();
+    const statuses = Array.from({ length: 150 }, (_unused, deviceIndex) => ({
+      _id: `status-${deviceIndex}`,
+      device: `device-${deviceIndex.toString().padStart(3, "0")}`,
+      created_at: new Date(now - (150 - deviceIndex) * 60_000).toISOString(),
+      pump: { battery: 50 + (deviceIndex % 50) },
+    }));
+    statuses.push({
+      _id: "outside-one-day-window",
+      device: "outside-device",
+      created_at: new Date(now - 24 * 60 * 60_000 - 60_000).toISOString(),
+      pump: { battery: 1 },
+    });
+    await stub.createDocuments("devicestatus", JSON.stringify(statuses));
+    await stub.createDocuments("profile", JSON.stringify([{
+      _id: "public-profile",
+      defaultProfile: "Default",
+      store: { Default: {}, "Private@@@@@copy": {} },
+    }]));
+
+    const huge = JSON.stringify({
+      _id: "oversized-food",
+      created_at: new Date(now + 60_000).toISOString(),
+      partA: "a".repeat(225_000),
+      partB: "b".repeat(225_000),
+      partC: "c".repeat(225_000),
+      partD: "d".repeat(225_000),
+    });
+    const trailing = JSON.stringify({
+      _id: "lower-priority-food",
+      created_at: new Date(now).toISOString(),
+      carbs: 10,
+    });
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO documents
+           (collection, id, body, sort_time, created_at, updated_at)
+         VALUES ('food', 'oversized-food', ?, ?, ?, ?),
+                ('food', 'lower-priority-food', ?, ?, ?, ?)`,
+        huge,
+        now + 60_000,
+        now,
+        now,
+        trailing,
+        now,
+        now,
+        now,
+      );
+    });
+
+    const { sid } = await open(name);
+    expect((await send(name, sid, clientPayload({ type: "connect", namespace: "/" }))).status)
+      .toBe(200);
+    expect((await poll(name, sid)).status).toBe(200);
+    expect((await send(name, sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 40,
+      data: ["authorize", { client: "web" }],
+    }))).status).toBe(200);
+    const authorizedResponse = await poll(name, sid);
+    expect(authorizedResponse.status).toBe(200);
+    const authorized = socketPackets(await authorizedResponse.text());
+    expect(authorized.at(-1)).toEqual({
+      type: "ack",
+      namespace: "/",
+      id: 40,
+      data: [{ read: true, write: false, write_treatment: false }],
+    });
+    const data = eventValue(authorized, "dataUpdate") as RealtimeSnapshot;
+    expect(data.devicestatus).toHaveLength(150);
+    const groupCounts = new Map<string, number>();
+    for (const status of data.devicestatus as Array<Record<string, unknown>>) {
+      const device = String(status.device);
+      groupCounts.set(device, (groupCounts.get(device) ?? 0) + 1);
+    }
+    expect(groupCounts.size).toBe(150);
+    expect([...groupCounts.values()]).toEqual(Array.from({ length: 150 }, () => 1));
+    expect(groupCounts.get("device-000")).toBe(1);
+    expect(data.devicestatus).not.toContainEqual(
+      expect.objectContaining({ _id: "outside-one-day-window" }),
+    );
+    expect(data.profiles).toHaveLength(1);
+    expect(data.food).toEqual([]);
+    expect(new TextEncoder().encode(JSON.stringify(data)).byteLength)
+      .toBeLessThanOrEqual(REALTIME_SNAPSHOT_MAX_BYTES);
+    expect(await stub.realtimeValidateSession(sid)).toEqual({ ok: true, value: null });
+
+    expect((await send(name, sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 41,
+      data: ["loadRetro", { loadedMills: 0 }],
+    }))).status).toBe(200);
+    const retroResponse = await poll(name, sid);
+    expect(retroResponse.status).toBe(200);
+    const retro = socketPackets(await retroResponse.text());
+    expect(retro[0]).toEqual({
+      type: "ack",
+      namespace: "/",
+      id: 41,
+      data: [{ result: "success" }],
+    });
+    const retroStatuses = (
+      eventValue(retro, "retroUpdate") as { devicestatus: Array<Record<string, unknown>> }
+    ).devicestatus;
+    expect(retroStatuses).toHaveLength(150);
+    expect(retroStatuses).not.toContainEqual(
+      expect.objectContaining({ _id: "outside-one-day-window" }),
+    );
+    expect(await stub.realtimeValidateSession(sid)).toEqual({ ok: true, value: null });
+  });
+
+  it("rejects an over-deep stored document before runtime cloning without closing the SID", async () => {
+    const name = tenant("eio-snapshot-depth");
+    const stub = env.ENTRY_STORE.getByName(name) as DurableObjectStub<EntryStore>;
+    const now = Date.now();
+    const createdAt = new Date(now + 60_000).toISOString();
+    const tooDeep =
+      `{"_id":"too-deep","created_at":"${createdAt}","nested":` +
+      "{\"child\":".repeat(5_000) +
+      "{\"leaf\":true}" +
+      "}".repeat(5_000) +
+      "}";
+    const trailing = JSON.stringify({
+      _id: "after-too-deep",
+      created_at: new Date(now).toISOString(),
+      carbs: 12,
+    });
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO documents
+           (collection, id, body, sort_time, created_at, updated_at)
+         VALUES ('food', 'too-deep', ?, ?, ?, ?),
+                ('food', 'after-too-deep', ?, ?, ?, ?)`,
+        tooDeep,
+        now + 60_000,
+        now,
+        now,
+        trailing,
+        now,
+        now,
+        now,
+      );
+    });
+
+    const { sid } = await open(name);
+    expect((await send(name, sid, clientPayload({ type: "connect", namespace: "/" }))).status)
+      .toBe(200);
+    expect((await poll(name, sid)).status).toBe(200);
+    expect((await send(name, sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 45,
+      data: ["authorize", { client: "web" }],
+    }))).status).toBe(200);
+    const authorizedResponse = await poll(name, sid);
+    expect(authorizedResponse.status).toBe(200);
+    const authorized = socketPackets(await authorizedResponse.text());
+    expect(authorized.at(-1)).toEqual({
+      type: "ack",
+      namespace: "/",
+      id: 45,
+      data: [{ read: true, write: false, write_treatment: false }],
+    });
+    expect((eventValue(authorized, "dataUpdate") as RealtimeSnapshot).food).toEqual([]);
+    expect(await stub.realtimeValidateSession(sid)).toEqual({ ok: true, value: null });
+  });
+
+  it("truncates thousands of tiny documents at the shared node budget without closing the SID", async () => {
+    const name = tenant("eio-snapshot-nodes");
+    const stub = env.ENTRY_STORE.getByName(name) as DurableObjectStub<EntryStore>;
+    const now = Date.now();
+    await runInDurableObject(stub, async (_instance, state) => {
+      const depth24Profile =
+        `{"_id":"depth-24-profile","nested":` +
+        "[".repeat(23) +
+        "0" +
+        "]".repeat(23) +
+        "}";
+      state.storage.sql.exec(
+        `INSERT INTO documents
+           (collection, id, body, sort_time, created_at, updated_at)
+         VALUES ('profile', 'depth-24-profile', ?, ?, ?, ?)`,
+        depth24Profile,
+        now,
+        now,
+        now,
+      );
+      state.storage.sql.exec(
+        `WITH digits(value) AS (
+           VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)
+         ), sequence(value) AS (
+           SELECT ones.value + 10 * tens.value + 100 * hundreds.value + 1000 * thousands.value
+           FROM digits AS ones
+           CROSS JOIN digits AS tens
+           CROSS JOIN digits AS hundreds
+           CROSS JOIN digits AS thousands
+           WHERE ones.value + 10 * tens.value + 100 * hundreds.value + 1000 * thousands.value < 2500
+         )
+         INSERT INTO documents
+           (collection, id, body, sort_time, created_at, updated_at)
+         SELECT 'food',
+                'tiny-' || value,
+                json_object(
+                  '_id', 'tiny-' || value,
+                  'created_at', ? - value,
+                  'carbs', value % 10
+                ),
+                ? - value,
+                ?,
+                ?
+         FROM sequence`,
+        now,
+        now,
+        now,
+        now,
+      );
+    });
+
+    const { sid } = await open(name);
+    expect((await send(name, sid, clientPayload({ type: "connect", namespace: "/" }))).status)
+      .toBe(200);
+    expect((await poll(name, sid)).status).toBe(200);
+    expect((await send(name, sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 50,
+      data: ["authorize", { client: "web" }],
+    }))).status).toBe(200);
+    const authorizedResponse = await poll(name, sid);
+    expect(authorizedResponse.status).toBe(200);
+    const authorized = socketPackets(await authorizedResponse.text());
+    expect(authorized.at(-1)).toEqual({
+      type: "ack",
+      namespace: "/",
+      id: 50,
+      data: [{ read: true, write: false, write_treatment: false }],
+    });
+    const data = eventValue(authorized, "dataUpdate") as RealtimeSnapshot;
+    expect(data.profiles).toHaveLength(1);
+    expect((data.profiles[0] as Record<string, unknown>)._id).toBe("depth-24-profile");
+    expect(data.food.length).toBeGreaterThan(1_000);
+    expect(data.food.length).toBeLessThan(REALTIME_SNAPSHOT_MAX_DOCUMENTS);
+    const foods = data.food as Array<Record<string, unknown>>;
+    expect(foods[0]?._id).toBe("tiny-0");
+    expect(foods.at(-1)?._id).toBe(`tiny-${foods.length - 1}`);
+    const nodes = jsonNodeCount(data);
+    expect(nodes).toBeGreaterThan(REALTIME_SNAPSHOT_MAX_NODES - 10);
+    expect(nodes).toBeLessThanOrEqual(REALTIME_SNAPSHOT_MAX_NODES);
+    expect(new TextEncoder().encode(JSON.stringify(data)).byteLength)
+      .toBeLessThan(REALTIME_SNAPSHOT_MAX_BYTES);
+    expect(await stub.realtimeValidateSession(sid)).toEqual({ ok: true, value: null });
   });
 
   it("keeps SIDs tenant-local and rejects invalid tenant names", async () => {

@@ -404,7 +404,9 @@ authorization ACKs, initial/retro data and connection-count broadcasts.
 The current server boundary is explicit:
 
 - EIO4 polling only; EIO3 HTTP, WebSocket upgrades and binary packets are
-  rejected, and the handshake advertises `upgrades: []`;
+  rejected, and the handshake advertises `upgrades: []`; an exact
+  `application/octet-stream` POST closes its leased SID and receives a
+  controlled 400/code-3 response;
 - 256 sessions per tenant, 128 queued packets and a 1,000,000-byte whole
   polling payload per session; incoming POST bodies are counted while streamed;
 - 32-session opportunity cleanup on normal requests, with no new alarm;
@@ -415,12 +417,17 @@ The current server boundary is explicit:
 - no `document_changes` row is consumed and no database mutation is broadcast.
 
 Initial authorization data mirrors `dataWithRecentStatuses()`. `loadRetro`
-correctly uses a separate unfiltered device-status loader, but the current SQL
-adapter loads at most 100 statuses rather than the locked one-day `lastData`
-window. Websocket status preserves the locked key set/order, with fixed
-platform assumptions for API/careportal/boluscalc enablement and no active
-profile. `authorize` and `loadRetro` require exactly one object payload; this is
-a resource/safety tightening over permissive upstream JavaScript call shapes.
+uses a separate unfiltered device-status view over the same one-day raw SQL
+window. Initial filtering then keeps the newest 10 rows per device/type, so a
+fixed 100-row cutoff no longer hides a group when budget remains. Snapshot
+cursors share a deterministic 900,000-byte, 8,000-node, 2,000-document budget
+plus a 24-level per-document depth cap; collection priority is profiles, device
+status, SGVs, treatments, then food. Reaching that budget still retains only a
+deterministic time-descending cursor prefix and may omit older groups. Websocket
+status preserves the locked key set/order, with fixed platform assumptions for
+API/careportal/boluscalc enablement and no active profile. `authorize` and
+`loadRetro` require exactly one object payload; this is a resource/safety
+tightening over permissive upstream JavaScript call shapes.
 
 The target transport persists a change record in the same DO turn as each
 mutation, then broadcasts only after the write succeeds. Hibernated sessions

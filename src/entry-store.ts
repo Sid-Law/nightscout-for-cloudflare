@@ -21,9 +21,21 @@ import {
   type RealtimeSnapshot,
 } from "./realtime/session-service";
 import {
-  buildRealtimeDdataSnapshot,
   buildRealtimeRetroDeviceStatus,
+  filterRealtimePublicProfiles,
+  normalizeRealtimeDeviceStatus,
+  normalizeRealtimeDocument,
+  selectRealtimeRecentDeviceStatus,
+  type RealtimeDocument,
 } from "./realtime/ddata-snapshot";
+import {
+  REALTIME_DEVICE_STATUS_WINDOW_MS,
+  REALTIME_SNAPSHOT_MAX_BYTES,
+  REALTIME_SNAPSHOT_MAX_DOCUMENT_DEPTH,
+  REALTIME_SNAPSHOT_MAX_DOCUMENTS,
+  REALTIME_SNAPSHOT_MAX_NODES,
+  REALTIME_SNAPSHOT_MAX_STRING_CHARACTERS,
+} from "./realtime/constants";
 import { nightscoutWebsocketStatus } from "./status";
 
 export type DocumentCollection =
@@ -126,6 +138,132 @@ function toDocument(row: DbDocument): JsonDocument {
   return JSON.parse(row.body) as JsonDocument;
 }
 
+const realtimeJsonEncoder = new TextEncoder();
+
+function realtimeJsonBytes(value: unknown): number {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new Error("realtime JSON value is not serializable");
+  return realtimeJsonEncoder.encode(serialized).byteLength;
+}
+
+function realtimeStoredBodyAllowed(body: string): boolean {
+  // UTF-16 length is a cheap lower bound for UTF-8 size and avoids allocating
+  // another near-megabyte buffer for a body that is already too large.
+  if (body.length > REALTIME_SNAPSHOT_MAX_BYTES) return false;
+  const bytes = realtimeJsonEncoder.encode(body).byteLength;
+  return bytes <= REALTIME_SNAPSHOT_MAX_BYTES;
+}
+
+interface RealtimeJsonMetrics {
+  nodes: number;
+  maxDepth: number;
+  maxStringCharacters: number;
+}
+
+function realtimeJsonMetrics(
+  value: unknown,
+  enforceDocumentShape = false,
+): RealtimeJsonMetrics {
+  const work: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
+  let nodes = 0;
+  let maxDepth = 0;
+  let maxStringCharacters = 0;
+  while (work.length > 0) {
+    const item = work.pop();
+    if (item === undefined) break;
+    nodes += 1;
+    maxDepth = Math.max(maxDepth, item.depth);
+    if (nodes > REALTIME_SNAPSHOT_MAX_NODES) {
+      return { nodes, maxDepth, maxStringCharacters };
+    }
+    if (enforceDocumentShape && maxDepth > REALTIME_SNAPSHOT_MAX_DOCUMENT_DEPTH) {
+      return { nodes, maxDepth, maxStringCharacters };
+    }
+    if (typeof item.value === "string") {
+      maxStringCharacters = Math.max(maxStringCharacters, item.value.length);
+      if (
+        enforceDocumentShape &&
+        maxStringCharacters > REALTIME_SNAPSHOT_MAX_STRING_CHARACTERS
+      ) {
+        return { nodes, maxDepth, maxStringCharacters };
+      }
+    } else if (Array.isArray(item.value)) {
+      if (nodes + work.length + item.value.length > REALTIME_SNAPSHOT_MAX_NODES) {
+        return {
+          nodes: REALTIME_SNAPSHOT_MAX_NODES + 1,
+          maxDepth,
+          maxStringCharacters,
+        };
+      }
+      for (const child of item.value) work.push({ value: child, depth: item.depth + 1 });
+    } else if (typeof item.value === "object" && item.value !== null) {
+      for (const key in item.value) {
+        if (!Object.prototype.hasOwnProperty.call(item.value, key)) continue;
+        maxStringCharacters = Math.max(maxStringCharacters, key.length);
+        if (
+          enforceDocumentShape &&
+          maxStringCharacters > REALTIME_SNAPSHOT_MAX_STRING_CHARACTERS
+        ) {
+          return { nodes, maxDepth, maxStringCharacters };
+        }
+        if (nodes + work.length + 1 > REALTIME_SNAPSHOT_MAX_NODES) {
+          return {
+            nodes: REALTIME_SNAPSHOT_MAX_NODES + 1,
+            maxDepth,
+            maxStringCharacters,
+          };
+        }
+        const child = (item.value as Record<string, unknown>)[key];
+        work.push({ value: child, depth: item.depth + 1 });
+      }
+    }
+  }
+  return { nodes, maxDepth, maxStringCharacters };
+}
+
+function realtimeDocumentShapeAllowed(metrics: RealtimeJsonMetrics): boolean {
+  return metrics.nodes <= REALTIME_SNAPSHOT_MAX_NODES
+    && metrics.maxDepth <= REALTIME_SNAPSHOT_MAX_DOCUMENT_DEPTH
+    && metrics.maxStringCharacters <= REALTIME_SNAPSHOT_MAX_STRING_CHARACTERS;
+}
+
+class RealtimeJsonBudget {
+  private usedBytes: number;
+  private usedNodes: number;
+  private usedDocuments: number;
+
+  constructor(base: unknown, documents = 0) {
+    this.usedBytes = realtimeJsonBytes(base);
+    this.usedNodes = realtimeJsonMetrics(base).nodes;
+    this.usedDocuments = documents;
+    if (this.usedBytes > REALTIME_SNAPSHOT_MAX_BYTES) {
+      throw new Error("realtime snapshot base exceeds its byte budget");
+    }
+    if (this.usedNodes > REALTIME_SNAPSHOT_MAX_NODES) {
+      throw new Error("realtime snapshot base exceeds its node budget");
+    }
+  }
+
+  reserveArrayItem(value: unknown, priorItems: number): boolean {
+    const metrics = realtimeJsonMetrics(value, true);
+    if (
+      !realtimeDocumentShapeAllowed(metrics) ||
+      this.usedNodes + metrics.nodes > REALTIME_SNAPSHOT_MAX_NODES ||
+      this.usedDocuments + 1 > REALTIME_SNAPSHOT_MAX_DOCUMENTS
+    ) {
+      return false;
+    }
+    // Stringify only after the iterative shape walk has established safe
+    // depth, node, and scalar bounds.
+    const addedBytes = realtimeJsonBytes(value) + (priorItems === 0 ? 0 : 1);
+    if (this.usedBytes + addedBytes > REALTIME_SNAPSHOT_MAX_BYTES) return false;
+    this.usedBytes += addedBytes;
+    this.usedNodes += metrics.nodes;
+    this.usedDocuments += 1;
+    return true;
+  }
+}
+
 export class EntryStore extends DurableObject<EntryStoreEnv> {
   private readonly realtime: RealtimeSessionService;
 
@@ -133,7 +271,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     super(ctx, env);
     this.realtime = new RealtimeSessionService(ctx.storage, {
       snapshot: (now) => this.realtimeSnapshot(now),
-      retroDeviceStatus: () => this.realtimeRetroDeviceStatus(),
+      retroDeviceStatus: (now) => this.realtimeRetroDeviceStatus(now),
       status: (now) => nightscoutWebsocketStatus(new Date(now)),
       authorize: (message) => this.realtimeAuthorize(message),
     });
@@ -225,58 +363,135 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private realtimeSnapshot(now: number): RealtimeSnapshot {
-    const entries = this.ctx.storage.sql
-      .exec<DbEntry>(
-        `SELECT id, identifier, dedupe_key, sgv, date, date_string, direction, device, type
-         FROM entries ORDER BY date DESC LIMIT 1000`,
-      )
-      .toArray()
-      .map(toPublicEntry);
-    const documents = (collection: DocumentCollection, limit: number): JsonDocument[] =>
-      this.ctx.storage.sql
-        .exec<DbDocument>(
-          `SELECT id, body, sort_time
-           FROM documents
-           WHERE collection = ?
-           ORDER BY sort_time DESC, updated_at DESC
-           LIMIT ?`,
-          collection,
-          limit,
-        )
-        .toArray()
-        .map(toDocument);
+    const snapshot: RealtimeSnapshot = {
+      devicestatus: [],
+      sgvs: [],
+      cals: [],
+      profiles: [],
+      mbgs: [],
+      food: [],
+      treatments: [],
+      dbstats: {},
+    };
 
-    return buildRealtimeDdataSnapshot({
-      sgvs: entries
-        .map((entry) => ({
-          _id: entry._id,
-          mgdl: entry.sgv,
-          mills: entry.date,
-          device: entry.device,
-          direction: entry.direction,
-          type: entry.type,
-        }))
-        .sort((left, right) => left.mills - right.mills),
-      treatments: this.documentRepository().queryLegacyTreatments({ limit: 1000 }),
-      food: documents("food", 5000),
-      profiles: documents("profile", 10),
-      devicestatus: documents("devicestatus", 100),
-    }, now);
+    // Deterministic truncation priority: profiles, device status, SGVs,
+    // treatments, then food. Each SQL cursor stops as soon as the shared
+    // serialized output budget is exhausted; no large result is materialized
+    // with toArray() before accounting.
+    let budget = new RealtimeJsonBudget(snapshot);
+    const profiles = this.realtimeDocuments(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'profile'
+       ORDER BY sort_time DESC, updated_at DESC
+       LIMIT 10`,
+      [],
+      budget,
+      (document) => document,
+    );
+    snapshot.profiles = filterRealtimePublicProfiles(profiles);
+    budget = new RealtimeJsonBudget(snapshot, snapshot.profiles.length);
+
+    const rawDeviceStatus = this.realtimeRawDeviceStatus(now, budget);
+    snapshot.devicestatus = selectRealtimeRecentDeviceStatus(rawDeviceStatus, now);
+    // recentDeviceStatus removes old-per-group and future records, so refund
+    // those conservative raw reservations before lower-priority collections.
+    budget = new RealtimeJsonBudget(
+      snapshot,
+      snapshot.profiles.length + snapshot.devicestatus.length,
+    );
+
+    for (const row of this.ctx.storage.sql.exec<DbEntry>(
+      `SELECT id, identifier, dedupe_key, sgv, date, date_string, direction, device, type
+       FROM entries ORDER BY date DESC LIMIT 1000`,
+    )) {
+      const entry = toPublicEntry(row);
+      const sgv = {
+        _id: entry._id,
+        mgdl: entry.sgv,
+        mills: entry.date,
+        device: entry.device,
+        direction: entry.direction,
+        type: entry.type,
+      };
+      if (!budget.reserveArrayItem(sgv, snapshot.sgvs.length)) break;
+      snapshot.sgvs.push(sgv);
+    }
+    snapshot.sgvs.reverse();
+
+    snapshot.treatments = this.realtimeDocuments(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'treatments'
+       ORDER BY json_extract(body, '$.created_at') DESC, id ASC
+       LIMIT 1000`,
+      [],
+      budget,
+      normalizeRealtimeDocument,
+    );
+    snapshot.food = this.realtimeDocuments(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'food'
+       ORDER BY sort_time DESC, updated_at DESC
+       LIMIT 5000`,
+      [],
+      budget,
+      normalizeRealtimeDocument,
+    );
+    return snapshot;
   }
 
-  private realtimeRetroDeviceStatus(): JsonDocument[] {
-    return buildRealtimeRetroDeviceStatus(
-      this.ctx.storage.sql
-        .exec<DbDocument>(
-          `SELECT id, body, sort_time
-           FROM documents
-           WHERE collection = 'devicestatus'
-           ORDER BY sort_time DESC, updated_at DESC
-           LIMIT 100`,
-        )
-        .toArray()
-        .map(toDocument),
-    ) as JsonDocument[];
+  private realtimeDocuments(
+    statement: string,
+    bindings: SqlStorageValue[],
+    budget: RealtimeJsonBudget,
+    normalize: (document: RealtimeDocument) => RealtimeDocument,
+  ): RealtimeDocument[] {
+    const documents: RealtimeDocument[] = [];
+    for (const row of this.ctx.storage.sql.exec<DbDocument>(statement, ...bindings)) {
+      if (!realtimeStoredBodyAllowed(row.body)) break;
+      let parsed: RealtimeDocument;
+      try {
+        const value: unknown = toDocument(row);
+        if (typeof value !== "object" || value === null || Array.isArray(value)) break;
+        parsed = value as RealtimeDocument;
+      } catch {
+        break;
+      }
+      parsed._id = row.id;
+      // Stored JSON is checked iteratively before clone-based runtime
+      // normalization, so an over-deep body cannot reach JSON.stringify().
+      if (!realtimeDocumentShapeAllowed(realtimeJsonMetrics(parsed, true))) break;
+      const normalized = normalize(parsed);
+      if (!budget.reserveArrayItem(normalized, documents.length)) break;
+      documents.push(normalized);
+    }
+    return documents;
+  }
+
+  private realtimeRawDeviceStatus(
+    now: number,
+    budget: RealtimeJsonBudget,
+  ): RealtimeDocument[] {
+    return this.realtimeDocuments(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'devicestatus' AND sort_time >= ?
+       ORDER BY sort_time DESC, updated_at DESC`,
+      [now - REALTIME_DEVICE_STATUS_WINDOW_MS],
+      budget,
+      normalizeRealtimeDeviceStatus,
+    );
+  }
+
+  private realtimeRetroDeviceStatus(now: number): RealtimeDocument[] {
+    const result: { devicestatus: RealtimeDocument[] } = { devicestatus: [] };
+    const budget = new RealtimeJsonBudget(result);
+    result.devicestatus = buildRealtimeRetroDeviceStatus(
+      this.realtimeRawDeviceStatus(now, budget),
+    );
+    return result.devicestatus;
   }
 
   private async realtimeAuthorize(

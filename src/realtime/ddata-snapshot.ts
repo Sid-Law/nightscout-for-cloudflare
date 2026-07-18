@@ -2,7 +2,7 @@ import type { RealtimeSnapshot } from "./session-service";
 
 const DEVICE_TYPE_FIELDS = ["uploader", "pump", "openaps", "loop", "xdripjs"] as const;
 
-type RealtimeDocument = Record<string, unknown>;
+export type RealtimeDocument = Record<string, unknown>;
 
 export interface RealtimeDdataInput {
   sgvs: unknown[];
@@ -19,7 +19,9 @@ function cloneDocument(document: RealtimeDocument): RealtimeDocument {
   return JSON.parse(JSON.stringify(document)) as RealtimeDocument;
 }
 
-function runtimeDocument(document: RealtimeDocument): RealtimeDocument {
+export function normalizeRealtimeDocument(
+  document: RealtimeDocument,
+): RealtimeDocument {
   const normalized = cloneDocument(document);
   if (normalized.mills === undefined) {
     const source = normalized.created_at ?? normalized.sysTime;
@@ -46,8 +48,10 @@ function runtimeDocument(document: RealtimeDocument): RealtimeDocument {
   return normalized;
 }
 
-function runtimeDeviceStatusDocument(document: RealtimeDocument): RealtimeDocument {
-  const normalized = runtimeDocument(document);
+export function normalizeRealtimeDeviceStatus(
+  document: RealtimeDocument,
+): RealtimeDocument {
+  const normalized = normalizeRealtimeDocument(document);
   if (Object.prototype.hasOwnProperty.call(normalized, "uploaderBattery")) {
     normalized.uploader = { battery: normalized.uploaderBattery };
     delete normalized.uploaderBattery;
@@ -55,8 +59,11 @@ function runtimeDeviceStatusDocument(document: RealtimeDocument): RealtimeDocume
   return normalized;
 }
 
-function recentDeviceStatus(documents: RealtimeDocument[], now: number): RealtimeDocument[] {
-  const statuses = documents.map(runtimeDeviceStatusDocument);
+export function selectRealtimeRecentDeviceStatus(
+  documents: RealtimeDocument[],
+  now: number,
+): RealtimeDocument[] {
+  const statuses = documents.map(normalizeRealtimeDeviceStatus);
   const pairs = new Map<string, { device: unknown; type: string }>();
   for (const status of statuses) {
     for (const type of DEVICE_TYPE_FIELDS) {
@@ -95,11 +102,13 @@ export function buildRealtimeRetroDeviceStatus(
   documents: RealtimeDocument[],
 ): RealtimeDocument[] {
   return documents
-    .map(runtimeDeviceStatusDocument)
+    .map(normalizeRealtimeDeviceStatus)
     .sort((left, right) => Number(left.mills) - Number(right.mills));
 }
 
-function publicProfiles(documents: RealtimeDocument[]): RealtimeDocument[] {
+export function filterRealtimePublicProfiles(
+  documents: RealtimeDocument[],
+): RealtimeDocument[] {
   const profiles = documents.map(cloneDocument);
   const first = profiles[0];
   if (
@@ -123,13 +132,13 @@ export function buildRealtimeDdataSnapshot(
   now: number,
 ): RealtimeSnapshot {
   return {
-    devicestatus: recentDeviceStatus(input.devicestatus, now),
+    devicestatus: selectRealtimeRecentDeviceStatus(input.devicestatus, now),
     sgvs: input.sgvs,
     cals: input.cals ?? [],
-    profiles: publicProfiles(input.profiles),
+    profiles: filterRealtimePublicProfiles(input.profiles),
     mbgs: input.mbgs ?? [],
-    food: input.food.map(runtimeDocument),
-    treatments: input.treatments.map(runtimeDocument),
+    food: input.food.map(normalizeRealtimeDocument),
+    treatments: input.treatments.map(normalizeRealtimeDocument),
     dbstats: input.dbstats ?? {},
   };
 }

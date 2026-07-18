@@ -88,6 +88,16 @@ Unknown SID/query errors, overlapping GET/POST leases, oversized POST bodies,
 malformed protocol close behavior and tenant crossing have Workers-runtime
 HTTP tests.
 
+Only the exact `Content-Type: application/octet-stream` value selects the
+unsupported binary path. It closes the leased SID and returns the adapter's
+controlled JSON 400/code-3 response; every other content type is decoded as
+text, matching the locked Engine.IO branch selection. Malformed UTF-8 uses
+replacement decoding, then enters the normal parser: the tested malformed
+packet is ACKed with HTTP 200 and closes its SID. Near the 1,000,000-byte edge,
+parity between raw-body admission and replacement-expanded text accounting is a
+controlled P2 follow-up; the adapter always enforces the raw streamed byte cap
+before decoding.
+
 SQLite schema v5 stores the Engine.IO SID, current Socket.IO SID, root connect/
 authorization/read flags, heartbeat deadlines, GET/POST leases, queue counters
 and ordered outbound packets. The only memory-only item is the resolver for a
@@ -109,13 +119,26 @@ The supported SIO5 root behavior is deliberately narrow:
   CONNECT receives `CONNECT_ERROR` without terminating root.
 
 Initial data matches locked `dataWithRecentStatuses()` field order and recent
-device-status filtering. Retro data comes from a distinct raw normalized loader
-as upstream requires, but the adapter queries at most 100 device-status
-documents instead of reconstructing the locked one-day in-memory window. The
-websocket status object has the locked field set/order; fixed API/careportal
-enabled, boluscalc disabled, and absent active profile are named platform
-assumptions. Requiring exactly one object argument for `authorize` and
-`loadRetro` is a deliberate safety/resource tightening.
+device-status filtering. The EntryStore cursor-walks the same one-day raw
+device-status window for both paths: initial data keeps the most recent 10 rows
+per device/type and `loadRetro` returns the raw runtime-normalized window. This
+avoids the former blind 100-row SQL limit, which could omit an entire device
+group even when the response budget had room. This is not an all-groups
+guarantee: the shared resource ceiling below can still deterministically stop
+the time-descending cursor before older groups. The websocket status object has
+the locked field set/order; fixed API/careportal enabled, boluscalc disabled,
+and absent active profile are named platform assumptions. Requiring exactly one
+object argument for `authorize` and `loadRetro` is a deliberate safety/resource
+tightening.
+
+Initial and retro loaders share deterministic resource accounting while their
+SQLite cursors are consumed; they do not materialize the 1,000-entry,
+1,000-treatment, or 5,000-food query ceilings before applying the budget.
+Initial truncation priority is profiles, device status, SGVs, treatments, then
+food. The snapshot ceiling is 900,000 serialized UTF-8 bytes, 8,000 JSON nodes,
+2,000 documents, and 24 levels inside any stored document. These values leave
+headroom for the Socket.IO wrapper, optional status object, ACK, and the codec's
+10,000-node/1,000,000-byte packet boundary.
 
 `src/protocol/engine-io-v4.ts` provides:
 
@@ -176,6 +199,10 @@ These are project codec defaults, not Cloudflare platform quotas:
 | JSON nesting | 32 levels |
 | JSON traversal | 10,000 nodes |
 | Individual JSON string/key | 262,144 UTF-16 code units |
+| Initial/retro data body | 900,000 serialized UTF-8 bytes |
+| Initial/retro data traversal | 8,000 JSON nodes |
+| Initial/retro stored documents | 2,000 documents |
+| Individual stored-document nesting | 24 levels |
 
 Decoders reject empty or malformed payload segments, truncated EIO3 frames,
 unknown packet types, raw/binary frames outside the supported subset, invalid
@@ -185,8 +212,9 @@ wrong payload shapes, and excessive size/depth/complexity.
 The routed HTTP adapter checks `Content-Length` when present and always streams/
 counts the body before decoding, so it never obtains an already-unbounded
 `request.text()` value. Runtime caps add 256 sessions per tenant, 128 queued
-packets per session, a 1,000,000-byte whole framed queue, and cleanup batches of
-32. Cloudflare's current Workers memory limit remains 128 MB per isolate.
+packets per session, a 1,000,000-byte whole framed queue, the snapshot limits
+above, and cleanup batches of 32. Cloudflare's current Workers memory limit
+remains 128 MB per isolate.
 
 ## Remaining tenant Durable Object integration
 

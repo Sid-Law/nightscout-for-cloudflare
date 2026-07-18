@@ -141,12 +141,20 @@ The local polling slice is intentionally bounded to 256 sessions per tenant,
 shapes and opportunity cleanup in batches of 32; it adds no DO alarm. Root
 authorization always ACKs `write:false` and `write_treatment:false`. Initial
 `dataUpdate` follows locked recent-device-status filtering, while `loadRetro`
-uses the unfiltered runtime-normalized device-status loader but is limited by
-this adapter's 100-document SQL query rather than upstream's one-day cache.
+uses the unfiltered runtime-normalized device-status loader over the same
+one-day raw window. Cursor-based snapshot loading applies a shared deterministic
+900,000-byte, 8,000-node, 2,000-document budget (and 24-level per-document
+depth cap) in profiles/device-status/SGV/treatments/food priority order before
+the Socket.IO frame is built. The fixed 100-status cutoff is gone, but reaching
+that shared ceiling can still deterministically truncate the older cursor tail.
 The websocket status shape is locked, but `apiEnabled:true`,
 `careportalEnabled:true`, `boluscalcEnabled:false` and the absence of
 `activeProfile` are current platform assumptions. Strict one-object
 `authorize`/`loadRetro` validation is a named safety tightening.
+Exact `application/octet-stream` POSTs close their SID and return a controlled
+400/code-3 response. Small malformed UTF-8 follows replacement decode and
+parser-close behavior; raw-byte versus replacement-expanded accounting at the
+1,000,000-byte boundary remains a controlled P2 parity task.
 
 ## Ordered implementation milestones
 

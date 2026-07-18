@@ -215,9 +215,12 @@ SQLite persistence across eviction, tenant isolation and invalid input. It also
 covers schema-v4 repair, v1/API3 treatment time separation, UUID query handling,
 API3 materialization and rollback, the treatments JSON HTTP workflow, and the
 EIO4 polling HTTP/session boundary: packet ordering, root authorization,
-heartbeat, eviction, overlap, body/session/queue caps and cross-tenant SID
-rejection. The locked upstream has 111 JavaScript test files and about 873 test
-cases; the local adapter tests do not prove complete Nightscout compatibility.
+heartbeat, eviction, overlap, body/session/queue caps, cursor-bounded
+initial/retro snapshots, byte/node/document
+truncation, removal of the fixed 100-status cutoff, deterministic older-tail
+truncation and cross-tenant SID rejection. The locked upstream has 111
+JavaScript test files and about 873 test cases; the local adapter tests do not
+prove complete Nightscout compatibility.
 
 The current simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally
