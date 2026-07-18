@@ -117,6 +117,13 @@ export function matchApi3DeviceStatusRoute(
   return matchApi3CollectionRoute(method, pathname, "devicestatus");
 }
 
+export function matchApi3EntriesRoute(
+  method: string,
+  pathname: string,
+): Api3CollectionRoute | null {
+  return matchApi3CollectionRoute(method, pathname, "entries");
+}
+
 function allowed(
   authorization: Api3Authorization,
   collection: Api3CollectionName,
@@ -645,12 +652,22 @@ export async function handleApi3DeviceStatus(
   return handleApi3Collection(request, url, store, authorization, route, "devicestatus");
 }
 
+export async function handleApi3Entries(
+  request: Request,
+  url: URL,
+  store: DurableObjectStub<EntryStore>,
+  authorization: Api3Authorization,
+  route: Api3CollectionRoute,
+): Promise<Response> {
+  return handleApi3Collection(request, url, store, authorization, route, "entries");
+}
+
 export async function handleApi3TreatmentsLastModified(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
 ): Promise<Response> {
   const collections: Record<string, number> = {};
-  for (const collection of ["devicestatus", "treatments"] as const) {
+  for (const collection of ["devicestatus", "entries", "treatments"] as const) {
     if (!allowed(authorization, collection, "read")) continue;
     const modified = await store.api3CollectionLastModified(collection);
     if (modified !== null) collections[collection] = modified;

@@ -29,27 +29,41 @@ export class ApiError extends Error {
   }
 }
 
+export type EntryJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | EntryJsonValue[]
+  | { [key: string]: EntryJsonValue };
+
+export interface EntryJsonDocument {
+  [key: string]: EntryJsonValue;
+}
+
 export interface ValidatedEntry {
+  documentJson: string;
   requestedId: string | null;
   identifier: string | null;
+  identifierPresent: boolean;
   dedupeKey: string;
-  sgv: number;
+  sysTime: string;
   date: number;
-  dateString: string;
   direction: string;
   device: string;
-  type: "sgv";
+  type: string;
 }
 
 export interface PublicEntry {
   _id: string;
-  identifier?: string;
-  sgv: number;
+  identifier?: string | null;
+  sgv?: number;
+  mbg?: number;
   date: number;
-  dateString: string;
-  direction: string;
-  device: string;
-  type: "sgv";
+  dateString?: string;
+  direction?: string;
+  device?: string;
+  type: string;
 }
 
 export interface HistoryQuery {
@@ -100,11 +114,17 @@ function parseDate(entry: Record<string, unknown>): number {
 function parseIdentity(entry: Record<string, unknown>): {
   requestedId: string | null;
   identifier: string | null;
+  identifierPresent: boolean;
 } {
   let requestedId: string | null = null;
   let identifier: string | null = null;
+  // JSON.stringify omits an own property whose value is undefined. Treat the
+  // same in direct RPC/unit-test callers so identity semantics do not depend
+  // on whether the payload crossed an HTTP JSON boundary first.
+  let identifierPresent = Object.prototype.hasOwnProperty.call(entry, "identifier")
+    && entry.identifier !== undefined;
 
-  if (entry.identifier !== undefined) {
+  if (identifierPresent && entry.identifier !== null) {
     if (typeof entry.identifier !== "string" || !SAFE_IDENTIFIER.test(entry.identifier)) {
       throw new ApiError(400, "invalid_entry", "identifier has an invalid format");
     }
@@ -119,46 +139,89 @@ function parseIdentity(entry: Record<string, unknown>): {
       requestedId = entry._id.toLowerCase();
     } else if (UUID.test(entry._id)) {
       identifier ??= entry._id;
+      identifierPresent = true;
     } else {
       throw new ApiError(400, "invalid_entry", "_id must be a 24-hex ObjectId or UUID");
     }
   }
 
-  return { requestedId, identifier };
+  return { requestedId, identifier, identifierPresent };
+}
+
+function parsedZoneOffset(value: string): number {
+  if (/[zZ]$/.test(value)) return 0;
+  const match = /([+-])(\d{2}):?(\d{2})$/.exec(value);
+  if (match === null) return 0;
+  const minutes = Number(match[2]) * 60 + Number(match[3]);
+  return match[1] === "-" ? -minutes : minutes;
 }
 
 function validateEntry(value: unknown): ValidatedEntry {
   if (!isRecord(value)) {
     throw new ApiError(400, "invalid_entry", "each entry must be a JSON object");
   }
-  if (typeof value.sgv !== "number" || !Number.isInteger(value.sgv)) {
-    throw new ApiError(400, "invalid_entry", "sgv must be an integer");
-  }
-  if (value.sgv < 20 || value.sgv > 600) {
-    throw new ApiError(400, "invalid_entry", "sgv must be between 20 and 600 mg/dL");
-  }
 
   const date = parseDate(value);
-  const type = boundedString(value.type, "type", "sgv", 16);
-  if (type !== "sgv") {
-    throw new ApiError(400, "invalid_entry", "the current adapter accepts only type=sgv");
+  const type = boundedString(value.type, "type", "sgv", 32);
+  if (!/^[A-Za-z0-9_-]+$/.test(type)) {
+    throw new ApiError(400, "invalid_entry", "type has an invalid format");
+  }
+  const measurementField = type === "mbg" ? "mbg" : type === "sgv" ? "sgv" : null;
+  if (measurementField !== null) {
+    const measurement = value[measurementField];
+    if (typeof measurement !== "number" || !Number.isInteger(measurement)) {
+      throw new ApiError(400, "invalid_entry", `${measurementField} must be an integer`);
+    }
+    if (measurement < 20 || measurement > 600) {
+      throw new ApiError(
+        400,
+        "invalid_entry",
+        `${measurementField} must be between 20 and 600 mg/dL`,
+      );
+    }
   }
   const direction = boundedString(value.direction, "direction", "NONE", 32);
-  if (!DIRECTIONS.includes(direction as (typeof DIRECTIONS)[number])) {
+  if (type === "sgv" && !DIRECTIONS.includes(direction as (typeof DIRECTIONS)[number])) {
     throw new ApiError(400, "invalid_entry", "direction is not a known Nightscout direction");
   }
   const device = boundedString(value.device, "device", "unknown", 80);
   const identity = parseIdentity(value);
+  const sourceDateString = typeof value.dateString === "string" && value.dateString.length > 0
+    ? value.dateString
+    : null;
+  const sysTimeMillis = sourceDateString === null ? date : Date.parse(sourceDateString);
+  if (!Number.isFinite(sysTimeMillis)) {
+    throw new ApiError(400, "invalid_entry", "dateString is not a valid timestamp");
+  }
+  const sysTime = new Date(sysTimeMillis).toISOString();
+  const document = { ...value } as EntryJsonDocument;
+  delete document._id;
+  if (identity.requestedId !== null) document._id = identity.requestedId;
+  if (identity.identifierPresent) document.identifier = identity.identifier;
+  else delete document.identifier;
+  document.date = date;
+  // Locked v15.0.7 lib/server/entries.js uses moment.parseZone: sysTime is
+  // always normalized to UTC, utcOffset preserves the supplied zone, and a
+  // date-only payload does not acquire a dateString field.
+  if (sourceDateString === null) delete document.dateString;
+  else document.dateString = sysTime;
+  document.sysTime = sysTime;
+  document.utcOffset = sourceDateString === null ? 0 : parsedZoneOffset(sourceDateString);
+  document.type = type;
+  document.direction = direction;
+  document.device = device;
 
   return {
     ...identity,
-    dedupeKey: `${date}:sgv`,
-    sgv: value.sgv,
+    documentJson: JSON.stringify(document),
+    // Locked v15.0.7 lib/server/entries.js always upserts v1 entries by
+    // normalized sysTime + type, independently of identifier or device.
+    dedupeKey: JSON.stringify([sysTime, type]),
+    sysTime,
     date,
-    dateString: new Date(date).toISOString(),
     direction,
     device,
-    type: "sgv",
+    type,
   };
 }
 

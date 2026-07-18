@@ -1,9 +1,11 @@
 import type { JsonDocument, JsonValue } from "./entry-store";
+import type { HistoryQuery, ValidatedEntry } from "./model";
 
-export type Api3CollectionName = "devicestatus" | "treatments";
+export type Api3CollectionName = "devicestatus" | "entries" | "treatments";
 
 const TREATMENTS: Api3CollectionName = "treatments";
 const DEVICESTATUS: Api3CollectionName = "devicestatus";
+const ENTRIES: Api3CollectionName = "entries";
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FIELD_NAME = /^[A-Za-z0-9_,.-]+$/;
@@ -155,6 +157,33 @@ interface CountRow {
   count: number;
 }
 
+interface DbLegacyEntryShadow {
+  [key: string]: SqlStorageValue;
+  id: string;
+  identifier: string | null;
+  dedupe_key: string;
+  sgv: number | null;
+  mbg: number | null;
+  date: number;
+  date_string: string;
+  direction: string;
+  device: string;
+  type: string;
+  created_at: number;
+}
+
+interface SqlIndexRow {
+  [key: string]: SqlStorageValue;
+  name: string;
+  unique: number;
+}
+
+interface SqlColumnRow {
+  [key: string]: SqlStorageValue;
+  name: string;
+  notnull: number;
+}
+
 function randomObjectId(): string {
   const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
@@ -199,17 +228,25 @@ function fallbackKey(
   document: JsonDocument,
   collection: Api3CollectionName = TREATMENTS,
 ): string | null {
-  const createdAt = canonicalCreatedAt(document.created_at);
-  const distinguishingValue = collection === DEVICESTATUS
-    ? document.device
-    : document.eventType;
+  // Locked v15.0.7 lib/api3/generic/setup.js configures the API3 legacy
+  // fallback as date+type for entries, created_at+device for devicestatus,
+  // and created_at+eventType for treatments. This is deliberately separate
+  // from v1's sysTime+type upsert selector in lib/server/entries.js.
+  const dateValue = collection === ENTRIES
+    ? document.date
+    : canonicalCreatedAt(document.created_at);
+  const distinguishingValue = collection === ENTRIES
+    ? document.type
+    : collection === DEVICESTATUS
+      ? document.device
+      : document.eventType;
   if (
-    (typeof createdAt !== "string" && typeof createdAt !== "number") ||
+    (typeof dateValue !== "string" && typeof dateValue !== "number") ||
     (typeof distinguishingValue !== "string" && typeof distinguishingValue !== "number")
   ) {
     return null;
   }
-  return JSON.stringify([createdAt, distinguishingValue]);
+  return JSON.stringify([dateValue, distinguishingValue]);
 }
 
 function hasOwn(document: JsonDocument, field: string): boolean {
@@ -415,6 +452,7 @@ function normalizeTreatmentDuration(
 function materializeApi3WithStorageProjection(
   row: Pick<DbDocumentV4, "id" | "body">,
   fields: string[] | undefined,
+  collection: Api3CollectionName = TREATMENTS,
 ): JsonDocument {
   let document = parseBody(row.body);
   if (!document.identifier) document.identifier = row.id;
@@ -430,11 +468,11 @@ function materializeApi3WithStorageProjection(
     ])));
   }
 
-  // Locked API3 resolves fallback dates only after the storage query. This is
-  // deliberately virtual: created_at can appear as srv* in a response without
-  // making a legacy document match srv* search or history predicates.
+  // Locked API3 resolves fallback dates only after the storage query. Entries
+  // use date; the other implemented collections use created_at. This remains
+  // virtual, so legacy rows do not start matching raw srv* filters/history.
   if (!document.srvModified) {
-    const fallback = timestamp(document.created_at);
+    const fallback = timestamp(collection === ENTRIES ? document.date : document.created_at);
     if (fallback !== null) document.srvModified = fallback;
   }
   if (document.srvModified && !document.srvCreated) {
@@ -444,8 +482,11 @@ function materializeApi3WithStorageProjection(
   return document;
 }
 
-function materializeApi3(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument {
-  return materializeApi3WithStorageProjection(row, undefined);
+function materializeApi3(
+  row: Pick<DbDocumentV4, "id" | "body">,
+  collection: Api3CollectionName = TREATMENTS,
+): JsonDocument {
+  return materializeApi3WithStorageProjection(row, undefined, collection);
 }
 
 function materializeLegacy(row: Pick<DbDocumentV4, "id" | "body">): JsonDocument {
@@ -719,7 +760,10 @@ function assertSqlQueryWithinLimits(statement: string, bindings: SqlStorageValue
   }
 }
 
-function tableColumnNames(sql: SqlStorage, table: "documents" | "document_changes"): Set<string> {
+function tableColumnNames(
+  sql: SqlStorage,
+  table: "documents" | "document_changes" | "entries",
+): Set<string> {
   return new Set(
     sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray().map((column) => column.name),
   );
@@ -842,6 +886,9 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
        OR (collection = 'devicestatus' AND fallback_key IS NULL
            AND json_type(body, '$.created_at') IS NOT NULL
            AND json_type(body, '$.device') IS NOT NULL)
+       OR (collection = 'entries' AND fallback_key IS NULL
+           AND json_type(body, '$.date') IS NOT NULL
+           AND json_type(body, '$.type') IS NOT NULL)
        OR NOT EXISTS (
          SELECT 1 FROM document_changes
          WHERE document_changes.collection = documents.collection
@@ -866,8 +913,10 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     // Recompute the locked collection-specific API3 fallback key from the
     // preserved body. This also backfills devicestatus rows written before
     // that collection joined the generic SQLite API3 adapter.
-    const documentFallback = collection === TREATMENTS || collection === DEVICESTATUS
-      ? fallbackKey(document, collection)
+    const documentFallback = collection === TREATMENTS
+      || collection === DEVICESTATUS
+      || collection === ENTRIES
+      ? fallbackKey(document, collection as Api3CollectionName)
       : row.fallback_key;
     const revision = row.revision ?? 1;
 
@@ -940,6 +989,186 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     ON CONFLICT(collection) DO UPDATE SET
       last_srv_modified = excluded.last_srv_modified
     WHERE excluded.last_srv_modified > collection_clocks.last_srv_modified
+  `);
+}
+
+function createEntriesShadowTable(sql: SqlStorage): void {
+  sql.exec(`
+    CREATE TABLE IF NOT EXISTS entries (
+      id TEXT PRIMARY KEY,
+      identifier TEXT,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      sgv INTEGER CHECK (sgv IS NULL OR (sgv >= 20 AND sgv <= 600)),
+      mbg INTEGER CHECK (mbg IS NULL OR (mbg >= 20 AND mbg <= 600)),
+      date INTEGER NOT NULL,
+      date_string TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      device TEXT NOT NULL,
+      type TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
+}
+
+function entriesIdentifierIsUnique(sql: SqlStorage): boolean {
+  for (const index of sql.exec<SqlIndexRow>("PRAGMA index_list(entries)").toArray()) {
+    if (index.unique === 0 || !/^[A-Za-z0-9_]+$/.test(index.name)) continue;
+    const columns = sql.exec<{ name: string }>(
+      `PRAGMA index_info("${index.name}")`,
+    ).toArray().map((column) => column.name);
+    if (columns.length === 1 && columns[0] === "identifier") return true;
+  }
+  return false;
+}
+
+/**
+ * Entries schema/data bridge introduced after the generic API3 repository.
+ *
+ * Upstream source: v15.0.7 (7e0e77f88fc113a76fe363504125f5b36b8a3fe3)
+ * - lib/storage/mongo-storage.js creates ordinary, non-unique indexes.
+ * - lib/server/entries.js upserts v1 data by normalized sysTime + type.
+ * - lib/api3/generic/setup.js falls back by date + type only for legacy rows
+ *   whose identifier field does not exist.
+ *
+ * The old fixed-width table remains as a v1 write shadow for migration
+ * compatibility. Canonical reads/mutations live in documents so API3 can
+ * preserve arbitrary entry fields, soft-delete metadata, and history state.
+ */
+export function migrateEntriesV6(sql: SqlStorage): void {
+  createEntriesShadowTable(sql);
+  const columns = sql.exec<SqlColumnRow>("PRAGMA table_info(entries)").toArray();
+  const columnNames = new Set(columns.map((column) => column.name));
+  const sgvWasRequired = columns.find((column) => column.name === "sgv")?.notnull !== 0;
+  const needsRebuild = entriesIdentifierIsUnique(sql)
+    || !columnNames.has("mbg")
+    || sgvWasRequired;
+  const markerPresent = sql.exec<{ present: number }>(
+    "SELECT EXISTS(SELECT 1 FROM _sql_schema_migrations WHERE id = 6) AS present",
+  ).one().present !== 0;
+
+  if (needsRebuild) {
+    // transactionSync at the caller makes the rename/copy/drop sequence
+    // atomic. Every selected baseline column is copied before the old table
+    // is dropped; a thrown constraint error therefore preserves the old DB.
+    sql.exec("ALTER TABLE entries RENAME TO entries_v6_legacy");
+    createEntriesShadowTable(sql);
+    // Inspect the renamed source explicitly for optional columns introduced
+    // by later snapshots.
+    const renamedColumns = new Set(
+      sql.exec<{ name: string }>("PRAGMA table_info(entries_v6_legacy)")
+        .toArray()
+        .map((column) => column.name),
+    );
+    sql.exec(`
+      INSERT INTO entries
+        (id, identifier, dedupe_key, sgv, mbg, date, date_string,
+         direction, device, type, created_at)
+      SELECT id, identifier, json_array(date_string, type), sgv,
+             ${renamedColumns.has("mbg") ? "mbg" : "NULL"},
+             date, date_string, direction, device, type, created_at
+      FROM entries_v6_legacy
+    `);
+    sql.exec("DROP TABLE entries_v6_legacy");
+  }
+  sql.exec("CREATE INDEX IF NOT EXISTS entries_date_desc ON entries(date DESC)");
+  // v1's authoritative upsert selector lives inside the canonical JSON body.
+  // Without this expression index, every new/replayed SGV would scan years of
+  // Entries documents on the Free plan. SQLite JSON functions are
+  // deterministic and therefore valid expression-index keys.
+  sql.exec(`
+    CREATE INDEX IF NOT EXISTS documents_entries_sys_time_type
+      ON documents(
+        json_extract(body, '$.sysTime'),
+        json_extract(body, '$.type'),
+        updated_at ASC,
+        id ASC
+      )
+      WHERE collection = 'entries'
+  `);
+
+  // The marker gates data work only, never schema inspection. Thus a database
+  // carrying a higher unrelated marker still repairs an old UNIQUE table,
+  // while the ordinary marker-6 activation does not scan years of entries or
+  // canonical documents at all. A rebuild forces the bridge even if a stale
+  // marker was already present.
+  if (markerPresent && !needsRebuild) return;
+
+  // Keep unconditional schema inspection separate from data backfill. The
+  // baseline table can still need repair when a newer/unrelated migration
+  // marker exists, but a normal activation must neither materialize every
+  // shadow row nor issue a losing INSERT per canonical entry. Both the first
+  // large import and later incremental repair stay set-based inside the
+  // caller's transactionSync, so JS heap use is constant rather than scaling
+  // with years of SGV rows. The documents primary key (collection, id)
+  // indexes the anti-join and yields no writes after the one-time import.
+  //
+  // Old rows could not represent explicit identifier:null; SQL NULL therefore
+  // means the field was absent. New explicit-null rows are written to both
+  // stores transactionally and are already excluded by the anti-join.
+  sql.exec(`
+    INSERT INTO documents
+      (collection, id, body, sort_time, created_at, updated_at, identifier,
+       identifier_present, srv_created, srv_modified, is_valid, fallback_key,
+       revision, srv_metadata_version)
+    SELECT
+      'entries', entry.id,
+      json_patch(
+        json_patch(
+          json_patch(
+            json_object(
+              '_id', entry.id,
+              'date', entry.date,
+              'dateString', entry.date_string,
+              'sysTime', entry.date_string,
+              'utcOffset', 0,
+              'direction', entry.direction,
+              'device', entry.device,
+              'type', entry.type
+            ),
+            CASE WHEN entry.identifier IS NULL THEN '{}'
+                 ELSE json_object('identifier', entry.identifier) END
+          ),
+          CASE WHEN entry.sgv IS NULL THEN '{}'
+               ELSE json_object('sgv', entry.sgv) END
+        ),
+        CASE WHEN entry.mbg IS NULL THEN '{}'
+             ELSE json_object('mbg', entry.mbg) END
+      ),
+      entry.date, entry.created_at, entry.created_at, entry.identifier,
+      CASE WHEN entry.identifier IS NULL THEN 0 ELSE 1 END,
+      NULL, NULL, 1, json_array(entry.date, entry.type), 1, 1
+    FROM entries AS entry
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM documents AS document
+      WHERE document.collection = 'entries' AND document.id = entry.id
+    )
+    ON CONFLICT(collection, id) DO NOTHING
+  `);
+
+  // migrateDocumentsV4 repairs history before this bridge runs. Copying only
+  // shadow-backed canonical revisions that still lack history covers rows
+  // inserted above without re-appending a change on every activation.
+  sql.exec(`
+    INSERT INTO document_changes
+      (collection, id, identifier, identifier_present, body, srv_created,
+       srv_modified, is_valid, revision, operation, srv_metadata_version)
+    SELECT document.collection, document.id, document.identifier,
+           document.identifier_present, document.body, document.srv_created,
+           document.srv_modified, document.is_valid, document.revision,
+           'migrate', 1
+    FROM documents AS document
+    WHERE document.collection = 'entries'
+      AND EXISTS (
+        SELECT 1 FROM entries AS entry WHERE entry.id = document.id
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM document_changes AS change
+        WHERE change.collection = document.collection
+          AND change.id = document.id
+          AND change.revision = document.revision
+      )
   `);
 }
 
@@ -1051,6 +1280,90 @@ export class SqliteDocumentRepository {
     return key === null ? undefined : this.findByFallbackRow(key, false);
   }
 
+  private findLegacyEntryBySysTimeType(
+    sysTime: string,
+    type: string,
+  ): DbDocumentV4 | undefined {
+    // Locked v15.0.7 lib/server/entries.js does not use identifier for v1
+    // upserts. The exact normalized sysTime + type pair is authoritative.
+    return this.sql.exec<DbDocumentV4>(
+      `SELECT * FROM documents
+       WHERE collection = 'entries'
+         AND json_extract(body, '$.sysTime') = ?
+         AND json_extract(body, '$.type') = ?
+       ORDER BY updated_at ASC, id ASC
+       LIMIT 1`,
+      sysTime,
+      type,
+    ).toArray()[0];
+  }
+
+  private findEntryShadowByDedupeKey(key: string): DbLegacyEntryShadow | undefined {
+    return this.sql.exec<DbLegacyEntryShadow>(
+      `SELECT id, identifier, dedupe_key, sgv, mbg, date, date_string,
+              direction, device, type, created_at
+       FROM entries WHERE dedupe_key = ? LIMIT 1`,
+      key,
+    ).toArray()[0];
+  }
+
+  private writeLegacyEntryShadow(
+    id: string,
+    dedupeKey: string,
+    document: JsonDocument,
+  ): void {
+    const identifier = typeof document.identifier === "string" ? document.identifier : null;
+    const sgv = typeof document.sgv === "number" && Number.isFinite(document.sgv)
+      ? Math.trunc(document.sgv)
+      : null;
+    const mbg = typeof document.mbg === "number" && Number.isFinite(document.mbg)
+      ? Math.trunc(document.mbg)
+      : null;
+    const date = timestamp(document.date);
+    // The fixed shadow column is the v1 upsert time, not necessarily a public
+    // dateString: locked upstream leaves dateString absent for date-only input.
+    const dateString = typeof document.sysTime === "string"
+      ? document.sysTime
+      : date === null
+        ? null
+        : new Date(date).toISOString();
+    if (date === null || dateString === null || typeof document.type !== "string") {
+      throw new Error("legacy entry shadow requires date, dateString, and type");
+    }
+    const direction = typeof document.direction === "string" ? document.direction : "NONE";
+    const device = typeof document.device === "string" ? document.device : "unknown";
+    const existing = this.findEntryShadowByDedupeKey(dedupeKey);
+    if (existing !== undefined && existing.id !== id) {
+      throw new Error("legacy entry shadow identity mismatch");
+    }
+    this.sql.exec(
+      `INSERT INTO entries
+        (id, identifier, dedupe_key, sgv, mbg, date, date_string,
+         direction, device, type, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(dedupe_key) DO UPDATE SET
+         identifier = excluded.identifier,
+         sgv = excluded.sgv,
+         mbg = excluded.mbg,
+         date = excluded.date,
+         date_string = excluded.date_string,
+         direction = excluded.direction,
+         device = excluded.device,
+         type = excluded.type`,
+      id,
+      identifier,
+      dedupeKey,
+      sgv,
+      mbg,
+      date,
+      dateString,
+      direction,
+      device,
+      document.type,
+      Date.now(),
+    );
+  }
+
   private nextSrvModified(
     now: number,
     collection: Api3CollectionName = TREATMENTS,
@@ -1070,9 +1383,13 @@ export class SqliteDocumentRepository {
     return next;
   }
 
-  private preconditionFailed(row: DbDocumentV4, ifUnmodifiedSince: number | null): boolean {
+  private preconditionFailed(
+    row: DbDocumentV4,
+    ifUnmodifiedSince: number | null,
+    collection: Api3CollectionName = TREATMENTS,
+  ): boolean {
     if (ifUnmodifiedSince === null) return false;
-    const modified = timestamp(materializeApi3(row).srvModified);
+    const modified = timestamp(materializeApi3(row, collection).srvModified);
     return modified !== null
       && Math.floor(modified / 1_000) * 1_000 > ifUnmodifiedSince;
   }
@@ -1089,10 +1406,13 @@ export class SqliteDocumentRepository {
     document: JsonDocument,
     isDeduplication = false,
     resolveStoredDates = false,
+    collection: Api3CollectionName = TREATMENTS,
   ): void {
     this.assertWritable(row);
     if (row.is_valid === 0) return;
-    const stored = resolveStoredDates ? materializeApi3(row) : materializeLegacy(row);
+    const stored = resolveStoredDates
+      ? materializeApi3(row, collection)
+      : materializeLegacy(row);
     if (!resolveStoredDates) stored.identifier = row.identifier || row.id;
     for (const field of API3_IMMUTABLE_FIELDS) {
       if (field === "identifier" && isDeduplication) continue;
@@ -1199,12 +1519,21 @@ export class SqliteDocumentRepository {
       operation,
     );
 
+    if (policy === "api3" && collection === ENTRIES) {
+      // v1's fixed table is only a migration/write shadow. Any API3 mutation
+      // can make its sysTime+type selector or payload stale (type is writable
+      // upstream, and soft delete adds metadata), so invalidate it inside the
+      // same transaction. A later v1 write consults canonical documents first
+      // and recreates an accurate shadow without risking primary-key reuse.
+      this.sql.exec("DELETE FROM entries WHERE id = ?", id);
+    }
+
     const result: DocumentMutationResult = {
       document: policy === "api3"
         ? materializeApi3({
           id,
           body,
-        })
+        }, collection)
         : stored,
       created: existing === undefined,
       deduplicated: existing !== undefined,
@@ -1221,13 +1550,13 @@ export class SqliteDocumentRepository {
   findTreatmentById(id: string, includeDeleted = false): JsonDocument | null {
     const row = this.findByIdRow(id);
     if (row === undefined || (!includeDeleted && row.is_valid === 0)) return null;
-    return materializeApi3(row);
+    return materializeApi3(row, TREATMENTS);
   }
 
   findTreatmentByIdentifier(identifier: string, includeDeleted = false): JsonDocument | null {
     const row = this.findByIdentifierRow(identifier) ?? this.findByIdRow(identifier);
     if (row === undefined || (!includeDeleted && row.is_valid === 0)) return null;
-    return materializeApi3(row);
+    return materializeApi3(row, TREATMENTS);
   }
 
   findTreatmentForApi3Read(
@@ -1237,7 +1566,9 @@ export class SqliteDocumentRepository {
   ): JsonDocument | null {
     const row = this.findByIdentifierRow(identifier, collection)
       ?? this.findByIdRow(identifier, collection);
-    return row === undefined ? null : materializeApi3WithStorageProjection(row, fields);
+    return row === undefined
+      ? null
+      : materializeApi3WithStorageProjection(row, fields, collection);
   }
 
   findDocumentForApi3Read(
@@ -1252,7 +1583,7 @@ export class SqliteDocumentRepository {
     const key = fallbackKey({ created_at: createdAt, eventType });
     const row = key === null ? undefined : this.findByFallbackRow(key, true);
     if (row === undefined || (!includeDeleted && row.is_valid === 0)) return null;
-    return materializeApi3(row);
+    return materializeApi3(row, TREATMENTS);
   }
 
   private queryTreatmentRows(
@@ -1293,7 +1624,7 @@ export class SqliteDocumentRepository {
 
   queryTreatments(query: DocumentQuery = {}): JsonDocument[] {
     return this.queryTreatmentRows(query, "api3")
-      .map(materializeApi3)
+      .map((row) => materializeApi3(row, TREATMENTS))
       .map((document) => project(document, query.fields));
   }
 
@@ -1302,7 +1633,7 @@ export class SqliteDocumentRepository {
     query: DocumentQuery = {},
   ): JsonDocument[] {
     return this.queryTreatmentRows(query, "api3", collection)
-      .map(materializeApi3)
+      .map((row) => materializeApi3(row, collection))
       .map((document) => project(document, query.fields));
   }
 
@@ -1310,6 +1641,143 @@ export class SqliteDocumentRepository {
     return this.queryTreatmentRows(query, "legacy")
       .map(materializeLegacy)
       .map((document) => project(document, query.fields));
+  }
+
+  upsertLegacyEntries(entries: ValidatedEntry[]): DocumentMutationResult[] {
+    return this.storage.transactionSync(() => entries.map((entry) => {
+      const incoming = parseBody(entry.documentJson);
+      let shadow = this.findEntryShadowByDedupeKey(entry.dedupeKey);
+      let existing: DbDocumentV4 | undefined;
+      if (shadow !== undefined) {
+        const candidate = this.findByIdRow(shadow.id, ENTRIES);
+        if (candidate !== undefined) {
+          const candidateDocument = parseBody(candidate.body);
+          if (
+            candidateDocument.sysTime === entry.sysTime
+            && candidateDocument.type === entry.type
+          ) {
+            // The ordinary replay path is two indexed lookups: shadow's UNIQUE
+            // dedupe key followed by documents' (collection,id) primary key.
+            existing = candidate;
+          } else {
+            this.sql.exec("DELETE FROM entries WHERE dedupe_key = ?", entry.dedupeKey);
+            shadow = undefined;
+          }
+        }
+      }
+      existing ??= this.findLegacyEntryBySysTimeType(entry.sysTime, entry.type);
+      if (shadow !== undefined && existing?.id !== shadow.id) {
+        const shadowCanonical = this.findByIdRow(shadow.id, ENTRIES);
+        if (existing !== undefined || shadowCanonical !== undefined) {
+          // The canonical Mongo-equivalent sysTime+type lookup wins. This can
+          // repair a shadow left stale by an older deployment after API3
+          // changed type, without forcing a duplicate primary-key insert.
+          this.sql.exec("DELETE FROM entries WHERE dedupe_key = ?", entry.dedupeKey);
+          shadow = undefined;
+        }
+      }
+      if (
+        existing !== undefined
+        && entry.requestedId !== null
+        && entry.requestedId !== existing.id
+      ) {
+        // Mongo rejects changing _id in the $set portion of an upsert. Keeping
+        // that failure inside this synchronous transaction also verifies that
+        // a mixed v1 batch cannot partially commit in SQLite.
+        throw new Error("MongoServerError: immutable field _id was altered");
+      }
+      delete incoming._id;
+      const original = existing === undefined ? {} : parseBody(existing.body);
+      delete original._id;
+      const document = { ...original, ...incoming };
+      const id = existing?.id ?? shadow?.id ?? entry.requestedId ?? randomObjectId();
+      const mutation = this.writeSnapshot(
+        id,
+        document,
+        existing,
+        existing === undefined ? "create" : "replace",
+        "legacy",
+        undefined,
+        ENTRIES,
+      );
+      this.writeLegacyEntryShadow(id, entry.dedupeKey, mutation.document);
+      return mutation;
+    }));
+  }
+
+  queryLegacyEntries(query: HistoryQuery): JsonDocument[] {
+    const clauses = ["collection = 'entries'"];
+    const bindings: SqlStorageValue[] = [];
+    for (const [operator, value] of [
+      [">", query.gt],
+      [">=", query.gte],
+      ["<", query.lt],
+      ["<=", query.lte],
+    ] as const) {
+      if (value === null) continue;
+      clauses.push(`json_extract(body, '$.date') ${operator} ?`);
+      bindings.push(value);
+    }
+    bindings.push(query.count);
+    return this.sql.exec<DbDocumentV4>(
+      `SELECT * FROM documents
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY json_extract(body, '$.date') DESC, id ASC
+       LIMIT ?`,
+      ...bindings,
+    ).toArray().map(materializeLegacy);
+  }
+
+  currentLegacyEntries(type = "sgv"): JsonDocument[] {
+    return this.sql.exec<DbDocumentV4>(
+      `SELECT * FROM documents
+       WHERE collection = 'entries'
+         AND json_extract(body, '$.type') = ?
+       ORDER BY json_extract(body, '$.date') DESC, id ASC
+       LIMIT 1`,
+      type,
+    ).toArray().map(materializeLegacy);
+  }
+
+  deleteLegacyEntries(
+    ids: string[],
+    lte: number | null,
+    gte: number | null,
+  ): number {
+    return this.storage.transactionSync(() => {
+      if (ids.length === 0 && lte === null && gte === null) return 0;
+      const clauses = ["collection = 'entries'"];
+      const bindings: SqlStorageValue[] = [];
+      if (ids.length > 0) {
+        clauses.push(`id IN (${ids.map(() => "?").join(", ")})`);
+        bindings.push(...ids);
+      } else {
+        if (lte !== null) {
+          clauses.push("json_extract(body, '$.date') <= ?");
+          bindings.push(lte);
+        }
+        if (gte !== null) {
+          clauses.push("json_extract(body, '$.date') >= ?");
+          bindings.push(gte);
+        }
+      }
+      const rows = this.sql.exec<{ id: string }>(
+        `SELECT id FROM documents WHERE ${clauses.join(" AND ")}`,
+        ...bindings,
+      ).toArray();
+      for (const row of rows) {
+        this.sql.exec(
+          "DELETE FROM document_changes WHERE collection = 'entries' AND id = ?",
+          row.id,
+        );
+        this.sql.exec(
+          "DELETE FROM documents WHERE collection = 'entries' AND id = ?",
+          row.id,
+        );
+        this.sql.exec("DELETE FROM entries WHERE id = ?", row.id);
+      }
+      return rows.length;
+    });
   }
 
   upsertTreatment(input: JsonDocument): DocumentMutationResult {
@@ -1379,7 +1847,7 @@ export class SqliteDocumentRepository {
       if (existing !== undefined) {
         if (!options.canUpdate) return { ok: false, reason: "missing-update-permission" };
         this.assertClientStorageIdCompatible(existing, document);
-        this.assertApi3ImmutableFields(existing, document, true);
+        this.assertApi3ImmutableFields(existing, document, true, false, collection);
         if (options.validate !== false) assertApi3Common(document);
         normalizeTreatmentDuration(document);
       } else {
@@ -1456,7 +1924,7 @@ export class SqliteDocumentRepository {
         };
       }
       if (existing.is_valid === 0) return { ok: false, reason: "gone" };
-      if (this.preconditionFailed(existing, options.ifUnmodifiedSince)) {
+      if (this.preconditionFailed(existing, options.ifUnmodifiedSince, collection)) {
         return { ok: false, reason: "precondition-failed" };
       }
       if (!options.canUpdate) return { ok: false, reason: "missing-update-permission" };
@@ -1464,11 +1932,11 @@ export class SqliteDocumentRepository {
       this.assertClientStorageIdCompatible(existing, document);
       document._id = existing.id;
       document.identifier = identity;
-      this.assertApi3ImmutableFields(existing, document, false, true);
+      this.assertApi3ImmutableFields(existing, document, false, true, collection);
       if (options.validate !== false) assertApi3Common(document);
       normalizeTreatmentDuration(document);
       if (options.actor !== null) document.subject = options.actor;
-      const resolvedExisting = materializeApi3(existing);
+      const resolvedExisting = materializeApi3(existing, collection);
       if (resolvedExisting.srvCreated !== undefined) {
         document.srvCreated = resolvedExisting.srvCreated;
       }
@@ -1522,10 +1990,10 @@ export class SqliteDocumentRepository {
       const existing = this.findApi3MutationCandidate(identity, collection);
       if (existing === undefined) return { ok: false, reason: "not-found" };
       if (existing.is_valid === 0) return { ok: false, reason: "gone" };
-      if (this.preconditionFailed(existing, options.ifUnmodifiedSince)) {
+      if (this.preconditionFailed(existing, options.ifUnmodifiedSince, collection)) {
         return { ok: false, reason: "precondition-failed" };
       }
-      this.assertApi3ImmutableFields(existing, patch, false, true);
+      this.assertApi3ImmutableFields(existing, patch, false, true, collection);
       if (options.validate !== false) assertApi3Common(patch, true);
       const original = materializeLegacy(existing);
       const serverPatch = { ...patch };
@@ -1592,6 +2060,12 @@ export class SqliteDocumentRepository {
           collection,
           existing.id,
         );
+        if (collection === ENTRIES) {
+          // Remove the v1 migration shadow in the same transaction. Otherwise
+          // a later DO activation could import it again and resurrect a
+          // permanently deleted entry.
+          this.sql.exec("DELETE FROM entries WHERE id = ?", existing.id);
+        }
         return { deleted: true, permanent: true };
       }
       const document = materializeLegacy(existing);
@@ -1631,6 +2105,7 @@ export class SqliteDocumentRepository {
       if (existing === undefined) return false;
       this.sql.exec("DELETE FROM document_changes WHERE collection = ? AND id = ?", collection, id);
       this.sql.exec("DELETE FROM documents WHERE collection = ? AND id = ?", collection, id);
+      if (collection === ENTRIES) this.sql.exec("DELETE FROM entries WHERE id = ?", id);
       return true;
     });
   }
@@ -1662,6 +2137,7 @@ export class SqliteDocumentRepository {
   }
 
   treatmentsLastModified(collection: Api3CollectionName = TREATMENTS): number | null {
+    const fallbackPath = collection === ENTRIES ? "$.date" : "$.created_at";
     const row = this.sql.exec<MaxModifiedRow>(
       `SELECT MAX(CASE
                     WHEN json_type(body, '$.srvModified') IN ('integer', 'real')
@@ -1669,23 +2145,29 @@ export class SqliteDocumentRepository {
                     ELSE NULL
                   END) AS srv_modified,
               MAX(CASE
-                    WHEN json_type(body, '$.created_at') IN ('integer', 'real')
-                      THEN CAST(json_extract(body, '$.created_at') AS INTEGER)
+                    WHEN json_type(body, ?) IN ('integer', 'real')
+                      THEN CAST(json_extract(body, ?) AS INTEGER)
                     ELSE NULL
                   END) AS created_at_number
        FROM documents
        WHERE collection = ?`,
+      fallbackPath,
+      fallbackPath,
       collection,
     ).one();
     const textCreatedAt = this.sql.exec<TextModifiedRow>(
-      `SELECT json_extract(body, '$.created_at') AS created_at_text
+      `SELECT json_extract(body, ?) AS created_at_text
        FROM documents
        WHERE collection = ?
-         AND json_type(body, '$.created_at') = 'text'
-         AND julianday(json_extract(body, '$.created_at')) IS NOT NULL
-       ORDER BY julianday(json_extract(body, '$.created_at')) DESC
+         AND json_type(body, ?) = 'text'
+         AND julianday(json_extract(body, ?)) IS NOT NULL
+       ORDER BY julianday(json_extract(body, ?)) DESC
        LIMIT 1`,
+      fallbackPath,
       collection,
+      fallbackPath,
+      fallbackPath,
+      fallbackPath,
     ).toArray()[0]?.created_at_text;
     const candidates = [
       row.srv_modified,
@@ -1716,7 +2198,9 @@ export class SqliteDocumentRepository {
       Math.trunc(query.since),
       boundedLimit(query.limit),
     ).toArray();
-    return rows.map(materializeApi3).map((document) => project(document, query.fields));
+    return rows
+      .map((row) => materializeApi3(row, collection))
+      .map((document) => project(document, query.fields));
   }
 
   documentHistory(

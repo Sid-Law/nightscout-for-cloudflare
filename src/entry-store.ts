@@ -14,6 +14,7 @@ import {
   verifyJwt as validateJwt,
 } from "./jwt";
 import {
+  migrateEntriesV6,
   migrateDocumentsV4,
   SqliteDocumentRepository,
   type Api3CollectionName,
@@ -69,19 +70,6 @@ export interface JsonDocument {
   [key: string]: JsonValue;
 }
 
-interface DbEntry {
-  [key: string]: SqlStorageValue;
-  id: string;
-  identifier: string | null;
-  dedupe_key: string;
-  sgv: number;
-  date: number;
-  date_string: string;
-  direction: string;
-  device: string;
-  type: "sgv";
-}
-
 interface DbDocument {
   [key: string]: SqlStorageValue;
   id: string;
@@ -118,18 +106,18 @@ function randomObjectId(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function toPublicEntry(row: DbEntry): PublicEntry {
-  const entry: PublicEntry = {
-    _id: row.id,
-    sgv: row.sgv,
-    date: row.date,
-    dateString: row.date_string,
-    direction: row.direction,
-    device: row.device,
-    type: "sgv",
-  };
-  if (row.identifier !== null) entry.identifier = row.identifier;
-  return entry;
+function toPublicEntry(document: JsonDocument): PublicEntry {
+  const id = document._id;
+  const date = document.date;
+  const type = document.type;
+  if (
+    typeof id !== "string"
+    || typeof date !== "number"
+    || typeof type !== "string"
+  ) {
+    throw new Error("stored entry is missing its legacy public fields");
+  }
+  return { ...document, _id: id, date, type };
 }
 
 function documentSortTime(document: JsonDocument): number {
@@ -337,14 +325,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         this.ctx.storage.sql.exec(`
           CREATE TABLE IF NOT EXISTS entries (
             id TEXT PRIMARY KEY,
-            identifier TEXT UNIQUE,
+            identifier TEXT,
             dedupe_key TEXT NOT NULL UNIQUE,
-            sgv INTEGER NOT NULL CHECK (sgv >= 20 AND sgv <= 600),
+            sgv INTEGER CHECK (sgv IS NULL OR (sgv >= 20 AND sgv <= 600)),
+            mbg INTEGER CHECK (mbg IS NULL OR (mbg >= 20 AND mbg <= 600)),
             date INTEGER NOT NULL,
             date_string TEXT NOT NULL,
             direction TEXT NOT NULL,
             device TEXT NOT NULL,
-            type TEXT NOT NULL CHECK (type = 'sgv'),
+            type TEXT NOT NULL,
             created_at INTEGER NOT NULL
           );
           CREATE INDEX IF NOT EXISTS entries_date_desc ON entries(date DESC);
@@ -394,6 +383,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       if (version < 5) {
         this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (5)");
       }
+
+      // Run the actual Entries repair on every activation. The marker records
+      // provenance only: another branch may already have advanced MAX(id), and
+      // an old identifier-UNIQUE table must still be repaired and imported.
+      migrateEntriesV6(this.ctx.storage.sql);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (6)",
+      );
     });
   }
 
@@ -585,11 +582,17 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       snapshot.profiles.length + snapshot.devicestatus.length,
     );
 
-    for (const row of this.ctx.storage.sql.exec<DbEntry>(
-      `SELECT id, identifier, dedupe_key, sgv, date, date_string, direction, device, type
-       FROM entries ORDER BY date DESC LIMIT 1000`,
+    for (const row of this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'entries'
+         AND json_extract(body, '$.type') = 'sgv'
+         AND json_type(body, '$.sgv') IN ('integer', 'real')
+       ORDER BY json_extract(body, '$.date') DESC, id ASC
+       LIMIT 1000`,
     )) {
-      const entry = toPublicEntry(row);
+      const entry = toPublicEntry(toDocument(row));
+      if (typeof entry.sgv !== "number") continue;
       const sgv = {
         _id: entry._id,
         mgdl: entry.sgv,
@@ -833,101 +836,20 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async putEntries(entries: ValidatedEntry[]): Promise<WriteResult> {
-    let inserted = 0;
-    let duplicates = 0;
-    const stored: PublicEntry[] = [];
-
-    for (const entry of entries) {
-      const id = entry.requestedId ?? randomObjectId();
-      const existing = this.ctx.storage.sql
-        .exec<DbEntry>(
-          `SELECT id, identifier, dedupe_key, sgv, date, date_string, direction, device, type
-           FROM entries
-           WHERE dedupe_key = ? OR id = ? OR identifier = ?
-           LIMIT 1`,
-          entry.dedupeKey,
-          id,
-          entry.identifier,
-        )
-        .toArray()[0];
-
-      if (existing !== undefined) {
-        duplicates += 1;
-        stored.push(toPublicEntry(existing));
-        continue;
-      }
-
-      this.ctx.storage.sql.exec(
-        `INSERT INTO entries
-          (id, identifier, dedupe_key, sgv, date, date_string, direction, device, type, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'sgv', ?)`,
-        id,
-        entry.identifier,
-        entry.dedupeKey,
-        entry.sgv,
-        entry.date,
-        entry.dateString,
-        entry.direction,
-        entry.device,
-        Date.now(),
-      );
-      inserted += 1;
-      stored.push(
-        toPublicEntry({
-          id,
-          identifier: entry.identifier,
-          dedupe_key: entry.dedupeKey,
-          sgv: entry.sgv,
-          date: entry.date,
-          date_string: entry.dateString,
-          direction: entry.direction,
-          device: entry.device,
-          type: "sgv",
-        }),
-      );
-    }
-
-    return { inserted, duplicates, entries: stored };
+    const mutations = this.documentRepository().upsertLegacyEntries(entries);
+    return {
+      inserted: mutations.filter((mutation) => mutation.created).length,
+      duplicates: mutations.filter((mutation) => !mutation.created).length,
+      entries: mutations.map((mutation) => toPublicEntry(mutation.document)),
+    };
   }
 
   async getEntries(query: HistoryQuery): Promise<PublicEntry[]> {
-    const conditions: string[] = [];
-    const bindings: number[] = [];
-    const add = (operator: string, value: number | null): void => {
-      if (value !== null) {
-        conditions.push(`date ${operator} ?`);
-        bindings.push(value);
-      }
-    };
-    add(">", query.gt);
-    add(">=", query.gte);
-    add("<", query.lt);
-    add("<=", query.lte);
-
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const rows = this.ctx.storage.sql
-      .exec<DbEntry>(
-        `SELECT id, identifier, dedupe_key, sgv, date, date_string, direction, device, type
-         FROM entries ${where}
-         ORDER BY date DESC
-         LIMIT ?`,
-        ...bindings,
-        query.count,
-      )
-      .toArray();
-    return rows.map(toPublicEntry);
+    return this.documentRepository().queryLegacyEntries(query).map(toPublicEntry);
   }
 
   async getCurrent(): Promise<PublicEntry[]> {
-    const row = this.ctx.storage.sql
-      .exec<DbEntry>(
-        `SELECT id, identifier, dedupe_key, sgv, date, date_string, direction, device, type
-         FROM entries
-         ORDER BY date DESC
-         LIMIT 1`,
-      )
-      .toArray()[0];
-    return row === undefined ? [] : [toPublicEntry(row)];
+    return this.documentRepository().currentLegacyEntries().map(toPublicEntry);
   }
 
   async deleteEntries(
@@ -935,25 +857,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     lte: number | null = null,
     gte: number | null = null,
   ): Promise<number> {
-    let deleted = 0;
-    for (const id of ids) {
-      deleted += this.ctx.storage.sql.exec("DELETE FROM entries WHERE id = ?", id).rowsWritten;
-    }
-    if (ids.length === 0 && (lte !== null || gte !== null)) {
-      const conditions: string[] = [];
-      const bindings: number[] = [];
-      if (lte !== null) {
-        conditions.push("date <= ?");
-        bindings.push(lte);
-      }
-      if (gte !== null) {
-        conditions.push("date >= ?");
-        bindings.push(gte);
-      }
-      deleted += this.ctx.storage.sql
-        .exec(`DELETE FROM entries WHERE ${conditions.join(" AND ")}`, ...bindings).rowsWritten;
-    }
-    return deleted;
+    return this.documentRepository().deleteLegacyEntries(ids, lte, gte);
   }
 
   async listDocuments(collection: DocumentCollection, limit = 5000): Promise<string> {

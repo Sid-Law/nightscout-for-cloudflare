@@ -21,9 +21,11 @@ import { handleSocketIoPolling } from "./realtime/http-adapter";
 import { nightscoutStatus } from "./status";
 import {
   handleApi3DeviceStatus,
+  handleApi3Entries,
   handleApi3Treatments,
   handleApi3TreatmentsLastModified,
   matchApi3DeviceStatusRoute,
+  matchApi3EntriesRoute,
   matchApi3TreatmentRoute,
   api3BodyParserFailure,
   splitApi3Extension,
@@ -519,8 +521,17 @@ async function readBoundedBody(request: Request): Promise<unknown> {
   }
 }
 
+function isSgvEntry(entry: PublicEntry): entry is PublicEntry & { sgv: number } {
+  return entry.type === "sgv" && typeof entry.sgv === "number";
+}
+
+function isMbgEntry(entry: PublicEntry): entry is PublicEntry & { mbg: number } {
+  return entry.type === "mbg" && typeof entry.mbg === "number";
+}
+
 function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
-  const current = entries[0];
+  const sgvs = entries.filter(isSgvEntry);
+  const current = sgvs[0];
   if (current === undefined) {
     return { bgnow: { sgvs: [] }, delta: null };
   }
@@ -534,7 +545,7 @@ function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
     device: current.device,
     type: current.type,
   };
-  const previous = entries[1];
+  const previous = sgvs[1];
   const deltaValue = previous === undefined ? null : current.sgv - previous.sgv;
   return {
     bgnow: { sgvs: [sgv] },
@@ -1108,9 +1119,12 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
 
   const matchedTreatmentRoute = matchApi3TreatmentRoute(request.method, api3Pathname);
   const matchedDeviceStatusRoute = matchApi3DeviceStatusRoute(request.method, api3Pathname);
+  const matchedEntriesRoute = matchApi3EntriesRoute(request.method, api3Pathname);
   const matchedApi3Route = matchedTreatmentRoute === null
     ? matchedDeviceStatusRoute === null
-      ? null
+      ? matchedEntriesRoute === null
+        ? null
+        : { route: matchedEntriesRoute, collection: "entries" as const }
       : { route: matchedDeviceStatusRoute, collection: "devicestatus" as const }
     : { route: matchedTreatmentRoute, collection: "treatments" as const };
   const api3CollectionRoute: Api3CollectionRoute | null =
@@ -1128,13 +1142,21 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
         authentication.authorized,
         api3CollectionRoute,
       )
-      : handleApi3DeviceStatus(
-        request,
-        url,
-        authentication.store,
-        authentication.authorized,
-        api3CollectionRoute,
-      );
+      : matchedApi3Route.collection === "devicestatus"
+        ? handleApi3DeviceStatus(
+          request,
+          url,
+          authentication.store,
+          authentication.authorized,
+          api3CollectionRoute,
+        )
+        : handleApi3Entries(
+          request,
+          url,
+          authentication.store,
+          authentication.authorized,
+          api3CollectionRoute,
+        );
   }
 
   if (isApi3) return api3Error(404, "Bad operation or collection");
@@ -1159,6 +1181,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
         store.listDocuments("devicestatus"),
       ]);
     const sgvs = entries
+      .filter(isSgvEntry)
       .map((entry) => ({
         _id: entry._id,
         mgdl: entry.sgv,
@@ -1168,10 +1191,20 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
         type: entry.type,
       }))
       .sort((left, right) => left.mills - right.mills);
+    const mbgs = entries
+      .filter(isMbgEntry)
+      .map((entry) => ({
+        _id: entry._id,
+        mgdl: entry.mbg,
+        mills: entry.date,
+        device: entry.device,
+        type: entry.type,
+      }))
+      .sort((left, right) => left.mills - right.mills);
     return json({
       lastUpdated: Date.now(),
       sgvs,
-      mbgs: [],
+      mbgs,
       cals: [],
       treatments: parseDocuments(treatmentsJson),
       food: parseDocuments(foodJson),
