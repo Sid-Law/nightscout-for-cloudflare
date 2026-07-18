@@ -678,16 +678,57 @@ function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
   };
 }
 
-async function statusForResolution(
+function selectedStatusQueryCredential(url: URL): string | null {
+  const tokenValues = url.searchParams.getAll("token");
+  const token = tokenValues.length === 0
+    ? null
+    : tokenValues.length === 1
+      ? tokenValues[0]!
+      : tokenValues;
+  const secretValues = url.searchParams.getAll("secret");
+  const secret = secretValues.length === 0
+    ? null
+    : secretValues.length === 1
+      ? secretValues[0]!
+      : secretValues;
+  const selected = token !== null && (Array.isArray(token) || token)
+    ? token
+    : secret !== null && (Array.isArray(secret) || secret)
+      ? secret
+      : null;
+  // Express's repeated query key is an array. authorization.authorize()
+  // cannot resolve that array as either a JWT or a stored access token.
+  return typeof selected === "string" && selected.length > 0 ? selected : null;
+}
+
+async function statusQueryAuthorization(
+  store: DurableObjectStub<EntryStore>,
+  url: URL,
+  configuredDefaultRoles: string | undefined,
+): Promise<AuthorizedSubject | null> {
+  const presented = selectedStatusQueryCredential(url);
+  if (presented === null || boundedTokenCandidates(presented) === null) return null;
+  const claimsJson = await store.verifyAccessJwt(presented);
+  const accessToken = claimsJson === null
+    ? presented
+    : parseAccessJwtClaims(claimsJson).accessToken;
+  return authorizeCredential(store, accessToken, configuredDefaultRoles);
+}
+
+async function statusForRequest(
   env: AppEnv,
   url: URL,
-  resolution: AuthorizationResolution,
 ): Promise<Record<string, unknown>> {
   const store = env.ENTRY_STORE.getByName(resolveTenantFromUrl(url));
   const status = JSON.parse(await store.nightscoutHttpStatus(Date.now())) as Record<string, unknown>;
-  // The DO supplies the key in locked order. Assignment updates the value in
-  // place, so anonymous/admin null and an authorized subject share one shape.
-  status.authorized = resolution.authorized;
+  // Locked status.js does not reuse the authorization middleware result. It
+  // independently calls authorization.authorize(query.token || query.secret)
+  // and therefore ignores Bearer and api-secret headers for this field.
+  status.authorized = await statusQueryAuthorization(
+    store,
+    url,
+    env.AUTH_DEFAULT_ROLES,
+  );
   return status;
 }
 
@@ -889,12 +930,22 @@ function statusRedirect(
   return new Response(body, { status: 302, headers });
 }
 
-function statusNotAcceptable(): Response {
-  return statusText(
-    JSON.stringify({ status: 406, message: "Not Acceptable" }),
-    "application/json",
-    { status: 406 },
-  );
+function statusNotAcceptable(request: Request): Response {
+  // res.format() forwards this error to the production app's errorhandler(),
+  // which falls back to a plain-text stack for an unacceptable Accept value.
+  const error = new Error("Not Acceptable");
+  const body = error.stack ?? error.toString();
+  const headers = new Headers(corsHeaders());
+  headers.set("Content-Type", "text/plain; charset=utf-8");
+  headers.set("Vary", "Accept");
+  headers.set("X-Content-Type-Options", "nosniff");
+  if (request.method !== "HEAD") {
+    headers.set("Content-Length", String(new TextEncoder().encode(body).byteLength));
+  }
+  return new Response(request.method === "HEAD" ? null : body, {
+    status: 406,
+    headers,
+  });
 }
 
 function renderStatus(
@@ -911,7 +962,7 @@ function renderStatus(
       return statusRedirect(request, format, explicitExtension);
     case "js":
       return statusText(
-        `this.serverSettings = ${JSON.stringify(status)};`,
+        `this.serverSettings = ${JSON.stringify(status)} ;`,
         "application/javascript",
       );
     case "text":
@@ -928,6 +979,46 @@ function withoutBodyForHead(request: Request, response: Response): Response {
     statusText: response.statusText,
     headers: response.headers,
   });
+}
+
+function escapeFinalhandlerMessage(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+    .replaceAll("\n", "<br>")
+    .replaceAll("  ", " &nbsp;");
+}
+
+function expressFinalNotFound(request: Request, url: URL): Response {
+  const message = escapeFinalhandlerMessage(
+    `Cannot ${request.method} ${url.pathname}`,
+  );
+  const body = "<!DOCTYPE html>\n"
+    + '<html lang="en">\n'
+    + "<head>\n"
+    + '<meta charset="utf-8">\n'
+    + "<title>Error</title>\n"
+    + "</head>\n"
+    + "<body>\n"
+    + `<pre>${message}</pre>\n`
+    + "</body>\n"
+    + "</html>\n";
+  const headers = new Headers(corsHeaders());
+  headers.set("Content-Security-Policy", "default-src 'none'");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  headers.set("Content-Length", String(new TextEncoder().encode(body).byteLength));
+  return new Response(request.method === "HEAD" ? null : body, {
+    status: 404,
+    headers,
+  });
+}
+
+function isStatusFinalhandlerPath(pathname: string): boolean {
+  return /^\/api\/(?:v[12]\/)?status/i.test(pathname);
 }
 
 function entryDeleteBoundary(url: URL, name: string): number | null {
@@ -1494,19 +1585,30 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   const statusMatch = /^\/api\/v[12]\/status(?:\/|\.(json|html|txt|png|svg|js|csv|tsv))?$/i.exec(
     url.pathname,
   );
-  if ((request.method === "GET" || request.method === "HEAD") && statusMatch !== null) {
-    const resolution = await requirePermission(
+  const statusExtension = statusMatch?.[1];
+  const statusExtensionHasLockedCase = statusExtension === undefined
+    || statusExtension === "json"
+    || statusExtension === "html"
+    || statusExtension === "txt"
+    || statusExtension === "png"
+    || statusExtension === "svg"
+    || statusExtension === "js"
+    || statusExtension === "csv"
+    || statusExtension === "tsv";
+  if (
+    (request.method === "GET" || request.method === "HEAD")
+    && statusMatch !== null
+    && statusExtensionHasLockedCase
+  ) {
+    await requirePermission(
       request,
       env,
       url,
       "api:status:read",
     );
-    const extension = statusMatch[1]?.toLowerCase();
+    const extension = statusExtension;
     if (extension === "csv" || extension === "tsv") {
-      return withoutBodyForHead(
-        request,
-        statusNotAcceptable(),
-      );
+      return statusNotAcceptable(request);
     }
     const format: StatusFormat | null = extension === undefined
       ? negotiatedStatusFormat(request)
@@ -1514,12 +1616,9 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
         ? "text"
         : extension as StatusFormat;
     if (format === null) {
-      return withoutBodyForHead(
-        request,
-        statusNotAcceptable(),
-      );
+      return statusNotAcceptable(request);
     }
-    const status = await statusForResolution(env, url, resolution);
+    const status = await statusForRequest(env, url);
     return withoutBodyForHead(
       request,
       renderStatus(request, status, format, extension !== undefined),
@@ -1717,6 +1816,16 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
 
   const authorizationResponse = await handleAuthorizationApi(request, env, url);
   if (authorizationResponse !== null) return authorizationResponse;
+
+  if (
+    (request.method === "GET" || request.method === "HEAD")
+    && isStatusFinalhandlerPath(url.pathname)
+  ) {
+    if (/^\/api\/v[12]\/status/i.test(url.pathname)) {
+      await requirePermission(request, env, url, "api:status:read");
+    }
+    return expressFinalNotFound(request, url);
+  }
 
   return json(
     {

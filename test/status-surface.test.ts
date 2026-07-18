@@ -43,6 +43,69 @@ async function saveProfile(tenantName: string, profile: Record<string, unknown>)
   expect(response.status).toBe(200);
 }
 
+interface StatusSubject {
+  name: string;
+  accessToken: string;
+}
+
+async function createStatusSubject(
+  tenantName: string,
+  name: string,
+): Promise<StatusSubject> {
+  const store = env.ENTRY_STORE.getByName(tenantName);
+  await store.createDocuments("subjects", JSON.stringify([{ name, roles: ["readable"] }]));
+  const subjects = JSON.parse(await store.listDocuments("subjects")) as StatusSubject[];
+  const subject = subjects.find((candidate) => candidate.name === name);
+  if (subject === undefined) throw new Error("status subject was not created");
+  return subject;
+}
+
+async function issueStatusJwt(tenantName: string, accessToken: string): Promise<string> {
+  const issued = JSON.parse(
+    await env.ENTRY_STORE.getByName(tenantName).issueAccessJwt(accessToken),
+  ) as { token: string };
+  return issued.token;
+}
+
+function finalhandlerBody(method: "GET" | "HEAD", pathname: string): string {
+  return "<!DOCTYPE html>\n"
+    + '<html lang="en">\n'
+    + "<head>\n"
+    + '<meta charset="utf-8">\n'
+    + "<title>Error</title>\n"
+    + "</head>\n"
+    + "<body>\n"
+    + `<pre>Cannot ${method} ${pathname}</pre>\n`
+    + "</body>\n"
+    + "</html>\n";
+}
+
+async function expectNotAcceptable(
+  href: string,
+  method: "GET" | "HEAD",
+  accept?: string,
+): Promise<void> {
+  const response = await SELF.fetch(href, {
+    method,
+    ...(accept === undefined ? {} : { headers: { Accept: accept } }),
+  });
+  expect(response.status).toBe(406);
+  expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+  expect(response.headers.get("Vary")).toBe("Accept");
+  expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  if (method === "HEAD") {
+    expect(response.headers.get("Content-Length")).toBeNull();
+    expect(await response.text()).toBe("");
+  } else {
+    const body = await response.text();
+    expect(body).toMatch(/^Error: Not Acceptable\n/);
+    expect(body.split("\n").length).toBeGreaterThan(1);
+    expect(response.headers.get("Content-Length")).toBe(
+      String(new TextEncoder().encode(body).byteLength),
+    );
+  }
+}
+
 function settingsOf(status: Record<string, unknown>): Record<string, unknown> {
   return status.settings as Record<string, unknown>;
 }
@@ -336,6 +399,49 @@ describe("v1/v2 status representations", () => {
     }
   });
 
+  it("derives authorized only from query token, then query secret", async () => {
+    const tenantName = tenant("status-query-auth");
+    const bearerSubject = await createStatusSubject(tenantName, "Bearer Viewer");
+    const querySubject = await createStatusSubject(tenantName, "Query Viewer");
+    const bearerJwt = await issueStatusJwt(tenantName, bearerSubject.accessToken);
+    const queryJwt = await issueStatusJwt(tenantName, querySubject.accessToken);
+
+    async function authorized(
+      configure: (url: URL) => void = () => undefined,
+      headers: HeadersInit = {},
+    ): Promise<unknown> {
+      const url = new URL("https://example.test/api/v1/status.json");
+      url.searchParams.set("tenant", tenantName);
+      configure(url);
+      const response = await SELF.fetch(url, { headers });
+      expect(response.status).toBe(200);
+      return (await response.json<Record<string, unknown>>()).authorized;
+    }
+
+    expect(await authorized(
+      undefined,
+      { Authorization: `Bearer ${bearerJwt}` },
+    )).toBeNull();
+    expect(await authorized(
+      undefined,
+      { "api-secret": await secretDigest() },
+    )).toBeNull();
+    expect(await authorized((url) => {
+      url.searchParams.set("secret", querySubject.accessToken);
+    })).toMatchObject({ sub: "Query Viewer" });
+    expect(await authorized((url) => {
+      url.searchParams.set("token", queryJwt);
+    })).toMatchObject({ sub: "Query Viewer" });
+    const apiSecret = await secretDigest();
+    expect(await authorized((url) => {
+      url.searchParams.set("token", querySubject.accessToken);
+      url.searchParams.set("secret", bearerSubject.accessToken);
+    }, { Authorization: `Bearer ${bearerJwt}` })).toMatchObject({ sub: "Query Viewer" });
+    expect(await authorized((url) => {
+      url.searchParams.set("secret", apiSecret);
+    })).toBeNull();
+  });
+
   it("serves the locked explicit representations through both inherited mounts", async () => {
     for (const version of ["v1", "v2"] as const) {
       const html = await SELF.fetch(`https://example.test/api/${version}/status.html`);
@@ -372,7 +478,18 @@ describe("v1/v2 status representations", () => {
       expect(script.status).toBe(200);
       expect(script.headers.get("Content-Type")).toMatch(/^application\/javascript/);
       expect(script.headers.get("Vary")).toBe("Accept");
-      expect(await script.text()).toMatch(/^this\.serverSettings = \{"status":"ok"/);
+      const scriptBody = await script.text();
+      expect(scriptBody).toMatch(/^this\.serverSettings = \{"status":"ok"/);
+      expect(scriptBody).toMatch(/ \;$/);
+      const scriptHead = await SELF.fetch(
+        `https://example.test/api/${version}/status.js`,
+        { method: "HEAD" },
+      );
+      expect(scriptHead.status).toBe(200);
+      expect(scriptHead.headers.get("Content-Length")).toBe(
+        script.headers.get("Content-Length"),
+      );
+      expect(await scriptHead.text()).toBe("");
 
       const json = await SELF.fetch(`https://example.test/api/${version}/status.json`);
       expect(json.status).toBe(200);
@@ -444,27 +561,54 @@ describe("v1/v2 status representations", () => {
     expect(wildcard.headers.get("Content-Type")).toMatch(/^text\/html/);
 
     // negotiator 0.6.3 intentionally does not trim between the q key and `=`.
-    const spacedQuality = await SELF.fetch("https://example.test/api/v1/status", {
-      headers: { Accept: "text/html;q =.5" },
-    });
-    expect(spacedQuality.status).toBe(406);
+    await expectNotAcceptable(
+      "https://example.test/api/v1/status",
+      "GET",
+      "text/html;q =.5",
+    );
 
-    const csv = await SELF.fetch("https://example.test/api/v1/status.csv");
-    expect(csv.status).toBe(406);
-    expect(csv.headers.get("Vary")).toBe("Accept");
-    expect(await csv.json()).toEqual({ status: 406, message: "Not Acceptable" });
+    for (const version of ["v1", "v2"] as const) {
+      for (const extension of ["csv", "tsv"] as const) {
+        for (const method of ["GET", "HEAD"] as const) {
+          await expectNotAcceptable(
+            `https://example.test/api/${version}/status.${extension}`,
+            method,
+          );
+        }
+      }
+      for (const method of ["GET", "HEAD"] as const) {
+        await expectNotAcceptable(
+          `https://example.test/api/${version}/status`,
+          method,
+          "application/xml",
+        );
+      }
+    }
+  });
 
-    const unknown = await SELF.fetch("https://example.test/api/v1/status.xml");
-    expect(unknown.status).toBe(404);
-    const extensionWithSlash = await SELF.fetch("https://example.test/api/v1/status.json/");
-    expect(extensionWithSlash.status).toBe(404);
-    const unsupportedExtension = await SELF.fetch("https://example.test/api/v1/status.tsv");
-    expect(unsupportedExtension.status).toBe(406);
-    expect(unsupportedExtension.headers.get("Vary")).toBe("Accept");
-    expect(await unsupportedExtension.json()).toEqual({
-      status: 406,
-      message: "Not Acceptable",
-    });
+  it("preserves extension case bugs and unversioned finalhandler 404 responses", async () => {
+    const paths = [
+      "/api/v1/status.JSON",
+      "/api/v2/status.TsV",
+      "/api/v1/status.xml",
+      "/api/v1/status.json/",
+      "/api/status",
+      "/api/status.json",
+    ];
+    for (const pathname of paths) {
+      for (const method of ["GET", "HEAD"] as const) {
+        const response = await SELF.fetch(`https://example.test${pathname}`, { method });
+        expect(response.status).toBe(404);
+        expect(response.headers.get("Content-Security-Policy")).toBe("default-src 'none'");
+        expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(response.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+        const expectedBody = finalhandlerBody(method, pathname);
+        expect(response.headers.get("Content-Length")).toBe(
+          String(new TextEncoder().encode(expectedBody).byteLength),
+        );
+        expect(await response.text()).toBe(method === "HEAD" ? "" : expectedBody);
+      }
+    }
   });
 
   it("inherits GET as HEAD without returning a body", async () => {
