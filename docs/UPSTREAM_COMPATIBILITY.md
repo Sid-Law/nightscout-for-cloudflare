@@ -17,7 +17,7 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-The current local suite has 41 Workers-runtime tests. The locked
+The current local suite has 75 Workers-runtime tests. The locked
 upstream has 111 `*.test.js` files and approximately 873 `it(...)` cases. Those
 numbers are not directly comparable, but they make clear why the current suite
 does not prove full compatibility.

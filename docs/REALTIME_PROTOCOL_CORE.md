@@ -170,7 +170,7 @@ For WebSockets, use the Durable Objects WebSocket Hibernation API:
    `deserializeAttachment()` after constructor re-entry;
 4. keep authoritative session, queue, namespace, and authorization state in
    Durable Object SQLite storage. Cloudflare's current documented maximum for
-   a serialized attachment is **2,048 bytes**, and the attachment disappears
+   a serialized attachment is **16,384 bytes**, and the attachment disappears
    when its WebSocket closes;
 5. keep Engine.IO text-frame heartbeat separate from WebSocket control
    ping/pong and prove hibernation through eviction tests before enabling an
