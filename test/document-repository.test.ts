@@ -1007,7 +1007,7 @@ describe("SQLite collection contract v4", () => {
       expect(decision).toMatchObject({
         ok: false,
         reason: "operation-error",
-        message: expect.stringContaining("UNIQUE constraint failed"),
+        message: expect.stringContaining("E11000 duplicate key error"),
       });
     });
 

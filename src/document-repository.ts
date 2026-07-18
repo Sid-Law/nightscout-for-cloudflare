@@ -1,5 +1,7 @@
 import type { JsonDocument, JsonValue } from "./entry-store";
+import { LEGACY_ENTRY_DEFAULT_WINDOW_MS } from "./model";
 import type { HistoryQuery, ValidatedEntry } from "./model";
+import { compileMongoRegexToSqlGlob } from "./safe-regex";
 
 export type Api3CollectionName = "devicestatus" | "entries" | "treatments";
 
@@ -13,10 +15,32 @@ const MAX_FIELD_NAME_LENGTH = 512;
 const MAX_LIMIT = 10_000;
 const MAX_SQL_BINDINGS = 100;
 const MAX_SQL_STATEMENT_BYTES = 100_000;
-const MAX_LIKE_PATTERN_BYTES = 50;
+const MAX_UNINDEXED_ENTRY_CANDIDATES = 10_000;
+const MAX_SYNCHRONOUS_ENTRY_DELETES = 128;
 const API3_MIN_TIMESTAMP = Date.UTC(2000, 0, 1);
 const API3_MIN_UTC_OFFSET = -1_440;
 const API3_MAX_UTC_OFFSET = 1_440;
+
+function realtimeJsonTruthySql(path: "$.mbg" | "$.sgv"): string {
+  const type = `json_type(body, '${path}')`;
+  const value = `json_extract(body, '${path}')`;
+  return `COALESCE(((${type} IN ('integer', 'real') AND ${value} != 0)
+    OR (${type} = 'text' AND length(${value}) > 0)
+    OR ${type} IN ('true', 'array', 'object')), 0)`;
+}
+
+function realtimeNumericMeasurementSql(path: "$.mbg" | "$.sgv"): string {
+  const type = `json_type(body, '${path}')`;
+  const value = `json_extract(body, '${path}')`;
+  const trimmed = `trim(CAST(${value} AS TEXT))`;
+  const safeJson = `(CASE WHEN json_valid(${trimmed}) THEN ${trimmed} ELSE 'null' END)`;
+  return `((${type} IN ('integer', 'real') AND ${value} != 0)
+    OR (${type} = 'text'
+      AND length(${value}) > 0
+      AND json_type(${safeJson}) IN ('integer', 'real')
+      AND abs(CAST(${value} AS REAL)) <= 1.7976931348623157e308)
+    OR ${type} = 'true')`;
+}
 
 type FilterOperator =
   | "eq"
@@ -94,6 +118,7 @@ export interface DocumentMutationResult {
 export interface DocumentDeleteResult {
   deleted: boolean;
   permanent: boolean;
+  tooLarge?: boolean;
   revision?: number;
   srvModified?: number;
 }
@@ -176,12 +201,14 @@ interface SqlIndexRow {
   [key: string]: SqlStorageValue;
   name: string;
   unique: number;
+  partial: number;
 }
 
 interface SqlColumnRow {
   [key: string]: SqlStorageValue;
   name: string;
   notnull: number;
+  pk: number;
 }
 
 function randomObjectId(): string {
@@ -556,19 +583,77 @@ interface FieldExpression {
   bindings: SqlStorageValue[];
   existsSql: string;
   existsBindings: SqlStorageValue[];
+  textSql: string;
+  textBindings: SqlStorageValue[];
+  typeSql: string;
+  typeBindings: SqlStorageValue[];
+  arrayEachSql?: string;
+  arrayBindings?: SqlStorageValue[];
 }
 
-function fieldExpression(field: string, policy: MaterializationPolicy): FieldExpression {
+function fieldExpression(
+  field: string,
+  policy: MaterializationPolicy,
+  collection?: Api3CollectionName,
+): FieldExpression {
   validateFieldName(field);
+  if (collection === ENTRIES && field === "date") {
+    // Both API3 and legacy entry validators make canonical sort_time the
+    // integer `date`. Keeping the query expression on this physical column is
+    // what lets SQLite use the collection/date index rather than JSON-scan a
+    // tenant's complete glucose history.
+    return {
+      sql: "sort_time",
+      bindings: [],
+      existsSql: "1",
+      existsBindings: [],
+      textSql: "0",
+      textBindings: [],
+      typeSql: "'integer'",
+      typeBindings: [],
+    };
+  }
+  if (collection === ENTRIES && field === "type") {
+    // Literal JSON paths are required for SQLite to match the partial
+    // documents_entries_type_sort expression index. A bound path is
+    // semantically equivalent but cannot participate in that index.
+    return {
+      sql: "json_extract(body, '$.type')",
+      bindings: [],
+      existsSql: "json_type(body, '$.type') IS NOT NULL",
+      existsBindings: [],
+      textSql: "json_type(body, '$.type') = 'text'",
+      textBindings: [],
+      typeSql: "json_type(body, '$.type')",
+      typeBindings: [],
+      arrayEachSql: "json_each(body, '$.type')",
+      arrayBindings: [],
+    };
+  }
   switch (field) {
     case "_id":
-      return { sql: "id", bindings: [], existsSql: "1", existsBindings: [] };
+      return {
+        sql: "id",
+        bindings: [],
+        existsSql: "1",
+        existsBindings: [],
+        // Mongo stores API3 `_id` as ObjectId, so `$regex` does not apply even
+        // though the adapter's physical primary key is encoded as SQLite TEXT.
+        textSql: "0",
+        textBindings: [],
+        typeSql: policy === "api3" ? "'objectId'" : "'text'",
+        typeBindings: [],
+      };
     case "identifier":
       return {
         sql: "identifier",
         bindings: [],
         existsSql: "identifier_present != 0",
         existsBindings: [],
+        textSql: "typeof(identifier) = 'text'",
+        textBindings: [],
+        typeSql: "CASE WHEN identifier_present = 0 THEN NULL WHEN identifier IS NULL THEN 'null' ELSE 'text' END",
+        typeBindings: [],
       };
     case "srvCreated":
     case "srvModified":
@@ -577,7 +662,16 @@ function fieldExpression(field: string, policy: MaterializationPolicy): FieldExp
       break;
     case "isValid":
       if (policy === "api3") {
-        return { sql: "is_valid", bindings: [], existsSql: "1", existsBindings: [] };
+        return {
+          sql: "is_valid",
+          bindings: [],
+          existsSql: "1",
+          existsBindings: [],
+          textSql: "0",
+          textBindings: [],
+          typeSql: "'true'",
+          typeBindings: [],
+        };
       }
       break;
   }
@@ -586,7 +680,136 @@ function fieldExpression(field: string, policy: MaterializationPolicy): FieldExp
     bindings: [jsonPath(field)],
     existsSql: "json_type(body, ?) IS NOT NULL",
     existsBindings: [jsonPath(field)],
+    textSql: "json_type(body, ?) = 'text'",
+    textBindings: [jsonPath(field)],
+    typeSql: "json_type(body, ?)",
+    typeBindings: [jsonPath(field)],
+    arrayEachSql: "json_each(body, ?)",
+    arrayBindings: [jsonPath(field)],
   };
+}
+
+interface SqlPredicate {
+  sql: string;
+  bindings: SqlStorageValue[];
+}
+
+function mongoTypeGuard(typeSql: string, value: JsonValue): string {
+  if (typeof value === "number") return `${typeSql} IN ('integer', 'real')`;
+  if (typeof value === "string") return `${typeSql} = 'text'`;
+  if (typeof value === "boolean") return `${typeSql} IN ('true', 'false')`;
+  if (value === null) return `${typeSql} = 'null'`;
+  return `${typeSql} = '${Array.isArray(value) ? "array" : "object"}'`;
+}
+
+function combinePredicates(operator: "AND" | "OR", predicates: SqlPredicate[]): SqlPredicate {
+  if (predicates.length === 0) return { sql: operator === "OR" ? "0" : "1", bindings: [] };
+  if (predicates.length === 1) return predicates[0]!;
+  const midpoint = Math.floor(predicates.length / 2);
+  const left = combinePredicates(operator, predicates.slice(0, midpoint));
+  const right = combinePredicates(operator, predicates.slice(midpoint));
+  return {
+    sql: `(${left.sql} ${operator} ${right.sql})`,
+    bindings: [...left.bindings, ...right.bindings],
+  };
+}
+
+function scalarEqualityPredicate(
+  expression: FieldExpression,
+  value: JsonValue,
+  includeMissingForNull: boolean,
+): SqlPredicate {
+  if (value === null) {
+    return includeMissingForNull
+      ? {
+          sql: `(NOT (${expression.existsSql}) OR ${expression.typeSql} = 'null')`,
+          bindings: [...expression.existsBindings, ...expression.typeBindings],
+        }
+      : {
+          sql: `(${expression.existsSql} AND ${expression.typeSql} = 'null')`,
+          bindings: [...expression.existsBindings, ...expression.typeBindings],
+        };
+  }
+  return {
+    sql: `(${mongoTypeGuard(expression.typeSql, value)} AND ${expression.sql} = ?)`,
+    bindings: [
+      ...expression.typeBindings,
+      ...expression.bindings,
+      sqlValue(value),
+    ],
+  };
+}
+
+function arrayValuePredicate(
+  expression: FieldExpression,
+  operator: "=" | ">" | ">=" | "<" | "<=" | "GLOB",
+  value: JsonValue,
+): SqlPredicate | null {
+  if (expression.arrayEachSql === undefined || expression.arrayBindings === undefined) return null;
+  const valueClause = value === null
+    ? "item.type = 'null'"
+    : `${mongoTypeGuard("item.type", value)} AND item.value ${operator} ?`;
+  return {
+    sql: `(${expression.typeSql} = 'array' AND EXISTS (
+      SELECT 1 FROM ${expression.arrayEachSql} AS item
+      WHERE ${valueClause}
+    ))`,
+    bindings: [
+      ...expression.typeBindings,
+      ...expression.arrayBindings,
+      ...(value === null ? [] : [sqlValue(value)]),
+    ],
+  };
+}
+
+function equalityPredicate(
+  expression: FieldExpression,
+  value: JsonValue,
+  includeMissingForNull: boolean,
+): SqlPredicate {
+  const predicates = [scalarEqualityPredicate(expression, value, includeMissingForNull)];
+  const array = arrayValuePredicate(expression, "=", value);
+  if (array !== null) predicates.push(array);
+  return combinePredicates("OR", predicates);
+}
+
+function comparisonPredicate(
+  expression: FieldExpression,
+  operator: ">" | ">=" | "<" | "<=",
+  value: JsonValue,
+): SqlPredicate {
+  const predicates: SqlPredicate[] = [{
+    sql: `(${mongoTypeGuard(expression.typeSql, value)} AND ${expression.sql} ${operator} ?)`,
+    bindings: [
+      ...expression.typeBindings,
+      ...expression.bindings,
+      sqlValue(value),
+    ],
+  }];
+  const array = arrayValuePredicate(expression, operator, value);
+  if (array !== null) predicates.push(array);
+  return combinePredicates("OR", predicates);
+}
+
+function regexPredicate(expression: FieldExpression, pattern: string): SqlPredicate {
+  const predicates: SqlPredicate[] = [{
+    sql: `(${expression.textSql} AND ${expression.sql} GLOB ?)`,
+    bindings: [...expression.textBindings, ...expression.bindings, pattern],
+  }];
+  if (expression.arrayEachSql !== undefined && expression.arrayBindings !== undefined) {
+    predicates.push({
+      sql: `(${expression.typeSql} = 'array' AND EXISTS (
+        SELECT 1 FROM ${expression.arrayEachSql} AS item
+        WHERE item.type = 'text' AND item.value GLOB ?
+      ))`,
+      bindings: [
+        ...expression.typeBindings,
+        ...expression.arrayBindings,
+        pattern,
+      ],
+    });
+  }
+  return combinePredicates("OR", predicates);
 }
 
 function orderedSorts(sort: DocumentQuery["sort"]): DocumentSort[] {
@@ -614,8 +837,49 @@ function orderedSorts(sort: DocumentQuery["sort"]): DocumentSort[] {
   });
 }
 
-function escapeLike(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+function entryQueryNeedsScanGuard(query: DocumentQuery): boolean {
+  const indexedFields = new Set([
+    "_id",
+    "identifier",
+    "date",
+    "type",
+    "isValid",
+    "srvModified",
+  ]);
+  const indexableOperators = new Set(["eq", "gt", "gte", "lt", "lte", "in"]);
+  if ((query.filters ?? []).some(
+    (filter) => !indexedFields.has(filter.field) || !indexableOperators.has(filter.operator),
+  )) return true;
+  return orderedSorts(query.sort).some((sort) => !indexedFields.has(sort.field));
+}
+
+function entryScanProbe(query: DocumentQuery): SqlPredicate {
+  const clauses = ["collection = 'entries'"];
+  const bindings: SqlStorageValue[] = [];
+  for (const filter of query.filters ?? []) {
+    if (filter.field === "date" && typeof filter.value === "number") {
+      const operators: Partial<Record<FilterOperator, string>> = {
+        eq: "=",
+        gt: ">",
+        gte: ">=",
+        lt: "<",
+        lte: "<=",
+      };
+      const operator = operators[filter.operator];
+      if (operator !== undefined) {
+        clauses.push(`sort_time ${operator} ?`);
+        bindings.push(filter.value);
+      }
+    } else if (
+      (filter.field === "_id" || filter.field === "identifier")
+      && filter.operator === "eq"
+      && typeof filter.value === "string"
+    ) {
+      clauses.push(`${filter.field === "_id" ? "id" : "identifier"} = ?`);
+      bindings.push(filter.value);
+    }
+  }
+  return { sql: clauses.join(" AND "), bindings };
 }
 
 function appendFilter(
@@ -623,6 +887,7 @@ function appendFilter(
   bindings: SqlStorageValue[],
   filter: DocumentFilter,
   policy: MaterializationPolicy,
+  collection: Api3CollectionName,
 ): void {
   if (
     policy === "legacy"
@@ -635,35 +900,37 @@ function appendFilter(
     bindings.push(filter.value, filter.value);
     return;
   }
-  const expression = fieldExpression(filter.field, policy);
-  const addExpression = (): void => {
-    bindings.push(...expression.bindings);
-  };
+  const expression = fieldExpression(filter.field, policy, collection);
   switch (filter.operator) {
-    case "eq":
-      addExpression();
-      if (filter.value === null) clauses.push(`${expression.sql} IS NULL`);
-      else {
-        clauses.push(`${expression.sql} = ?`);
-        bindings.push(sqlValue(filter.value));
+    case "eq": {
+      const predicate = equalityPredicate(expression, filter.value, true);
+      clauses.push(predicate.sql);
+      bindings.push(...predicate.bindings);
+      return;
+    }
+    case "ne": {
+      const equal = equalityPredicate(expression, filter.value, false);
+      if (filter.value === null) {
+        clauses.push(`(${expression.existsSql} AND NOT (${equal.sql}))`);
+        bindings.push(...expression.existsBindings, ...equal.bindings);
+      } else {
+        clauses.push(`NOT COALESCE((${equal.sql}), 0)`);
+        bindings.push(...equal.bindings);
       }
       return;
-    case "ne":
-      addExpression();
-      if (filter.value === null) clauses.push(`${expression.sql} IS NOT NULL`);
-      else {
-        clauses.push(`(${expression.sql} IS NULL OR ${expression.sql} != ?)`);
-        bindings.push(...expression.bindings, sqlValue(filter.value));
-      }
-      return;
+    }
     case "gt":
     case "gte":
     case "lt":
     case "lte": {
       const operators = { gt: ">", gte: ">=", lt: "<", lte: "<=" } as const;
-      addExpression();
-      clauses.push(`${expression.sql} ${operators[filter.operator]} ?`);
-      bindings.push(sqlValue(filter.value));
+      const predicate = comparisonPredicate(
+        expression,
+        operators[filter.operator],
+        filter.value,
+      );
+      clauses.push(predicate.sql);
+      bindings.push(...predicate.bindings);
       return;
     }
     case "in":
@@ -679,53 +946,30 @@ function appendFilter(
           `document query exceeds SQLite's ${MAX_SQL_BINDINGS} bound-parameter limit`,
         );
       }
-      const hasNull = values.some((value) => value === null);
-      const nonNullValues = values.filter((value) => value !== null);
-      const placeholders = nonNullValues.map(() => "?").join(", ");
-      if (filter.operator === "in") {
-        if (hasNull) {
-          clauses.push(nonNullValues.length === 0
-            ? `(NOT (${expression.existsSql}) OR ${expression.sql} IS NULL)`
-            : `(NOT (${expression.existsSql}) OR ${expression.sql} IS NULL OR ${expression.sql} IN (${placeholders}))`);
-          bindings.push(
-            ...expression.existsBindings,
-            ...expression.bindings,
-            ...(nonNullValues.length === 0 ? [] : expression.bindings),
-            ...nonNullValues.map(sqlValue),
-          );
-        } else {
-          addExpression();
-          clauses.push(`${expression.sql} IN (${placeholders})`);
-          bindings.push(...nonNullValues.map(sqlValue));
-        }
-      } else if (hasNull) {
-        clauses.push(nonNullValues.length === 0
-          ? `(NOT (${expression.existsSql}) OR ${expression.sql} IS NOT NULL)`
-          : `(NOT (${expression.existsSql}) OR (${expression.sql} IS NOT NULL AND ${expression.sql} NOT IN (${placeholders})))`);
-        bindings.push(
-          ...expression.existsBindings,
-          ...expression.bindings,
-          ...(nonNullValues.length === 0 ? [] : expression.bindings),
-          ...nonNullValues.map(sqlValue),
-        );
-      } else {
-        addExpression();
-        clauses.push(`(${expression.sql} IS NULL OR ${expression.sql} NOT IN (${placeholders}))`);
-        bindings.push(...expression.bindings, ...nonNullValues.map(sqlValue));
-      }
+      const membership = combinePredicates(
+        "OR",
+        values.map((value) => equalityPredicate(
+          expression,
+          value,
+          filter.operator === "in" && value === null,
+        )),
+      );
+      clauses.push(
+        filter.operator === "in"
+          ? membership.sql
+          : `NOT COALESCE((${membership.sql}), 0)`,
+      );
+      bindings.push(...membership.bindings);
       return;
     }
     case "re": {
-      addExpression();
-      const pattern = `%${escapeLike(String(filter.value))}%`;
-      if (new TextEncoder().encode(pattern).byteLength > MAX_LIKE_PATTERN_BYTES) {
-        throw new DocumentQueryError(
-          "QUERY_LIKE_PATTERN_LIMIT",
-          `LIKE pattern exceeds SQLite's ${MAX_LIKE_PATTERN_BYTES}-byte limit`,
-        );
-      }
-      clauses.push(`CAST(${expression.sql} AS TEXT) LIKE ? ESCAPE '\\'`);
-      bindings.push(pattern);
+      const pattern = compileMongoRegexToSqlGlob(String(filter.value));
+      // Mongo's $regex only matches string values. GLOB is case-sensitive and
+      // has no backtracking engine; the compiler accepts only a bounded linear
+      // subset before this statement is built.
+      const predicate = regexPredicate(expression, pattern);
+      clauses.push(predicate.sql);
+      bindings.push(...predicate.bindings);
       return;
     }
     case "exists": {
@@ -1010,73 +1254,173 @@ function createEntriesShadowTable(sql: SqlStorage): void {
   `);
 }
 
-function entriesIdentifierIsUnique(sql: SqlStorage): boolean {
-  for (const index of sql.exec<SqlIndexRow>("PRAGMA index_list(entries)").toArray()) {
-    if (index.unique === 0 || !/^[A-Za-z0-9_]+$/.test(index.name)) continue;
+function sqliteObjectExists(
+  sql: SqlStorage,
+  type: "index" | "table" | "trigger",
+  name: string,
+): boolean {
+  return sql.exec<{ present: number }>(
+    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?) AS present",
+    type,
+    name,
+  ).one().present !== 0;
+}
+
+function entriesUniqueIndexesAreCompatible(sql: SqlStorage): boolean {
+  const indexes = sql.exec<SqlIndexRow>("PRAGMA index_list(entries)").toArray();
+  const allowedNames = new Set([
+    "entries_date_desc",
+    "sqlite_autoindex_entries_1",
+    "sqlite_autoindex_entries_2",
+  ]);
+  if (indexes.some((index) => !allowedNames.has(index.name))) return false;
+  let idIsUnique = false;
+  let dedupeKeyIsUnique = false;
+  for (const index of indexes) {
+    if (index.unique === 0) {
+      // The fresh shadow contract has exactly one caller-created non-unique
+      // index. Unknown expression indexes can throw during otherwise-valid
+      // writes (for example json_extract over a plain device string), so they
+      // are incompatible rather than harmless schema decoration.
+      if (index.name !== "entries_date_desc") return false;
+      continue;
+    }
+    if (index.partial !== 0) return false;
+    if (!/^[A-Za-z0-9_]+$/.test(index.name)) return false;
     const columns = sql.exec<{ name: string }>(
       `PRAGMA index_info("${index.name}")`,
     ).toArray().map((column) => column.name);
-    if (columns.length === 1 && columns[0] === "identifier") return true;
+    if (
+      index.name === "sqlite_autoindex_entries_1"
+      && columns.length === 1
+      && columns[0] === "id"
+    ) {
+      idIsUnique = true;
+    } else if (
+      index.name === "sqlite_autoindex_entries_2"
+      && columns.length === 1
+      && columns[0] === "dedupe_key"
+    ) {
+      dedupeKeyIsUnique = true;
+    } else {
+      // Any additional UNIQUE contract can reject writes Mongo would accept.
+      return false;
+    }
   }
-  return false;
+  return idIsUnique && dedupeKeyIsUnique;
 }
 
-/**
- * Entries schema/data bridge introduced after the generic API3 repository.
- *
- * Upstream source: v15.0.7 (7e0e77f88fc113a76fe363504125f5b36b8a3fe3)
- * - lib/storage/mongo-storage.js creates ordinary, non-unique indexes.
- * - lib/server/entries.js upserts v1 data by normalized sysTime + type.
- * - lib/api3/generic/setup.js falls back by date + type only for legacy rows
- *   whose identifier field does not exist.
- *
- * The old fixed-width table remains as a v1 write shadow for migration
- * compatibility. Canonical reads/mutations live in documents so API3 can
- * preserve arbitrary entry fields, soft-delete metadata, and history state.
- */
-export function migrateEntriesV6(sql: SqlStorage): void {
-  createEntriesShadowTable(sql);
-  const columns = sql.exec<SqlColumnRow>("PRAGMA table_info(entries)").toArray();
-  const columnNames = new Set(columns.map((column) => column.name));
-  const sgvWasRequired = columns.find((column) => column.name === "sgv")?.notnull !== 0;
-  const needsRebuild = entriesIdentifierIsUnique(sql)
-    || !columnNames.has("mbg")
-    || sgvWasRequired;
-  const markerPresent = sql.exec<{ present: number }>(
-    "SELECT EXISTS(SELECT 1 FROM _sql_schema_migrations WHERE id = 6) AS present",
-  ).one().present !== 0;
+function entriesHasDateIndex(sql: SqlStorage): boolean {
+  const row = sql.exec<{ sql: string | null }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'entries_date_desc'",
+  ).toArray()[0];
+  return typeof row?.sql === "string"
+    && normalizeSchemaDefinition(row.sql)
+      === normalizeSchemaDefinition("CREATE INDEX entries_date_desc ON entries(date DESC)");
+}
 
-  if (needsRebuild) {
-    // transactionSync at the caller makes the rename/copy/drop sequence
-    // atomic. Every selected baseline column is copied before the old table
-    // is dropped; a thrown constraint error therefore preserves the old DB.
-    sql.exec("ALTER TABLE entries RENAME TO entries_v6_legacy");
-    createEntriesShadowTable(sql);
-    // Inspect the renamed source explicitly for optional columns introduced
-    // by later snapshots.
-    const renamedColumns = new Set(
-      sql.exec<{ name: string }>("PRAGMA table_info(entries_v6_legacy)")
-        .toArray()
-        .map((column) => column.name),
-    );
-    sql.exec(`
-      INSERT INTO entries
-        (id, identifier, dedupe_key, sgv, mbg, date, date_string,
-         direction, device, type, created_at)
-      SELECT id, identifier, json_array(date_string, type), sgv,
-             ${renamedColumns.has("mbg") ? "mbg" : "NULL"},
-             date, date_string, direction, device, type, created_at
-      FROM entries_v6_legacy
-    `);
-    sql.exec("DROP TABLE entries_v6_legacy");
-  }
-  sql.exec("CREATE INDEX IF NOT EXISTS entries_date_desc ON entries(date DESC)");
-  // v1's authoritative upsert selector lives inside the canonical JSON body.
-  // Without this expression index, every new/replayed SGV would scan years of
-  // Entries documents on the Free plan. SQLite JSON functions are
-  // deterministic and therefore valid expression-index keys.
-  sql.exec(`
-    CREATE INDEX IF NOT EXISTS documents_entries_sys_time_type
+function entriesHasTriggers(sql: SqlStorage): boolean {
+  return sql.exec<{ present: number }>(
+    `SELECT EXISTS(
+       SELECT 1 FROM sqlite_master
+       WHERE type = 'trigger' AND tbl_name = 'entries'
+     ) AS present`,
+  ).one().present !== 0;
+}
+
+function hasObsoleteEntriesArtifacts(sql: SqlStorage): boolean {
+  return sql.exec<{ present: number }>(`
+    SELECT EXISTS(
+      SELECT 1
+      FROM sqlite_master
+      WHERE name IN (
+        'entries_migration_capture_insert',
+        'entries_migration_capture_update',
+        'entries_migration_capture_delete',
+        'entry_shadow_migration_queue',
+        'entry_shadow_migration_state',
+        'entries_v6_legacy'
+      )
+    ) AS present
+  `).one().present !== 0;
+}
+
+function normalizeSchemaDefinition(definition: string): string {
+  return definition
+    .toLowerCase()
+    .replace(/["`\[\]]/g, "")
+    .replace(/\s+/g, "")
+    .replace("createtableifnotexists", "createtable")
+    .replace(/;$/, "");
+}
+
+function entriesTableDefinitionIsCompatible(sql: SqlStorage): boolean {
+  const row = sql.exec<{ sql: string | null }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'entries'",
+  ).toArray()[0];
+  if (typeof row?.sql !== "string") return false;
+  const expected = `
+    CREATE TABLE entries (
+      id TEXT PRIMARY KEY,
+      identifier TEXT,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      sgv INTEGER CHECK (sgv IS NULL OR (sgv >= 20 AND sgv <= 600)),
+      mbg INTEGER CHECK (mbg IS NULL OR (mbg >= 20 AND mbg <= 600)),
+      date INTEGER NOT NULL,
+      date_string TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      device TEXT NOT NULL,
+      type TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `;
+  return normalizeSchemaDefinition(row.sql) === normalizeSchemaDefinition(expected);
+}
+
+function entriesShadowNeedsRebuild(sql: SqlStorage): boolean {
+  const columns = sql.exec<SqlColumnRow>("PRAGMA table_info(entries)").toArray();
+  const byName = new Map(columns.map((column) => [column.name, column]));
+  const columnNames = new Set(columns.map((column) => column.name));
+  const requiredColumns = [
+    "id",
+    "identifier",
+    "dedupe_key",
+    "sgv",
+    "mbg",
+    "date",
+    "date_string",
+    "direction",
+    "device",
+    "type",
+    "created_at",
+  ];
+  const requiredNotNull = [
+    "dedupe_key",
+    "date",
+    "date_string",
+    "direction",
+    "device",
+    "type",
+    "created_at",
+  ];
+  const requiredNullable = ["identifier", "sgv", "mbg"];
+  return !entriesTableDefinitionIsCompatible(sql)
+    || !entriesUniqueIndexesAreCompatible(sql)
+    || entriesHasTriggers(sql)
+    || columnNames.size !== requiredColumns.length
+    || requiredColumns.some((column) => !columnNames.has(column))
+    || byName.get("id")?.pk !== 1
+    || requiredNotNull.some((column) => byName.get(column)?.notnull !== 1)
+    || requiredNullable.some((column) => byName.get(column)?.notnull !== 0);
+}
+
+function canonicalEntriesIndexIsCompatible(sql: SqlStorage): boolean {
+  const row = sql.exec<{ sql: string | null }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'documents_entries_sys_time_type'",
+  ).toArray()[0];
+  if (typeof row?.sql !== "string") return false;
+  const expected = `
+    CREATE INDEX documents_entries_sys_time_type
       ON documents(
         json_extract(body, '$.sysTime'),
         json_extract(body, '$.type'),
@@ -1084,94 +1428,165 @@ export function migrateEntriesV6(sql: SqlStorage): void {
         id ASC
       )
       WHERE collection = 'entries'
-  `);
-
-  // The marker gates data work only, never schema inspection. Thus a database
-  // carrying a higher unrelated marker still repairs an old UNIQUE table,
-  // while the ordinary marker-6 activation does not scan years of entries or
-  // canonical documents at all. A rebuild forces the bridge even if a stale
-  // marker was already present.
-  if (markerPresent && !needsRebuild) return;
-
-  // Keep unconditional schema inspection separate from data backfill. The
-  // baseline table can still need repair when a newer/unrelated migration
-  // marker exists, but a normal activation must neither materialize every
-  // shadow row nor issue a losing INSERT per canonical entry. Both the first
-  // large import and later incremental repair stay set-based inside the
-  // caller's transactionSync, so JS heap use is constant rather than scaling
-  // with years of SGV rows. The documents primary key (collection, id)
-  // indexes the anti-join and yields no writes after the one-time import.
-  //
-  // Old rows could not represent explicit identifier:null; SQL NULL therefore
-  // means the field was absent. New explicit-null rows are written to both
-  // stores transactionally and are already excluded by the anti-join.
-  sql.exec(`
-    INSERT INTO documents
-      (collection, id, body, sort_time, created_at, updated_at, identifier,
-       identifier_present, srv_created, srv_modified, is_valid, fallback_key,
-       revision, srv_metadata_version)
-    SELECT
-      'entries', entry.id,
-      json_patch(
-        json_patch(
-          json_patch(
-            json_object(
-              '_id', entry.id,
-              'date', entry.date,
-              'dateString', entry.date_string,
-              'sysTime', entry.date_string,
-              'utcOffset', 0,
-              'direction', entry.direction,
-              'device', entry.device,
-              'type', entry.type
-            ),
-            CASE WHEN entry.identifier IS NULL THEN '{}'
-                 ELSE json_object('identifier', entry.identifier) END
-          ),
-          CASE WHEN entry.sgv IS NULL THEN '{}'
-               ELSE json_object('sgv', entry.sgv) END
-        ),
-        CASE WHEN entry.mbg IS NULL THEN '{}'
-             ELSE json_object('mbg', entry.mbg) END
-      ),
-      entry.date, entry.created_at, entry.created_at, entry.identifier,
-      CASE WHEN entry.identifier IS NULL THEN 0 ELSE 1 END,
-      NULL, NULL, 1, json_array(entry.date, entry.type), 1, 1
-    FROM entries AS entry
-    WHERE NOT EXISTS (
-      SELECT 1
-      FROM documents AS document
-      WHERE document.collection = 'entries' AND document.id = entry.id
-    )
-    ON CONFLICT(collection, id) DO NOTHING
-  `);
-
-  // migrateDocumentsV4 repairs history before this bridge runs. Copying only
-  // shadow-backed canonical revisions that still lack history covers rows
-  // inserted above without re-appending a change on every activation.
-  sql.exec(`
-    INSERT INTO document_changes
-      (collection, id, identifier, identifier_present, body, srv_created,
-       srv_modified, is_valid, revision, operation, srv_metadata_version)
-    SELECT document.collection, document.id, document.identifier,
-           document.identifier_present, document.body, document.srv_created,
-           document.srv_modified, document.is_valid, document.revision,
-           'migrate', 1
-    FROM documents AS document
-    WHERE document.collection = 'entries'
-      AND EXISTS (
-        SELECT 1 FROM entries AS entry WHERE entry.id = document.id
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM document_changes AS change
-        WHERE change.collection = document.collection
-          AND change.id = document.id
-          AND change.revision = document.revision
-      )
-  `);
+  `;
+  return normalizeSchemaDefinition(row.sql) === normalizeSchemaDefinition(expected);
 }
 
+function canonicalEntriesTypeSortIndexIsCompatible(sql: SqlStorage): boolean {
+  const row = sql.exec<{ sql: string | null }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'documents_entries_type_sort'",
+  ).toArray()[0];
+  if (typeof row?.sql !== "string") return false;
+  const expected = `
+    CREATE INDEX documents_entries_type_sort
+      ON documents(
+        json_extract(body, '$.type'),
+        sort_time DESC,
+        id ASC
+      )
+      WHERE collection = 'entries'
+  `;
+  return normalizeSchemaDefinition(row.sql) === normalizeSchemaDefinition(expected);
+}
+
+function canonicalEntriesDateStringIndexIsCompatible(sql: SqlStorage): boolean {
+  const row = sql.exec<{ sql: string | null }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'documents_entries_date_string_sort'",
+  ).toArray()[0];
+  if (typeof row?.sql !== "string") return false;
+  const expected = `
+    CREATE INDEX documents_entries_date_string_sort
+      ON documents(
+        json_extract(body, '$.dateString'),
+        sort_time DESC,
+        id ASC
+      )
+      WHERE collection = 'entries'
+        AND json_type(body, '$.dateString') = 'text'
+  `;
+  return normalizeSchemaDefinition(row.sql) === normalizeSchemaDefinition(expected);
+}
+
+/**
+ * Install the fresh Entries shadow used by v1 writes and realtime reads.
+ *
+ * This project is still pre-1.0 and its only incompatible `entries` schemas
+ * held simulated data. The public deployment was verified empty before this
+ * contract was selected. Reset only that internal shadow when it is
+ * incompatible; canonical documents and every other tenant collection stay
+ * untouched. From this schema onward v1/API3 writes maintain canonical state
+ * synchronously, so no source-copy queue or background alarm is required.
+ */
+export function migrateEntriesV6(sql: SqlStorage): void {
+  const hasObsoleteArtifacts = hasObsoleteEntriesArtifacts(sql);
+  const hasEntriesTable = sqliteObjectExists(sql, "table", "entries");
+  const needsRebuild = hasEntriesTable && entriesShadowNeedsRebuild(sql);
+  const hasDateIndex = hasEntriesTable && !needsRebuild && entriesHasDateIndex(sql);
+  const hasNamedCanonicalIndex = sqliteObjectExists(
+    sql,
+    "index",
+    "documents_entries_sys_time_type",
+  );
+  const hasCanonicalIndex = hasNamedCanonicalIndex && canonicalEntriesIndexIsCompatible(sql);
+  const hasNamedTypeSortIndex = sqliteObjectExists(
+    sql,
+    "index",
+    "documents_entries_type_sort",
+  );
+  const hasTypeSortIndex = hasNamedTypeSortIndex
+    && canonicalEntriesTypeSortIndexIsCompatible(sql);
+  const hasNamedDateStringIndex = sqliteObjectExists(
+    sql,
+    "index",
+    "documents_entries_date_string_sort",
+  );
+  const hasDateStringIndex = hasNamedDateStringIndex
+    && canonicalEntriesDateStringIndexIsCompatible(sql);
+  // The common activation path is read-only. Avoid issuing even no-op DDL on
+  // every Durable Object wake once the complete fresh-schema contract exists.
+  if (
+    !hasObsoleteArtifacts
+    && hasEntriesTable
+    && !needsRebuild
+    && hasDateIndex
+    && hasCanonicalIndex
+    && hasTypeSortIndex
+    && hasDateStringIndex
+  ) {
+    return;
+  }
+
+  if (hasObsoleteArtifacts) {
+    sql.exec(`
+      DROP TRIGGER IF EXISTS entries_migration_capture_insert;
+      DROP TRIGGER IF EXISTS entries_migration_capture_update;
+      DROP TRIGGER IF EXISTS entries_migration_capture_delete;
+      DROP TABLE IF EXISTS entry_shadow_migration_queue;
+      DROP TABLE IF EXISTS entry_shadow_migration_state;
+      DROP TABLE IF EXISTS entries_v6_legacy;
+    `);
+  }
+  if (!hasEntriesTable) {
+    createEntriesShadowTable(sql);
+  } else if (needsRebuild) {
+    sql.exec("DROP TABLE entries");
+    createEntriesShadowTable(sql);
+  }
+  if (!hasDateIndex || needsRebuild || !hasEntriesTable) {
+    if (sqliteObjectExists(sql, "index", "entries_date_desc")) {
+      sql.exec("DROP INDEX entries_date_desc");
+    }
+    sql.exec("CREATE INDEX entries_date_desc ON entries(date DESC)");
+  }
+  // v1's authoritative upsert selector lives inside the canonical JSON body.
+  // Without this expression index, every new/replayed SGV would scan years of
+  // Entries documents on the Free plan. SQLite JSON functions are
+  // deterministic and therefore valid expression-index keys.
+  if (hasNamedCanonicalIndex && !hasCanonicalIndex) {
+    sql.exec("DROP INDEX documents_entries_sys_time_type");
+  }
+  if (!hasCanonicalIndex) {
+    sql.exec(`
+      CREATE INDEX documents_entries_sys_time_type
+      ON documents(
+        json_extract(body, '$.sysTime'),
+        json_extract(body, '$.type'),
+        updated_at ASC,
+        id ASC
+      )
+      WHERE collection = 'entries'
+    `);
+  }
+  if (hasNamedTypeSortIndex && !hasTypeSortIndex) {
+    sql.exec("DROP INDEX documents_entries_type_sort");
+  }
+  if (!hasTypeSortIndex) {
+    sql.exec(`
+      CREATE INDEX documents_entries_type_sort
+      ON documents(
+        json_extract(body, '$.type'),
+        sort_time DESC,
+        id ASC
+      )
+      WHERE collection = 'entries'
+    `);
+  }
+  if (hasNamedDateStringIndex && !hasDateStringIndex) {
+    sql.exec("DROP INDEX documents_entries_date_string_sort");
+  }
+  if (!hasDateStringIndex) {
+    sql.exec(`
+      CREATE INDEX documents_entries_date_string_sort
+      ON documents(
+        json_extract(body, '$.dateString'),
+        sort_time DESC,
+        id ASC
+      )
+      WHERE collection = 'entries'
+        AND json_type(body, '$.dateString') = 'text'
+    `);
+  }
+}
 export class SqliteDocumentRepository {
   constructor(private readonly storage: DurableObjectStorage) {}
 
@@ -1236,7 +1651,10 @@ export class SqliteDocumentRepository {
     identity: string,
     collection: Api3CollectionName = TREATMENTS,
   ): DbDocumentV4 | undefined {
-    return this.findByIdentifierRow(identity, collection) ?? this.findByIdRow(identity, collection);
+    return this.findByIdentifierRow(identity, collection)
+      ?? (OBJECT_ID.test(identity)
+        ? this.findByIdRow(identity.toLowerCase(), collection)
+        : undefined);
   }
 
   private findApi3MutationCandidate(
@@ -1267,6 +1685,25 @@ export class SqliteDocumentRepository {
     }
     const key = fallbackKey(document, collection);
     return key === null ? undefined : this.findByFallbackRow(key, true, collection);
+  }
+
+  private requestedStorageIdIsOccupied(
+    document: JsonDocument,
+    collection: Api3CollectionName,
+  ): boolean {
+    const id = requestedId(document);
+    if (id === null) return false;
+    return this.findByIdRow(id, collection) !== undefined;
+  }
+
+  private duplicateStorageIdDecision(
+    collection: Api3CollectionName,
+  ): Api3MutationDecision {
+    return {
+      ok: false,
+      reason: "operation-error",
+      message: `E11000 duplicate key error collection: ${collection} index: _id_`,
+    };
   }
 
   private findTreatmentUpsertCandidate(document: JsonDocument): DbDocumentV4 | undefined {
@@ -1520,11 +1957,10 @@ export class SqliteDocumentRepository {
     );
 
     if (policy === "api3" && collection === ENTRIES) {
-      // v1's fixed table is only a migration/write shadow. Any API3 mutation
-      // can make its sysTime+type selector or payload stale (type is writable
-      // upstream, and soft delete adds metadata), so invalidate it inside the
-      // same transaction. A later v1 write consults canonical documents first
-      // and recreates an accurate shadow without risking primary-key reuse.
+      // API3 can change fields the narrow v1/realtime shadow cannot represent
+      // (including type and soft-delete metadata). Canonical JSON is always
+      // written first in this transaction; invalidating the shadow keeps v1
+      // reads exact until a later v1 write recreates it synchronously.
       this.sql.exec("DELETE FROM entries WHERE id = ?", id);
     }
 
@@ -1554,7 +1990,7 @@ export class SqliteDocumentRepository {
   }
 
   findTreatmentByIdentifier(identifier: string, includeDeleted = false): JsonDocument | null {
-    const row = this.findByIdentifierRow(identifier) ?? this.findByIdRow(identifier);
+    const row = this.findByIdentity(identifier);
     if (row === undefined || (!includeDeleted && row.is_valid === 0)) return null;
     return materializeApi3(row, TREATMENTS);
   }
@@ -1564,8 +2000,7 @@ export class SqliteDocumentRepository {
     fields: string[] | undefined,
     collection: Api3CollectionName = TREATMENTS,
   ): JsonDocument | null {
-    const row = this.findByIdentifierRow(identifier, collection)
-      ?? this.findByIdRow(identifier, collection);
+    const row = this.findByIdentity(identifier, collection);
     return row === undefined
       ? null
       : materializeApi3WithStorageProjection(row, fields, collection);
@@ -1591,10 +2026,14 @@ export class SqliteDocumentRepository {
     policy: MaterializationPolicy,
     collection: Api3CollectionName = TREATMENTS,
   ): DbDocumentV4[] {
-    const clauses = ["collection = ?"];
-    const bindings: SqlStorageValue[] = [collection];
+    // A literal Entries collection predicate lets SQLite prove partial-index
+    // eligibility. Other collections retain the shared bound predicate.
+    const clauses = collection === ENTRIES ? ["collection = 'entries'"] : ["collection = ?"];
+    const bindings: SqlStorageValue[] = collection === ENTRIES ? [] : [collection];
     if (policy === "api3" && query.includeDeleted !== true) clauses.push("is_valid != 0");
-    for (const filter of query.filters ?? []) appendFilter(clauses, bindings, filter, policy);
+    for (const filter of query.filters ?? []) {
+      appendFilter(clauses, bindings, filter, policy, collection);
+    }
 
     let order = policy === "legacy"
       ? "json_extract(body, '$.created_at') DESC, id ASC"
@@ -1603,7 +2042,7 @@ export class SqliteDocumentRepository {
       const sorts = orderedSorts(query.sort);
       const orderParts: string[] = [];
       for (const sort of sorts) {
-        const expression = fieldExpression(sort.field, policy);
+        const expression = fieldExpression(sort.field, policy, collection);
         orderParts.push(`${expression.sql} ${sort.direction === "asc" ? "ASC" : "DESC"}`);
         bindings.push(...expression.bindings);
       }
@@ -1614,6 +2053,30 @@ export class SqliteDocumentRepository {
       order = orderParts.join(", ");
     }
     bindings.push(boundedLimit(query.limit), boundedSkip(query.skip));
+    // Arbitrary JSON fields, compound fallback sorts, and regex/negative
+    // predicates have no general SQLite index. Probe the indexed date/id
+    // candidate set and fail closed before executing when it exceeds the
+    // explicit Free-plan budget. Never truncate then filter: that would return
+    // a plausible but incorrect empty/page result.
+    const guardEntryScan = collection === ENTRIES && entryQueryNeedsScanGuard(query);
+    if (guardEntryScan) {
+      const probe = entryScanProbe(query);
+      const beyondBudget = this.sql.exec<{ present: number }>(
+        `SELECT EXISTS(
+           SELECT 1 FROM documents
+           WHERE ${probe.sql}
+           ORDER BY sort_time DESC, id ASC
+           LIMIT 1 OFFSET ${MAX_UNINDEXED_ENTRY_CANDIDATES}
+         ) AS present`,
+        ...probe.bindings,
+      ).one().present !== 0;
+      if (beyondBudget) {
+        throw new DocumentQueryError(
+          "QUERY_SCAN_LIMIT",
+          `Entries query exceeds the ${MAX_UNINDEXED_ENTRY_CANDIDATES}-row scan budget; add a narrower date filter`,
+        );
+      }
+    }
     const statement = `SELECT * FROM documents
        WHERE ${clauses.join(" AND ")}
        ORDER BY ${order}
@@ -1660,7 +2123,7 @@ export class SqliteDocumentRepository {
             // dedupe key followed by documents' (collection,id) primary key.
             existing = candidate;
           } else {
-            this.sql.exec("DELETE FROM entries WHERE dedupe_key = ?", entry.dedupeKey);
+            this.sql.exec("DELETE FROM entries WHERE id = ?", shadow.id);
             shadow = undefined;
           }
         }
@@ -1672,7 +2135,7 @@ export class SqliteDocumentRepository {
           // The canonical Mongo-equivalent sysTime+type lookup wins. This can
           // repair a shadow left stale by an older deployment after API3
           // changed type, without forcing a duplicate primary-key insert.
-          this.sql.exec("DELETE FROM entries WHERE dedupe_key = ?", entry.dedupeKey);
+          this.sql.exec("DELETE FROM entries WHERE id = ?", shadow.id);
           shadow = undefined;
         }
       }
@@ -1685,6 +2148,13 @@ export class SqliteDocumentRepository {
         // that failure inside this synchronous transaction also verifies that
         // a mixed v1 batch cannot partially commit in SQLite.
         throw new Error("MongoServerError: immutable field _id was altered");
+      }
+      if (
+        existing === undefined
+        && entry.requestedId !== null
+        && this.findByIdRow(entry.requestedId, ENTRIES) !== undefined
+      ) {
+        throw new Error("E11000 duplicate key error collection: entries index: _id_");
       }
       delete incoming._id;
       const original = existing === undefined ? {} : parseBody(existing.body);
@@ -1708,6 +2178,12 @@ export class SqliteDocumentRepository {
   queryLegacyEntries(query: HistoryQuery): JsonDocument[] {
     const clauses = ["collection = 'entries'"];
     const bindings: SqlStorageValue[] = [];
+    const dateStringClauses: string[] = [];
+    const dateStringBindings: SqlStorageValue[] = [];
+    const hasDateStringFilter = query.dateStringGt !== null
+      || query.dateStringGte !== null
+      || query.dateStringLt !== null
+      || query.dateStringLte !== null;
     for (const [operator, value] of [
       [">", query.gt],
       [">=", query.gte],
@@ -1715,34 +2191,109 @@ export class SqliteDocumentRepository {
       ["<=", query.lte],
     ] as const) {
       if (value === null) continue;
-      clauses.push(`json_extract(body, '$.date') ${operator} ?`);
+      clauses.push(`sort_time ${operator} ?`);
       bindings.push(value);
+    }
+    for (const [operator, value] of [
+      [">", query.dateStringGt],
+      [">=", query.dateStringGte],
+      ["<", query.dateStringLt],
+      ["<=", query.dateStringLte],
+    ] as const) {
+      if (value === null) continue;
+      // `dateString` is a Mongo string field. It is deliberately not folded
+      // into sort_time/date: locked v1 permits a stored date and dateString to
+      // differ, and Mongo compares this predicate lexically as text.
+      clauses.push(`json_type(body, '$.dateString') = 'text'`);
+      clauses.push(`json_extract(body, '$.dateString') ${operator} ?`);
+      bindings.push(value);
+      dateStringClauses.push(`json_extract(body, '$.dateString') ${operator} ?`);
+      dateStringBindings.push(value);
+    }
+    if (hasDateStringFilter) {
+      const beyondBudget = this.sql.exec<{ present: number }>(
+        `SELECT EXISTS(
+           SELECT 1
+           FROM documents INDEXED BY documents_entries_date_string_sort
+           WHERE collection = 'entries'
+             AND json_type(body, '$.dateString') = 'text'
+             AND ${dateStringClauses.join(" AND ")}
+           LIMIT 1 OFFSET ${MAX_UNINDEXED_ENTRY_CANDIDATES}
+         ) AS present`,
+        ...dateStringBindings,
+      ).one().present !== 0;
+      if (beyondBudget) {
+        throw new DocumentQueryError(
+          "QUERY_SCAN_LIMIT",
+          `Entries dateString query exceeds the ${MAX_UNINDEXED_ENTRY_CANDIDATES}-row scan budget; add a narrower range`,
+        );
+      }
+    }
+    if (query.type !== null && query.type !== undefined) {
+      clauses.push("json_extract(body, '$.type') = ?");
+      bindings.push(query.type);
     }
     bindings.push(query.count);
     return this.sql.exec<DbDocumentV4>(
-      `SELECT * FROM documents
+      `SELECT * FROM documents${hasDateStringFilter
+        ? " INDEXED BY documents_entries_date_string_sort"
+        : ""}
        WHERE ${clauses.join(" AND ")}
-       ORDER BY json_extract(body, '$.date') DESC, id ASC
+       ORDER BY sort_time DESC, id ASC
        LIMIT ?`,
       ...bindings,
     ).toArray().map(materializeLegacy);
   }
 
-  currentLegacyEntries(type = "sgv"): JsonDocument[] {
-    return this.sql.exec<DbDocumentV4>(
+  queryLegacySgvBucket(count: number): JsonDocument[] {
+    const documents: JsonDocument[] = [];
+    for (const row of this.sql.exec<DbDocumentV4>(
       `SELECT * FROM documents
        WHERE collection = 'entries'
-         AND json_extract(body, '$.type') = ?
-       ORDER BY json_extract(body, '$.date') DESC, id ASC
-       LIMIT 1`,
-      type,
-    ).toArray().map(materializeLegacy);
+         AND sort_time >= ?
+         AND ${realtimeNumericMeasurementSql("$.sgv")}
+         AND NOT ${realtimeJsonTruthySql("$.mbg")}
+       ORDER BY sort_time DESC, id ASC
+       LIMIT 1000`,
+      Date.now() - 2 * 24 * 60 * 60 * 1_000,
+    )) {
+      const document = materializeLegacy(row);
+      // Locked dataloader classifies mbg first, then applies Number() to a
+      // truthy sgv. Keep the properties/clock bucket aligned with realtime.
+      if (document.mbg || !document.sgv) continue;
+      const sgv = Number(document.sgv);
+      if (!Number.isFinite(sgv)) continue;
+      documents.push({ ...document, sgv, type: "sgv" });
+      if (documents.length >= count) break;
+    }
+    return documents;
+  }
+
+  findLegacyEntryById(id: string): JsonDocument | null {
+    const canonical = this.findByIdRow(id, ENTRIES);
+    return canonical === undefined ? null : materializeLegacy(canonical);
+  }
+
+  currentLegacyEntries(): JsonDocument[] {
+    return this.queryLegacyEntries({
+      count: 1,
+      gt: null,
+      gte: Date.now() - LEGACY_ENTRY_DEFAULT_WINDOW_MS,
+      lt: null,
+      lte: null,
+      dateStringGt: null,
+      dateStringGte: null,
+      dateStringLt: null,
+      dateStringLte: null,
+      type: null,
+    });
   }
 
   deleteLegacyEntries(
     ids: string[],
     lte: number | null,
     gte: number | null,
+    type: string | null = null,
   ): number {
     return this.storage.transactionSync(() => {
       if (ids.length === 0 && lte === null && gte === null) return 0;
@@ -1753,18 +2304,35 @@ export class SqliteDocumentRepository {
         bindings.push(...ids);
       } else {
         if (lte !== null) {
-          clauses.push("json_extract(body, '$.date') <= ?");
+          clauses.push("sort_time <= ?");
           bindings.push(lte);
         }
         if (gte !== null) {
-          clauses.push("json_extract(body, '$.date') >= ?");
+          clauses.push("sort_time >= ?");
           bindings.push(gte);
         }
       }
+      if (type !== null) {
+        clauses.push("json_extract(body, '$.type') = ?");
+        bindings.push(type);
+      }
       const rows = this.sql.exec<{ id: string }>(
-        `SELECT id FROM documents WHERE ${clauses.join(" AND ")}`,
+        `SELECT id FROM documents WHERE ${clauses.join(" AND ")} LIMIT ?`,
         ...bindings,
+        MAX_SYNCHRONOUS_ENTRY_DELETES + 1,
       ).toArray();
+      if (rows.length > MAX_SYNCHRONOUS_ENTRY_DELETES) return -1;
+      let changeRows = 0;
+      for (const row of rows) {
+        const remaining = MAX_SYNCHRONOUS_ENTRY_DELETES - changeRows + 1;
+        changeRows += this.sql.exec<{ change_id: number }>(
+          `SELECT change_id FROM document_changes
+           WHERE collection = 'entries' AND id = ? LIMIT ?`,
+          row.id,
+          remaining,
+        ).toArray().length;
+        if (changeRows > MAX_SYNCHRONOUS_ENTRY_DELETES) return -1;
+      }
       for (const row of rows) {
         this.sql.exec(
           "DELETE FROM document_changes WHERE collection = 'entries' AND id = ?",
@@ -1852,6 +2420,11 @@ export class SqliteDocumentRepository {
         normalizeTreatmentDuration(document);
       } else {
         if (!options.canCreate) return { ok: false, reason: "missing-create-permission" };
+        // Mongo insertOne cannot overwrite an existing `_id`; the canonical
+        // collection therefore rejects an occupied storage key with E11000.
+        if (this.requestedStorageIdIsOccupied(document, collection)) {
+          return this.duplicateStorageIdDecision(collection);
+        }
         if (options.validate !== false) {
           assertApi3Identifier(document);
           assertApi3Common(document);
@@ -1905,6 +2478,9 @@ export class SqliteDocumentRepository {
       if (existing === undefined) {
         if (!options.canCreate) return { ok: false, reason: "missing-create-permission" };
         const document = normalizeTreatmentIdentity({ ...input, identifier: identity });
+        if (this.requestedStorageIdIsOccupied(document, collection)) {
+          return this.duplicateStorageIdDecision(collection);
+        }
         if (options.validate !== false) {
           assertApi3Identifier(document);
           assertApi3Common(document);
@@ -2050,6 +2626,17 @@ export class SqliteDocumentRepository {
       if (existing === undefined) return { deleted: false, permanent };
       this.assertWritable(existing);
       if (permanent) {
+        const history = this.sql.exec<{ change_id: number }>(
+          `SELECT change_id FROM document_changes
+           WHERE collection = ? AND id = ?
+           LIMIT ?`,
+          collection,
+          existing.id,
+          MAX_SYNCHRONOUS_ENTRY_DELETES + 1,
+        ).toArray();
+        if (history.length > MAX_SYNCHRONOUS_ENTRY_DELETES) {
+          return { deleted: false, permanent: true, tooLarge: true };
+        }
         this.sql.exec(
           "DELETE FROM document_changes WHERE collection = ? AND id = ?",
           collection,
@@ -2060,12 +2647,7 @@ export class SqliteDocumentRepository {
           collection,
           existing.id,
         );
-        if (collection === ENTRIES) {
-          // Remove the v1 migration shadow in the same transaction. Otherwise
-          // a later DO activation could import it again and resurrect a
-          // permanently deleted entry.
-          this.sql.exec("DELETE FROM entries WHERE id = ?", existing.id);
-        }
+        if (collection === ENTRIES) this.sql.exec("DELETE FROM entries WHERE id = ?", existing.id);
         return { deleted: true, permanent: true };
       }
       const document = materializeLegacy(existing);

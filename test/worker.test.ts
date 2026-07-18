@@ -190,6 +190,15 @@ describe("Nightscout compatibility API", () => {
     const name = tenant("clock");
     const base = Date.now() - 10 * 60_000;
     await post(name, [entry(110, base), entry(123, base + 300_000, "SingleUp")]);
+    // These are newer than both SGVs. Mongo-backed Nightscout derives
+    // properties from its SGV bucket, so MBGs must be filtered before LIMIT 4.
+    await post(name, Array.from({ length: 4 }, (_, index) => ({
+      type: "mbg",
+      mbg: 100 + index,
+      date: base + (index + 6) * 60_000,
+      dateString: new Date(base + (index + 6) * 60_000).toISOString(),
+      device: "properties-meter",
+    })));
 
     const statusScript = await SELF.fetch("https://example.test/api/v1/status.js");
     expect(statusScript.status).toBe(200);
@@ -205,6 +214,14 @@ describe("Nightscout compatibility API", () => {
       },
       delta: { mgdl: 13, scaled: 13, display: "+13" },
     });
+
+    const staleName = tenant("clock-stale");
+    const staleDate = Date.now() - 3 * 24 * 60 * 60_000;
+    await post(staleName, [entry(199, staleDate)]);
+    const staleProperties = await (
+      await SELF.fetch(`https://example.test/api/v2/properties?tenant=${staleName}`)
+    ).json<Record<string, any>>();
+    expect(staleProperties).toEqual({ bgnow: { sgvs: [] }, delta: null });
   });
 
   it("persists food editor records through create, update, filtering and delete", async () => {
@@ -1076,10 +1093,17 @@ describe("Nightscout compatibility API", () => {
     const base = Date.now() - 10 * 60_000;
     const first = await post(name, entry(111, base));
     expect(first.status).toBe(200);
-    expect(await first.json()).toEqual([]);
+    expect(await first.json()).toMatchObject([{
+      _id: expect.stringMatching(/^[0-9a-f]{24}$/),
+      sgv: 111,
+      date: base,
+      sysTime: new Date(base).toISOString(),
+      utcOffset: 0,
+    }]);
 
     const batch = await post(name, [entry(122, base + 300_000), entry(133, base + 600_000)], "/api/v1/entries.json");
     expect(batch.status).toBe(200);
+    expect((await batch.json<PublicEntry[]>()).map((row) => row.sgv)).toEqual([122, 133]);
 
     const history = await SELF.fetch(`https://example.test/api/v1/entries.json?tenant=${name}&count=10`);
     const rows = await history.json<PublicEntry[]>();

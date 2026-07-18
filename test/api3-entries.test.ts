@@ -225,6 +225,86 @@ describe("API v3 Entries vertical slice", () => {
     expect((await api3Fetch(name, reader, "/api/v3/entries/entry-auth")).status).toBe(200);
   });
 
+  it("keeps valid API3 entries without type readable through legacy v1 routes", async () => {
+    const name = tenant("api3-entry-optional-type");
+    const jwt = await issueSubject(name, "Optional type", [
+      "api:entries:create",
+      "api:entries:read",
+    ]);
+    const date = Date.now() - 60_000;
+    const created = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/entries",
+      jsonMutation("POST", {
+        identifier: "optional-type-sgv",
+        date,
+        utcOffset: 0,
+        app: "api3-entries-test",
+        device: "optional-type-cgm",
+        direction: "Flat",
+        sgv: 123,
+      }),
+    );
+    expect(created.status).toBe(201);
+
+    const legacy = await SELF.fetch(withTenant("/api/v1/entries.json?count=10", name));
+    expect(legacy.status).toBe(200);
+    const rows = await legacy.json<JsonObject[]>();
+    expect(rows).toMatchObject([{
+      identifier: "optional-type-sgv",
+      date,
+      sgv: 123,
+    }]);
+    expect(rows[0]).not.toHaveProperty("type");
+    const current = await SELF.fetch(withTenant("/api/v1/entries/current.json", name));
+    expect(current.status).toBe(200);
+    expect(await current.json()).toMatchObject([{
+      identifier: "optional-type-sgv",
+      sgv: 123,
+      type: "sgv",
+    }]);
+    const properties = await SELF.fetch(withTenant("/api/v2/properties", name));
+    expect(properties.status).toBe(200);
+    expect(await properties.json()).toMatchObject({
+      bgnow: { sgvs: [{ mgdl: 123, device: "optional-type-cgm" }] },
+    });
+  });
+
+  it("preserves locked v1 numeric-string measurements without BSON cross-type range matches", async () => {
+    const name = tenant("api3-entry-numeric-string");
+    const date = Date.now() - 60_000;
+    const posted = await v1Post(name, entry(
+      "numeric-string-sgv",
+      date,
+      { sgv: "199" },
+    ));
+    expect(posted.status).toBe(200);
+    expect(await posted.json()).toMatchObject([{
+      _id: expect.stringMatching(/^[0-9a-f]{24}$/),
+      identifier: "numeric-string-sgv",
+      sgv: "199",
+    }]);
+    expect(await v1Entries(name)).toMatchObject([{
+      identifier: "numeric-string-sgv",
+      sgv: "199",
+    }]);
+
+    const jwt = await issueSubject(name, "Numeric string reader", ["api:entries:read"]);
+    for (const range of ["sgv%24gt=100", "sgv%24lt=300"]) {
+      expect(await result<JsonObject[]>(await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/entries?${range}`,
+      ))).toEqual([]);
+    }
+    const ddata = await SELF.fetch(withTenant("/api/v2/ddata/at", name));
+    expect(ddata.status).toBe(200);
+    expect(await ddata.json()).toMatchObject({
+      sgvs: [{ mgdl: 199, device: "simulator://cgm", type: "sgv" }],
+    });
+  });
+
   it("runs search, create, read, PUT, PATCH, history, lastModified, formats, and deletes", async () => {
     const name = tenant("api3-entry-workflow");
     const permissions = [
@@ -481,16 +561,123 @@ describe("API v3 Entries vertical slice", () => {
     });
   });
 
+  it("pushes a bounded case-sensitive Nightscout regex subset into SQLite without ReDoS", async () => {
+    const name = tenant("api3-entry-safe-regex");
+    const jwt = await issueSubject(name, "Regex reader", ["api:entries:read"]);
+    const base = Date.now() - 10 * 60_000;
+    expect((await v1Post(name, [
+      entry("regex-one", base, {
+        device: "simulator://cgm-1",
+        labels: ["simulator://cgm-1"],
+        scores: [50, 250],
+        metadata: { device: "simulator://cgm-1" },
+      }),
+      entry("regex-two", base + 60_000, { device: "simulator://cgm-2" }),
+      entry("regex-case", base + 120_000, { device: "Simulator://CGM-3" }),
+    ])).status).toBe(200);
+
+    const common = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?device%24re=${encodeURIComponent("simulator://cgm-.*")}`,
+    ));
+    expect(common.map((document) => document.identifier).sort()).toEqual([
+      "regex-one",
+      "regex-two",
+    ]);
+
+    const anchoredDigit = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?device%24re=${encodeURIComponent("^simulator://cgm-\\d$")}`,
+    ));
+    expect(anchoredDigit).toHaveLength(2);
+    const quotedAnchoredDigit = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?device%24re=${encodeURIComponent("'^simulator://cgm-\\d$'")}`,
+    ));
+    expect(quotedAnchoredDigit).toEqual(anchoredDigit);
+
+    const numericDoesNotCast = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?sgv%24re=${encodeURIComponent("12.*")}`,
+    ));
+    expect(numericDoesNotCast).toEqual([]);
+    const objectIdDoesNotCast = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?_id%24re=${encodeURIComponent(".*")}`,
+    ));
+    expect(objectIdDoesNotCast).toEqual([]);
+
+    const arrayRegex = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?labels%24re=${encodeURIComponent("simulator.*")}`,
+    ));
+    expect(arrayRegex).toMatchObject([{ identifier: "regex-one" }]);
+    for (const filter of [
+      `labels=${encodeURIComponent("simulator://cgm-1")}`,
+      `labels%24in=${encodeURIComponent("other|simulator://cgm-1")}`,
+      "scores%24gt=200",
+    ]) {
+      expect(await result<JsonObject[]>(await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/entries?${filter}`,
+      ))).toMatchObject([{ identifier: "regex-one" }]);
+    }
+    const objectRegex = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?metadata%24re=${encodeURIComponent("simulator.*")}`,
+    ));
+    expect(objectRegex).toEqual([]);
+
+    for (const unsafe of [
+      "(a+)+$",
+      "a".repeat(129),
+      "\\bword",
+      "(a)\\1",
+      "\\p{L}",
+      "\\w".repeat(8),
+    ]) {
+      const response = await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/entries?device%24re=${encodeURIComponent(unsafe)}`,
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        status: 400,
+        message: expect.stringMatching(/not supported safely|exceeds 128 bytes|50-byte limit/),
+      });
+    }
+  });
+
   it("matches v1 sysTime+type upserts independently of UUID, device, and measurement type", async () => {
     const name = tenant("api3-entry-v1-dedup");
     const date = Date.now() - 15 * 60_000;
     const firstUuid = "550e8400-e29b-41d4-a716-446655440011";
     const secondUuid = "550e8400-e29b-41d4-a716-446655440012";
-    expect((await v1Post(name, {
+    const firstPost = await v1Post(name, {
       _id: firstUuid,
-      ...entry("discarded-first", date, { identifier: undefined, sgv: 111, device: "Trio" }),
-    })).status).toBe(200);
-    expect((await v1Post(name, {
+      ...entry("discarded-first", date, {
+        identifier: undefined,
+        sgv: 111,
+        device: "Trio",
+        filtered: 22_222,
+      }),
+    });
+    expect(firstPost.status).toBe(200);
+    expect(await firstPost.json()).toMatchObject([{
+      _id: expect.stringMatching(/^[0-9a-f]{24}$/),
+      identifier: firstUuid,
+      filtered: 22_222,
+    }]);
+    const replayPost = await v1Post(name, {
       _id: secondUuid,
       ...entry("discarded-second", date, {
         identifier: undefined,
@@ -498,7 +685,16 @@ describe("API v3 Entries vertical slice", () => {
         direction: "FortyFiveUp",
         device: "xDrip",
       }),
-    })).status).toBe(200);
+    });
+    expect(replayPost.status).toBe(200);
+    const replaySaved = await replayPost.json<JsonObject[]>();
+    expect(replaySaved).toMatchObject([{
+      identifier: secondUuid,
+      sgv: 123,
+      device: "xDrip",
+    }]);
+    expect(replaySaved[0]).not.toHaveProperty("_id");
+    expect(replaySaved[0]).not.toHaveProperty("filtered");
     expect((await v1Post(name, {
       type: "mbg",
       mbg: 118,
@@ -538,6 +734,52 @@ describe("API v3 Entries vertical slice", () => {
         "sgv",
       ).toArray().map((row) => row.detail).join("\n");
       expect(plan).toContain("documents_entries_sys_time_type");
+      const datePlan = state.storage.sql.exec<{ detail: string }>(
+        `EXPLAIN QUERY PLAN
+         SELECT id FROM documents
+         WHERE collection = 'entries'
+           AND sort_time >= ?
+           AND sort_time <= ?
+         ORDER BY sort_time DESC, id ASC
+         LIMIT 10`,
+        date - 60_000,
+        date + 600_000,
+      ).toArray().map((row) => row.detail).join("\n");
+      expect(datePlan).toContain("documents_collection_sort");
+      expect(datePlan).toMatch(/sort_time>[?]/);
+      const typePlan = state.storage.sql.exec<{ detail: string }>(
+        `EXPLAIN QUERY PLAN
+         SELECT id FROM documents
+         WHERE collection = 'entries'
+           AND json_extract(body, '$.type') = ?
+         ORDER BY sort_time DESC, id ASC
+         LIMIT 10`,
+        "mbg",
+      ).toArray().map((row) => row.detail).join("\n");
+      expect(typePlan).toContain("documents_entries_type_sort");
+      const api3DatePlan = state.storage.sql.exec<{ detail: string }>(
+        `EXPLAIN QUERY PLAN
+         SELECT id FROM documents
+         WHERE collection = 'entries'
+           AND is_valid != 0
+           AND sort_time >= ?
+         ORDER BY sort_time DESC, srv_modified DESC, id ASC
+         LIMIT 10`,
+        date - 60_000,
+      ).toArray().map((row) => row.detail).join("\n");
+      expect(api3DatePlan).toMatch(/documents_collection_(?:valid_)?sort/);
+      expect(api3DatePlan).toMatch(/sort_time>[?]/);
+      const dateStringPlan = state.storage.sql.exec<{ detail: string }>(
+        `EXPLAIN QUERY PLAN
+         SELECT id FROM documents INDEXED BY documents_entries_date_string_sort
+         WHERE collection = 'entries'
+           AND json_type(body, '$.dateString') = 'text'
+           AND json_extract(body, '$.dateString') >= ?
+         ORDER BY sort_time DESC, id ASC
+         LIMIT 10`,
+        new Date(date - 60_000).toISOString(),
+      ).toArray().map((row) => row.detail).join("\n");
+      expect(dateStringPlan).toContain("documents_entries_date_string_sort");
     });
   });
 
@@ -563,7 +805,11 @@ describe("API v3 Entries vertical slice", () => {
     ])).status).toBe(200);
 
     const byIdentifier = new Map(
-      (await v1Entries(name)).map((document) => [document.identifier, document]),
+      (await (await SELF.fetch(withTenant(
+        `/api/v1/entries.json?count=100&find[date][$gte]=${plusDate - 60_000}`
+          + `&find[date][$lte]=${dateOnly + 60_000}`,
+        name,
+      ))).json<JsonObject[]>()).map((document) => [document.identifier, document]),
     );
     expect(byIdentifier.get("zone-plus-eight")).toMatchObject({
       dateString: "2025-07-18T00:00:00.000Z",
@@ -581,6 +827,391 @@ describe("API v3 Entries vertical slice", () => {
       utcOffset: 0,
     });
     expect(Object.prototype.hasOwnProperty.call(withoutDateString, "dateString")).toBe(false);
+  });
+
+  it("applies the locked four-day default window without conflating dateString with date", async () => {
+    const name = tenant("api3-entry-v1-default-window");
+    const now = Date.now();
+    const staleDate = now - 5 * 24 * 60 * 60_000;
+    const staleResponse = await v1Post(name, entry("stale-default-window", staleDate));
+    expect(staleResponse.status).toBe(200);
+    const [savedStale] = await staleResponse.json<JsonObject[]>();
+    const staleId = String(savedStale?._id);
+
+    expect(await v1Entries(name)).toEqual([]);
+    for (const route of ["/api/v1/entries/current", "/api/v2/entries/current.json"]) {
+      const response = await SELF.fetch(withTenant(route, name));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual([]);
+    }
+    const byId = await SELF.fetch(withTenant(`/api/v1/entries/${staleId}.json`, name));
+    expect(byId.status).toBe(200);
+    expect(await byId.json()).toMatchObject([{ identifier: "stale-default-window" }]);
+
+    const storedDate = now - 2 * 24 * 60 * 60_000;
+    const storedDateString = new Date(now - 24 * 60 * 60_000).toISOString();
+    expect((await v1Post(name, entry("independent-date-string", storedDate, {
+      dateString: storedDateString,
+    }))).status).toBe(200);
+    const boundary = encodeURIComponent(new Date(now - 36 * 60 * 60_000).toISOString());
+    const byDateString = await SELF.fetch(withTenant(
+      `/api/v1/entries.json?count=10&find[dateString][$gte]=${boundary}`,
+      name,
+    ));
+    expect(byDateString.status).toBe(200);
+    expect(await byDateString.json()).toMatchObject([{
+      identifier: "independent-date-string",
+      date: storedDate,
+      dateString: storedDateString,
+    }]);
+  });
+
+  it("returns saved v1/v2 records, honors model/type filters, and bypasses the ten-row ID window", async () => {
+    const name = tenant("api3-entry-v1-routing");
+    const empty = await v1Post(name, []);
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toEqual([]);
+    const base = Date.now() - 20 * 60_000;
+    const payload = Array.from({ length: 12 }, (_, index) => entry(
+      `routing-sgv-${index}`,
+      base + index * 60_000,
+      { sgv: 100 + index, filtered: 20_000 + index, unfiltered: 21_000 + index },
+    ));
+    payload.push({
+      identifier: "routing-mbg",
+      date: base + 13 * 60_000,
+      dateString: new Date(base + 13 * 60_000).toISOString(),
+      app: "api3-entries-test",
+      device: "routing-meter",
+      type: "mbg",
+      mbg: 117,
+    });
+    const posted = await v1Post(name, payload);
+    expect(posted.status).toBe(200);
+    const saved = await posted.json<JsonObject[]>();
+    expect(saved).toHaveLength(13);
+    expect(saved[0]).toMatchObject({
+      _id: expect.stringMatching(/^[0-9a-f]{24}$/),
+      identifier: "routing-sgv-0",
+      type: "sgv",
+      filtered: 20_000,
+      unfiltered: 21_000,
+      sysTime: new Date(base).toISOString(),
+      utcOffset: 0,
+    });
+
+    const v1Sgvs = await (
+      await SELF.fetch(withTenant("/api/v1/entries/sgv.json?count=20", name))
+    ).json<JsonObject[]>();
+    expect(v1Sgvs).toHaveLength(12);
+    expect(new Set(v1Sgvs.map((document) => document.type))).toEqual(new Set(["sgv"]));
+    const v2Sgvs = await (
+      await SELF.fetch(withTenant("/api/v2/entries/sgv.json?count=20", name))
+    ).json<JsonObject[]>();
+    expect(v2Sgvs).toEqual(v1Sgvs);
+    const legacyExtensionPath = await (
+      await SELF.fetch(withTenant("/api/v1/entries/sgv/.json?count=20", name))
+    ).json<JsonObject[]>();
+    expect(legacyExtensionPath).toEqual(v1Sgvs);
+
+    const mbgs = await (
+      await SELF.fetch(withTenant("/api/v1/entries.json?find[type]=mbg&count=20", name))
+    ).json<JsonObject[]>();
+    expect(mbgs).toMatchObject([{ identifier: "routing-mbg", type: "mbg", mbg: 117 }]);
+
+    const oldestId = String(saved[0]?._id);
+    const ordinaryWindow = await v1Entries(name, 10);
+    expect(ordinaryWindow.some((document) => document._id === oldestId)).toBe(false);
+    for (const version of ["v1", "v2"] as const) {
+      const byId = await SELF.fetch(withTenant(`/api/${version}/entries/${oldestId}`, name));
+      expect(byId.status).toBe(200);
+      expect(await byId.json()).toMatchObject([{
+        _id: oldestId,
+        identifier: "routing-sgv-0",
+        sgv: 100,
+      }]);
+      const missingId = "ffffffffffffffffffffffff";
+      const missing = await SELF.fetch(withTenant(
+        `/api/${version}/entries/${missingId}`,
+        name,
+      ));
+      expect(missing.status).toBe(500);
+      expect(await missing.json()).toEqual({
+        status: 500,
+        message: "Mongo Error",
+        description: `No such id: '${missingId}'`,
+      });
+    }
+
+    const mbgDate = base + 13 * 60_000;
+    const modelDelete = await SELF.fetch(withTenant(
+      `/api/v2/entries/mbg.json?find[date][$gte]=${mbgDate}&find[date][$lte]=${mbgDate}`,
+      name,
+    ), {
+      method: "DELETE",
+      headers: { "api-secret": await secretDigest() },
+    });
+    expect(modelDelete.status).toBe(200);
+    expect(await modelDelete.json()).toEqual({ acknowledged: true, deletedCount: 1 });
+    expect(await (
+      await SELF.fetch(withTenant("/api/v1/entries/mbg.json?count=20", name))
+    ).json()).toEqual([]);
+
+    const filteredDeleteDate = base + 14 * 60_000;
+    expect((await v1Post(name, [
+      entry("routing-filtered-sgv", filteredDeleteDate, { sgv: 145 }),
+      {
+        identifier: "routing-filtered-mbg",
+        date: filteredDeleteDate,
+        dateString: new Date(filteredDeleteDate).toISOString(),
+        app: "api3-entries-test",
+        device: "routing-meter",
+        type: "mbg",
+        mbg: 119,
+      },
+    ])).status).toBe(200);
+    const queryTypeDelete = await SELF.fetch(withTenant(
+      `/api/v1/entries.json?find[type][$eq]=mbg&find[date][$gte]=${filteredDeleteDate}&find[date][$lte]=${filteredDeleteDate}`,
+      name,
+    ), {
+      method: "DELETE",
+      headers: { "api-secret": await secretDigest() },
+    });
+    expect(queryTypeDelete.status).toBe(200);
+    expect(await queryTypeDelete.json()).toEqual({ acknowledged: true, deletedCount: 1 });
+    const afterQueryTypeDelete = await (
+      await SELF.fetch(withTenant("/api/v1/entries.json?count=20", name))
+    ).json<JsonObject[]>();
+    expect(afterQueryTypeDelete).toEqual(expect.arrayContaining([
+      expect.objectContaining({ identifier: "routing-filtered-sgv", type: "sgv", sgv: 145 }),
+    ]));
+    expect(afterQueryTypeDelete.some(
+      (document) => document.identifier === "routing-filtered-mbg",
+    )).toBe(false);
+
+    const unsupportedDelete = await SELF.fetch(withTenant(
+      `/api/v1/entries.json?find[device]=simulator&find[date][$gte]=${base}&find[date][$lte]=${filteredDeleteDate}`,
+      name,
+    ), {
+      method: "DELETE",
+      headers: { "api-secret": await secretDigest() },
+    });
+    expect(unsupportedDelete.status).toBe(400);
+    expect(await unsupportedDelete.json()).toMatchObject({
+      error: { code: "unsupported_delete_filter" },
+    });
+    expect(await v1Entries(name, 20)).toHaveLength(13);
+
+    // Locked entries DELETE treats path model `*` specially: prepReqModel
+    // first overwrites query type with `*`, then removes that type predicate.
+    for (const [index, typeFilter] of [
+      "find[type]=mbg",
+      "find[type][$eq]=mbg",
+    ].entries()) {
+      const wildcardDate = filteredDeleteDate + (index + 1) * 60_000;
+      expect((await v1Post(name, [
+        entry(`wildcard-sgv-${index}`, wildcardDate, { sgv: 150 + index }),
+        {
+          identifier: `wildcard-mbg-${index}`,
+          date: wildcardDate,
+          dateString: new Date(wildcardDate).toISOString(),
+          device: "routing-meter",
+          type: "mbg",
+          mbg: 120 + index,
+        },
+      ])).status).toBe(200);
+      const wildcardDelete = await SELF.fetch(withTenant(
+        `/api/v1/entries/*.json?${typeFilter}&find[date][$gte]=${wildcardDate}&find[date][$lte]=${wildcardDate}`,
+        name,
+      ), {
+        method: "DELETE",
+        headers: { "api-secret": await secretDigest() },
+      });
+      expect(wildcardDelete.status).toBe(200);
+      expect(await wildcardDelete.json()).toEqual({
+        acknowledged: true,
+        deletedCount: 2,
+      });
+    }
+    expect(await v1Entries(name, 20)).toHaveLength(13);
+  });
+
+  it("fails closed when an unindexed API3 Entries query exceeds its scan budget", async () => {
+    const name = tenant("api3-entry-scan-budget");
+    const needleDate = Date.now() - 60_000;
+    expect((await v1Post(name, entry("scan-budget-needle", needleDate, {
+      device: "needle-cgm",
+    }))).status).toBe(200);
+    const jwt = await issueSubject(name, "Scan budget reader", ["api:entries:read"]);
+    const stub = env.ENTRY_STORE.getByName(name);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      const base = needleDate - 24 * 60 * 60_000;
+      state.storage.sql.exec(
+        `WITH RECURSIVE candidates(value) AS (
+           VALUES (1)
+           UNION ALL SELECT value + 1 FROM candidates WHERE value <= 10000
+         )
+         INSERT INTO documents
+           (collection, id, body, sort_time, created_at, updated_at)
+         SELECT 'entries', printf('%024x', value + 900000),
+                json_object(
+                  'date', ? - value,
+                  'dateString', ?,
+                  'type', 'sgv',
+                  'sgv', 120,
+                  'device', 'nonmatching-cgm'
+                ),
+                ? - value, ?, ?
+         FROM candidates`,
+        base,
+        new Date(base).toISOString(),
+        base,
+        base,
+        base,
+      );
+    });
+
+    const broad = await api3Fetch(name, jwt, "/api/v3/entries?device=needle-cgm&limit=1");
+    expect(broad.status).toBe(413);
+    expect(await broad.json()).toMatchObject({
+      status: 413,
+      message: expect.stringContaining("add a narrower date filter"),
+    });
+
+    const broadDateString = await SELF.fetch(withTenant(
+      "/api/v1/entries.json?count=1&find[dateString][$gte]=0000",
+      name,
+    ));
+    expect(broadDateString.status).toBe(413);
+    expect(await broadDateString.json()).toMatchObject({
+      error: {
+        code: "entry_query_limit",
+        message: expect.stringContaining("add a narrower range"),
+      },
+    });
+
+    const narrow = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?device=needle-cgm&date%24gte=${needleDate - 1_000}&limit=1`,
+    );
+    expect(narrow.status).toBe(200);
+    expect(await result<JsonObject[]>(narrow)).toMatchObject([{
+      identifier: "scan-budget-needle",
+      device: "needle-cgm",
+    }]);
+  });
+
+  it("rejects an oversized synchronous v1 range delete atomically", async () => {
+    const name = tenant("api3-entry-delete-limit");
+    const base = Date.now() - 180 * 60_000;
+    const entries = Array.from({ length: 129 }, (_, index) => entry(
+      `delete-limit-${index}`,
+      base + index * 60_000,
+      { sgv: 90 + (index % 100) },
+    ));
+    expect((await v1Post(name, entries.slice(0, 100))).status).toBe(200);
+    expect((await v1Post(name, entries.slice(100))).status).toBe(200);
+
+    const response = await SELF.fetch(withTenant(
+      `/api/v1/entries/sgv.json?find[date][$gte]=${base}&find[date][$lte]=${base + 128 * 60_000}`,
+      name,
+    ), {
+      method: "DELETE",
+      headers: { "api-secret": await secretDigest() },
+    });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "entry_delete_limit",
+        message: "entry deletion exceeds 128 records or stored revisions; narrow the request",
+      },
+    });
+    const intact = await v1Entries(name, 200);
+    expect(intact).toHaveLength(129);
+    const oneId = String(intact[0]?._id);
+    const removeOne = await SELF.fetch(withTenant(`/api/v1/entries/${oneId}`, name), {
+      method: "DELETE",
+      headers: { "api-secret": await secretDigest() },
+    });
+    expect(removeOne.status).toBe(200);
+    expect(await removeOne.json()).toEqual({ acknowledged: true, deletedCount: 1 });
+    const accepted = await SELF.fetch(withTenant(
+      `/api/v1/entries/sgv.json?find[date][$gte]=${base}&find[date][$lte]=${base + 128 * 60_000}`,
+      name,
+    ), {
+      method: "DELETE",
+      headers: { "api-secret": await secretDigest() },
+    });
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toEqual({ acknowledged: true, deletedCount: 128 });
+    expect(await v1Entries(name, 200)).toEqual([]);
+  });
+
+  it("rejects permanent deletion with unbounded revision history atomically", async () => {
+    const name = tenant("api3-entry-delete-history-limit");
+    const stub = env.ENTRY_STORE.getByName(name);
+    const jwt = await issueSubject(name, "History delete limiter", [
+      "api:entries:read",
+      "api:entries:delete",
+    ]);
+    const id = "abababababababababababab";
+    expect((await v1Post(name, {
+      _id: id,
+      ...entry("delete-history-limit", Date.now() - 60_000),
+    })).status).toBe(200);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      state.storage.sql.exec(
+        `WITH RECURSIVE copies(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM copies WHERE value < 128
+         )
+         INSERT INTO document_changes
+           (collection, id, identifier, identifier_present, body, srv_created,
+            srv_modified, is_valid, revision, operation, srv_metadata_version)
+         SELECT document.collection, document.id, document.identifier,
+                document.identifier_present, document.body, document.srv_created,
+                document.srv_modified, document.is_valid, document.revision,
+                'history-limit', document.srv_metadata_version
+         FROM documents AS document CROSS JOIN copies
+         WHERE document.collection = 'entries' AND document.id = ?`,
+        id,
+      );
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM document_changes WHERE collection = 'entries' AND id = ?",
+        id,
+      ).one().count).toBe(129);
+    });
+
+    const api3Delete = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/entries/delete-history-limit?permanent=true",
+      { method: "DELETE" },
+    );
+    expect(api3Delete.status).toBe(413);
+    expect(await api3Delete.json()).toMatchObject({ status: 413 });
+    const v1Delete = await SELF.fetch(withTenant(`/api/v1/entries/${id}`, name), {
+      method: "DELETE",
+      headers: { "api-secret": await secretDigest() },
+    });
+    expect(v1Delete.status).toBe(413);
+    expect(await v1Delete.json()).toMatchObject({
+      error: { code: "entry_delete_limit" },
+    });
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM documents WHERE collection = 'entries' AND id = ?",
+        id,
+      ).one().count).toBe(1);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM document_changes WHERE collection = 'entries' AND id = ?",
+        id,
+      ).one().count).toBe(129);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM entries WHERE id = ?",
+        id,
+      ).one().count).toBe(1);
+    });
   });
 
   it("invalidates a v1 shadow after API3 type changes and soft deletion", async () => {
@@ -634,6 +1265,100 @@ describe("API v3 Entries vertical slice", () => {
         replacementId,
       ).one().count).toBe(0);
     });
+  });
+
+  it("normalizes uppercase ObjectId fallbacks like Mongo for API3 read, patch, put, and delete", async () => {
+    const name = tenant("api3-entry-objectid-case");
+    const jwt = await issueSubject(name, "ObjectId case", [
+      "api:entries:create",
+      "api:entries:read",
+      "api:entries:update",
+      "api:entries:delete",
+    ]);
+    const base = Date.now() - 30 * 60_000;
+    const ids = [
+      "abcdefabcdefabcdefabcde1",
+      "abcdefabcdefabcdefabcde2",
+      "abcdefabcdefabcdefabcde3",
+      "abcdefabcdefabcdefabcde4",
+    ];
+    expect((await v1Post(name, ids.map((id, index) => ({
+      _id: id,
+      ...entry(`case-${index}`, base + index * 60_000, { identifier: undefined }),
+    })))).status).toBe(200);
+
+    for (const filter of [
+      `_id%24eq=${ids[0]}`,
+      `_id%24in=${ids[0]}`,
+    ]) {
+      expect(await result<JsonObject[]>(await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/entries?${filter}`,
+      ))).toEqual([]);
+    }
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?_id%24ne=${ids[0]}`,
+    ))).toHaveLength(4);
+
+    const read = await api3Fetch(name, jwt, `/api/v3/entries/${ids[0]!.toUpperCase()}`);
+    expect(read.status).toBe(200);
+    expect(await result<JsonObject>(read)).toMatchObject({ identifier: ids[0], sgv: 120 });
+
+    const patched = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/${ids[1]!.toUpperCase()}`,
+      jsonMutation("PATCH", { sgv: 133 }),
+    );
+    expect(patched.status).toBe(200);
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/${ids[1]!.toUpperCase()}`,
+    ))).toMatchObject({ sgv: 133 });
+
+    const upperPutId = ids[2]!.toUpperCase();
+    const uppercasePut = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/${upperPutId}`,
+      jsonMutation("PUT", entry("ignored-by-path", base + 2 * 60_000, { sgv: 144 })),
+    );
+    // ObjectId parsing itself is case-insensitive, but locked update.validate
+    // compares the normalized legacy identifier to the path string exactly.
+    expect(uppercasePut.status).toBe(400);
+    expect(await uppercasePut.json()).toMatchObject({
+      status: 400,
+      message: "Field identifier cannot be modified by the client",
+    });
+    const lowercasePut = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/${ids[2]}`,
+      jsonMutation("PUT", entry("ignored-by-path", base + 2 * 60_000, { sgv: 144 })),
+    );
+    expect(lowercasePut.status).toBe(200);
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/${upperPutId}`,
+    ))).toMatchObject({ identifier: ids[2], sgv: 144 });
+
+    const removed = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/${ids[3]!.toUpperCase()}?permanent=true`,
+      { method: "DELETE" },
+    );
+    expect(removed.status).toBe(200);
+    expect((await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/${ids[3]!.toUpperCase()}`,
+    )).status).toBe(404);
   });
 
   it("bridges v1 entries into API3 and API3 mutations back into v1 reads", async () => {
@@ -817,7 +1542,7 @@ describe("API v3 Entries vertical slice", () => {
         failure = error instanceof Error ? error.message : String(error);
       }
     });
-    expect(failure).toContain("UNIQUE constraint failed");
+    expect(failure).toContain("E11000 duplicate key error");
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM documents WHERE collection = 'entries'",
@@ -831,116 +1556,52 @@ describe("API v3 Entries vertical slice", () => {
     });
   });
 
-  it("imports a 10k shadow set without JS materialization and performs no repeat writes", async () => {
-    const name = tenant("api3-entry-bulk-migrate");
-    const stub = env.ENTRY_STORE.getByName(name);
-    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
-      state.storage.sql.exec(`
-        WITH digits(value) AS (
-          VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)
-        ), numbers(value) AS (
-          SELECT ((thousands.value * 10 + hundreds.value) * 10 + tens.value) * 10
-                 + ones.value
-          FROM digits AS thousands
-          CROSS JOIN digits AS hundreds
-          CROSS JOIN digits AS tens
-          CROSS JOIN digits AS ones
-        )
-        INSERT INTO entries
-          (id, identifier, dedupe_key, sgv, mbg, date, date_string,
-           direction, device, type, created_at)
-        SELECT printf('%024x', value + 1), 'bulk-entry-' || value,
-               json_array(CAST(1700000000000 + value AS TEXT), 'sgv'),
-               80 + (value % 200), NULL, 1700000000000 + value,
-               CAST(1700000000000 + value AS TEXT), 'Flat', 'bulk-migration',
-               'sgv', 1700000000000 + value
-        FROM numbers
-      `);
-      expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM entries",
-      ).one().count).toBe(10_000);
-      expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM documents WHERE collection = 'entries'",
-      ).one().count).toBe(0);
-      // This is an upgrade snapshot: a newer worker has not yet recorded the
-      // Entries bridge even though the shadow can already be large.
-      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 6");
-    });
-
-    await evictDurableObject(stub);
-    expect(await stub.getEntries({
-      count: 1,
-      gt: null,
-      gte: null,
-      lt: null,
-      lte: null,
-    })).toHaveLength(1);
-    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
-      expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM documents WHERE collection = 'entries'",
-      ).one().count).toBe(10_000);
-      expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM document_changes WHERE collection = 'entries'",
-      ).one().count).toBe(10_000);
-      // A BEFORE INSERT trigger turns even an ON CONFLICT losing insert into
-      // an activation failure. Together with marker 6, the second eviction
-      // verifies the normal activation bypasses the backfill statements
-      // entirely rather than scanning/walking all 10k rows again.
-      state.storage.sql.exec(`
-        CREATE TRIGGER reject_repeat_entry_migration
-        BEFORE INSERT ON documents
-        WHEN NEW.collection = 'entries' AND EXISTS (
-          SELECT 1 FROM documents
-          WHERE collection = 'entries' AND id = NEW.id
-        )
-        BEGIN
-          SELECT RAISE(ABORT, 'repeat entry migration write');
-        END
-      `);
-      expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id = 6",
-      ).one().count).toBe(1);
-    });
-
-    await evictDurableObject(stub);
-    expect(await stub.getEntries({
-      count: 1,
-      gt: null,
-      gte: null,
-      lt: null,
-      lte: null,
-    })).toHaveLength(1);
-    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
-      expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM documents WHERE collection = 'entries'",
-      ).one().count).toBe(10_000);
-      expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM document_changes WHERE collection = 'entries'",
-      ).one().count).toBe(10_000);
+  it("keeps v1 sysTime plus type authoritative when identifiers differ", async () => {
+    const name = tenant("api3-entry-v1-identifier-independent");
+    const date = Date.now() - 60_000;
+    const sysTime = new Date(date).toISOString();
+    expect((await v1Post(name, {
+      ...entry("v1-first-identifier", date),
+      sysTime,
+      sgv: 141,
+    })).status).toBe(200);
+    expect((await v1Post(name, {
+      ...entry("v1-second-identifier", date),
+      sysTime,
+      sgv: 199,
+    })).status).toBe(200);
+    const rows = await v1Entries(name);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      identifier: "v1-second-identifier",
+      sysTime,
+      type: "sgv",
+      sgv: 199,
     });
   });
 
-  it("repairs and imports an old UNIQUE schema after eviction even with a higher marker", async () => {
-    const name = tenant("api3-entry-migrate");
+  it("resets only an incompatible pre-1.0 Entries shadow and preserves profile data", async () => {
+    const name = tenant("api3-entry-fresh-schema-reset");
     const stub = env.ENTRY_STORE.getByName(name);
-    const id = "ffffffffffffffffffffffff";
-    const date = Date.now() - 2 * 60 * 60_000;
-    const dateString = new Date(date).toISOString();
+    const profileId = "abababababababababababab";
+    await stub.createDocuments("profile", JSON.stringify([{
+      _id: profileId,
+      defaultProfile: "Default",
+      store: { Default: { timezone: "UTC" } },
+    }]));
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
-      state.storage.sql.exec("DELETE FROM document_changes WHERE collection = 'entries'");
-      state.storage.sql.exec("DELETE FROM documents WHERE collection = 'entries'");
       state.storage.sql.exec("DROP TABLE entries");
       state.storage.sql.exec(`
         CREATE TABLE entries (
           id TEXT PRIMARY KEY,
           identifier TEXT UNIQUE,
           dedupe_key TEXT NOT NULL UNIQUE,
-          sgv INTEGER NOT NULL CHECK (sgv >= 20 AND sgv <= 600),
+          sgv INTEGER NOT NULL,
           date INTEGER NOT NULL,
           date_string TEXT NOT NULL,
           direction TEXT NOT NULL,
           device TEXT NOT NULL,
-          type TEXT NOT NULL CHECK (type = 'sgv'),
+          type TEXT NOT NULL,
           created_at INTEGER NOT NULL
         )
       `);
@@ -948,15 +1609,10 @@ describe("API v3 Entries vertical slice", () => {
         `INSERT INTO entries
           (id, identifier, dedupe_key, sgv, date, date_string,
            direction, device, type, created_at)
-         VALUES (?, 'migration-shared-id', ?, 144, ?, ?, 'Flat',
-                 'old-sqlite', 'sgv', ?)`,
-        id,
-        `${date}:sgv`,
-        date,
-        dateString,
-        date,
+         VALUES ('cdcdcdcdcdcdcdcdcdcdcdcd', 'simulated-old-row',
+                 'old-key', 140, 1700000000000, '2023-11-14T22:13:20.000Z',
+                 'Flat', 'simulator', 'sgv', 1700000000000)`,
       );
-      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 6");
       state.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (99)",
       );
@@ -969,54 +1625,222 @@ describe("API v3 Entries vertical slice", () => {
       gte: null,
       lt: null,
       lte: null,
-    })).toEqual([
-      expect.objectContaining({
-        _id: id,
-        identifier: "migration-shared-id",
-        sgv: 144,
-      }),
-    ]);
-
+      dateStringGt: null,
+      dateStringGte: null,
+      dateStringLt: null,
+      dateStringLte: null,
+      type: null,
+    })).toEqual([]);
+    expect(JSON.parse(await stub.listDocuments("profile", 10))).toMatchObject([{
+      _id: profileId,
+      defaultProfile: "Default",
+    }]);
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
-      expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM documents WHERE collection = 'entries'",
-      ).one().count).toBe(1);
-      expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id IN (6, 99)",
-      ).one().count).toBe(2);
+      const columns = state.storage.sql.exec<{ name: string }>(
+        "PRAGMA table_info(entries)",
+      ).toArray().map((column) => column.name);
+      expect(columns).toContain("mbg");
       const uniqueIdentifierIndexes = state.storage.sql.exec<{
         name: string;
         unique: number;
       }>("PRAGMA index_list(entries)").toArray().filter((index) => {
         if (index.unique === 0) return false;
-        const columns = state.storage.sql.exec<{ name: string }>(
+        const indexed = state.storage.sql.exec<{ name: string }>(
           `PRAGMA index_info("${index.name}")`,
         ).toArray();
-        return columns.length === 1 && columns[0]?.name === "identifier";
+        return indexed.length === 1 && indexed[0]?.name === "identifier";
       });
       expect(uniqueIdentifierIndexes).toEqual([]);
-    });
-
-    expect((await v1Post(name, entry(
-      "migration-shared-id",
-      date + 300_000,
-      { sgv: 145 },
-    ))).status).toBe(200);
-    await evictDurableObject(stub);
-    expect(await stub.getEntries({
-      count: 10,
-      gt: null,
-      gte: null,
-      lt: null,
-      lte: null,
-    })).toHaveLength(2);
-    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
       expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM documents WHERE collection = 'entries'",
-      ).one().count).toBe(2);
+        `SELECT COUNT(*) AS count FROM sqlite_master
+         WHERE name IN (
+           'entries_v6_legacy',
+           'entry_shadow_migration_queue',
+           'entry_shadow_migration_state',
+           'entries_migration_capture_insert',
+           'entries_migration_capture_update',
+           'entries_migration_capture_delete'
+         )`,
+      ).one().count).toBe(0);
       expect(state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM entries WHERE identifier = 'migration-shared-id'",
-      ).one().count).toBe(2);
+        "SELECT COUNT(*) AS count FROM documents WHERE collection = 'profile' AND id = ?",
+        profileId,
+      ).one().count).toBe(1);
     });
   });
+
+  it("repairs deceptive shadow constraints and same-name indexes once, then restarts read-only", async () => {
+    const name = tenant("api3-entry-schema-contract");
+    const stub = env.ENTRY_STORE.getByName(name);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      state.storage.sql.exec("DROP TABLE entries");
+      state.storage.sql.exec(`
+        CREATE TABLE entries (
+          id TEXT PRIMARY KEY,
+          identifier TEXT,
+          dedupe_key TEXT NOT NULL COLLATE NOCASE,
+          sgv INTEGER CHECK (sgv IS NULL OR sgv < 100),
+          mbg INTEGER,
+          date INTEGER NOT NULL,
+          date_string TEXT NOT NULL,
+          direction TEXT NOT NULL,
+          device TEXT NOT NULL,
+          type TEXT NOT NULL CHECK (type = 'sgv'),
+          created_at INTEGER NOT NULL
+        );
+        CREATE UNIQUE INDEX deceptive_dedupe_key
+          ON entries(dedupe_key) WHERE 0;
+        CREATE INDEX entries_date_desc ON entries(date DESC);
+        DROP INDEX documents_entries_sys_time_type;
+        CREATE UNIQUE INDEX documents_entries_sys_time_type
+          ON documents(
+            json_extract(body, '$.sysTime'),
+            json_extract(body, '$.type'),
+            updated_at ASC,
+            id ASC
+          )
+          WHERE collection = 'entries';
+        DROP INDEX documents_entries_type_sort;
+        CREATE UNIQUE INDEX documents_entries_type_sort
+          ON documents(json_extract(body, '$.type'), sort_time ASC)
+          WHERE collection = 'entries';
+        DROP INDEX documents_entries_date_string_sort;
+        CREATE UNIQUE INDEX documents_entries_date_string_sort
+          ON documents(json_extract(body, '$.dateString'))
+          WHERE collection = 'entries';
+      `);
+    });
+
+    await evictDurableObject(stub);
+    expect((await v1Post(name, {
+      identifier: "schema-repaired-mbg",
+      type: "mbg",
+      mbg: 121,
+      date: Date.now() - 60_000,
+      device: "schema-meter",
+    })).status).toBe(200);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      const tableSql = state.storage.sql.exec<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'entries'",
+      ).one().sql;
+      expect(tableSql).not.toContain("COLLATE NOCASE");
+      expect(tableSql).not.toContain("type = 'sgv'");
+      const canonicalSql = state.storage.sql.exec<{ sql: string }>(
+        `SELECT sql FROM sqlite_master
+         WHERE type = 'index' AND name = 'documents_entries_sys_time_type'`,
+      ).one().sql;
+      expect(canonicalSql).toMatch(/^CREATE INDEX /i);
+      expect(canonicalSql).not.toMatch(/^CREATE UNIQUE INDEX /i);
+      const typeSortSql = state.storage.sql.exec<{ sql: string }>(
+        `SELECT sql FROM sqlite_master
+         WHERE type = 'index' AND name = 'documents_entries_type_sort'`,
+      ).one().sql;
+      expect(typeSortSql).toMatch(/^CREATE INDEX /i);
+      expect(typeSortSql).not.toMatch(/^CREATE UNIQUE INDEX /i);
+      expect(typeSortSql).toContain("sort_time DESC");
+      const dateStringSql = state.storage.sql.exec<{ sql: string }>(
+        `SELECT sql FROM sqlite_master
+         WHERE type = 'index' AND name = 'documents_entries_date_string_sort'`,
+      ).one().sql;
+      expect(dateStringSql).toMatch(/^CREATE INDEX /i);
+      expect(dateStringSql).not.toMatch(/^CREATE UNIQUE INDEX /i);
+      expect(dateStringSql).toContain("json_type(body, '$.dateString') = 'text'");
+      const dedupeIndexes = state.storage.sql.exec<{
+        name: string;
+        unique: number;
+        partial: number;
+      }>("PRAGMA index_list(entries)").toArray().filter((index) => {
+        if (index.unique === 0) return false;
+        return state.storage.sql.exec<{ name: string }>(
+          `PRAGMA index_info("${index.name}")`,
+        ).toArray().some((column) => column.name === "dedupe_key");
+      });
+      expect(dedupeIndexes).toHaveLength(1);
+      expect(dedupeIndexes[0]?.partial).toBe(0);
+
+      state.storage.sql.exec("DROP INDEX entries_date_desc");
+      state.storage.sql.exec("CREATE INDEX entries_date_desc ON entries(type)");
+    });
+
+    await evictDurableObject(stub);
+    expect((await stub.getCurrent()).length).toBe(1);
+    const schemaSnapshot = await runInDurableObject(
+      stub,
+      async (_instance: EntryStore, state) => JSON.stringify(state.storage.sql.exec<{
+        type: string;
+        name: string;
+        sql: string | null;
+      }>(
+        `SELECT type, name, sql FROM sqlite_master
+         WHERE name NOT LIKE 'sqlite_%'
+         ORDER BY type, name`,
+      ).toArray()),
+    );
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      const columns = state.storage.sql.exec<{ name: string }>(
+        "PRAGMA index_info(entries_date_desc)",
+      ).toArray().map((column) => column.name);
+      expect(columns).toEqual(["date"]);
+    });
+
+    await evictDurableObject(stub);
+    expect((await stub.getCurrent()).length).toBe(1);
+    const restartedSchemaSnapshot = await runInDurableObject(
+      stub,
+      async (_instance: EntryStore, state) => JSON.stringify(state.storage.sql.exec<{
+        type: string;
+        name: string;
+        sql: string | null;
+      }>(
+        `SELECT type, name, sql FROM sqlite_master
+         WHERE name NOT LIKE 'sqlite_%'
+         ORDER BY type, name`,
+      ).toArray()),
+    );
+    expect(restartedSchemaSnapshot).toBe(schemaSnapshot);
+  });
+
+  it("removes every unknown Entries trigger and index before accepting writes", async () => {
+    const name = tenant("api3-entry-schema-unknown-objects");
+    const stub = env.ENTRY_STORE.getByName(name);
+    expect(await stub.getCurrent()).toEqual([]);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      state.storage.sql.exec(`
+        CREATE TRIGGER arbitrary_blocking_trigger
+        BEFORE INSERT ON entries
+        BEGIN
+          SELECT RAISE(ABORT, 'unexpected trigger fired');
+        END;
+        CREATE INDEX unexpected_expr
+          ON entries(json_extract(device, '$.x'));
+        CREATE UNIQUE INDEX unexpected_nocase_dedupe
+          ON entries(dedupe_key COLLATE NOCASE);
+      `);
+    });
+
+    await evictDurableObject(stub);
+    const saved = await v1Post(name, {
+      identifier: "schema-clean-write",
+      type: "sgv",
+      sgv: 118,
+      date: Date.now() - 60_000,
+      device: "unknown",
+    });
+    expect(saved.status).toBe(200);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM sqlite_master
+         WHERE (type = 'trigger' AND tbl_name = 'entries')
+            OR name IN ('unexpected_expr', 'unexpected_nocase_dedupe')`,
+      ).one().count).toBe(0);
+      expect(state.storage.sql.exec<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'entries'",
+      ).toArray().map((row) => row.name).sort()).toEqual([
+        "entries_date_desc",
+        "sqlite_autoindex_entries_1",
+        "sqlite_autoindex_entries_2",
+      ]);
+    });
+  });
+
 });

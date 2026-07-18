@@ -1,5 +1,6 @@
 import type { DocumentFilter, DocumentSort } from "../document-repository";
 import type { JsonDocument, JsonValue } from "../entry-store";
+import { compileMongoRegexToSqlGlob, SafeRegexError } from "../safe-regex";
 
 const API3_MAX_LIMIT = 1_000;
 const MIN_TIMESTAMP = Date.UTC(2000, 0, 1);
@@ -259,13 +260,6 @@ export function parseApi3Search(url: URL): Api3SearchInput {
       if (!FILTER_OPERATORS.has(operator)) {
         throw new Api3InputError(400, `Unsupported filter operator ${operator}`);
       }
-      if (operator === "re") {
-        throw new Api3InputError(
-          400,
-          "Filter operator re is not supported by the SQLite adapter",
-          true,
-        );
-      }
     }
     assertSafeField(field, "filter");
     const raw = expressScalar(queryValues(url, name));
@@ -273,6 +267,19 @@ export function parseApi3Search(url: URL): Api3SearchInput {
     const value = operator === "in" || operator === "nin"
       ? jsPropertyKey(raw)
       : parseFilterValue(field, raw);
+    if (operator === "re") {
+      try {
+        // Locked parseValue() removes paired single quotes before the Mongo
+        // driver receives a regex. Validate the same normalized value that
+        // the repository will compile, not the raw query token.
+        compileMongoRegexToSqlGlob(String(value));
+      } catch (error) {
+        if (error instanceof SafeRegexError) {
+          throw new Api3InputError(400, error.message, true);
+        }
+        throw error;
+      }
+    }
     if (field !== "isValid") {
       filtersByField.set(field, {
         field,

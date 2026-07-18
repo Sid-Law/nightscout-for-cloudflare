@@ -20,6 +20,7 @@ import { permissionGroupsAllow } from "./permissions";
 import {
   migrateEntriesV6,
   migrateDocumentsV4,
+  DocumentQueryError,
   SqliteDocumentRepository,
   type Api3CollectionName,
   type Api3MutationOptions,
@@ -104,7 +105,7 @@ interface DbSecret {
 export interface WriteResult {
   inserted: number;
   duplicates: number;
-  entries: PublicEntry[];
+  entriesJson: string;
 }
 
 export type RealtimeRpcResult<T> =
@@ -131,6 +132,7 @@ const REALTIME_WEBSOCKET_SID_TAG_PREFIX = "eio4-sid:";
 const REALTIME_WEBSOCKET_ATTACHMENT_VERSION = 1;
 const REALTIME_WEBSOCKET_EVENT_TIMEOUT_MS = 15_000;
 const REALTIME_SID = /^[A-Za-z0-9_-]{20}$/;
+const REALTIME_ENTRY_WINDOW_MS = 2 * 24 * 60 * 60 * 1_000;
 
 interface RealtimeWebSocketAttachment {
   version: typeof REALTIME_WEBSOCKET_ATTACHMENT_VERSION;
@@ -149,15 +151,43 @@ function randomObjectId(): string {
 function toPublicEntry(document: JsonDocument): PublicEntry {
   const id = document._id;
   const date = document.date;
-  const type = document.type;
   if (
     typeof id !== "string"
     || typeof date !== "number"
-    || typeof type !== "string"
   ) {
     throw new Error("stored entry is missing its legacy public fields");
   }
-  return { ...document, _id: id, date, type };
+  return { ...document, _id: id, date };
+}
+
+function realtimeMeasurement(value: unknown): number | null {
+  // Locked dataloader classification uses JS truthiness followed by Number().
+  // Preserve numeric strings and the mbg-before-sgv priority, but omit values
+  // that would become NaN/Infinity instead of serializing misleading nulls.
+  if (!value) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function realtimeJsonTruthySql(path: "$.mbg" | "$.sgv"): string {
+  const type = `json_type(body, '${path}')`;
+  const value = `json_extract(body, '${path}')`;
+  return `COALESCE(((${type} IN ('integer', 'real') AND ${value} != 0)
+    OR (${type} = 'text' AND length(${value}) > 0)
+    OR ${type} IN ('true', 'array', 'object')), 0)`;
+}
+
+function realtimeNumericMeasurementSql(path: "$.mbg" | "$.sgv"): string {
+  const type = `json_type(body, '${path}')`;
+  const value = `json_extract(body, '${path}')`;
+  const trimmed = `trim(CAST(${value} AS TEXT))`;
+  const safeJson = `(CASE WHEN json_valid(${trimmed}) THEN ${trimmed} ELSE 'null' END)`;
+  return `((${type} IN ('integer', 'real') AND ${value} != 0)
+    OR (${type} = 'text'
+      AND length(${value}) > 0
+      AND json_type(${safeJson}) IN ('integer', 'real')
+      AND abs(CAST(${value} AS REAL)) <= 1.7976931348623157e308)
+    OR ${type} = 'true')`;
 }
 
 function documentSortTime(document: JsonDocument): number {
@@ -365,6 +395,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     });
     ctx.blockConcurrencyWhile(async () => {
       this.migrate();
+      await this.synchronizeRealtimeAlarm();
     });
   }
 
@@ -444,13 +475,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       if (version < 5) {
         this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (5)");
       }
-      // Run the actual Entries repair on every activation. The marker records
+      // Inspect the Entries shadow on every activation. The marker records
       // provenance only: another branch may already have advanced MAX(id), and
-      // an old identifier-UNIQUE table must still be repaired and imported.
+      // an incompatible pre-1.0 table must still be reset independently.
+      const entriesMarkerPresent = this.ctx.storage.sql.exec<{ present: number }>(
+        "SELECT EXISTS(SELECT 1 FROM _sql_schema_migrations WHERE id = 6) AS present",
+      ).one().present !== 0;
       migrateEntriesV6(this.ctx.storage.sql);
-      this.ctx.storage.sql.exec(
-        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (6)",
-      );
+      if (!entriesMarkerPresent) {
+        this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (6)");
+      }
 
       migrateRealtimeTransportsV7(this.ctx.storage);
       // MAX(id) is not proof that this specific repair marker exists: a later
@@ -1065,7 +1099,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ));
   }
 
-  private realtimeSnapshot(now: number): RealtimeSnapshot {
+  private realtimeSnapshot(now: number, frame = false): RealtimeSnapshot {
     const snapshot: RealtimeSnapshot = {
       devicestatus: [],
       sgvs: [],
@@ -1077,11 +1111,50 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       dbstats: {},
     };
 
-    // Deterministic truncation priority: profiles, device status, SGVs,
-    // treatments, then food. Each SQL cursor stops as soon as the shared
-    // serialized output budget is exhausted; no large result is materialized
-    // with toArray() before accounting.
+    // Deterministic truncation priority starts with SGVs so oversized profile
+    // or device-status documents cannot erase the glucose stream required by
+    // monitoring and closed-loop clients. Each SQL cursor stops as soon as the
+    // shared serialized output budget is exhausted; no large result is
+    // materialized with toArray() before accounting.
     let budget = new RealtimeJsonBudget(snapshot);
+    const entryUpperClause = frame ? "AND sort_time <= ?" : "";
+    const entryWindowBindings: SqlStorageValue[] = frame
+      ? [now - REALTIME_ENTRY_WINDOW_MS, now]
+      : [now - REALTIME_ENTRY_WINDOW_MS];
+    for (const row of this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'entries'
+         AND sort_time >= ?
+         ${entryUpperClause}
+         AND ${realtimeNumericMeasurementSql("$.sgv")}
+         AND NOT ${realtimeJsonTruthySql("$.mbg")}
+       ORDER BY sort_time DESC, id ASC
+       LIMIT 1000`,
+      ...entryWindowBindings,
+    )) {
+      const entry = toPublicEntry(toDocument(row));
+      const raw = entry as PublicEntry & Record<string, unknown>;
+      if (raw.mbg) continue;
+      const mgdl = realtimeMeasurement(raw.sgv);
+      if (mgdl === null) continue;
+      const sgv = {
+        _id: entry._id,
+        mgdl,
+        mills: entry.date,
+        device: entry.device,
+        direction: entry.direction,
+        filtered: raw.filtered,
+        unfiltered: raw.unfiltered,
+        noise: raw.noise,
+        rssi: raw.rssi,
+        type: "sgv",
+      };
+      if (!budget.reserveArrayItem(sgv, snapshot.sgvs.length)) break;
+      snapshot.sgvs.push(sgv);
+    }
+    snapshot.sgvs.reverse();
+
     const profiles = this.realtimeDocuments(
       `SELECT id, body, sort_time
        FROM documents
@@ -1093,7 +1166,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       (document) => document,
     );
     snapshot.profiles = filterRealtimePublicProfiles(profiles);
-    budget = new RealtimeJsonBudget(snapshot, snapshot.profiles.length);
+    budget = new RealtimeJsonBudget(
+      snapshot,
+      snapshot.sgvs.length + snapshot.profiles.length,
+    );
 
     const rawDeviceStatus = this.realtimeRawDeviceStatus(now, budget);
     snapshot.devicestatus = selectRealtimeRecentDeviceStatus(rawDeviceStatus, now);
@@ -1101,32 +1177,62 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     // those conservative raw reservations before lower-priority collections.
     budget = new RealtimeJsonBudget(
       snapshot,
-      snapshot.profiles.length + snapshot.devicestatus.length,
+      snapshot.sgvs.length + snapshot.profiles.length + snapshot.devicestatus.length,
     );
 
     for (const row of this.ctx.storage.sql.exec<DbDocument>(
       `SELECT id, body, sort_time
        FROM documents
        WHERE collection = 'entries'
-         AND json_extract(body, '$.type') = 'sgv'
-         AND json_type(body, '$.sgv') IN ('integer', 'real')
-       ORDER BY json_extract(body, '$.date') DESC, id ASC
+         AND sort_time >= ?
+         ${entryUpperClause}
+         AND json_extract(body, '$.type') = 'cal'
+         AND NOT ${realtimeJsonTruthySql("$.mbg")}
+         AND NOT ${realtimeJsonTruthySql("$.sgv")}
+       ORDER BY sort_time DESC, id ASC
        LIMIT 1000`,
+      ...entryWindowBindings,
+    )) {
+      const entry = toPublicEntry(toDocument(row)) as PublicEntry & Record<string, unknown>;
+      if (entry.mbg || entry.sgv) continue;
+      const calibration = {
+        _id: entry._id,
+        mills: entry.date,
+        scale: entry.scale,
+        intercept: entry.intercept,
+        slope: entry.slope,
+        type: "cal",
+      };
+      if (!budget.reserveArrayItem(calibration, snapshot.cals.length)) break;
+      snapshot.cals.push(calibration);
+    }
+    snapshot.cals.reverse();
+
+    for (const row of this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'entries'
+         AND sort_time >= ?
+         ${entryUpperClause}
+         AND ${realtimeNumericMeasurementSql("$.mbg")}
+       ORDER BY sort_time DESC, id ASC
+       LIMIT 1000`,
+      ...entryWindowBindings,
     )) {
       const entry = toPublicEntry(toDocument(row));
-      if (typeof entry.sgv !== "number") continue;
-      const sgv = {
+      const mgdl = realtimeMeasurement(entry.mbg);
+      if (mgdl === null) continue;
+      const mbg = {
         _id: entry._id,
-        mgdl: entry.sgv,
+        mgdl,
         mills: entry.date,
         device: entry.device,
-        direction: entry.direction,
-        type: entry.type,
+        type: "mbg",
       };
-      if (!budget.reserveArrayItem(sgv, snapshot.sgvs.length)) break;
-      snapshot.sgvs.push(sgv);
+      if (!budget.reserveArrayItem(mbg, snapshot.mbgs.length)) break;
+      snapshot.mbgs.push(mbg);
     }
-    snapshot.sgvs.reverse();
+    snapshot.mbgs.reverse();
 
     snapshot.treatments = this.realtimeDocuments(
       `SELECT id, body, sort_time
@@ -1520,7 +1626,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return {
       inserted: mutations.filter((mutation) => mutation.created).length,
       duplicates: mutations.filter((mutation) => !mutation.created).length,
-      entries: mutations.map((mutation) => toPublicEntry(mutation.document)),
+      // Locked bulkWrite returns the normalized submitted documents, not the
+      // merged database snapshots. Mongo only adds _id to indexes that were
+      // inserted by this batch; an ordinary replay/update has no generated id.
+      entriesJson: JSON.stringify(mutations.map((mutation, index) => {
+        const submitted = JSON.parse(entries[index]!.documentJson) as JsonDocument;
+        if (mutation.created) submitted._id = mutation.document._id!;
+        return submitted;
+      })),
     };
   }
 
@@ -1528,16 +1641,51 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return this.documentRepository().queryLegacyEntries(query).map(toPublicEntry);
   }
 
+  async getEntriesJson(query: HistoryQuery): Promise<string> {
+    try {
+      return JSON.stringify({ ok: true, result: await this.getEntries(query) });
+    } catch (error) {
+      return JSON.stringify({
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof DocumentQueryError && error.code === "QUERY_SCAN_LIMIT"
+          ? { status: 413 }
+          : {}),
+      });
+    }
+  }
+
+  async getSgvEntries(count: number): Promise<PublicEntry[]> {
+    return this.documentRepository().queryLegacySgvBucket(count).map(toPublicEntry);
+  }
+
+  async getDdataSnapshotJson(at: number, frame: boolean): Promise<string> {
+    if (!Number.isFinite(at)) throw new Error("invalid ddata frame time");
+    return JSON.stringify({
+      lastUpdated: at,
+      ...this.realtimeSnapshot(Math.trunc(at), frame),
+    });
+  }
+
+  async getEntryById(id: string): Promise<PublicEntry[]> {
+    const entry = this.documentRepository().findLegacyEntryById(id);
+    return entry === null ? [] : [toPublicEntry(entry)];
+  }
+
   async getCurrent(): Promise<PublicEntry[]> {
-    return this.documentRepository().currentLegacyEntries().map(toPublicEntry);
+    return this.documentRepository().currentLegacyEntries().map((document) => {
+      const entry = toPublicEntry(document);
+      return entry.type === undefined ? { ...entry, type: "sgv" } : entry;
+    });
   }
 
   async deleteEntries(
     ids: string[],
     lte: number | null = null,
     gte: number | null = null,
+    type: string | null = null,
   ): Promise<number> {
-    return this.documentRepository().deleteLegacyEntries(ids, lte, gte);
+    return this.documentRepository().deleteLegacyEntries(ids, lte, gte, type);
   }
 
   async listDocuments(collection: DocumentCollection, limit = 5000): Promise<string> {
@@ -1858,6 +2006,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       return JSON.stringify({
         ok: false,
         message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof DocumentQueryError
+          ? { status: error.code === "QUERY_SCAN_LIMIT" ? 413 : 400 }
+          : {}),
       });
     }
   }

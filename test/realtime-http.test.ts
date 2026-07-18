@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { SELF, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { EntryStore } from "../src/entry-store";
+import { parseEntryPayload } from "../src/model";
 import {
   decodeEngineIoV4Handshake,
   decodeEngineIoV4PollingPayload,
@@ -147,6 +148,371 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
 
     const options = await SELF.fetch(endpoint(name), { method: "OPTIONS" });
     expect(options.status).toBe(204);
+  });
+
+  it("maps SGV raw fields, MBGs, and calibrations exactly into the upstream ddata buckets", async () => {
+    const name = tenant("eio-entry-buckets");
+    const stub = env.ENTRY_STORE.getByName(name);
+    const now = Date.now();
+    await stub.putEntries(parseEntryPayload([
+      {
+        _id: "111111111111111111111111",
+        type: "sgv",
+        sgv: 123,
+        date: now - 180_000,
+        dateString: new Date(now - 180_000).toISOString(),
+        direction: "Flat",
+        device: "raw-cgm",
+        filtered: 23_456,
+        unfiltered: 24_567,
+        noise: 2,
+        rssi: 177,
+      },
+      {
+        _id: "222222222222222222222222",
+        type: "mbg",
+        mbg: 117,
+        date: now - 120_000,
+        dateString: new Date(now - 120_000).toISOString(),
+        device: "meter",
+      },
+      {
+        _id: "333333333333333333333333",
+        type: "cal",
+        date: now - 60_000,
+        dateString: new Date(now - 60_000).toISOString(),
+        device: "raw-cgm",
+        scale: 1.1,
+        intercept: 31_102.3,
+        slope: 776.9,
+      },
+      {
+        _id: "444444444444444444444444",
+        type: "sgv",
+        sgv: 124,
+        mbg: 118,
+        date: now - 45_000,
+        dateString: new Date(now - 45_000).toISOString(),
+        direction: "Flat",
+        device: "hybrid-meter",
+      },
+      {
+        _id: "555555555555555555555555",
+        type: "cal",
+        sgv: 126,
+        date: now - 30_000,
+        dateString: new Date(now - 30_000).toISOString(),
+        direction: "SingleUp",
+        device: "cal-with-sgv",
+        scale: 9,
+        intercept: 9,
+        slope: 9,
+      },
+      {
+        _id: "888888888888888888888881",
+        type: "sgv",
+        sgv: 99,
+        date: now - 3 * 24 * 60 * 60_000,
+        dateString: new Date(now - 3 * 24 * 60 * 60_000).toISOString(),
+        direction: "Flat",
+        device: "stale-cgm",
+      },
+      {
+        _id: "888888888888888888888882",
+        type: "mbg",
+        mbg: 98,
+        date: now - 3 * 24 * 60 * 60_000,
+        dateString: new Date(now - 3 * 24 * 60 * 60_000).toISOString(),
+        device: "stale-meter",
+      },
+      {
+        _id: "888888888888888888888883",
+        type: "cal",
+        date: now - 3 * 24 * 60 * 60_000,
+        dateString: new Date(now - 3 * 24 * 60 * 60_000).toISOString(),
+        device: "stale-calibration",
+        scale: 2,
+        intercept: 2,
+        slope: 2,
+      },
+    ]));
+    for (const document of [
+      {
+        identifier: "optional-type-realtime",
+        date: now - 15_000,
+        utcOffset: 0,
+        app: "realtime-test",
+        device: "optional-type-cgm",
+        direction: "Flat",
+        sgv: "128",
+      },
+      {
+        identifier: "string-mbg-realtime",
+        date: now - 10_000,
+        utcOffset: 0,
+        app: "realtime-test",
+        device: "string-meter",
+        mbg: "129",
+      },
+      {
+        identifier: "cal-string-sgv-realtime",
+        date: now - 5_000,
+        utcOffset: 0,
+        app: "realtime-test",
+        device: "cal-string-sgv",
+        direction: "FortyFiveUp",
+        type: "cal",
+        sgv: "130",
+        scale: 8,
+        intercept: 8,
+        slope: 8,
+      },
+    ]) {
+      const decision = JSON.parse(await stub.api3CreateDocument(
+        "entries",
+        JSON.stringify(document),
+        JSON.stringify({
+          canCreate: true,
+          canUpdate: true,
+          actor: null,
+          ifUnmodifiedSince: null,
+          validate: true,
+        }),
+      )) as { ok: boolean };
+      expect(decision.ok).toBe(true);
+    }
+
+    const { sid } = await open(name);
+    expect((await send(name, sid, clientPayload({ type: "connect", namespace: "/" }))).status)
+      .toBe(200);
+    expect((await poll(name, sid)).status).toBe(200);
+    expect((await send(name, sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 12,
+      data: ["authorize", { client: "web" }],
+    }))).status).toBe(200);
+    const packets = socketPackets(await (await poll(name, sid)).text());
+    const snapshot = eventValue(packets, "dataUpdate") as RealtimeSnapshot;
+    expect(snapshot.sgvs).toEqual([
+      {
+        _id: "111111111111111111111111",
+        mgdl: 123,
+        mills: now - 180_000,
+        device: "raw-cgm",
+        direction: "Flat",
+        filtered: 23_456,
+        unfiltered: 24_567,
+        noise: 2,
+        rssi: 177,
+        type: "sgv",
+      },
+      {
+        _id: "555555555555555555555555",
+        mgdl: 126,
+        mills: now - 30_000,
+        device: "cal-with-sgv",
+        direction: "SingleUp",
+        type: "sgv",
+      },
+      {
+        _id: expect.stringMatching(/^[0-9a-f]{24}$/),
+        mgdl: 128,
+        mills: now - 15_000,
+        device: "optional-type-cgm",
+        direction: "Flat",
+        type: "sgv",
+      },
+      {
+        _id: expect.stringMatching(/^[0-9a-f]{24}$/),
+        mgdl: 130,
+        mills: now - 5_000,
+        device: "cal-string-sgv",
+        direction: "FortyFiveUp",
+        type: "sgv",
+      },
+    ]);
+    expect(snapshot.mbgs).toEqual([
+      {
+        _id: "222222222222222222222222",
+        mgdl: 117,
+        mills: now - 120_000,
+        device: "meter",
+        type: "mbg",
+      },
+      {
+        _id: "444444444444444444444444",
+        mgdl: 118,
+        mills: now - 45_000,
+        device: "hybrid-meter",
+        type: "mbg",
+      },
+      {
+        _id: expect.stringMatching(/^[0-9a-f]{24}$/),
+        mgdl: 129,
+        mills: now - 10_000,
+        device: "string-meter",
+        type: "mbg",
+      },
+    ]);
+    expect(snapshot.cals).toEqual([{
+      _id: "333333333333333333333333",
+      mills: now - 60_000,
+      scale: 1.1,
+      intercept: 31_102.3,
+      slope: 776.9,
+      type: "cal",
+    }]);
+  });
+
+  it("reserves realtime snapshot budget for SGV before oversized profile state", async () => {
+    const name = tenant("eio-snapshot-sgv-priority");
+    const stub = env.ENTRY_STORE.getByName(name) as DurableObjectStub<EntryStore>;
+    const now = Date.now();
+    await stub.putEntries(parseEntryPayload([{
+      _id: "676767676767676767676767",
+      type: "sgv",
+      sgv: 147,
+      date: now - 60_000,
+      dateString: new Date(now - 60_000).toISOString(),
+      direction: "Flat",
+      device: "priority-cgm",
+      filtered: 31_001,
+      unfiltered: 31_002,
+      noise: 1,
+      rssi: 181,
+    }]));
+    await runInDurableObject(stub, async (_instance, state) => {
+      const profile = JSON.stringify({
+        _id: "node-heavy-profile",
+        values: Array.from({ length: 7_985 }, () => 0),
+      });
+      state.storage.sql.exec(
+        `INSERT INTO documents
+          (collection, id, body, sort_time, created_at, updated_at)
+         VALUES ('profile', 'node-heavy-profile', ?, ?, ?, ?)`,
+        profile,
+        now,
+        now,
+        now,
+      );
+      state.storage.sql.exec(
+        `WITH RECURSIVE candidates(value) AS (
+           VALUES (1)
+           UNION ALL SELECT value + 1 FROM candidates WHERE value < 1000
+         )
+         INSERT INTO documents
+           (collection, id, body, sort_time, created_at, updated_at)
+         SELECT 'entries', printf('%024x', value + 5000),
+                json_object(
+                  '_id', printf('%024x', value + 5000),
+                  'date', ? + value,
+                  'type', 'sgv',
+                  'sgv', CASE WHEN value % 2 = 0 THEN 151 ELSE 'not-a-number' END,
+                  'mbg', CASE WHEN value % 2 = 0 THEN 111 ELSE NULL END,
+                  'device', 'newer-non-sgv-candidate'
+                ),
+                ? + value, ?, ?
+         FROM candidates`,
+        now,
+        now,
+        now,
+        now,
+      );
+    });
+
+    const { sid } = await open(name);
+    expect((await send(name, sid, clientPayload({ type: "connect", namespace: "/" }))).status)
+      .toBe(200);
+    expect((await poll(name, sid)).status).toBe(200);
+    expect((await send(name, sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 13,
+      data: ["authorize", { client: "web" }],
+    }))).status).toBe(200);
+    const packets = socketPackets(await (await poll(name, sid)).text());
+    const snapshot = eventValue(packets, "dataUpdate") as RealtimeSnapshot;
+    expect(snapshot.sgvs).toEqual([expect.objectContaining({
+      _id: "676767676767676767676767",
+      mgdl: 147,
+      device: "priority-cgm",
+    })]);
+    expect(snapshot.profiles).toEqual([]);
+    expect(jsonNodeCount(snapshot)).toBeLessThanOrEqual(REALTIME_SNAPSHOT_MAX_NODES);
+
+    const ddata = await SELF.fetch(
+      `https://example.test/api/v2/ddata/at?tenant=${name}`,
+    );
+    expect(ddata.status).toBe(200);
+    expect(await ddata.json()).toMatchObject({
+      sgvs: [{
+        _id: "676767676767676767676767",
+        mgdl: 147,
+        device: "priority-cgm",
+        filtered: 31_001,
+        unfiltered: 31_002,
+        noise: 1,
+        rssi: 181,
+      }],
+    });
+  });
+
+  it("bounds explicit ddata frames to the preceding two days and requested time", async () => {
+    const name = tenant("eio-ddata-frame-window");
+    const stub = env.ENTRY_STORE.getByName(name);
+    const now = Date.now();
+    const frameAt = now - 10 * 60_000;
+    await stub.putEntries(parseEntryPayload([
+      {
+        _id: "919191919191919191919191",
+        type: "sgv",
+        sgv: 91,
+        date: frameAt - 3 * 24 * 60 * 60_000,
+        dateString: new Date(frameAt - 3 * 24 * 60 * 60_000).toISOString(),
+        direction: "Flat",
+        device: "stale-frame-cgm",
+      },
+      {
+        _id: "929292929292929292929292",
+        type: "sgv",
+        sgv: 122,
+        date: frameAt - 60_000,
+        dateString: new Date(frameAt - 60_000).toISOString(),
+        direction: "Flat",
+        device: "before-frame-cgm",
+        filtered: 42_001,
+        unfiltered: 42_002,
+        noise: 2,
+        rssi: 172,
+      },
+      {
+        _id: "939393939393939393939393",
+        type: "sgv",
+        sgv: 133,
+        date: frameAt + 60_000,
+        dateString: new Date(frameAt + 60_000).toISOString(),
+        direction: "SingleUp",
+        device: "after-frame-cgm",
+      },
+    ]));
+
+    const response = await SELF.fetch(
+      `https://example.test/api/v2/ddata/at/${frameAt}?tenant=${name}`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      lastUpdated: frameAt,
+      sgvs: [{
+        _id: "929292929292929292929292",
+        mgdl: 122,
+        device: "before-frame-cgm",
+        filtered: 42_001,
+        unfiltered: 42_002,
+        noise: 2,
+        rssi: 172,
+      }],
+    });
   });
 
   it("round-trips root CONNECT and read-only authorize in locked packet order", async () => {

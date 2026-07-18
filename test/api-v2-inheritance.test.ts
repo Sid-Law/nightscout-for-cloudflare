@@ -80,6 +80,14 @@ describe("API v2 inherits the implemented v1 router", () => {
       },
     ]);
     expect(created.status).toBe(200);
+    expect(await created.json()).toMatchObject([{
+      _id: expect.stringMatching(/^[0-9a-f]{24}$/),
+      type: "sgv",
+      sgv: 121,
+      device: "v2-contract",
+      sysTime: new Date(now).toISOString(),
+      utcOffset: 0,
+    }]);
 
     const fromV2 = await (
       await SELF.fetch(withTenant("/api/v2/entries.json?count=10", name))
@@ -97,7 +105,7 @@ describe("API v2 inherits the implemented v1 router", () => {
     const id = String(fromV2[0]?._id);
     const deleted = await v2Write(name, "DELETE", `/api/v2/entries/${id}`);
     expect(deleted.status).toBe(200);
-    expect(await deleted.json()).toEqual({ n: 1, ok: 1 });
+    expect(await deleted.json()).toEqual({ acknowledged: true, deletedCount: 1 });
   });
 
   it("inherits the implemented document collection CRUD without duplicating storage", async () => {

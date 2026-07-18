@@ -19,7 +19,12 @@ import {
   parseDocumentPayload,
   parseTreatmentQuery,
 } from "./documents";
-import { ApiError, parseEntryPayload, parseHistoryQuery } from "./model";
+import {
+  ApiError,
+  parseEntryPayload,
+  parseEntryTypeFilter,
+  parseHistoryQuery,
+} from "./model";
 import type { PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
 import { handleSocketIo } from "./realtime/http-adapter";
@@ -639,16 +644,21 @@ async function readBoundedBody(request: Request): Promise<unknown> {
   }
 }
 
-function isSgvEntry(entry: PublicEntry): entry is PublicEntry & { sgv: number } {
-  return entry.type === "sgv" && typeof entry.sgv === "number";
+function runtimeMeasurement(value: unknown): number | null {
+  if (!value) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
-function isMbgEntry(entry: PublicEntry): entry is PublicEntry & { mbg: number } {
-  return entry.type === "mbg" && typeof entry.mbg === "number";
+function runtimeSgv(entry: PublicEntry): number | null {
+  return entry.mbg ? null : runtimeMeasurement(entry.sgv);
 }
 
 function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
-  const sgvs = entries.filter(isSgvEntry);
+  const sgvs = entries.flatMap((entry) => {
+    const sgv = runtimeSgv(entry);
+    return sgv === null ? [] : [{ ...entry, sgv, type: "sgv" }];
+  });
   const current = sgvs[0];
   if (current === undefined) {
     return { bgnow: { sgvs: [] }, delta: null };
@@ -1048,6 +1058,24 @@ function entryDeleteBoundary(url: URL, name: string): number | null {
   return Math.trunc(parsed);
 }
 
+function assertSupportedEntryDeleteFilters(url: URL): void {
+  const supported = new Set([
+    "find[date][$gte]",
+    "find[date][$lte]",
+    "find[type]",
+    "find[type][$eq]",
+  ]);
+  for (const name of url.searchParams.keys()) {
+    if (name.startsWith("find[") && !supported.has(name)) {
+      throw new ApiError(
+        400,
+        "unsupported_delete_filter",
+        `entry deletion does not safely support ${name}`,
+      );
+    }
+  }
+}
+
 function latestDocumentTime(documents: JsonDocument[]): number | null {
   let latest: number | null = null;
   for (const document of documents) {
@@ -1083,7 +1111,7 @@ async function handleEntriesApi(
 ): Promise<Response | null> {
   if (
     request.method === "GET" &&
-    /^\/api\/v[12]\/entries\/current(?:\.json)?\/?$/.test(url.pathname)
+    /^\/api\/v[12]\/entries\/current\/?(?:\.json)?\/?$/.test(url.pathname)
   ) {
     await requirePermission(request, env, url, "api:entries:read");
     const tenant = resolveTenant(request, url);
@@ -1092,12 +1120,12 @@ async function handleEntriesApi(
 
   // API v2 mounts the complete v1 router at `/` before registering its
   // additional v2-only endpoints (locked upstream lib/api2/index.js:14-19).
-  const match = /^\/api\/v[12]\/entries(?:\.json)?(?:\/([^/]+))?\/?$/.exec(url.pathname);
+  const match = /^\/api\/v[12]\/entries(?:\/([^/.]+))?\/?(?:\.json)?\/?$/.exec(url.pathname);
   if (match === null) return null;
   const tenant = resolveTenant(request, url);
-  const id = match[1];
+  const spec = match[1];
 
-  if (request.method === "POST" && id === undefined) {
+  if (request.method === "POST" && spec === undefined) {
     const payload = await readBoundedBody(request);
     await requirePermissions(
       request,
@@ -1108,19 +1136,38 @@ async function handleEntriesApi(
     );
     const store = env.ENTRY_STORE.getByName(tenant);
     const entries = parseEntryPayload(payload);
-    await store.putEntries(entries);
-    return json([], { status: 200 });
+    const saved = await store.putEntries(entries);
+    return json(JSON.parse(saved.entriesJson), { status: 200 });
   }
 
   if (request.method === "GET") {
     await requirePermission(request, env, url, "api:entries:read");
     const store = env.ENTRY_STORE.getByName(tenant);
-    const entries = await store.getEntries(parseHistoryQuery(url));
-    if (id === undefined) return json(entries);
-    const selected = entries.find((entry) => entry._id === id);
-    return selected === undefined
-      ? json({ error: { code: "not_found", message: "entry not found" } }, { status: 404 })
-      : json(selected);
+    if (spec !== undefined && OBJECT_ID.test(spec)) {
+      // Locked getEntry() bypasses the default count/date window and the
+      // formatter always emits an array, even for this single-record route.
+      const entries = await store.getEntryById(spec.toLowerCase());
+      if (entries.length === 0) {
+        return json({
+          status: 500,
+          message: "Mongo Error",
+          description: `No such id: '${spec}'`,
+        }, { status: 500 });
+      }
+      return json(entries);
+    }
+    const query = parseHistoryQuery(url);
+    if (spec !== undefined) query.type = spec;
+    const decision = JSON.parse(await store.getEntriesJson(query)) as
+      | { ok: true; result: PublicEntry[] }
+      | { ok: false; status?: number; message: string };
+    if (!decision.ok) {
+      if (decision.status === 413) {
+        throw new ApiError(413, "entry_query_limit", decision.message);
+      }
+      throw new Error(decision.message);
+    }
+    return json(decision.result);
   }
 
   if (request.method === "DELETE") {
@@ -1133,16 +1180,36 @@ async function handleEntriesApi(
       payload,
     );
     const store = env.ENTRY_STORE.getByName(tenant);
-    if (id !== undefined && id !== "*" && !OBJECT_ID.test(id)) {
-      throw new ApiError(400, "invalid_entry", "entry id must be a 24-character hexadecimal string");
+    const id = spec !== undefined && OBJECT_ID.test(spec);
+    const model = spec !== undefined && spec !== "*" && !id
+      ? spec
+      : null;
+    if (model !== null && !/^[A-Za-z0-9_-]{1,32}$/.test(model)) {
+      throw new ApiError(400, "invalid_entry", "entry model has an invalid format");
     }
-    const lte = entryDeleteBoundary(url, "find[date][$lte]");
-    const gte = entryDeleteBoundary(url, "find[date][$gte]");
-    if ((id === undefined || id === "*") && lte === null && gte === null) {
+    if (!id) assertSupportedEntryDeleteFilters(url);
+    const lte = id ? null : entryDeleteBoundary(url, "find[date][$lte]");
+    const gte = id ? null : entryDeleteBoundary(url, "find[date][$gte]");
+    if (!id && lte === null && gte === null) {
       throw new ApiError(400, "invalid_query", "a bounded date query is required for bulk entry deletion");
     }
-    const deleted = await store.deleteEntries(id && id !== "*" ? [id] : [], lte, gte);
-    return json({ n: deleted, ok: 1 });
+    const type = id || spec === "*"
+      ? null
+      : model ?? parseEntryTypeFilter(url);
+    const deleted = await store.deleteEntries(
+      id ? [spec.toLowerCase()] : [],
+      lte,
+      gte,
+      type,
+    );
+    if (deleted < 0) {
+      throw new ApiError(
+        413,
+        "entry_delete_limit",
+        "entry deletion exceeds 128 records or stored revisions; narrow the request",
+      );
+    }
+    return json({ acknowledged: true, deletedCount: deleted });
   }
 
   return null;
@@ -1724,10 +1791,8 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
 
   if (isApi3) return api3Error(404, "Bad operation or collection");
 
-  if (
-    request.method === "GET" &&
-    /^\/api\/v2\/ddata\/at(?:\/[^/]+)?\/?$/.test(url.pathname)
-  ) {
+  const ddataRoute = /^\/api\/v2\/ddata\/at(?:\/([^/]+))?\/?$/.exec(url.pathname);
+  if (request.method === "GET" && ddataRoute !== null) {
     await requirePermissions(
       request,
       env,
@@ -1735,52 +1800,25 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       ["api:entries:read", "api:treatments:read"],
     );
     const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
-    const [entries, treatmentsJson, foodJson, profilesJson, deviceStatusJson] =
-      await Promise.all([
-        store.getEntries({
-          count: 1000,
-          gt: null,
-          gte: null,
-          lt: null,
-          lte: null,
-        }),
-        store.listDocuments("treatments"),
-        store.listDocuments("food"),
-        store.listDocuments("profile"),
-        store.listDocuments("devicestatus"),
-      ]);
-    const sgvs = entries
-      .filter(isSgvEntry)
-      .map((entry) => ({
-        _id: entry._id,
-        mgdl: entry.sgv,
-        mills: entry.date,
-        device: entry.device,
-        direction: entry.direction,
-        type: entry.type,
-      }))
-      .sort((left, right) => left.mills - right.mills);
-    const mbgs = entries
-      .filter(isMbgEntry)
-      .map((entry) => ({
-        _id: entry._id,
-        mgdl: entry.mbg,
-        mills: entry.date,
-        device: entry.device,
-        type: entry.type,
-      }))
-      .sort((left, right) => left.mills - right.mills);
-    return json({
-      lastUpdated: Date.now(),
-      sgvs,
-      mbgs,
-      cals: [],
-      treatments: parseDocuments(treatmentsJson),
-      food: parseDocuments(foodJson),
-      profiles: parseDocuments(profilesJson),
-      devicestatus: parseDocuments(deviceStatusJson),
-      dbstats: {},
-    });
+    const now = Date.now();
+    let at = now;
+    if (ddataRoute[1] !== undefined) {
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(ddataRoute[1]);
+      } catch {
+        throw new ApiError(400, "invalid_query", "ddata frame time is invalid");
+      }
+      const numeric = Number(decoded);
+      at = Number.isFinite(numeric) ? numeric : Date.parse(decoded);
+      if (!Number.isFinite(at)) {
+        throw new ApiError(400, "invalid_query", "ddata frame time is invalid");
+      }
+    }
+    // Locked ddata_at reuses the live cache inside five minutes; older/future
+    // explicit frames run a two-day bounded load ending at the requested time.
+    const frame = ddataRoute[1] !== undefined && Math.abs(at - now) >= 5 * 60_000;
+    return json(JSON.parse(await store.getDdataSnapshotJson(at, frame)));
   }
 
   if (request.method === "GET" && url.pathname === "/api/v2/properties") {
@@ -1791,13 +1829,9 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       ["api:entries:read", "api:treatments:read"],
     );
     const tenant = resolveTenant(request, url);
-    const entries = await env.ENTRY_STORE.getByName(tenant).getEntries({
-      count: 4,
-      gt: null,
-      gte: null,
-      lt: null,
-      lte: null,
-    });
+    // The upstream sandbox properties are derived from the runtime SGV bucket,
+    // whose mbg-first/truthy-sgv classification is not equivalent to type=sgv.
+    const entries = await env.ENTRY_STORE.getByName(tenant).getSgvEntries(4);
     return json(toClockProperties(entries));
   }
 

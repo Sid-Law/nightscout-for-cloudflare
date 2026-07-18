@@ -1,6 +1,7 @@
 const MIN_DATE = Date.UTC(2000, 0, 1);
 const MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
 const MAX_BATCH_SIZE = 100;
+export const LEGACY_ENTRY_DEFAULT_WINDOW_MS = 4 * 24 * 60 * 60 * 1_000;
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 const SAFE_IDENTIFIER = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -63,7 +64,7 @@ export interface PublicEntry {
   dateString?: string;
   direction?: string;
   device?: string;
-  type: string;
+  type?: string;
 }
 
 export interface HistoryQuery {
@@ -72,6 +73,24 @@ export interface HistoryQuery {
   gte: number | null;
   lt: number | null;
   lte: number | null;
+  dateStringGt: string | null;
+  dateStringGte: string | null;
+  dateStringLt: string | null;
+  dateStringLte: string | null;
+  type?: string | null;
+}
+
+export function parseEntryTypeFilter(url: URL): string | null {
+  const direct = url.searchParams.get("find[type]");
+  const equality = url.searchParams.get("find[type][$eq]");
+  if (direct !== null && equality !== null && direct !== equality) {
+    throw new ApiError(400, "invalid_query", "find[type] filters conflict");
+  }
+  const type = equality ?? direct;
+  if (type !== null && (type.length === 0 || type.length > 32 || !/^[A-Za-z0-9_-]+$/.test(type))) {
+    throw new ApiError(400, "invalid_query", "find[type] has an invalid format");
+  }
+  return type;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -169,10 +188,15 @@ function validateEntry(value: unknown): ValidatedEntry {
   const measurementField = type === "mbg" ? "mbg" : type === "sgv" ? "sgv" : null;
   if (measurementField !== null) {
     const measurement = value[measurementField];
-    if (typeof measurement !== "number" || !Number.isInteger(measurement)) {
-      throw new ApiError(400, "invalid_entry", `${measurementField} must be an integer`);
+    const numericMeasurement = typeof measurement === "number"
+      ? measurement
+      : typeof measurement === "string" && measurement.trim().length > 0
+        ? Number(measurement)
+        : Number.NaN;
+    if (!Number.isInteger(numericMeasurement)) {
+      throw new ApiError(400, "invalid_entry", `${measurementField} must be an integer or numeric string`);
     }
-    if (measurement < 20 || measurement > 600) {
+    if (numericMeasurement < 20 || numericMeasurement > 600) {
       throw new ApiError(
         400,
         "invalid_entry",
@@ -227,8 +251,8 @@ function validateEntry(value: unknown): ValidatedEntry {
 
 export function parseEntryPayload(value: unknown): ValidatedEntry[] {
   const values = Array.isArray(value) ? value : [value];
-  if (values.length === 0 || values.length > MAX_BATCH_SIZE) {
-    throw new ApiError(400, "invalid_batch", `batch must contain 1-${MAX_BATCH_SIZE} entries`);
+  if (values.length > MAX_BATCH_SIZE) {
+    throw new ApiError(400, "invalid_batch", `batch must contain 0-${MAX_BATCH_SIZE} entries`);
   }
   return values.map(validateEntry);
 }
@@ -250,17 +274,40 @@ export function parseHistoryQuery(url: URL): HistoryQuery {
     throw new ApiError(400, "invalid_query", "count must be an integer from 1 to 10000");
   }
 
+  const type = parseEntryTypeFilter(url);
+  const gt = parseTime(url.searchParams.get("find[date][$gt]"), "find[date][$gt]");
+  let gte = parseTime(
+    url.searchParams.get("find[date][$gte]")
+      ?? url.searchParams.get("from"),
+    "find[date][$gte]",
+  );
+  const lt = parseTime(url.searchParams.get("find[date][$lt]"), "find[date][$lt]");
+  const lte = parseTime(
+    url.searchParams.get("find[date][$lte]")
+      ?? url.searchParams.get("to"),
+    "find[date][$lte]",
+  );
+  const dateStringGt = url.searchParams.get("find[dateString][$gt]");
+  const dateStringGte = url.searchParams.get("find[dateString][$gte]");
+  const dateStringLt = url.searchParams.get("find[dateString][$lt]");
+  const dateStringLte = url.searchParams.get("find[dateString][$lte]");
+  if (
+    gt === null && gte === null && lt === null && lte === null
+    && dateStringGt === null && dateStringGte === null
+    && dateStringLt === null && dateStringLte === null
+  ) {
+    gte = Date.now() - LEGACY_ENTRY_DEFAULT_WINDOW_MS;
+  }
   return {
     count,
-    gt: parseTime(url.searchParams.get("find[date][$gt]"), "find[date][$gt]"),
-    gte: parseTime(
-      url.searchParams.get("find[date][$gte]") ?? url.searchParams.get("from"),
-      "find[date][$gte]",
-    ),
-    lt: parseTime(url.searchParams.get("find[date][$lt]"), "find[date][$lt]"),
-    lte: parseTime(
-      url.searchParams.get("find[date][$lte]") ?? url.searchParams.get("to"),
-      "find[date][$lte]",
-    ),
+    gt,
+    gte,
+    lt,
+    lte,
+    dateStringGt,
+    dateStringGte,
+    dateStringLt,
+    dateStringLte,
+    type,
   };
 }

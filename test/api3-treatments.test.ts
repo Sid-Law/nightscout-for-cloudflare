@@ -1005,7 +1005,7 @@ describe("API v3 treatments vertical slice", () => {
     expect(projected.headers.get("ETag")).toBe(`W/"${Date.parse(createdAt)}"`);
   });
 
-  it("returns controlled SQLite query differences without broadening the public API", async () => {
+  it("enforces controlled SQLite query limits without broadening the public API", async () => {
     const name = tenant("api3-query-differences");
     const jwt = await issueSubject(name, "Query user", [
       "api:treatments:create",
@@ -1027,10 +1027,21 @@ describe("API v3 treatments vertical slice", () => {
       jwt,
       `/api/v3/treatments?${regexParams.toString()}`,
     );
-    expect(regex.status).toBe(400);
-    expect(await regex.json()).toEqual({
+    expect(regex.status).toBe(200);
+    expect(await result<JsonObject[]>(regex)).toEqual([
+      expect.objectContaining({ identifier: "regex-source", notes: "Meal Bolus" }),
+    ]);
+
+    const unsafeRegexParams = new URLSearchParams({ "notes$re": "(a+)+$" });
+    const unsafeRegex = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/treatments?${unsafeRegexParams.toString()}`,
+    );
+    expect(unsafeRegex.status).toBe(400);
+    expect(await unsafeRegex.json()).toEqual({
       status: 400,
-      message: "Filter operator re is not supported by the SQLite adapter",
+      message: "regex construct ( is not supported safely",
     });
 
     for (const paging of ["limit=.5", "limit=0x10", "skip=.5"]) {

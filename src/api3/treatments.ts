@@ -442,6 +442,12 @@ async function deleteTreatment(
     permanent,
     authorization.sub || null,
   );
+  if (result.tooLarge === true) {
+    return api3Status(
+      413,
+      "Permanent delete has more than 128 stored revisions; compact history first",
+    );
+  }
   return result.deleted ? api3Status(200) : api3Status(404);
 }
 
@@ -495,8 +501,12 @@ async function searchTreatments(
     JSON.stringify(query),
   )) as
     | { ok: true; result: JsonDocument[] }
-    | { ok: false; message: string };
-  if (!decision.ok) throw new Error(decision.message);
+    | { ok: false; message: string; status?: number };
+  if (!decision.ok) {
+    return decision.status === 400 || decision.status === 413
+      ? api3Status(decision.status, decision.message)
+      : api3Status(500, STORAGE_ERROR);
+  }
   const result = decision.result;
   return renderApi3(api3FormatFromRequest(request, extension), result);
 }
