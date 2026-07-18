@@ -90,6 +90,12 @@ only the bounded safe `$re` subset is compiled to SQLite `GLOB`.
 
 ## Pre-deployment gate
 
+The next local code candidate is
+`3366bc10e25e1c169937fd2a1f57555d42626d02`. It adds API v3 Profile and
+v1/API3 shared Profile storage. The table below records its local gate; the
+Status section above remains the currently active Cloudflare version until a
+new deployment and post-deploy verification complete.
+
 | Check | Result |
 | --- | --- |
 | Locked upstream | `nightscout/cgm-remote-monitor` v15.0.7, pinned commit and archive hash verified |
@@ -97,14 +103,15 @@ only the bounded safe `$re` subset is compiled to SQLite `GLOB`.
 | Static Assets | 248 official asset entries rebuilt |
 | Upstream route/test audit | 161 registrations and 111 test files; generated outputs deterministic |
 | Audit tool tests | 14/14 passed |
+| Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 18 files, 215/215 passed |
-| Worker dry run | 764.00 KiB raw / 135.65 KiB gzip |
+| Workers integration tests | 19 files, 223/223 passed |
+| Worker dry run | 765.94 KiB raw / 135.92 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
-| Deployment variables | `--keep-vars`; configured secret neither read nor printed |
+| Planned deployment variables | command uses `--keep-vars`; configured secret will not be read or printed |
 
 The locked upstream contains 111 JavaScript test files and approximately 873
-test cases. The 215 Workers tests cover the implemented adapter subset; no
+test cases. The 223 Workers tests cover the implemented adapter subset; no
 whole upstream test file is claimed green. Neither count proves complete
 compatibility.
 
@@ -165,9 +172,10 @@ other protected page workflow.
   it in the new instance must not migrate to this release.
 - This remains a simulated-data lab. It must not be connected to a real CGM
   uploader, pump or closed-loop client.
-- API v1 and v2 remain subsets. API v3 has version, JWT status and the generic
-  entries/treatments/device-status verticals; food, profile, settings and broad
-  large-response resource parity remain missing.
+- API v1 and v2 remain subsets. The deployed API v3 has version, JWT status and
+  the generic entries/treatments/device-status verticals. The next local
+  candidate adds Profile; food, settings and broad large-response resource
+  parity remain missing.
 - MongoDB query, BSON ObjectId, index, mixed-type, array and update semantics
   are only partially mapped to SQLite.
 - Cloudflare strips `Content-Length` from dynamic responses, including HEAD.

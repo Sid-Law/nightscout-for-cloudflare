@@ -47,10 +47,10 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
 | 2. Official browser assets/pages | Partial | The current deployed version has homepage/About, stable Settings close, loaded Profile Values and Admin/Food/Report/color-clock render smokes. Protected Profile Save was not attempted in this release; add that regression plus the remaining mutation/report workflows, split view and pushed live updates. |
-| 3. SQLite collection compatibility | In progress | Entries, treatments and device status share the generic API3 repository. Extend it to food/profile/settings, close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
+| 3. SQLite collection compatibility | In progress | Entries, treatments, device status and profile share the generic API3 repository. Extend it to food/settings, close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress | The Entries create/list/current/model/delete slice now covers locked identity, type, date/dateString and bounded failure behavior; Activity CRUD is implemented. Complete preview/echo/times/count/slice/formats and the remaining document routes. |
 | 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
-| 6. API v3 | Partial three-collection slice | Public `/version`, JWT-protected `/status`, the generic routes for entries/treatments/device-status and three-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add food, profile and settings plus large-response resource controls and broader mixed-type query parity. |
+| 6. API v3 | Partial four-collection slice | Public `/version`, JWT-protected `/status`, the generic routes for entries/treatments/device-status/profile and four-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add food and settings plus large-response resource controls and broader mixed-type query parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
 | 8. Engine.IO/Socket.IO | Partial read-only polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT, read-only authorize ACK/dataUpdate, loadRetro and clients-count events. One derived alarm survives eviction. Complete the official-page switch only after `/alarm` and tenant propagation; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP, `/storage`, root writes and change broadcasts. |
 | 9. Real-time storage updates | Storage foundation only | Implemented generic mutations persist atomic change snapshots, but no transport consumes them; define bounded outbox retention, cursors and reconnect/eviction tests before broadcasting. |
@@ -106,6 +106,16 @@ processed 248 official asset entries with no updated asset uploads, reported
 Deployment used `--keep-vars`; the configured secret was neither read nor
 printed. The 18-file Workers-runtime suite passed 215/215 locally before this
 deployment, which remains subset evidence rather than a full-port claim.
+
+The next local code candidate is
+`3366bc10e25e1c169937fd2a1f57555d42626d02`. Its 19-file Workers-runtime
+suite passes 223/223 after rebuilding the official UI, both audit suites pass
+20/20, TypeScript passes, and Wrangler dry-run reports 248 assets, 765.94 KiB
+raw / 135.92 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. It adds API v3
+Profile, AAPS create/retry/new-version behavior, v1/API3 shared storage,
+idempotent legacy metadata repair and common startDate-current selection for
+v1, Status and realtime. Deployment and remote/browser evidence remain pending
+until the post-deploy gate below is rerun.
 
 Entries deliberately follows a fresh-only pre-1.0 policy. If activation finds
 the old narrow `entries` shadow structurally incompatible, it resets that
@@ -166,7 +176,7 @@ their official controls. No console errors were observed; only known upstream
 or browser warnings appeared. No credentialed Profile Save or other protected
 write was attempted, so those workflows remain unproven for this release.
 
-The deployed code is still not a full port: API v3 food, profile and settings,
+The code is still not a full port: API v3 food and settings,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, `/storage` and `/alarm`, root writes, persisted
 change broadcasts, the shared background-task scheduler, server plugins,
@@ -231,10 +241,10 @@ Token-bearing authorization paths are redacted from adapter error logs.
 
 1. Finish v1 entries and document routes from Express registration and Swagger.
 2. Finish v2 properties, ddata, summary, notifications and authorization.
-3. **Complete for the named entries, treatments and device-status slices:**
-   generic search/create/read/update/patch/delete/history, three-collection
+3. **Complete for the named entries, treatments, device-status and profile slices:**
+   generic search/create/read/update/patch/delete/history, four-collection
    lastModified and byte-compatible JSON/CSV/XML rendering. Extend the same
-   upstream contract to food, profile and settings, including bounded
+   upstream contract to food and settings, including bounded
    large-response handling.
 4. Port upstream API tests in module order and record any fixed-scope exclusion.
 

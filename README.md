@@ -27,12 +27,13 @@ for diagnosis, dosing, or medical decisions.
   delay, locked `shiro-trie` permission matching and corrected `verifyauth`
   behavior. The enforced delay is deliberately capped at 60 seconds; failed
   authentication does not yet generate the upstream admin notification.
-- The public API v3 version envelope, JWT-protected status endpoint and three
-  generic collection verticals for entries, treatments and device status:
+- The public API v3 version envelope, JWT-protected status endpoint and four
+  generic collection verticals for entries, treatments, device status and
+  profile:
   collection
   search/create, resource read/replace/patch/delete, both history forms and
   collection-aware `lastModified` in the locked JSON, CSV and XML formats.
-- A shared SQLite repository for entries, treatments and device status
+- A shared SQLite repository for entries, treatments, device status and profile
   legacy/API3 identity, collection-specific fallback dedupe, ordered search,
   branch-sensitive mutation permissions, server timestamps,
   tombstones/history and atomic change snapshots.
@@ -69,8 +70,9 @@ for diagnosis, dosing, or medical decisions.
 ## What is not complete
 
 This is not yet a drop-in Nightscout server. Important missing work includes
-the complete v1/v2/v3 route and error surface, the three remaining API v3
-generic collections, large-response CSV/XML resource adaptation, failed-auth
+the complete v1/v2/v3 route and error surface, the two remaining API v3
+generic collections (food and settings), large-response CSV/XML resource
+adaptation, failed-auth
 admin notifications, Mongo query/collection parity beyond the tested safe
 subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
 the direct-WebSocket at-most-once crash window, `/storage` and `/alarm`
@@ -205,8 +207,8 @@ code as `env.API_SECRET`.
 
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
 into an issue. Most current GET endpoints remain publicly readable. API v3
-`/status`, `/lastModified` and every entries/treatments/device-status operation
-require a valid Bearer JWT.
+`/status`, `/lastModified` and every entries/treatments/device-status/profile
+operation require a valid Bearer JWT.
 
 If Nightscout says `Wrong API secret`, verify that the Worker setting has no
 leading/trailing spaces, save it, wait for the deployment to finish, then enter
@@ -248,10 +250,10 @@ API-secret failure modes, derived/body credentials and persisted failure delay,
 the implemented entries and document CRUD subset, activity conditional
 requests, JWT issue/verify/expiry/tamper/cross-tenant behavior, Shiro permission
 matching, `verifyauth`, and the API v3 version/status envelopes. It also covers
-fresh-only Entries schema repair, v1/API3 entries/treatments/device-status
+fresh-only Entries schema repair, v1/API3 entries/treatments/device-status/profile
 identity and time separation, UUID/ObjectId query handling, API3
 materialization and rollback, safe regular-expression compilation,
-JSON/CSV/XML workflows for all three implemented generic collections, and the
+JSON/CSV/XML workflows for all four implemented generic collections, and the
 EIO4 polling/direct-Hibernatable-WebSocket boundary: packet ordering, root
 authorization, alarm-driven heartbeat/expiry, eviction, overlap,
 body/session/queue caps, cursor-bounded initial/retro snapshots,
@@ -260,6 +262,15 @@ deterministic older-tail truncation and cross-tenant session rejection. The
 locked upstream has 111
 JavaScript test files and about 873 test cases; the local adapter tests do not
 prove complete Nightscout compatibility.
+
+The next local code candidate is commit
+`3366bc10e25e1c169937fd2a1f57555d42626d02`. After rebuilding the locked
+official UI, its 19-file Workers-runtime suite passes 223/223 tests; both audit
+suites pass 20/20. Wrangler dry-run reads the same 248 official assets, reports
+765.94 KiB raw / 135.92 KiB gzip and still exposes only `ENTRY_STORE` and
+`ASSETS`. This candidate adds the complete named API v3 Profile vertical,
+v1/API3 shared Profile storage and idempotent legacy metadata repair. It does
+not add the `/storage` realtime namespace and is not closed-loop completion.
 
 The deployed code candidate is commit
 `d8e406d13b87b2e304b1db4dc075af18ae463022`; deployment ran from repository

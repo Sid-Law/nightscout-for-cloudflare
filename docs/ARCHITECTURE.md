@@ -16,6 +16,13 @@ raw / 135.65 KiB gzip, and declared only the `ENTRY_STORE` Durable Object and
 `ASSETS` bindings. Cloudflare reported a 20 ms startup. These are release
 facts for the named subset, not evidence of a complete port.
 
+The next local code candidate is
+`3366bc10e25e1c169937fd2a1f57555d42626d02`. It extends the same repository
+and API v3 adapter to Profile, passes 223/223 Workers-runtime tests across 19
+files plus 20/20 audit tests, and produces a 765.94 KiB raw / 135.92 KiB gzip
+Wrangler dry-run with the same two bindings. Deployment evidence is recorded
+only after the remote and browser gates complete.
+
 ## Current request and data flow
 
 ```text
@@ -253,8 +260,12 @@ JSON. Required behavior includes:
 SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
-The first three generic vertical slices—entries, treatments and device status—are now
-implemented in the tenant `EntryStore` Durable Object. Internal SQL schema
+The next local candidate
+`3366bc10e25e1c169937fd2a1f57555d42626d02` implements four generic vertical
+slices—entries, treatments, device status and profile—in the tenant
+`EntryStore` Durable Object. This paragraph and the Profile-specific behavior
+below describe that local candidate, not the still-active three-collection
+Cloudflare version named at the top of this document. Internal SQL schema
 version 4 extends `documents`
 with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
 `is_valid`, `fallback_key`, `revision` and `srv_metadata_version`; adds
@@ -267,6 +278,15 @@ therefore require a genuinely absent identifier without conflating those
 three states. `identifier` and each collection's fallback identity are
 deliberately **not** unique because the locked Mongo adapter only creates
 ordinary indexes and resolves legacy duplicates at lookup time.
+
+Profile uses the locked API v3 `created_at`-only fallback identity. V1 Profile
+create/save/delete now pass through the same repository, so API v3 and the
+official Profile Editor observe one row identity and one atomic change history.
+Activation backfills older Profile rows without rewriting their JSON bodies and
+records the migration snapshot once across repeated Durable Object eviction.
+The locked `{startDate:-1,_id:-1}` current-Profile order is shared by v1
+`/profile/current`, Status settings and the realtime dataloader; the latter
+returns one Profile just like upstream `ctx.profile.last()`.
 
 The v4 migration runs in `DurableObjectStorage.transactionSync()`. It leaves the
 legacy `body` and `_id` untouched, derives indexed metadata and snapshots each
@@ -376,12 +396,12 @@ delete tombstones. It does not use audit timestamps or virtual `created_at`
 fallbacks. Permanent deletion removes the document and its snapshots together,
 matching upstream history behavior for `permanent=true`.
 
-### API v3 entries, treatments and device-status boundary
+### Next local candidate: API v3 entries, treatments, device-status and profile
 
-The HTTP adapter now exposes exactly the eight locked generic routes for each
-of entries, treatments and device status: GET/POST on the collection, GET on both
-history forms, and GET/PUT/PATCH/DELETE on an identifier. GET
-`/api/v3/lastModified` reports all three collections independently when the
+The local candidate exposes exactly the eight locked generic routes for each
+of entries, treatments, device status and profile: GET/POST on the collection,
+GET on both history forms, and GET/PUT/PATCH/DELETE on an identifier. GET
+`/api/v3/lastModified` reports all four collections independently when the
 subject can read it. Unmatched API v3 routes use the locked `{status,message}`
 404 envelope rather than falling into the older adapter error shape.
 
@@ -435,14 +455,14 @@ Other deliberate or unresolved platform differences are explicit:
   integer binding;
 - SQLite/Mongo comparison and ordering across mixed JSON types, nested
   projection behavior and array semantics are not yet claimed compatible;
-- entries, treatments and device status are represented by API v3
-  `lastModified`; food, profile and settings remain unimplemented there.
+- entries, treatments, device status and profile are represented by API v3
+  `lastModified`; food and settings remain unimplemented there.
 
 The locked history projection quirk is retained: when `fields` excludes
 `srvModified`, the response body excludes it and Last-Modified/ETag are derived
 from the always-projected collection `created_at` fallback. Legacy documents
 can be read with virtual srv fields but do not match raw srv filters or HISTORY.
-These are three generic collection vertical slices, not completion of API v3 or
+These are four generic collection vertical slices, not completion of API v3 or
 of any whole upstream `api3.*` test file. CSV/XML currently serialize an entire
 bounded result in memory; large-result CPU and 128 MB memory adaptation remains
 open even though byte-level small/medium contracts are green.
