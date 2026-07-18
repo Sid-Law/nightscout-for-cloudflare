@@ -808,16 +808,11 @@ function priorityForMediaType(
   return priority;
 }
 
-function negotiatedStatusFormat(request: Request): StatusFormat | null {
+function negotiatedFormat<Format extends string>(
+  request: Request,
+  offered: ReadonlyArray<readonly [Format, string]>,
+): Format | null {
   const accept = request.headers.get("Accept") ?? "*/*";
-  const offered = [
-    ["html", "text/html"],
-    ["png", "image/png"],
-    ["svg", "image/svg+xml"],
-    ["js", "application/javascript"],
-    ["text", "text/plain"],
-    ["json", "application/json"],
-  ] as const;
   const accepted = splitQuoted(accept, ",")
     .map((value, order) => parsedMediaRange(value.trim(), order))
     .filter((value): value is ParsedMediaRange => value !== null);
@@ -834,6 +829,18 @@ function negotiatedStatusFormat(request: Request): StatusFormat | null {
   return priorities[0]?.format ?? null;
 }
 
+function negotiatedStatusFormat(request: Request): StatusFormat | null {
+  const offered = [
+    ["html", "text/html"],
+    ["png", "image/png"],
+    ["svg", "image/svg+xml"],
+    ["js", "application/javascript"],
+    ["text", "text/plain"],
+    ["json", "application/json"],
+  ] as const;
+  return negotiatedFormat(request, offered);
+}
+
 function statusText(
   body: string,
   contentType: string,
@@ -848,14 +855,38 @@ function statusText(
   return new Response(body, { ...init, headers });
 }
 
-function statusRedirect(extension: "png" | "svg"): Response {
+function statusRedirect(
+  request: Request,
+  extension: "png" | "svg",
+  explicitExtension: boolean,
+): Response {
   const headers = new Headers(corsHeaders());
-  headers.set("Location", `http://img.shields.io/badge/Nightscout-OK-green.${extension}`);
-  headers.set("Content-Type", extension === "png" ? "image/png" : "image/svg+xml");
-  headers.set("Content-Length", "0");
+  const location = `http://img.shields.io/badge/Nightscout-OK-green.${extension}`;
+  headers.set("Location", location);
+  let body = "";
+  let contentType = extension === "png" ? "image/png" : "image/svg+xml";
+  // Express first chooses png/svg in the route's res.format(), then
+  // res.redirect() negotiates text/html a second time. An explicit extension
+  // has already replaced Accept with its image MIME type, so it keeps the
+  // outer image Content-Type and the redirect body remains empty.
+  const redirectFormat = explicitExtension
+    ? null
+    : negotiatedFormat(request, [
+      ["text", "text/plain"],
+      ["html", "text/html"],
+    ] as const);
+  if (redirectFormat === "text") {
+    contentType = "text/plain; charset=utf-8";
+    body = `Found. Redirecting to ${location}`;
+  } else if (redirectFormat === "html") {
+    contentType = "text/html; charset=utf-8";
+    body = `<p>Found. Redirecting to <a href="${location}">${location}</a></p>`;
+  }
+  headers.set("Content-Type", contentType);
+  headers.set("Content-Length", String(new TextEncoder().encode(body).byteLength));
   headers.set("Cache-Control", "no-store");
   headers.set("Vary", "Accept");
-  return new Response(null, { status: 302, headers });
+  return new Response(body, { status: 302, headers });
 }
 
 function statusNotAcceptable(): Response {
@@ -867,15 +898,17 @@ function statusNotAcceptable(): Response {
 }
 
 function renderStatus(
+  request: Request,
   status: Record<string, unknown>,
   format: StatusFormat,
+  explicitExtension: boolean,
 ): Response {
   switch (format) {
     case "html":
       return statusText("<h1>STATUS OK</h1>", "text/html");
     case "png":
     case "svg":
-      return statusRedirect(format);
+      return statusRedirect(request, format, explicitExtension);
     case "js":
       return statusText(
         `this.serverSettings = ${JSON.stringify(status)};`,
@@ -1458,7 +1491,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     }
   }
 
-  const statusMatch = /^\/api\/v[12]\/status(?:\/|\.(json|html|txt|png|svg|js|csv))?$/i.exec(
+  const statusMatch = /^\/api\/v[12]\/status(?:\/|\.(json|html|txt|png|svg|js|csv|tsv))?$/i.exec(
     url.pathname,
   );
   if ((request.method === "GET" || request.method === "HEAD") && statusMatch !== null) {
@@ -1487,7 +1520,10 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       );
     }
     const status = await statusForResolution(env, url, resolution);
-    return withoutBodyForHead(request, renderStatus(status, format));
+    return withoutBodyForHead(
+      request,
+      renderStatus(request, status, format, extension !== undefined),
+    );
   }
 
   if (request.method === "GET" && url.pathname === "/api/versions") {

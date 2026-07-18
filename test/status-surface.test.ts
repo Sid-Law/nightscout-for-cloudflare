@@ -410,7 +410,32 @@ describe("v1/v2 status representations", () => {
       redirect: "manual",
     });
     expect(negotiatorPriority.status).toBe(302);
-    expect(negotiatorPriority.headers.get("Content-Type")).toBe("image/png");
+    expect(negotiatorPriority.headers.get("Content-Type")).toBe(
+      "text/plain; charset=utf-8",
+    );
+    const redirectBody =
+      "Found. Redirecting to http://img.shields.io/badge/Nightscout-OK-green.png";
+    expect(negotiatorPriority.headers.get("Content-Length")).toBe(
+      String(new TextEncoder().encode(redirectBody).byteLength),
+    );
+    expect(await negotiatorPriority.text()).toBe(redirectBody);
+
+    const negotiatorPriorityHead = await SELF.fetch(
+      "https://example.test/api/v1/status",
+      {
+        method: "HEAD",
+        headers: { Accept: "text/*;q=.1,*/*;q=1" },
+        redirect: "manual",
+      },
+    );
+    expect(negotiatorPriorityHead.status).toBe(302);
+    expect(negotiatorPriorityHead.headers.get("Content-Type")).toBe(
+      "text/plain; charset=utf-8",
+    );
+    expect(negotiatorPriorityHead.headers.get("Content-Length")).toBe(
+      negotiatorPriority.headers.get("Content-Length"),
+    );
+    expect(await negotiatorPriorityHead.text()).toBe("");
 
     const wildcard = await SELF.fetch("https://example.test/api/v1/status", {
       headers: { Accept: "*/*" },
@@ -434,7 +459,12 @@ describe("v1/v2 status representations", () => {
     const extensionWithSlash = await SELF.fetch("https://example.test/api/v1/status.json/");
     expect(extensionWithSlash.status).toBe(404);
     const unsupportedExtension = await SELF.fetch("https://example.test/api/v1/status.tsv");
-    expect(unsupportedExtension.status).toBe(404);
+    expect(unsupportedExtension.status).toBe(406);
+    expect(unsupportedExtension.headers.get("Vary")).toBe("Accept");
+    expect(await unsupportedExtension.json()).toEqual({
+      status: 406,
+      message: "Not Acceptable",
+    });
   });
 
   it("inherits GET as HEAD without returning a body", async () => {
