@@ -150,10 +150,9 @@ is not access control.
 
 ## Current code security boundary
 
-The public deployment and the newer local candidate are simulated-data labs,
-not personal Nightscout deployments. The newer local candidate adds the
-contracts described below; see the deployment section for the exact older code
-that is still live.
+The public deployment is a simulated-data lab, not a personal Nightscout
+deployment. The contracts described below are live in the current Cloudflare
+version, but they remain only a tested compatibility subset.
 Current v1/v2 writes require a Nightscout-compatible API-secret digest or an
 authorized subject credential; API v3 entries, treatments and device-status
 operations require a Bearer JWT.
@@ -201,7 +200,7 @@ code as `env.API_SECRET`.
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
 into an issue. Most current GET endpoints remain publicly readable. API v3
 `/status`, `/lastModified` and every entries/treatments/device-status operation
-in the local candidate require a valid Bearer JWT.
+require a valid Bearer JWT.
 
 If Nightscout says `Wrong API secret`, verify that the Worker setting has no
 leading/trailing spaces, save it, wait for the deployment to finish, then enter
@@ -256,19 +255,20 @@ locked upstream has 111
 JavaScript test files and about 873 test cases; the local adapter tests do not
 prove complete Nightscout compatibility.
 
-The merged local candidate is commit
-`d8e406d13b87b2e304b1db4dc075af18ae463022`. Its 18-file Workers-runtime suite
-passes 215/215 tests. It adds the strict Status, authorization, direct EIO4
-WebSocket and API v3 Entries slices described above, but it has not yet been
-deployed. The official upstream build completed with its three known Webpack
-size warnings, and Wrangler dry-run read 248 assets and reported only
-`ENTRY_STORE` and `ASSETS` bindings (764.00 KiB raw / 135.65 KiB gzip). Remote
-API/WebSocket smoke and browser evidence still require the deployment. Its
-Entries migration is intentionally
+The deployed code candidate is commit
+`d8e406d13b87b2e304b1db4dc075af18ae463022`; deployment ran from repository
+HEAD `ac0947dc6139d16e424cc212e3757dde0c7c088b`. Its 18-file Workers-runtime
+suite passes 215/215 tests. It adds the strict Status, authorization, direct
+EIO4 WebSocket and API v3 Entries slices described above. The official
+upstream build completed with its three known Webpack size warnings, and
+Wrangler read 248 assets and reported only `ENTRY_STORE` and `ASSETS` bindings
+(764.00 KiB raw / 135.65 KiB gzip). Deployment used `--keep-vars`; the
+configured secret was neither read nor printed. Its Entries migration is intentionally
 fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
 being imported, while canonical documents and other collections such as
 profile are preserved. A read-only check at 2026-07-18 14:51 UTC found zero
-Entries and one profile in the current public tenant, so this particular lab
+Entries and one profile in the public tenant, and the post-deployment smoke
+again returned zero Entries and one profile. This particular lab therefore
 has no old simulated Entry row to carry forward. This is not a general
 legacy-data migration guarantee.
 
@@ -290,18 +290,25 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-The current deployed code is commit `0319a8d5e78fc77c4c53c0a94724b706d7ec8255`
-(Cloudflare version `e8e7970b-65bb-412f-ba74-193ce14575c5`). Its release gate
-rebuilt 248 official asset entries, passed the 161-route/111-test-file audit,
-14/14 audit-tool tests and 141/141 Workers-runtime tests, then passed remote
-API/EIO4 polling-and-alarm smoke and real-browser homepage, Settings, Profile,
-Food, Admin, Report and color-clock checks. Profile and Food rendered their
-official editors; the browser snapshot caught their initial `Not loaded` state
-while authentication was `Unauthorized`, but direct public reads returned HTTP
-200 (including the stored simulated profile). No credentialed save was
-attempted, so this is neither a backend-failure claim nor proof of the protected
-workflow. These counts cover only the named adapter subset; they are not
-evidence of a complete Nightscout port.
+Cloudflare version `65db0a2f-9f4e-4c41-8edf-de85bb49c31d` reached 100% traffic
+at 2026-07-18T15:13:42.775Z with a reported 20 ms startup. No asset bytes
+needed uploading because all 248 official asset entries were unchanged.
+Remote smoke returned HTTP 200 for health, API v3 version, v1 Entries, the
+preserved one-element Profile response, strict Status text negotiation and
+`/api/v2/ddata/at`; unknown Status extensions returned 404 and API v3 Entries
+without a token returned 401. EIO4 polling and direct WebSocket each completed
+open, SIO5 connect, `clients`, read-only authorize, `dataUpdate` and ACK. The
+polling open advertised no upgrades, a 25-second ping interval, 20-second
+timeout and 1,000,000-byte maximum.
+
+A real Playwright browser run rendered the official homepage chart and About
+version 15.0.7. Settings stayed closed across several 15-second `dataUpdate`
+rounds rather than rebounding. Profile Values loaded, while Admin, Food,
+Report and the color clock rendered their official controls. There were zero
+console errors and only known upstream/browser warnings. No credentialed Save
+or other protected mutation was attempted, so this is not proof that every
+protected page workflow is complete. These counts and observations cover only
+the named adapter subset; they are not evidence of a complete Nightscout port.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

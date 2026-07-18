@@ -6,11 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-Unless a paragraph explicitly says “deployed,” “current” below describes local
-integration commit `d8e406d13b87b2e304b1db4dc075af18ae463022`. Its 18-file
-Workers-runtime suite passes 215/215, but the public Worker still runs the older
-commit recorded in `DEPLOYMENT.md`; direct WebSocket and API v3 Entries do not
-yet have remote release evidence.
+“Current” below describes deployed code candidate
+`d8e406d13b87b2e304b1db4dc075af18ae463022`. Deployment ran from repository
+HEAD `ac0947dc6139d16e424cc212e3757dde0c7c088b` and produced Cloudflare version
+`65db0a2f-9f4e-4c41-8edf-de85bb49c31d`, active at 100% traffic since
+2026-07-18T15:13:42.775Z. Its 18-file Workers-runtime suite passes 215/215.
+Wrangler processed 248 unchanged official asset entries, reported 764.00 KiB
+raw / 135.65 KiB gzip, and declared only the `ENTRY_STORE` Durable Object and
+`ASSETS` bindings. Cloudflare reported a 20 ms startup. These are release
+facts for the named subset, not evidence of a complete port.
 
 ## Current request and data flow
 
@@ -131,7 +135,7 @@ existing JWT. Permission checks use the same `shiro-trie` 0.4.10 resolved by
 the locked upstream release, including suffix, wildcard and comma semantics.
 Token-bearing authorization paths are redacted from unhandled-error logs.
 
-The local candidate now derives each subject access token from the
+The deployed adapter derives each subject access token from the
 API-secret/ObjectId contract, preserves the locked suffix/digest-prefix lookup,
 and implements the independent secret/token extraction order across query,
 header and the first request-body object. Explicit failures are recorded per
@@ -287,9 +291,10 @@ instead of guessing how to import the earlier simulated schema. It does not
 drop canonical documents, profiles or any other collection. Compatible healthy
 activation performs a read-only structural/index probe, so ordinary DO
 eviction does not repeat schema writes. The public lab was checked before this
-candidate's deployment and contained zero Entries and one profile; therefore
-this specific reset has no old simulated Entry row to lose, but the policy is
-not a general legacy Nightscout migration guarantee.
+deployment and contained zero Entries and one profile; post-deployment reads
+confirmed both counts. This specific reset therefore had no old simulated
+Entry row to lose and preserved the profile without recording its contents,
+but the policy is not a general legacy Nightscout migration guarantee.
 Deployment to the existing public Worker activates this schema in place and
 retains canonical/profile data. A new family's planned fresh path starts with a
 new Worker/SQLite DO namespace or empty tenant; an ordinary code deployment
@@ -528,16 +533,16 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 `loadRetro` require exactly one object payload; this is a resource/safety
 tightening over permissive upstream JavaScript call shapes.
 
-The polling portion is live in Cloudflare version
-`e8e7970b-65bb-412f-ba74-193ce14575c5`. Its remote smoke completed EIO4 open,
-SIO5 root CONNECT, read-only `authorize`, `dataUpdate`, `status`, ACK and an
-alarm-driven ping/pong. Direct Hibernatable WebSocket exists only in local
-candidate commit `d8e406d13b87b2e304b1db4dc075af18ae463022` at this writing;
-its 215-test integrated local gate is not remote deployment evidence. The
-at-most-once dequeue/send crash window described above also remains open. The
-official homepage intentionally still uses the REST polling shim, so even a
-future direct-WS smoke will prove the separate server slice rather than a page
-transport switch. The named polling HTTP edge difference is admission at the
+Both polling and direct Hibernatable WebSocket are live in Cloudflare version
+`65db0a2f-9f4e-4c41-8edf-de85bb49c31d`. Remote polling smoke completed EIO4
+open, SIO5 root CONNECT, `clients`, read-only `authorize`, `dataUpdate` and ACK.
+Direct WebSocket completed open, CONNECT, `clients`, connected authorization,
+`dataUpdate` and ACK. The polling open retained `upgrades: []`, a 25-second
+ping interval, 20-second timeout and 1,000,000-byte maximum. The at-most-once
+dequeue/send crash window described above remains open. The official homepage
+intentionally still uses the REST polling shim, so these transport smokes prove
+the separate server slice rather than a page transport switch. The named
+polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
 

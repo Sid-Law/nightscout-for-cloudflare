@@ -23,7 +23,9 @@ EIO4 polling/direct-Hibernatable-WebSocket protocol, persisted session,
 HTTP-boundary, eviction, authorization, tenant-isolation and resource-cap
 contracts in addition to strict v1/v2 Status, API v3
 entries/treatments/device-status, storage and official-page tests. This is not
-deployment evidence; the public Worker still runs the older commit recorded in
+full-port evidence. The same code candidate is deployed from repository HEAD
+`ac0947dc6139d16e424cc212e3757dde0c7c088b` as Cloudflare version
+`65db0a2f-9f4e-4c41-8edf-de85bb49c31d`; exact release evidence is recorded in
 `DEPLOYMENT.md`. The locked
 upstream has 111 `*.test.js` files and approximately 873 `it(...)` cases. Those
 sets are not directly comparable, and the local suite does not prove full
@@ -98,7 +100,7 @@ required and unresolved.
 | MongoDB connection and collections | `lib/storage/mongo-storage.js:105-221` creates a connection pool, retries forever, exposes `db.collection()` and creates indexes. | **Cannot run unchanged within the fixed platform scope.** This project deliberately has no Mongo service and must use SQLite Durable Objects. | Implement a Mongo-compatible repository contract over DO SQLite, including query conversion, indexes, collection behavior and migration tests. [SQLite-backed DO storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/). |
 | Mongo ObjectId and query semantics | `lib/server/query.js:28-175`, `lib/server/entries.js`, `lib/server/treatments.js` and `lib/authorization/storage.js` depend on ObjectId, nested Mongo operators, sort, projection and upsert behavior. | **Engineering adaptation.** ObjectId formatting is easy; behavioral parity is not. | Preserve 24-hex identity and UUID fallback rules, then port operators and collection-specific dedupe as contract-tested SQL/JSON operations. |
 | Process-global bus and mutable caches | `lib/bus.js:4-36`, `lib/server/bootevent.js:271-330`, `lib/notifications.js` and `lib/adminnotifies.js` keep timers, listeners and alarm state in memory. | **Runtime lifecycle conflict.** Workers and DOs may be evicted and reconstructed. | Persist authoritative state in SQLite, rebuild caches on activation, and make mutations idempotent. |
-| Socket.IO / Engine.IO | `lib/server/websocket.js:87-164` attaches Socket.IO with polling and WebSocket transports. The official 4.5.4 browser bundle uses EIO4/SIO5; `allowEIO3` retains EIO3/SIO4 legacy clients. Later handlers implement authorization and database mutations. | **Partial platform adaptation.** Persisted EIO4 polling and direct Hibernatable WebSocket read-only-root slices run on the tenant DO in the local candidate, separately from the homepage REST shim. This is not a polling-upgrade, namespace/write or broadcast completion. | Add the page-required namespace/tenant behavior before switching the static client; implement polling-to-WebSocket upgrade, EIO3 if retained and persisted change delivery. [DO WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/). |
+| Socket.IO / Engine.IO | `lib/server/websocket.js:87-164` attaches Socket.IO with polling and WebSocket transports. The official 4.5.4 browser bundle uses EIO4/SIO5; `allowEIO3` retains EIO3/SIO4 legacy clients. Later handlers implement authorization and database mutations. | **Partial platform adaptation.** Deployed persisted EIO4 polling and direct Hibernatable WebSocket read-only-root slices run on the tenant DO, separately from the homepage REST shim. This is not a polling-upgrade, namespace/write or broadcast completion. | Add the page-required namespace/tenant behavior before switching the static client; implement polling-to-WebSocket upgrade, EIO3 if retained and persisted change delivery. [DO WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/). |
 | `setInterval` and periodic work | `lib/bus.js:35`, `lib/plugins/bridge.js:116` and `lib/plugins/mmconnect.js:25` assume a permanent event loop. | **Runtime conflict.** Intervals cannot be the durable scheduler. | Store a task schedule in SQLite and multiplex it through the DO's single alarm. Alarms are at-least-once and must be idempotent. [DO alarms](https://developers.cloudflare.com/durable-objects/api/alarms/). |
 | Server plugin registration | `lib/plugins/index.js:25-80` statically requires the official plugin set; `lib/server/bootevent.js:209-246` creates server plugins from runtime settings. | **Mostly build/runtime adaptation.** Static requires can bundle; process-global contexts and plugin state cannot be trusted. | Generate a build-time registry from the locked tree and give each server plugin a persisted, tenant-scoped execution context. Do not rewrite official calculations. |
 
@@ -121,10 +123,10 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Mongo query behavior | `lib/server/query.js`, `lib/api3/storage/mongoCollection/**` | **Partial.** V1 Entries/treatments push their supported date/type/scalar filters, ordering and limits into SQLite; Entries keeps the four-day default and distinct string `dateString`. API3 implemented collections support locked scalar operators, safe nested/unknown fields, projection/paging, ordered sort chains and a bounded case-sensitive `$re` subset compiled to GLOB. Unsupported regex constructs and unsafe/over-limit SQL fail closed. SQLite/Mongo mixed-type, array, projection and collation parity remains unproven. | Build a broader regex and mixed-type/array differential matrix before calling generic search compatible. Other v1 collections still use limited filtering. |
 | API v1 entries | `lib/api/entries/index.js`, `lib/server/entries.js` | **Substantial partial slice.** Create/list/current/model/delete cover SGV/MBG/other types, locked ID and date/dateString behavior, four-day default reads, controlled 10,000-candidate failures and 128-row/revision delete bounds. Preview, echo, times, count, slice, all formats and some historical errors remain incomplete. | Port the remaining upstream Entries utilities and whole-file shape/error contracts; keep the fresh-only pre-1.0 reset explicit. |
 | API v1 document CRUD | food/profile/treatments/devicestatus modules | **Partial.** Page-used JSON CRUD exists with bounded filters. Treatments keep legacy materialization and mutation rules: `isValid:false` remains visible, `srv*` is not synthesized, read-only flags do not block v1 PUT/DELETE, numeric values, conditional GET and empty-array POST follow the locked shapes, and `/api/v2/ddata` keeps its raw legacy body. | Port every remaining route, content type, batch, validation and error variant; implement the atomic `preBolus` fan-out. |
-| API v1 activity | `lib/api/activity/index.js`, `lib/server/activity.js`, `tests/api.activity.test.js` | **Compatible subset implemented locally.** Create/list/filter/conditional GET/update/delete and empty-array create now follow the upstream shapes. | Remote authenticated create/read/update/delete smoke after deployment; expand remaining upstream shape tests. |
+| API v1 activity | `lib/api/activity/index.js`, `lib/server/activity.js`, `tests/api.activity.test.js` | **Compatible subset deployed.** Create/list/filter/conditional GET/update/delete and empty-array create now follow the upstream shapes. | Remote authenticated create/read/update/delete smoke when a credential is explicitly supplied; expand remaining upstream shape tests. |
 | Remaining API v1 | notifications, Alexa, Google Home and entries utility routes | **Missing or partial.** `adminnotifies` is a hard-coded empty response. | Route inventory from Express registration plus contract tests for each enabled/scope-allowed route. External integrations remain disabled in the simulated-data deployment. |
 | API v2 properties and ddata | `lib/api2/index.js`, `lib/data/endpoints.js`, `lib/api2/properties.js` | **Partial.** Clock properties and one aggregate page payload exist; canonical Entry loading uses a bounded two-day realtime/ddata window, distinct from v1's four-day default. The complete data transformation/delta contract does not. | Compare official client fixtures and all ddata/property fields, retro behavior and errors. |
-| API v1/v2 Status | `lib/api/status.js`, v1/v2 router mounting and final error chain | **Strict named surface locally, with one transport P2.** Locked extension/Accept negotiation, txt/json/js/png/svg paths, redirects, uppercase/trailing-path bugs, GET/HEAD representation lengths, method finalhandler behavior, query-only `authorized` derivation and production 406/404 bodies are contract-tested. Local Wrangler preserved the 406 `Content-Length`; its network adapter may still send the HTML finalhandler 404 chunked. | Repeat public format/error smoke after deployment, including the HTML 404 transfer boundary; do not infer other v1/v2 route compatibility. |
+| API v1/v2 Status | `lib/api/status.js`, v1/v2 router mounting and final error chain | **Strict named surface deployed, with one transport P2.** Locked extension/Accept negotiation, txt/json/js/png/svg paths, redirects, uppercase/trailing-path bugs, GET/HEAD representation lengths, method finalhandler behavior, query-only `authorized` derivation and production 406/404 bodies are contract-tested. Remote text/Accept forms returned 200 and an unknown extension returned 404. Cloudflare strips `Content-Length` from dynamic responses, including HEAD; status code, `Content-Type`, `Vary` and empty-body semantics are correct. | Preserve this P2 as an explicit platform difference and expand public smoke to every locked representation; do not infer other v1/v2 route compatibility. |
 | API v2 authorization | `lib/authorization/**`, `lib/api/verifyauth.js` | **Core adapted with named differences/hardening.** Role/subject CRUD, per-tenant signing keys, eight-hour HS256 issuance/refresh, derived access tokens and prefix matching, body/query/header precedence, signature/expiry verification, live role lookup, persisted per-IP failure delay, Shiro 0.4.10 and `verifyauth` are implemented. Enforced delay is capped at 60 seconds, a failed attempt does not yet emit the upstream admin notification, and repeated/bracket `secret` arrays are safely resolved or rejected instead of reproducing the locked unhandled rejection. | Add admin-notify emission/cleanup contracts; preserve the 60-second platform cap and array hardening as explicit differences and repeat remote auth smoke. |
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/api2/notifications-v2.js` | **Missing.** | Reuse upstream processors without adding medical logic; add notification acknowledgement/persistence tests. |
 | API v3 version/status | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.basic.test.js` | **Compatible named subset.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. | Local valid/missing/bad/eviction/cross-tenant JWT contracts plus remote missing/bad-token smoke; do not infer generic API support from this endpoint. |
@@ -135,7 +137,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The currently deployed version renders Profile, Admin, Food, Report and the color clock, but its latest browser pass did not authenticate or repeat a protected Save; their mutations/report generation and live-update workflows are not complete. The polling adapter is content-addressed so the upstream service worker cannot retain an older payload contract. | Re-run authenticated Profile Save on the current candidate, then add profile delete, food/admin mutations, report generation, split/clock updates and pushed live updates with console/network assertions. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current Playwright pass rendered the homepage/About, kept Settings closed across repeated 15-second updates, loaded Profile Values and rendered Admin, Food, Report and the color clock with zero console errors. It did not authenticate or repeat a protected Save; mutations/report generation and live-update workflows are not complete. The polling adapter is content-addressed so the upstream service worker cannot retain an older payload contract. | Re-run authenticated Profile Save on the current deployment when a credential is explicitly supplied, then add profile delete, food/admin mutations, report generation, split/clock updates and pushed live updates with console/network assertions. |
 | Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; compatibility unresolved.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations, but no whole upstream file is yet claimed green against the DO adapter. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
@@ -200,44 +202,45 @@ controlled renderer 406. Negotiated responses and renderer-generated 406
 responses vary on `Accept`. The 512 KiB and query-limit errors are platform
 controls, not upstream claims.
 
-## Current local integration evidence (not deployed)
+## Current deployed integration evidence
 
-Commit `d8e406d13b87b2e304b1db4dc075af18ae463022` passes 215/215 tests in
-18 Workers-runtime files. It combines the strict v1/v2 Status contract,
+Code candidate `d8e406d13b87b2e304b1db4dc075af18ae463022` passes 215/215
+tests in 18 Workers-runtime files. It combines the strict v1/v2 Status contract,
 derived/body credential and persisted-delay authorization work, direct
-Hibernatable EIO4 WebSocket, and API v3 Entries as the third collection. Final
-official build and Wrangler dry-run passed: 248 assets, 764.00 KiB raw / 135.65
-KiB gzip, and only the `ENTRY_STORE` and `ASSETS` bindings. A new Cloudflare
-version, remote API/direct-WS smoke and browser workflows remain release gates;
-none is inferred from the local count.
+Hibernatable EIO4 WebSocket, and API v3 Entries as the third collection.
+Deployment ran from repository HEAD
+`ac0947dc6139d16e424cc212e3757dde0c7c088b`. Cloudflare version
+`65db0a2f-9f4e-4c41-8edf-de85bb49c31d` reached 100% traffic at
+2026-07-18T15:13:42.775Z after being created at
+2026-07-18T15:13:42.034Z; Cloudflare reported a 20 ms startup. Wrangler
+processed 248 unchanged official asset entries, reported 764.00 KiB raw /
+135.65 KiB gzip, and listed only `ENTRY_STORE` and `ASSETS`. Deployment used
+`--keep-vars`; the configured secret was neither read nor printed. The current
+Wrangler output did not display a Deployment ID, so none is inferred.
 
 Entries is fresh-only for the pre-1.0 lab. An incompatible old narrow
 `entries` shadow is reset without importing its rows, while canonical documents
 and profile remain untouched. At 2026-07-18 14:51 UTC, read-only checks against
 the public instance returned an empty array from
 `/api/v1/entries.json?count=10000` and a one-element array from
-`/api/v1/profile.json`. Thus this specific deployment has no simulated Entry
-row to lose and has one profile to preserve; no profile content was inspected
-or copied into this record.
+`/api/v1/profile.json`. Post-deployment reads confirmed zero Entries and one
+profile. Thus this deployment had no simulated Entry row to lose and preserved
+its profile; no profile content was inspected or copied into this record.
 The deferred work is importing an external legacy Nightscout/MongoDB history.
 It does not defer correctness of NSCF's own forward-only SQLite schema
 activation. Redeploying the current Worker preserves that namespace; the
 planned fresh-family path instead starts with a new Worker/DO namespace or an
 empty tenant.
 
-The local candidate uses the one-alarm-per-DO design for both realtime
+The deployed adapter uses the one-alarm-per-DO design for both realtime
 deadlines and authorization-delay cleanup. On Workers Free, SQLite row reads,
 row writes and index maintenance remain account-wide daily resources, and each
-`setAlarm()` call counts as a write. The candidate therefore bounds unindexed
+`setAlarm()` call counts as a write. The adapter therefore bounds unindexed
 Entries candidates at 10,000 with controlled 413, synchronous deletion/history
 cleanup at 128, and `$re` to the safe GLOB-compilable subset.
 
-## Current deployed evidence
-
-The read-only EIO4 polling server described above is deployed in code commit
-`0319a8d5e78fc77c4c53c0a94724b706d7ec8255`, Cloudflare Worker version
-`e8e7970b-65bb-412f-ba74-193ce14575c5`. It remains separate from the homepage
-REST shim. Its current bounds and named differences are:
+The deployed polling and direct-WebSocket slices remain separate from the
+homepage REST shim. Their current bounds and named differences are:
 
 - strict `EIO=4`, `transport=polling`, non-binary payloads and `upgrades: []`;
 - exact `application/octet-stream` POSTs close the SID with a controlled
@@ -266,45 +269,30 @@ REST shim. Its current bounds and named differences are:
 - requiring exactly one object for `authorize` and `loadRetro` is a deliberate
   safety/resource tightening.
 
-The public deployment at
-`https://nscf-phase1.nscf-lab-20260717.workers.dev/` reached 100% traffic at
-2026-07-18 08:13:13 UTC. Its gate completed the official v15.0.7 build with
-248 asset entries, the 161-route/111-test-file audit, 14/14 audit-tool tests,
-141/141 integrated Workers tests, and a 651.05 KiB raw / 113.32 KiB gzip dry
-run declaring only `ENTRY_STORE` and `ASSETS`.
 
-- `/`, `/admin`, `/profile`, `/food`, `/report` and `/clock/clock-color`
-  returned HTTP 200 and rendered official Nightscout surfaces.
-- `/api/v1/entries.json` returned HTTP 200. `/api/v3/version` returned the
-  v15.0.7/API 3.0.3-alpha envelope and SQLite DO adapter metadata.
-- Missing-JWT `/api/v3/status`, `/api/v3/treatments` and
-  `/api/v3/devicestatus` returned HTTP 401; an unknown device-status extension
-  returned HTTP 406.
-  Valid JWT, permission, mutation, expiry, tamper, eviction and cross-tenant
-  contracts remain covered locally; this smoke did not invent an authenticated
-  remote mutation.
-- A real EIO4 polling handshake advertised no upgrades, a 25-second ping
-  interval, 20-second timeout and 1,000,000-byte maximum. SIO5 root CONNECT and
-  read-only authorize completed, and the following poll contained
-  `dataUpdate`, `status` and an ACK with read true/write false. A subsequent
-  poll held for 26 seconds received the alarm-driven ping; pong and close
-  completed with HTTP 200.
-- The in-app browser rendered the official homepage/chart and version 15.0.7;
-  closing Settings did not rebound. Admin, Report and color clock rendered.
-  Profile and Food rendered their official editors; the immediate snapshot
-  showed initial `Not loaded` text while authentication was `Unauthorized`.
-  Direct remote reads of both page-data endpoints returned HTTP 200, including
-  the stored simulated profile, so this is an unverified credentialed-save
-  workflow rather than evidence of a failed read API.
-- The homepage data connection still came from the REST polling shim; the new
-  EIO4 endpoint was exercised separately.
-- The existing `API_SECRET` was retained unchanged with `--keep-vars`; its
-  value and browser credential storage were never inspected or printed.
+Remote API checks returned HTTP 200 for health, API v3 version, v1 Entries
+count 1 (an empty array), v1 Profile (a one-element array), strict v1/v2 Status
+text forms and `/api/v2/ddata/at`. An unknown Status extension returned 404,
+and API v3 Entries without a Bearer token returned 401. No protected remote
+mutation was attempted.
+
+A real EIO4 polling handshake advertised no upgrades, a 25-second ping
+interval, 20-second timeout and 1,000,000-byte maximum, then completed SIO5
+root CONNECT, `clients`, read-only authorize, `dataUpdate` and ACK. Direct
+WebSocket completed open, CONNECT, `clients`, connected authorization,
+`dataUpdate` and ACK. These smokes prove the separate routed transport slices,
+not a homepage transport switch.
+
+A real Playwright run rendered the official homepage chart and About version
+15.0.7. Settings stayed closed across multiple 15-second `dataUpdate` rounds.
+Profile Values loaded, while Admin, Food, Report and color clock rendered their
+official controls. There were zero console errors and only known upstream or
+browser warnings. No authenticated Save or protected mutation was attempted.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing
-the original post-save redirect loop. The current release was not authenticated
-in the browser and did not repeat that mutation, so the earlier result remains
+the original post-save redirect loop. This release did not repeat an
+authenticated mutation, so the earlier result remains
 historical regression context rather than evidence that the current protected
 Profile/Food workflows are complete.
 

@@ -40,7 +40,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | An earlier deployed increment supplied authenticated Profile save/close regression evidence, and the current deployed version has Admin/Food/Report/color-clock render smokes. The present candidate still needs post-deployment protected-save retesting; add the remaining mutation/report workflows, split view and pushed live updates. |
+| 2. Official browser assets/pages | Partial | The current deployed version has homepage/About, stable Settings close, loaded Profile Values and Admin/Food/Report/color-clock render smokes. Protected Profile Save was not attempted in this release; add that regression plus the remaining mutation/report workflows, split view and pushed live updates. |
 | 3. SQLite collection compatibility | In progress | Entries, treatments and device status share the generic API3 repository. Extend it to food/profile/settings, close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress | The Entries create/list/current/model/delete slice now covers locked identity, type, date/dateString and bounded failure behavior; Activity CRUD is implemented. Complete preview/echo/times/count/slice/formats and the remaining document routes. |
 | 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
@@ -85,56 +85,45 @@ Mongo-to-SQLite, Express-to-Worker, process-lifecycle, Socket.IO,
 notification-state and browser adaptations remain required work and must not be
 relabeled as scope exclusions.
 
-## Current local candidate (not deployed)
+## Current deployed increment
 
 Integration commit `d8e406d13b87b2e304b1db4dc075af18ae463022`
 combines the strict v1/v2 Status contracts, derived/body credential and
 persisted-delay authorization work, direct Hibernatable EIO4 WebSocket, and API
-v3 Entries as the third generic collection. The 18-file Workers-runtime suite
-passes 215/215 locally. That number is local integration evidence only; the
-official v15.0.7 build has also passed with its three known Webpack size
-warnings. Wrangler dry-run read 248 assets, reported 764.00 KiB raw / 135.65 KiB
-gzip, and exposed only `ENTRY_STORE` plus `ASSETS`. The public deployment
-version, remote API/direct-WS smoke and browser workflows still need to be
-executed and recorded before this candidate is called deployed.
+v3 Entries as the third generic collection. Deployment ran from repository
+HEAD `ac0947dc6139d16e424cc212e3757dde0c7c088b` and produced Cloudflare Worker
+version `65db0a2f-9f4e-4c41-8edf-de85bb49c31d`, activated at 100% traffic on
+2026-07-18T15:13:42.775Z. The version was created at
+2026-07-18T15:13:42.034Z and Cloudflare reported a 20 ms startup. Wrangler
+processed 248 official asset entries with no updated asset uploads, reported
+764.00 KiB raw / 135.65 KiB gzip, and exposed only `ENTRY_STORE` plus `ASSETS`.
+Deployment used `--keep-vars`; the configured secret was neither read nor
+printed. The 18-file Workers-runtime suite passed 215/215 locally before this
+deployment, which remains subset evidence rather than a full-port claim.
 
 Entries deliberately follows a fresh-only pre-1.0 policy. If activation finds
 the old narrow `entries` shadow structurally incompatible, it resets that
 shadow instead of attempting a risky partial import. Canonical documents and
 other collections, including profile, are preserved. At 2026-07-18 14:51 UTC,
 a read-only pre-deployment check found zero Entries and one profile in the
-public lab;
-there is therefore no old simulated Entry row to migrate on that specific
-tenant. This policy is acceptable for the pre-1.0 simulated lab, but it is not
-a general migration path for an existing Nightscout database.
+public lab; post-deployment remote reads confirmed the same counts. There was
+therefore no old simulated Entry row to migrate on that tenant, and its profile
+was preserved without recording its contents. This policy is acceptable for
+the pre-1.0 simulated lab, but it is not a general migration path for an
+existing Nightscout database.
 Fresh deployment is the planned release path for the initial new-user/new-family
 audience; an external legacy-history importer is explicitly deferred and is not
 a launch gate. It means initially creating a new Worker/SQLite DO namespace or
 using an empty tenant. A code redeploy to the same Worker preserves Durable
 Object data; it is not a database reset, so the current lab keeps its canonical
 profile and other documents. This does not authorize real CGM/uploader/closed-
-loop use: the candidate remains simulated-data only.
+loop use: the deployed increment remains simulated-data only.
 
 The Entries bounds are explicit: v1 defaults to a four-day date window;
 realtime/ddata reads use two days; `dateString` and other unindexed candidate
 sets stop with controlled HTTP 413 above 10,000 rows; synchronous delete and
 per-document revision deletion are capped at 128; and `$re` accepts only the
 bounded, case-sensitive subset that can be safely compiled to SQLite `GLOB`.
-
-## Current deployed increment
-
-The following section intentionally describes the older code that is still
-live. It must not be used as deployment evidence for the local candidate above.
-
-Code commit `0319a8d5e78fc77c4c53c0a94724b706d7ec8255` is deployed at 100%
-traffic as Cloudflare Worker version
-`e8e7970b-65bb-412f-ba74-193ce14575c5` (2026-07-18 08:13:13 UTC). The release
-gate passed the official v15.0.7 Webpack build with 248 asset entries, Wrangler
-type generation and TypeScript, the deterministic 161-route/111-test-file
-audit, 14/14 audit-tool tests, 141/141 Workers-runtime tests and a 651.05 KiB
-(113.32 KiB gzip) dry run. The dry run declared only the `ENTRY_STORE` Durable
-Object and `ASSETS` binding. Deployment used `--keep-vars`; the existing
-`API_SECRET` value was neither read nor printed.
 
 The deployed increment includes:
 
@@ -144,35 +133,33 @@ The deployed increment includes:
   role/subject/token subsets and aggregate REST polling;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
-- all eight generic API v3 routes for both treatments and device status,
+- all eight generic API v3 routes for entries, treatments and device status,
   including branch-sensitive permissions, ordered search, conditional read,
   history, collection-specific legacy fallback/deduplication, lastModified,
   tombstones, permanent delete and atomic rollback; JSON/CSV/XML rendering uses
   the locked upstream dependency versions and Accept negotiation order;
-- strict tenant-local EIO4 polling with persisted sessions/queues, heartbeat,
-  SIO5 root CONNECT, read-only authorization/data snapshots and bounded
-  resource handling; a SQL-derived Durable Object alarm now survives eviction
-  and drives ping, pong timeout, session/lease expiry and client-count updates.
+- strict tenant-local EIO4 polling and direct Hibernatable WebSocket with
+  persisted sessions/queues, heartbeat, SIO5 root CONNECT, read-only
+  authorization/data snapshots and bounded resource handling; a SQL-derived
+  Durable Object alarm survives eviction and drives ping, pong timeout,
+  session/lease expiry, closure retry and client-count updates.
 
-Remote smoke verified public v3 version metadata, v1 entries, missing-JWT 401
-responses for v3 status, treatments and device status, an unknown-format 406,
-official page HTTP responses, and the
-full EIO4 open -> SIO5 CONNECT -> authorize -> dataUpdate/status/read-only ACK
-sequence. After 26 seconds without an HTTP cleanup opportunity the next poll
-received the alarm-driven Engine.IO ping; pong and close both succeeded. The
-in-app browser rendered the homepage/chart and About version 15.0.7, and
-Settings stayed closed for several seconds without rebounding. Profile and Food
-rendered the official editors; the immediate snapshot still showed their
-initial `Not loaded` text and an `Unauthorized` authentication state. Direct
-remote reads of `/api/v1/profile.json?count=20` and `/api/v1/food.json` both
-returned HTTP 200, including the stored simulated profile, so the snapshot is
-not treated as an API failure. No credentialed browser save was attempted, and
-that protected workflow remains unproven for this release. Admin, Report and
-color clock rendered their official empty/unauthorized states. No console error
-was observed; standalone pages emitted only the known
-missing-`#chartContainer` warning.
+Remote API smoke returned HTTP 200 for health, API v3 version, v1 Entries
+(`[]`), v1 Profile (one element), strict Status text forms and
+`/api/v2/ddata/at`; an unknown Status extension returned 404 and API v3 Entries
+without a token returned 401. EIO4 polling completed open, SIO5 CONNECT,
+`clients`, authorize, `dataUpdate` and read-only ACK. Direct WebSocket completed
+the same sequence. The polling open advertised `upgrades: []`, a 25-second
+ping interval, 20-second timeout and 1,000,000-byte maximum.
 
-The deployed code is still not a full port: API v3 entries, food, profile and settings,
+A real Playwright run rendered the official homepage/chart and About version
+15.0.7. Settings stayed closed across multiple 15-second `dataUpdate` rounds.
+Profile Values loaded, while Admin, Food, Report and the color clock rendered
+their official controls. No console errors were observed; only known upstream
+or browser warnings appeared. No credentialed Profile Save or other protected
+write was attempted, so those workflows remain unproven for this release.
+
+The deployed code is still not a full port: API v3 food, profile and settings,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, `/storage` and `/alarm`, root writes, persisted
 change broadcasts, the shared background-task scheduler, server plugins,
@@ -225,8 +212,8 @@ This milestone is the dependency for the rest of API v3 and real-time updates.
 4. Port default roles, admin semantics, failure delay-list and status contracts.
 5. Keep API_SECRET only as the bootstrap/admin credential and never log it.
 
-Items 1–3 and the request-enforcement core of item 4 are complete. The local
-candidate derives the upstream subject credential from API_SECRET/ObjectId,
+Items 1–3 and the request-enforcement core of item 4 are complete. The deployed
+adapter derives the upstream subject credential from API_SECRET/ObjectId,
 preserves prefix lookup, extracts credentials from the locked query/header/body
 precedence, and persists a bounded per-IP failure delay that shares the DO
 alarm. Remaining work is failed-auth admin notification emission. The enforced
