@@ -139,7 +139,7 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       .toMatchObject({ type: "connect", namespace: "/" });
   });
 
-  it("accepts only tenant-valid explicit realtime credentials and always ACKs read-only", async () => {
+  it("accepts only tenant-valid explicit realtime credentials and ACKs resolved permissions", async () => {
     const stub = store("realtime-explicit-auth");
     const createdJson = await stub.createDocuments(
       "subjects",
@@ -184,11 +184,16 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       if (!polled.ok) throw new Error(polled.error.message);
       const packets = decodeEngineIoV4PollingPayload(polled.value)
         .map((packet) => unwrapSocketIoV5Packet(packet));
+      const adminCredential = index < 2;
       expect(packets.at(-1)).toEqual({
         type: "ack",
         namespace: "/",
         id: 20 + index,
-        data: [{ read: true, write: false, write_treatment: false }],
+        data: [{
+          read: true,
+          write: adminCredential,
+          write_treatment: adminCredential,
+        }],
       });
     }
 

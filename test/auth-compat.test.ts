@@ -1,7 +1,16 @@
 import { env } from "cloudflare:workers";
-import { SELF, evictDurableObject, runInDurableObject } from "cloudflare:test";
+import {
+  SELF,
+  evictDurableObject,
+  runDurableObjectAlarm,
+  runInDurableObject,
+} from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  authorizationDerivationMarker,
+} from "../src/authorization";
 import type { EntryStore } from "../src/entry-store";
+import worker from "../src/index";
 import { issueJwt } from "../src/jwt";
 
 const TEST_API_SECRET = "nscf-test-secret-20260717";
@@ -47,6 +56,36 @@ function endpoint(path: string, tenantName: string): string {
   const url = new URL(`https://example.test${path}`);
   url.searchParams.set("tenant", tenantName);
   return url.href;
+}
+
+function configuredWorkerEnv(
+  authDefaultRoles = "readable",
+  authFailDelay = "0",
+): Env & {
+  API_SECRET: string;
+  AUTH_DEFAULT_ROLES: string;
+  AUTH_FAIL_DELAY: string;
+} {
+  return {
+    ASSETS: env.ASSETS,
+    ENTRY_STORE: env.ENTRY_STORE,
+    API_SECRET: TEST_API_SECRET,
+    AUTH_DEFAULT_ROLES: authDefaultRoles,
+    AUTH_FAIL_DELAY: authFailDelay,
+  };
+}
+
+function configuredFetch(
+  tenantName: string,
+  path: string,
+  authDefaultRoles: string,
+  init?: RequestInit,
+  authFailDelay = "0",
+): Promise<Response> {
+  return worker.fetch(
+    new Request(endpoint(path, tenantName), init),
+    configuredWorkerEnv(authDefaultRoles, authFailDelay),
+  );
 }
 
 async function adminRequest(
@@ -531,6 +570,242 @@ describe("locked Nightscout v15.0.7 authorization compatibility", () => {
     expect(await rejectedWrite.json()).toEqual(UNAUTHORIZED);
   });
 
+  it("applies locked default roles and rejects explicit bad credentials on protected v1/v2 reads", async () => {
+    const tenantName = tenant("auth-default-roles");
+
+    expect((await configuredFetch(tenantName, "/api/v1/entries.json", "denied")).status)
+      .toBe(401);
+    expect((await configuredFetch(tenantName, "/api/v2/status", "denied")).status)
+      .toBe(401);
+    expect((await configuredFetch(tenantName, "/api/v2/status", "status-only")).status)
+      .toBe(200);
+    expect((await configuredFetch(tenantName, "/api/v1/entries.json", "status-only")).status)
+      .toBe(401);
+
+    await createRole(tenantName, "entries-only-default", ["api:entries:read"]);
+    await createRole(tenantName, "clock-default", [
+      "api:entries:read",
+      "api:treatments:read",
+    ]);
+    expect((await configuredFetch(
+      tenantName,
+      "/api/v2/entries.json",
+      "denied,entries-only-default",
+    )).status).toBe(200);
+    expect((await configuredFetch(
+      tenantName,
+      "/api/v2/properties",
+      "entries-only-default",
+    )).status).toBe(401);
+    expect((await configuredFetch(
+      tenantName,
+      "/api/v2/properties",
+      "denied clock-default",
+    )).status).toBe(200);
+
+    for (const [headers, expected] of [
+      [{ Authorization: "Bearer definitely-wrong" }, 401],
+      [{ "api-secret": "definitely-wrong" }, 401],
+      [{ "api-secret": "null" }, 200],
+      [{ Authorization: "bearer definitely-wrong" }, 200],
+    ] as const) {
+      const response = await SELF.fetch(endpoint("/api/v1/entries.json", tenantName), {
+        headers,
+      });
+      expect(response.status).toBe(expected);
+      if (expected === 401) expect(await response.json()).toEqual(UNAUTHORIZED);
+    }
+    const invalidQueryToken = new URL(endpoint("/api/v2/entries.json", tenantName));
+    invalidQueryToken.searchParams.set("token", "invalid-opaque-query-token");
+    expect((await SELF.fetch(invalidQueryToken)).status).toBe(200);
+
+    const { listed } = await createSubject(tenantName, "No implicit reader", []);
+    const issued = await issueFor(tenantName, listed.accessToken);
+    expect((await configuredFetch(
+      tenantName,
+      "/api/v1/entries.json",
+      "denied",
+      { headers: { Authorization: `Bearer ${String(issued.token)}` } },
+    )).status).toBe(401);
+
+    await createRole(tenantName, "create-without-read", ["api:activity:create"]);
+    const writer = await createSubject(
+      tenantName,
+      "Outer read guard",
+      ["create-without-read"],
+    );
+    const writerJwt = await issueFor(tenantName, writer.listed.accessToken);
+    const outerGuard = await configuredFetch(
+      tenantName,
+      "/api/v1/activity",
+      "denied",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${String(writerJwt.token)}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(activity("outer-read-required")),
+      },
+    );
+    expect(outerGuard.status).toBe(401);
+  });
+
+  it("returns the locked seen-permission registry and Shiro trie JSON shape", async () => {
+    const tenantName = tenant("auth-permission-trie");
+    await createRole(tenantName, "not-a-route", ["custom:stored:permission"]);
+
+    const permissionsResponse = await adminRequest(
+      tenantName,
+      "GET",
+      "/api/v2/authorization/permissions",
+    );
+    const permissions = await permissionsResponse.json<string[]>();
+    expect(permissions).toEqual([...permissions].sort());
+    expect(permissions).toContain("admin:api:permissions:read");
+    expect(permissions).toContain("api:entries:read");
+    expect(permissions).toContain("notifications:loop:push");
+    expect(permissions).not.toContain("custom:stored:permission");
+
+    const trieResponse = await adminRequest(
+      tenantName,
+      "GET",
+      "/api/v2/authorization/permissions/trie",
+    );
+    expect(await trieResponse.json()).toMatchObject({
+      data: {
+        admin: { api: { permissions: { read: { "*": {} } } } },
+        api: { entries: { read: { "*": {} } } },
+        notifications: { loop: { push: { "*": {} } } },
+      },
+    });
+  });
+
+  it("persists the locked per-IP failure delay and clears it on successful auth", async () => {
+    const tenantName = tenant("auth-delay");
+    const stub = env.ENTRY_STORE.getByName(tenantName);
+    const directIp = "198.51.100.10";
+    expect(await stub.authorizationDelay(directIp, 1_000)).toBe(0);
+    await stub.authorizationFailed(directIp, 1_000, 50);
+    expect(await stub.authorizationDelay(directIp, 1_025)).toBe(25);
+    await stub.authorizationFailed(directIp, 1_025, 50);
+    expect(await stub.authorizationDelay(directIp, 1_025)).toBe(75);
+    expect(await stub.authorizationDelay(directIp, 1_100)).toBe(0);
+    await stub.authorizationFailed(directIp, 1_200, 50);
+    expect(await stub.authorizationDelay(directIp, 1_225)).toBe(25);
+    await stub.authorizationSucceeded(directIp);
+    expect(await stub.authorizationDelay(directIp, 1_225)).toBe(0);
+    await stub.authorizationFailed(directIp, 2_000, -50);
+    expect(await stub.authorizationDelay(directIp, 2_000)).toBe(0);
+    await stub.authorizationFailed(directIp, 3_000, 999_999);
+    expect(await stub.authorizationDelay(directIp, 3_000)).toBe(60_000);
+    await stub.authorizationSucceeded(directIp);
+
+    const alarmIp = "198.51.100.11";
+    const alarmNow = Date.now();
+    await stub.authorizationFailed(alarmIp, alarmNow, 50);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      expect(await state.storage.getAlarm()).toBe(alarmNow + 50 + 60_000 + 1);
+      state.storage.sql.exec(
+        "UPDATE authorization_failures SET retry_at = ? WHERE ip = ?",
+        Date.now() - 60_002,
+        alarmIp,
+      );
+      await state.storage.setAlarm(Date.now() + 60_000);
+    });
+    await evictDurableObject(stub);
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM authorization_failures WHERE ip = ?",
+        alarmIp,
+      ).one().count).toBe(0);
+    });
+
+    const requestIp = "203.0.113.77";
+    const rejected = await configuredFetch(
+      tenantName,
+      "/api/v1/entries.json",
+      "readable",
+      {
+        headers: {
+          Authorization: "Bearer wrong-delay-token",
+          "CF-Connecting-IP": requestIp,
+        },
+      },
+      "100",
+    );
+    expect(rejected.status).toBe(401);
+    expect(await stub.authorizationDelay(requestIp, Date.now())).toBeGreaterThan(0);
+
+    const accepted = await configuredFetch(
+      tenantName,
+      "/api/v1/entries.json",
+      "readable",
+      {
+        headers: {
+          "api-secret": await adminDigest(),
+          "CF-Connecting-IP": requestIp,
+        },
+      },
+      "100",
+    );
+    expect(accepted.status).toBe(200);
+    expect(await stub.authorizationDelay(requestIp, Date.now())).toBe(0);
+  });
+
+  it("derives realtime read/write/treatment flags from live role permissions", async () => {
+    const tenantName = tenant("auth-realtime-permissions");
+    await createRole(tenantName, "realtime-writer", [
+      "api:*:read",
+      "api:*:create,update,delete",
+      "api:treatments:create,update,delete",
+    ]);
+    const { listed } = await createSubject(
+      tenantName,
+      "Realtime Writer",
+      ["realtime-writer"],
+    );
+    const issued = await issueFor(tenantName, listed.accessToken);
+    const stub = env.ENTRY_STORE.getByName(tenantName);
+    await runInDurableObject(stub, async (instance: EntryStore) => {
+      const authorize = Reflect.get(instance, "realtimeAuthorize").bind(instance) as (
+        message: Record<string, unknown>,
+      ) => Promise<Record<string, boolean> | null>;
+      expect(await authorize({ token: issued.token })).toEqual({
+        read: true,
+        write: true,
+        write_treatment: true,
+      });
+    });
+
+    const roleResponse = await adminRequest(
+      tenantName,
+      "GET",
+      "/api/v2/authorization/roles",
+    );
+    const role = (await roleResponse.json<Array<Record<string, unknown>>>()).find(
+      (candidate) => candidate.name === "realtime-writer",
+    );
+    if (role === undefined) throw new Error("realtime writer role was not listed");
+    expect((await adminRequest(
+      tenantName,
+      "PUT",
+      "/api/v2/authorization/roles",
+      { ...role, permissions: ["api:*:read"] },
+    )).status).toBe(200);
+    await runInDurableObject(stub, async (instance: EntryStore) => {
+      const authorize = Reflect.get(instance, "realtimeAuthorize").bind(instance) as (
+        message: Record<string, unknown>,
+      ) => Promise<Record<string, boolean> | null>;
+      expect(await authorize({ token: issued.token })).toEqual({
+        read: true,
+        write: false,
+        write_treatment: false,
+      });
+    });
+  });
+
   it("matches all six locked admin-save cases and rejects mutation arrays", async () => {
     const tenantName = tenant("auth-admin-save");
     const { created: createdSubject } = await createSubject(
@@ -842,9 +1117,211 @@ describe("locked Nightscout v15.0.7 authorization compatibility", () => {
     )).not.toBeNull();
   });
 
+  it("patches rotated credentials without overwriting a concurrent subject edit", async () => {
+    const tenantName = tenant("auth-rotate-concurrent");
+    const id = "333333333333333333333333";
+    await createSubject(
+      tenantName,
+      "Concurrent Rotation",
+      [],
+      id,
+      { notes: "before" },
+    );
+    const rotatedSecretDigest = await hexDigest("SHA-1", ROTATED_API_SECRET);
+    const rotatedDigest = await hexDigest("SHA-1", `${rotatedSecretDigest}${id}`);
+    const rotatedAccessToken = `concurrent-${rotatedDigest.slice(0, 16)}`;
+    const stub = env.ENTRY_STORE.getByName(tenantName);
+
+    await runInDurableObject(stub, async (instance: EntryStore, state) => {
+      const instanceEnv = Reflect.get(instance, "env") as { API_SECRET?: string };
+      const originalDerive = Reflect.get(
+        instance,
+        "deriveAuthorizationSubject",
+      ).bind(instance) as (document: Record<string, unknown>) => Promise<unknown>;
+      let releaseDerivation!: () => void;
+      let markEntered!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        markEntered = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseDerivation = resolve;
+      });
+      let pauseFirst = true;
+      Reflect.set(instance, "deriveAuthorizationSubject", async (
+        document: Record<string, unknown>,
+      ) => {
+        if (pauseFirst) {
+          pauseFirst = false;
+          markEntered();
+          await release;
+        }
+        return originalDerive(document);
+      });
+      instanceEnv.API_SECRET = ROTATED_API_SECRET;
+      try {
+        const resolving = instance.resolveAuthorizationSubject(
+          JSON.stringify([rotatedAccessToken]),
+        );
+        await entered;
+        state.storage.sql.exec(
+          `UPDATE documents
+           SET body = json_set(body, '$.notes', 'concurrent-edit'),
+               updated_at = updated_at + 1
+           WHERE collection = 'subjects' AND id = ?`,
+          id,
+        );
+        releaseDerivation();
+        const resolved = await resolving;
+        expect(resolved).not.toBeNull();
+        const stored = JSON.parse(state.storage.sql.exec<{ body: string }>(
+          "SELECT body FROM documents WHERE collection = 'subjects' AND id = ?",
+          id,
+        ).one().body) as Record<string, unknown>;
+        expect(stored).toMatchObject({
+          notes: "concurrent-edit",
+          accessToken: rotatedAccessToken,
+          digest: rotatedDigest,
+        });
+      } finally {
+        releaseDerivation();
+        Reflect.set(instance, "deriveAuthorizationSubject", originalDerive);
+        instanceEnv.API_SECRET = TEST_API_SECRET;
+      }
+    });
+  });
+
+  it("self-heals malformed auth secrets and lets an API-secret admin repair corrupt subject JSON", async () => {
+    const tenantName = tenant("auth-corrupt-repair");
+    const id = "444444444444444444444444";
+    const stub = env.ENTRY_STORE.getByName(tenantName);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      const now = Date.now();
+      state.storage.sql.exec(
+        `INSERT INTO tenant_secrets (name, value, created_at)
+         VALUES ('authorization-jwt', 'malformed', ?)
+         ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
+        now,
+      );
+      state.storage.sql.exec(
+        `INSERT INTO tenant_secrets (name, value, created_at)
+         VALUES ('authorization-subject-marker', 'also-malformed', ?)
+         ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
+        now,
+      );
+      state.storage.sql.exec(
+        `INSERT INTO documents (collection, id, body, sort_time, created_at, updated_at)
+         VALUES ('subjects', ?, '{not-json', ?, ?, ?)`,
+        id,
+        now,
+        now,
+        now,
+      );
+    });
+
+    const listedCorrupt = await adminRequest(
+      tenantName,
+      "GET",
+      "/api/v2/authorization/subjects",
+    );
+    expect(listedCorrupt.status).toBe(200);
+    expect(await listedCorrupt.json()).toEqual([{
+      _id: id,
+      name: `[invalid subject ${id}]`,
+      roles: [],
+    }]);
+
+    const repaired = await adminRequest(
+      tenantName,
+      "PUT",
+      "/api/v2/authorization/subjects",
+      { _id: id, name: "Repaired Subject", roles: ["readable"] },
+    );
+    expect(repaired.status).toBe(200);
+    const [listed] = await listSubjects(tenantName);
+    expect(listed).toMatchObject({
+      _id: id,
+      name: "Repaired Subject",
+      roles: ["readable"],
+      accessToken: expect.stringMatching(/^repairedsu-[0-9a-f]{16}$/),
+    });
+
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      expect(state.storage.sql.exec<{ value: string }>(
+        "SELECT value FROM tenant_secrets WHERE name = 'authorization-jwt'",
+      ).one().value).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(state.storage.sql.exec<{ value: string }>(
+        "SELECT value FROM tenant_secrets WHERE name = 'authorization-subject-marker'",
+      ).one().value).toMatch(/^[0-9a-f]{64}$/);
+      expect(() => JSON.parse(state.storage.sql.exec<{ body: string }>(
+        "SELECT body FROM documents WHERE collection = 'subjects' AND id = ?",
+        id,
+      ).one().body)).not.toThrow();
+    });
+  });
+
+  it("enforces the 256-subject cap atomically for concurrent POST and PUT upsert", async () => {
+    const tenantName = tenant("auth-cap-concurrent");
+    const stub = env.ENTRY_STORE.getByName(tenantName);
+    await runInDurableObject(stub, async (_instance: EntryStore, state) => {
+      const now = Date.now();
+      for (let index = 0; index < 255; index += 1) {
+        const id = index.toString(16).padStart(24, "0");
+        state.storage.sql.exec(
+          `INSERT INTO documents (collection, id, body, sort_time, created_at, updated_at)
+           VALUES ('subjects', ?, ?, ?, ?, ?)`,
+          id,
+          JSON.stringify({ _id: id, name: `seed-${index}`, roles: [] }),
+          index,
+          now,
+          now,
+        );
+      }
+    });
+
+    const [first, second] = await Promise.all([
+      adminRequest(tenantName, "POST", "/api/v2/authorization/subjects", {
+        _id: "aaaaaaaaaaaaaaaaaaaaaaaa",
+        name: "Concurrent A",
+        roles: [],
+      }),
+      adminRequest(tenantName, "POST", "/api/v2/authorization/subjects", {
+        _id: "bbbbbbbbbbbbbbbbbbbbbbbb",
+        name: "Concurrent B",
+        roles: [],
+      }),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 500]);
+    expect((await listSubjects(tenantName))).toHaveLength(256);
+
+    const updateExisting = await adminRequest(
+      tenantName,
+      "PUT",
+      "/api/v2/authorization/subjects",
+      {
+        _id: "000000000000000000000000",
+        name: "Updated existing at cap",
+        roles: [],
+      },
+    );
+    expect(updateExisting.status).toBe(200);
+    const upsertNew = await adminRequest(
+      tenantName,
+      "PUT",
+      "/api/v2/authorization/subjects",
+      {
+        _id: "cccccccccccccccccccccccc",
+        name: "Forbidden upsert at cap",
+        roles: [],
+      },
+    );
+    expect(upsertNew.status).toBe(500);
+    expect((await listSubjects(tenantName))).toHaveLength(256);
+  });
+
   it("caps rotation work before hashing subjects and keeps failure responses/logs secret-free", async () => {
     const tenantName = tenant("auth-cap");
     const stub = env.ENTRY_STORE.getByName(tenantName);
+    await stub.issueAccessJwt("cap-marker-seed");
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
       const now = Date.now();
       for (let index = 0; index < 257; index += 1) {
@@ -859,8 +1336,19 @@ describe("locked Nightscout v15.0.7 authorization compatibility", () => {
           now,
         );
       }
+      const jwtSecret = state.storage.sql.exec<{ value: string }>(
+        "SELECT value FROM tenant_secrets WHERE name = 'authorization-jwt'",
+      ).one().value;
+      const currentMarker = await authorizationDerivationMarker(
+        jwtSecret,
+        TEST_API_SECRET,
+      );
       state.storage.sql.exec(
-        "DELETE FROM tenant_secrets WHERE name = 'authorization-subject-marker'",
+        `INSERT INTO tenant_secrets (name, value, created_at)
+         VALUES ('authorization-subject-marker', ?, ?)
+         ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
+        currentMarker,
+        now,
       );
     });
 

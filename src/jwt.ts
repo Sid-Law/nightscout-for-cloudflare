@@ -73,6 +73,10 @@ export function createJwtSecret(): string {
   return base64UrlEncode(bytes);
 }
 
+export function isJwtSecret(value: string): boolean {
+  return base64UrlDecode(value)?.byteLength === 32;
+}
+
 export async function issueJwt(
   secret: string,
   accessToken: string,

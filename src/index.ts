@@ -3,11 +3,16 @@ import mime from "mime";
 import type { DocumentCollection, JsonDocument } from "./entry-store";
 import {
   apiSecretDigestMatches,
+  authorizationDefaultRoleNames,
+  authorizationPermissionGroups,
+  authorizationRoleNames,
   boundedTokenCandidates,
+  BUILTIN_AUTHORIZATION_ROLES,
   extractRequestCredentials,
   type PresentedToken,
   type RequestCredentials,
 } from "./authorization";
+import { newTrie } from "shiro-trie";
 import {
   filterDocuments,
   normalizeTreatmentNumbers,
@@ -46,17 +51,52 @@ const UTF8_CONTENT_TYPES = [
   "image/svg+xml",
 ];
 const MIN_API_SECRET_LENGTH = 12;
-const DEFAULT_ROLES: JsonDocument[] = [
-  { name: "admin", permissions: ["*"] },
-  { name: "denied", permissions: [] },
-  { name: "status-only", permissions: ["api:status:read"] },
-  { name: "readable", permissions: ["*:*:read"] },
-  { name: "careportal", permissions: ["api:treatments:create"] },
-  { name: "devicestatus-upload", permissions: ["api:devicestatus:create"] },
-  { name: "activity", permissions: ["api:activity:create"] },
-];
+const MAX_AUTH_FAIL_DELAY_MS = 60_000;
+const SEEN_PERMISSIONS = [
+  "admin:api:permissions:read",
+  "admin:api:roles:create",
+  "admin:api:roles:delete",
+  "admin:api:roles:list",
+  "admin:api:roles:update",
+  "admin:api:subjects:create",
+  "admin:api:subjects:delete",
+  "admin:api:subjects:read",
+  "admin:api:subjects:update",
+  "api:*:read",
+  "api:activity:create",
+  "api:activity:delete",
+  "api:activity:read",
+  "api:activity:update",
+  "api:devicestatus:create",
+  "api:devicestatus:delete",
+  "api:devicestatus:read",
+  "api:entries:create",
+  "api:entries:delete",
+  "api:entries:read",
+  "api:food:create",
+  "api:food:delete",
+  "api:food:read",
+  "api:food:update",
+  "api:pebble,entries:read",
+  "api:profile:create",
+  "api:profile:delete",
+  "api:profile:read",
+  "api:profile:update",
+  "api:status:read",
+  "api:treatments:create",
+  "api:treatments:delete",
+  "api:treatments:read",
+  "api:treatments:update",
+  "authorization:debug:test",
+  "notifications:*:ack",
+  "notifications:loop:push",
+] as const;
 
-type AppEnv = Env & { API_SECRET?: string };
+type AppEnv = Env & {
+  API_SECRET?: string;
+  AUTH_DEFAULT_ROLES?: string;
+  AUTH_FAIL_DELAY?: string;
+};
 
 function corsHeaders(): Record<string, string> {
   return {
@@ -193,6 +233,39 @@ function configuredApiSecret(env: AppEnv): string | null {
   return secret !== undefined && secret.length >= MIN_API_SECRET_LENGTH ? secret : null;
 }
 
+function configuredAuthDefaultRoles(env: AppEnv): string {
+  return env.AUTH_DEFAULT_ROLES ?? "readable";
+}
+
+function configuredAuthFailDelay(env: AppEnv): number {
+  const parsed = Number(env.AUTH_FAIL_DELAY ?? 5000);
+  return Number.isFinite(parsed)
+    ? Math.max(0, Math.min(MAX_AUTH_FAIL_DELAY_MS, Math.trunc(parsed)))
+    : 5000;
+}
+
+function requestRemoteIp(request: Request): string {
+  const cloudflareIp = request.headers.get("CF-Connecting-IP");
+  if (cloudflareIp !== null && cloudflareIp.length > 0) {
+    return cloudflareIp.slice(0, 256);
+  }
+  const forwarded = request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim();
+  return forwarded !== undefined && forwarded.length > 0
+    ? forwarded.slice(0, 256)
+    : "unknown";
+}
+
+async function waitForAuthorizationDelay(
+  store: DurableObjectStub<EntryStore>,
+  ip: string,
+): Promise<void> {
+  const delay = await store.authorizationDelay(ip, Date.now());
+  if (delay <= 0) return;
+  await new Promise<void>((resolve) =>
+    setTimeout(resolve, Math.min(delay, MAX_AUTH_FAIL_DELAY_MS))
+  );
+}
+
 interface AuthorizedSubject {
   token: string;
   sub: string;
@@ -237,16 +310,6 @@ function bearerToken(request: Request, caseInsensitive = false): string | null {
     return null;
   }
   return token;
-}
-
-function rolePermissions(name: string, storedRoles: JsonDocument[]): string[] {
-  const role =
-    storedRoles.find((candidate) => candidate.name === name) ??
-    DEFAULT_ROLES.find((candidate) => candidate.name === name);
-  if (typeof role?.permissions === "string") return [role.permissions];
-  return Array.isArray(role?.permissions)
-    ? role.permissions.filter((permission): permission is string => typeof permission === "string")
-    : [];
 }
 
 function parseDocuments(value: string): JsonDocument[] {
@@ -296,6 +359,7 @@ function parseAuthorizedSubject(value: string): AuthorizedSubject {
 async function authorizeCredential(
   store: DurableObjectStub<EntryStore>,
   accessTokens: PresentedToken,
+  configuredDefaultRoles: string | undefined,
   credential: PresentedCredential | null = null,
   refreshJwt = false,
 ): Promise<AuthorizedSubject | null> {
@@ -306,10 +370,7 @@ async function authorizeCredential(
   const subject = parseDocument(subjectJson);
   if (typeof subject.name !== "string" || typeof subject.accessToken !== "string") return null;
   const storedRoles = parseDocuments(await store.listDocuments("roles"));
-  const names = Array.isArray(subject.roles)
-    ? subject.roles.filter((role): role is string => typeof role === "string")
-    : [];
-  if (!names.includes("readable")) names.push("readable");
+  const names = authorizationRoleNames(subject.roles, configuredDefaultRoles);
 
   let authorization: AuthorizedSubject;
   if (credential !== null && credential.token !== null && !refreshJwt) {
@@ -326,9 +387,7 @@ async function authorizeCredential(
     );
     authorization.sub = subject.name;
   }
-  authorization.permissionGroups = names.map((name) =>
-    rolePermissions(name, storedRoles),
-  );
+  authorization.permissionGroups = authorizationPermissionGroups(names, storedRoles);
   return authorization;
 }
 
@@ -341,6 +400,7 @@ interface AuthorizationResolution {
 async function resolveTokenCredential(
   store: DurableObjectStub<EntryStore>,
   credentials: RequestCredentials,
+  configuredDefaultRoles: string | undefined,
 ): Promise<{ authorized: AuthorizedSubject | null; attempted: boolean }> {
   if (credentials.token === null || credentials.tokenSource === null) {
     return { authorized: null, attempted: false };
@@ -363,6 +423,7 @@ async function resolveTokenCredential(
       authorized: await authorizeCredential(
         store,
         claims.accessToken,
+        configuredDefaultRoles,
         { ...claims, token: bearer },
       ),
       attempted: true,
@@ -374,11 +435,23 @@ async function resolveTokenCredential(
     const claimsJson = await store.verifyAccessJwt(candidate);
     if (claimsJson !== null) {
       const claims = parseAccessJwtClaims(claimsJson);
-      const authorized = await authorizeCredential(store, claims.accessToken, null, true);
+      const authorized = await authorizeCredential(
+        store,
+        claims.accessToken,
+        configuredDefaultRoles,
+        null,
+        true,
+      );
       return { authorized, attempted: authorized !== null };
     }
   }
-  const authorized = await authorizeCredential(store, candidates, null, true);
+  const authorized = await authorizeCredential(
+    store,
+    candidates,
+    configuredDefaultRoles,
+    null,
+    true,
+  );
   // Locked extractJWTfromRequest converts only a valid query/body access token
   // into a JWT. An invalid opaque token therefore falls back to defaults.
   return { authorized, attempted: authorized !== null };
@@ -392,11 +465,11 @@ async function resolveRequestAuthorization(
 ): Promise<AuthorizationResolution> {
   const credentials = extractRequestCredentials(request, url, body);
   const configured = configuredApiSecret(env);
-  if (await apiSecretDigestMatches(credentials.apiSecret, configured)) {
-    return { admin: true, authorized: null, defaults: false };
-  }
 
   if (env.ENTRY_STORE === undefined) {
+    if (await apiSecretDigestMatches(credentials.apiSecret, configured)) {
+      return { admin: true, authorized: null, defaults: false };
+    }
     return {
       admin: false,
       authorized: null,
@@ -404,18 +477,40 @@ async function resolveRequestAuthorization(
     };
   }
   const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
-  const token = await resolveTokenCredential(store, credentials);
+  const ip = requestRemoteIp(request);
+  await waitForAuthorizationDelay(store, ip);
+  if (await apiSecretDigestMatches(credentials.apiSecret, configured)) {
+    await store.authorizationSucceeded(ip);
+    return { admin: true, authorized: null, defaults: false };
+  }
+  const token = await resolveTokenCredential(
+    store,
+    credentials,
+    env.AUTH_DEFAULT_ROLES,
+  );
   if (token.authorized !== null) {
+    await store.authorizationSucceeded(ip);
     return { admin: false, authorized: token.authorized, defaults: false };
   }
 
   if (credentials.apiSecret !== null) {
-    const secretSubject = await authorizeCredential(store, credentials.apiSecret, null, true);
+    const secretSubject = await authorizeCredential(
+      store,
+      credentials.apiSecret,
+      env.AUTH_DEFAULT_ROLES,
+      null,
+      true,
+    );
+    if (secretSubject !== null) await store.authorizationSucceeded(ip);
+    else await store.authorizationFailed(ip, Date.now(), configuredAuthFailDelay(env));
     return {
       admin: false,
       authorized: secretSubject,
       defaults: false,
     };
+  }
+  if (token.attempted) {
+    await store.authorizationFailed(ip, Date.now(), configuredAuthFailDelay(env));
   }
   return {
     admin: false,
@@ -424,15 +519,30 @@ async function resolveRequestAuthorization(
   };
 }
 
-async function requirePermission(
+async function permissionGroupsForResolution(
+  resolution: AuthorizationResolution,
+  store: DurableObjectStub<EntryStore>,
+  env: AppEnv,
+): Promise<string[][]> {
+  if (resolution.admin) return [["*"]];
+  if (resolution.authorized !== null) return resolution.authorized.permissionGroups;
+  if (!resolution.defaults) return [];
+  const storedRoles = parseDocuments(await store.listDocuments("roles"));
+  return authorizationPermissionGroups(
+    authorizationDefaultRoleNames(configuredAuthDefaultRoles(env)),
+    storedRoles,
+  );
+}
+
+async function requirePermissions(
   request: Request,
   env: AppEnv,
   url: URL,
-  permission: string,
+  permissions: readonly string[],
   body?: unknown,
-): Promise<void> {
+): Promise<AuthorizationResolution> {
   const resolution = await resolveRequestAuthorization(request, env, url, body);
-  if (resolution.admin) return;
+  if (resolution.admin) return resolution;
   if (env.ENTRY_STORE === undefined) {
     if (configuredApiSecret(env) === null) {
       throw new ApiError(
@@ -447,11 +557,12 @@ async function requirePermission(
       "ENTRY_STORE must be configured before writes are enabled",
     );
   }
-  if (
-    resolution.authorized !== null &&
-    permissionGroupsAllow(resolution.authorized.permissionGroups, permission)
-  ) {
-    return;
+  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+  const permissionGroups = await permissionGroupsForResolution(resolution, store, env);
+  if (permissions.every((permission) =>
+    permissionGroupsAllow(permissionGroups, permission)
+  )) {
+    return resolution;
   }
   if (configuredApiSecret(env) === null) {
     throw new ApiError(
@@ -460,7 +571,21 @@ async function requirePermission(
       "API_SECRET must be configured as a Cloudflare variable before writes are enabled",
     );
   }
-  throw new ApiError(401, "unauthorized", `permission ${permission} is required`);
+  throw new ApiError(
+    401,
+    "unauthorized",
+    `permissions ${permissions.join(", ")} are required`,
+  );
+}
+
+async function requirePermission(
+  request: Request,
+  env: AppEnv,
+  url: URL,
+  permission: string,
+  body?: unknown,
+): Promise<AuthorizationResolution> {
+  return requirePermissions(request, env, url, [permission], body);
 }
 
 function formBody(text: string): JsonDocument {
@@ -560,9 +685,11 @@ function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
   };
 }
 
-async function statusForRequest(request: Request, env: AppEnv, url: URL): Promise<Record<string, unknown>> {
-  const status = nightscoutStatus();
-  const resolution = await resolveRequestAuthorization(request, env, url);
+function statusForResolution(
+  env: AppEnv,
+  resolution: AuthorizationResolution,
+): Record<string, unknown> {
+  const status = nightscoutStatus(new Date(), configuredAuthDefaultRoles(env));
   if (resolution.authorized !== null) status.authorized = resolution.authorized;
   return status;
 }
@@ -615,6 +742,7 @@ async function handleEntriesApi(
     request.method === "GET" &&
     /^\/api\/v[12]\/entries\/current(?:\.json)?\/?$/.test(url.pathname)
   ) {
+    await requirePermission(request, env, url, "api:entries:read");
     const tenant = resolveTenant(request, url);
     return json(await env.ENTRY_STORE.getByName(tenant).getCurrent());
   }
@@ -628,7 +756,13 @@ async function handleEntriesApi(
 
   if (request.method === "POST" && id === undefined) {
     const payload = await readBoundedBody(request);
-    await requirePermission(request, env, url, "api:entries:create", payload);
+    await requirePermissions(
+      request,
+      env,
+      url,
+      ["api:entries:read", "api:entries:create"],
+      payload,
+    );
     const store = env.ENTRY_STORE.getByName(tenant);
     const entries = parseEntryPayload(payload);
     await store.putEntries(entries);
@@ -636,6 +770,7 @@ async function handleEntriesApi(
   }
 
   if (request.method === "GET") {
+    await requirePermission(request, env, url, "api:entries:read");
     const store = env.ENTRY_STORE.getByName(tenant);
     const entries = await store.getEntries(parseHistoryQuery(url));
     if (id === undefined) return json(entries);
@@ -647,7 +782,13 @@ async function handleEntriesApi(
 
   if (request.method === "DELETE") {
     const payload = request.body === null ? undefined : await readBoundedBody(request);
-    await requirePermission(request, env, url, "api:entries:delete", payload);
+    await requirePermissions(
+      request,
+      env,
+      url,
+      ["api:entries:read", "api:entries:delete"],
+      payload,
+    );
     const store = env.ENTRY_STORE.getByName(tenant);
     if (id !== undefined && id !== "*" && !OBJECT_ID.test(id)) {
       throw new ApiError(400, "invalid_entry", "entry id must be a 24-character hexadecimal string");
@@ -702,6 +843,7 @@ async function handleCollectionApi(
   const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
 
   if (request.method === "GET") {
+    await requirePermission(request, env, url, `api:${collection}:read`);
     const all = collection === "treatments"
       ? normalizeTreatmentNumbers(parseDocuments(await store.queryLegacyTreatments(
         JSON.stringify(parseTreatmentQuery(url, defaultDocumentCount(collection, url))),
@@ -738,7 +880,13 @@ async function handleCollectionApi(
 
   if (request.method === "POST" && segment === undefined) {
     const payload = await readBoundedBody(request);
-    await requirePermission(request, env, url, `api:${collection}:create`, payload);
+    await requirePermissions(
+      request,
+      env,
+      url,
+      [`api:${collection}:read`, `api:${collection}:create`],
+      payload,
+    );
     if (
       (collection === "activity" || collection === "treatments")
       && Array.isArray(payload)
@@ -752,7 +900,13 @@ async function handleCollectionApi(
 
   if (request.method === "PUT" && segment === undefined) {
     const payload = await readBoundedBody(request);
-    await requirePermission(request, env, url, `api:${collection}:update`, payload);
+    await requirePermissions(
+      request,
+      env,
+      url,
+      [`api:${collection}:read`, `api:${collection}:update`],
+      payload,
+    );
     const parsed = parseDocumentPayload(
       payload,
       collection,
@@ -773,7 +927,13 @@ async function handleCollectionApi(
 
   if (request.method === "DELETE") {
     const payload = request.body === null ? undefined : await readBoundedBody(request);
-    await requirePermission(request, env, url, `api:${collection}:delete`, payload);
+    await requirePermissions(
+      request,
+      env,
+      url,
+      [`api:${collection}:read`, `api:${collection}:delete`],
+      payload,
+    );
     let selected: JsonDocument[];
     if (segment !== undefined && segment !== "*") {
       if (collection === "treatments" && (OBJECT_ID.test(segment) || UUID.test(segment))) {
@@ -808,7 +968,11 @@ async function handleCollectionApi(
 async function mergedRoles(store: DurableObjectStub<EntryStore>): Promise<JsonDocument[]> {
   const stored = parseDocuments(await store.listDocuments("roles"));
   const names = new Set(stored.map((role) => role.name).filter((name): name is string => typeof name === "string"));
-  return [...stored, ...DEFAULT_ROLES.filter((role) => !names.has(role.name as string))].sort((left, right) =>
+  const builtins: JsonDocument[] = BUILTIN_AUTHORIZATION_ROLES.map((role) => ({
+    name: role.name,
+    permissions: [...role.permissions],
+  }));
+  return [...stored, ...builtins.filter((role) => !names.has(role.name as string))].sort((left, right) =>
     String(left.name).localeCompare(String(right.name)),
   );
 }
@@ -858,6 +1022,7 @@ async function handleAuthorizationApi(
       ? await authorizeCredential(
           store,
           credential?.accessToken ?? presented,
+          env.AUTH_DEFAULT_ROLES,
           credential,
           true,
         )
@@ -872,16 +1037,10 @@ async function handleAuthorizationApi(
 
   if (path === "permissions" || path === "permissions/trie") {
     await requirePermission(request, env, url, "admin:api:permissions:read");
-    const permissions = Array.from(
-      new Set((await mergedRoles(store)).flatMap((role) =>
-        typeof role.permissions === "string"
-          ? [role.permissions]
-          : Array.isArray(role.permissions)
-            ? role.permissions.filter((item): item is string => typeof item === "string")
-            : [],
-      )),
-    );
-    return json(path.endsWith("/trie") ? { permissions } : permissions);
+    if (!path.endsWith("/trie")) return json(SEEN_PERMISSIONS);
+    const permissions = newTrie();
+    permissions.add(...SEEN_PERMISSIONS);
+    return json(permissions);
   }
 
   const match = /^(subjects|roles)(?:\/([^/]+))?$/.exec(path);
@@ -923,9 +1082,15 @@ async function handleAuthorizationApi(
       return authorizationMongoError("Authorization document must be a single object");
     }
     const parsed = parseDocumentPayload(payload, collection, false);
-    const created = parseDocuments(
-      await store.createDocuments(collection, JSON.stringify(parsed.documents)),
-    );
+    const serialized = JSON.stringify(parsed.documents);
+    const subjectMutation = collection === "subjects"
+      ? await store.createAuthorizationSubjects(serialized)
+      : null;
+    if (subjectMutation !== null && !subjectMutation.ok) {
+      return authorizationMongoError(subjectMutation.error);
+    }
+    const created = parseDocuments(subjectMutation?.value ??
+      await store.createDocuments(collection, serialized));
     const response = collection === "subjects"
       ? created.map(publicAuthorizationSubjectMutation)
       : created;
@@ -943,9 +1108,15 @@ async function handleAuthorizationApi(
       return authorizationMongoError(`Invalid _id format: ${String(rawId)}`);
     }
     const parsed = parseDocumentPayload(payload, collection, true);
-    const saved = parseDocuments(
-      await store.saveDocuments(collection, JSON.stringify(parsed.documents)),
-    );
+    const serialized = JSON.stringify(parsed.documents);
+    const subjectMutation = collection === "subjects"
+      ? await store.saveAuthorizationSubjects(serialized)
+      : null;
+    if (subjectMutation !== null && !subjectMutation.ok) {
+      return authorizationMongoError(subjectMutation.error);
+    }
+    const saved = parseDocuments(subjectMutation?.value ??
+      await store.saveDocuments(collection, serialized));
     const response = collection === "subjects"
       ? saved.map(publicAuthorizationSubjectMutation)
       : saved;
@@ -1036,24 +1207,32 @@ async function authenticateApi3(
   if (bearer === null) {
     return { ok: false, response: api3Error(401, "Missing or bad access token or JWT") };
   }
+  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+  const ip = requestRemoteIp(request);
+  await waitForAuthorizationDelay(store, ip);
   if (boundedTokenCandidates(bearer) === null) {
+    await store.authorizationFailed(ip, Date.now(), configuredAuthFailDelay(env));
     return { ok: false, response: api3Error(401, "Bad access token or JWT") };
   }
 
-  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
   const claimsJson = await store.verifyAccessJwt(bearer);
   if (claimsJson === null) {
+    await store.authorizationFailed(ip, Date.now(), configuredAuthFailDelay(env));
     return { ok: false, response: api3Error(401, "Bad access token or JWT") };
   }
   const claims = parseAccessJwtClaims(claimsJson);
   const authorized = await authorizeCredential(
     store,
     claims.accessToken,
+    env.AUTH_DEFAULT_ROLES,
     { ...claims, token: bearer },
   );
-  return authorized === null
-    ? { ok: false, response: api3Error(401, "Bad access token or JWT") }
-    : { ok: true, authorized, store };
+  if (authorized === null) {
+    await store.authorizationFailed(ip, Date.now(), configuredAuthFailDelay(env));
+    return { ok: false, response: api3Error(401, "Bad access token or JWT") };
+  }
+  await store.authorizationSucceeded(ip);
+  return { ok: true, authorized, store };
 }
 
 async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Response> {
@@ -1080,11 +1259,25 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     request.method === "GET" &&
     /^\/api\/v[12]\/status(?:\.json)?\/?$/.test(url.pathname)
   ) {
-    return json(await statusForRequest(request, env, url));
+    const resolution = await requirePermission(
+      request,
+      env,
+      url,
+      "api:status:read",
+    );
+    return json(statusForResolution(env, resolution));
   }
 
   if (request.method === "GET" && /^\/api\/v[12]\/status\.js\/?$/.test(url.pathname)) {
-    return javascript(`this.serverSettings = ${JSON.stringify(await statusForRequest(request, env, url))};`);
+    const resolution = await requirePermission(
+      request,
+      env,
+      url,
+      "api:status:read",
+    );
+    return javascript(
+      `this.serverSettings = ${JSON.stringify(statusForResolution(env, resolution))};`,
+    );
   }
 
   if (request.method === "GET" && url.pathname === "/api/versions") {
@@ -1165,6 +1358,12 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     request.method === "GET" &&
     /^\/api\/v2\/ddata\/at(?:\/[^/]+)?\/?$/.test(url.pathname)
   ) {
+    await requirePermissions(
+      request,
+      env,
+      url,
+      ["api:entries:read", "api:treatments:read"],
+    );
     const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
     const [entries, treatmentsJson, foodJson, profilesJson, deviceStatusJson] =
       await Promise.all([
@@ -1215,6 +1414,12 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   }
 
   if (request.method === "GET" && url.pathname === "/api/v2/properties") {
+    await requirePermissions(
+      request,
+      env,
+      url,
+      ["api:entries:read", "api:treatments:read"],
+    );
     const tenant = resolveTenant(request, url);
     const entries = await env.ENTRY_STORE.getByName(tenant).getEntries({
       count: 4,
@@ -1228,10 +1433,13 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
 
   if (request.method === "GET" && /^\/api\/v[12]\/verifyauth\/?$/.test(url.pathname)) {
     const resolution = await resolveRequestAuthorization(request, env, url);
-    const permissionGroups = resolution.admin
-      ? [["*"]]
-      : resolution.authorized?.permissionGroups ??
-        (resolution.defaults ? [rolePermissions("readable", [])] : []);
+    const permissionGroups = env.ENTRY_STORE === undefined
+      ? resolution.admin ? [["*"]] : []
+      : await permissionGroupsForResolution(
+        resolution,
+        env.ENTRY_STORE.getByName(resolveTenant(request, url)),
+        env,
+      );
     const canRead = permissionGroupsAllow(permissionGroups, "*:*:read");
     const canWrite = permissionGroupsAllow(permissionGroups, "*:*:write");
     const isAdmin = permissionGroupsAllow(permissionGroups, "*:*:admin");
@@ -1249,6 +1457,9 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   }
 
   if (request.method === "GET" && /^\/api\/v[12]\/adminnotifies\/?$/.test(url.pathname)) {
+    // Locked adminnotifies is public but still resolves credentials so a bad
+    // explicit secret participates in the shared failure delay-list.
+    await resolveRequestAuthorization(request, env, url);
     return json({ message: { notifies: [], notifyCount: 0 } });
   }
 

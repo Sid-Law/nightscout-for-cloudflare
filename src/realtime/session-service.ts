@@ -34,8 +34,8 @@ import {
 
 export interface RealtimeAuthorization {
   read: boolean;
-  write: false;
-  write_treatment: false;
+  write: boolean;
+  write_treatment: boolean;
 }
 
 export interface RealtimeSnapshot {
@@ -805,8 +805,8 @@ export class RealtimeSessionService {
           id: packet.id,
           data: [{
             read: authorization.read,
-            write: false,
-            write_treatment: false,
+            write: authorization.write,
+            write_treatment: authorization.write_treatment,
           }],
         }));
       }

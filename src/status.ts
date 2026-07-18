@@ -1,4 +1,7 @@
-export function nightscoutStatus(now = new Date()): Record<string, unknown> {
+export function nightscoutStatus(
+  now = new Date(),
+  authDefaultRoles = "readable",
+): Record<string, unknown> {
   return {
     status: "ok",
     name: "Nightscout",
@@ -25,7 +28,7 @@ export function nightscoutStatus(now = new Date()): Record<string, unknown> {
       showForecast: "ar2",
       focusHours: 3,
       heartbeat: 60,
-      authDefaultRoles: "readable",
+      authDefaultRoles,
       authenticationPromptOnLoad: false,
       adminNotifiesEnabled: false,
       alarmTypes: [],
@@ -69,8 +72,9 @@ export function nightscoutStatus(now = new Date()): Record<string, unknown> {
 export function nightscoutWebsocketStatus(
   now = new Date(),
   activeProfile?: unknown,
+  authDefaultRoles = "readable",
 ): Record<string, unknown> {
-  const httpStatus = nightscoutStatus(now);
+  const httpStatus = nightscoutStatus(now, authDefaultRoles);
   const websocketStatus: Record<string, unknown> = {
     status: "ok",
     name: "Nightscout",

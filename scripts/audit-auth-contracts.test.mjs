@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import vm from "node:vm";
@@ -11,6 +11,7 @@ const LOCKED_FILES = new Map([
   ["vendor/nightscout/lib/authorization/storage.js", "46ac790de4e76f06a5bc56a2d15f00261b5b89a7910a88752ce96fbe256b52ca"],
   ["vendor/nightscout/lib/authorization/index.js", "edac0ec0078551555b0c1203ed8a5496834d8f8b32c33729f0746bafc75e3729"],
   ["vendor/nightscout/lib/authorization/endpoints.js", "bb2c06500af6476f5d682384bd0bd29ad878a34f2ccde1e4b079d487b02a8b99"],
+  ["vendor/nightscout/lib/authorization/delaylist.js", "9988fe88e2ca0bb3b7168d07f6041115352388658124a31b6993ee40a9e0c03d"],
   ["vendor/nightscout/lib/api/verifyauth.js", "adb5b9edbce174fd02c3431fdf9d386270e286662bb80db1f673f6e6e349ff73"],
   ["vendor/nightscout/lib/server/enclave.js", "4581512456ef3138b8e8ac78020efc2a3f9ce626013b4fc6b188f9802e5aca68"],
   ["vendor/nightscout/tests/api.security.test.js", "ac9abc009f899100d332be69831cb99ccf4ef233da8f8a047a7bd54e69b14995"],
@@ -63,6 +64,48 @@ function loadLockedStorage() {
     { authentication_collections_prefix: "", enclave: {} },
     { store: { collection: () => ({}) } },
   );
+}
+
+function lockedJavascriptFiles(relativeDirectory) {
+  const results = [];
+  function visit(relativePath) {
+    for (const entry of readdirSync(join(REPO_ROOT, relativePath), { withFileTypes: true })) {
+      const child = join(relativePath, entry.name);
+      if (entry.isDirectory()) visit(child);
+      else if (entry.name.endsWith(".js")) results.push(child);
+    }
+  }
+  visit(relativeDirectory);
+  return results;
+}
+
+function loadLockedDelayList(now) {
+  const module = { exports: {} };
+  const require = (specifier) => {
+    if (specifier === "lodash") {
+      return {
+        get(value, path, fallback) {
+          const found = path.split(".").reduce(
+            (current, key) => current == null ? undefined : current[key],
+            value,
+          );
+          return found === undefined ? fallback : found;
+        },
+      };
+    }
+    throw new Error(`unexpected locked delay-list dependency: ${specifier}`);
+  };
+  vm.runInNewContext(
+    `(function (require, module, exports) {\n${source("vendor/nightscout/lib/authorization/delaylist.js")}\n})(require, module, module.exports);`,
+    {
+      require,
+      module,
+      Date: { now: () => now.value },
+      setTimeout: () => 0,
+    },
+    { filename: "vendor/nightscout/lib/authorization/delaylist.js" },
+  );
+  return module.exports({ settings: { authFailDelay: 50 } });
 }
 
 test("authorization audit is pinned to the exact v15.0.7 commit and source/test bytes", () => {
@@ -129,4 +172,38 @@ test("locked sources retain request priority, body deletion, hash case, and muta
   assert.match(storage, /if \(!obj\.created_at\)/);
   assert.match(verifyauth, /permissions: result\.defaults \? 'DEFAULT' : 'ROLE'/);
   assert.match(verifyauth, /rolefound: result\.subject \? 'FOUND' : 'NOTFOUND'/);
+});
+
+test("Worker seenPermissions is exactly generated from locked static isPermitted guards", () => {
+  const locked = new Set();
+  for (const relativePath of lockedJavascriptFiles("vendor/nightscout/lib")) {
+    for (const match of source(relativePath).matchAll(/\.isPermitted\(\s*['"]([^'"]+)['"]/g)) {
+      locked.add(match[1]);
+    }
+  }
+  const worker = source("src/index.ts");
+  const registry = /const SEEN_PERMISSIONS = \[([\s\S]*?)\] as const;/.exec(worker);
+  assert.ok(registry, "Worker seen-permission registry missing");
+  const adapted = Array.from(
+    registry[1].matchAll(/"([^"]+)"/g),
+    (match) => match[1],
+  );
+  assert.deepEqual(adapted, [...locked].sort());
+});
+
+test("locked delay-list accumulates failures, resets elapsed entries, and clears success", () => {
+  const now = { value: 1_000 };
+  const delayList = loadLockedDelayList(now);
+  assert.equal(delayList.shouldDelayRequest("198.51.100.1"), false);
+  delayList.addFailedRequest("198.51.100.1");
+  assert.equal(delayList.shouldDelayRequest("198.51.100.1"), 50);
+  now.value = 1_025;
+  delayList.addFailedRequest("198.51.100.1");
+  assert.equal(delayList.shouldDelayRequest("198.51.100.1"), 75);
+  now.value = 1_100;
+  assert.equal(delayList.shouldDelayRequest("198.51.100.1"), false);
+  delayList.addFailedRequest("198.51.100.1");
+  assert.equal(delayList.shouldDelayRequest("198.51.100.1"), 50);
+  delayList.requestSucceeded("198.51.100.1");
+  assert.equal(delayList.shouldDelayRequest("198.51.100.1"), false);
 });

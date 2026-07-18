@@ -7,7 +7,13 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
-      miniflare: { bindings: { API_SECRET: TEST_API_SECRET } },
+      miniflare: {
+        bindings: {
+          API_SECRET: TEST_API_SECRET,
+          AUTH_DEFAULT_ROLES: "readable",
+          AUTH_FAIL_DELAY: "1",
+        },
+      },
     }),
   ],
   test: {

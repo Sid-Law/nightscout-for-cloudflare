@@ -12,6 +12,58 @@ export interface SubjectCredential {
   digest: string;
 }
 
+export interface AuthorizationRoleDocument {
+  name?: unknown;
+  permissions?: unknown;
+}
+
+export const BUILTIN_AUTHORIZATION_ROLES: ReadonlyArray<{
+  name: string;
+  permissions: readonly string[];
+}> = [
+  { name: "admin", permissions: ["*"] },
+  { name: "denied", permissions: [] },
+  { name: "status-only", permissions: ["api:status:read"] },
+  { name: "readable", permissions: ["*:*:read"] },
+  { name: "careportal", permissions: ["api:treatments:create"] },
+  { name: "devicestatus-upload", permissions: ["api:devicestatus:create"] },
+  { name: "activity", permissions: ["api:activity:create"] },
+];
+
+/** Locked settings.js defaults to readable; index.js splits on any one delimiter. */
+export function authorizationDefaultRoleNames(configured?: string): string[] {
+  return (configured ?? "readable").split(/[, :]/);
+}
+
+export function authorizationRoleNames(
+  subjectRoles: unknown,
+  configuredDefaults?: string,
+): string[] {
+  const names = Array.isArray(subjectRoles)
+    ? subjectRoles.filter((role): role is string => typeof role === "string")
+    : [];
+  return Array.from(new Set([
+    ...names,
+    ...authorizationDefaultRoleNames(configuredDefaults),
+  ]));
+}
+
+export function authorizationPermissionGroups(
+  roleNames: readonly string[],
+  storedRoles: readonly AuthorizationRoleDocument[],
+): string[][] {
+  return roleNames.map((name) => {
+    const role = storedRoles.find((candidate) => candidate.name === name) ??
+      BUILTIN_AUTHORIZATION_ROLES.find((candidate) => candidate.name === name);
+    if (typeof role?.permissions === "string") return [role.permissions];
+    return Array.isArray(role?.permissions)
+      ? role.permissions.filter(
+        (permission): permission is string => typeof permission === "string",
+      )
+      : [];
+  });
+}
+
 const encoder = new TextEncoder();
 const MAX_CREDENTIAL_CHARACTERS = 4096;
 const MAX_TOKEN_CANDIDATES = 32;
@@ -130,6 +182,20 @@ async function timingSafeTextEqual(left: string, right: string): Promise<boolean
   return subtle.timingSafeEqual(leftDigest, rightDigest);
 }
 
+async function timingSafePrefixEqual(full: string, prefix: string): Promise<boolean> {
+  if (prefix.length > full.length) return false;
+  const subtle = crypto.subtle as SubtleCrypto & {
+    timingSafeEqual(
+      first: ArrayBuffer | ArrayBufferView,
+      second: ArrayBuffer | ArrayBufferView,
+    ): boolean;
+  };
+  return subtle.timingSafeEqual(
+    encoder.encode(full.slice(0, prefix.length)),
+    encoder.encode(prefix),
+  );
+}
+
 /** SHA-1 is case-insensitive upstream; SHA-512 is deliberately case-sensitive. */
 export async function apiSecretDigestMatches(
   provided: string | null,
@@ -193,10 +259,10 @@ export function authorizationDerivationMarker(
  * only the final dash-delimited suffix participates in the subject digest
  * comparison, while a SHA-1(accessToken) prefix is also accepted.
  */
-export function subjectCredentialMatches(
+export async function subjectCredentialMatches(
   subject: SubjectCredential,
   presented: string,
-): boolean {
+): Promise<boolean> {
   if (
     presented.length === 0 ||
     presented.length > MAX_CREDENTIAL_CHARACTERS
@@ -205,6 +271,9 @@ export function subjectCredentialMatches(
   }
   const suffix = presented.split("-").at(-1) ?? "";
   if (suffix.length < 16) return false;
-  return subject.accessTokenDigest.startsWith(presented) ||
-    subject.digest.startsWith(suffix);
+  const [accessTokenDigestMatches, subjectDigestMatches] = await Promise.all([
+    timingSafePrefixEqual(subject.accessTokenDigest, presented),
+    timingSafePrefixEqual(subject.digest, suffix),
+  ]);
+  return accessTokenDigestMatches || subjectDigestMatches;
 }
