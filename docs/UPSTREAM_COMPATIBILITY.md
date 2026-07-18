@@ -251,8 +251,11 @@ run declaring only `ENTRY_STORE` and `ASSETS`.
   completed with HTTP 200.
 - The in-app browser rendered the official homepage/chart and version 15.0.7;
   closing Settings did not rebound. Admin, Report and color clock rendered.
-  Profile and Food rendered their official editors but showed `Not loaded` and
-  `Unauthorized`, so this release does not claim their protected workflows.
+  Profile and Food rendered their official editors; the immediate snapshot
+  showed initial `Not loaded` text while authentication was `Unauthorized`.
+  Direct remote reads of both page-data endpoints returned HTTP 200, including
+  the stored simulated profile, so this is an unverified credentialed-save
+  workflow rather than evidence of a failed read API.
 - The homepage data connection still came from the REST polling shim; the new
   EIO4 endpoint was exercised separately.
 - The existing `API_SECRET` was retained unchanged with `--keep-vars`; its

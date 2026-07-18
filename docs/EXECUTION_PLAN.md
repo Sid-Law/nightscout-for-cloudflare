@@ -123,11 +123,15 @@ sequence. After 26 seconds without an HTTP cleanup opportunity the next poll
 received the alarm-driven Engine.IO ping; pong and close both succeeded. The
 in-app browser rendered the homepage/chart and About version 15.0.7, and
 Settings stayed closed for several seconds without rebounding. Profile and Food
-rendered the official editors but reported `Not loaded` and `Unauthorized`, so
-their protected read/save workflows remain open work. Admin, Report and color
-clock rendered their official empty/unauthorized states. No console error was
-observed; standalone pages emitted only the known missing-`#chartContainer`
-warning.
+rendered the official editors; the immediate snapshot still showed their
+initial `Not loaded` text and an `Unauthorized` authentication state. Direct
+remote reads of `/api/v1/profile.json?count=20` and `/api/v1/food.json` both
+returned HTTP 200, including the stored simulated profile, so the snapshot is
+not treated as an API failure. No credentialed browser save was attempted, and
+that protected workflow remains unproven for this release. Admin, Report and
+color clock rendered their official empty/unauthorized states. No console error
+was observed; standalone pages emitted only the known
+missing-`#chartContainer` warning.
 
 This is still not a full port: API v3 entries, food, profile and settings,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,

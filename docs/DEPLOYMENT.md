@@ -75,6 +75,8 @@ protocol markers, not only Wrangler command success.
 | `/` | HTTP 200, official HTML |
 | `/admin`, `/profile`, `/food`, `/report`, `/clock/clock-color` | HTTP 200 |
 | `/api/v1/entries.json?count=1` | HTTP 200 JSON |
+| `/api/v1/profile.json?count=20` | HTTP 200 JSON; stored simulated profile returned |
+| `/api/v1/food.json` | HTTP 200 JSON array |
 | `/api/v3/version` | HTTP 200; Nightscout `15.0.7`, API `3.0.3-alpha`, SQLite Durable Object adapter metadata |
 | `/api/v3/status` without JWT | HTTP 401 JSON |
 | `/api/v3/treatments` without JWT | HTTP 401 JSON |
@@ -99,17 +101,20 @@ reading credential storage or submitting protected mutations:
   About-panel version `15.0.7`;
 - opening and closing Settings left the panel closed after repeated delayed
   checks; no save was attempted;
-- Profile Editor and Food Editor rendered their official controls but reported
-  `Not loaded`; their authentication state was `Unauthorized`;
+- Profile Editor and Food Editor rendered their official controls. The
+  immediate snapshot still showed the initial `Not loaded` text and their
+  authentication state was `Unauthorized`;
 - Admin rendered its official authentication state; Report rendered its report
   selector and filters; color clock rendered the upstream empty-data state;
 - no console error was observed; the only messages were three locked-upstream
   `Unable to find element for #chartContainer` warnings on standalone pages.
 
 This confirms that the Settings close/reopen regression is not reproducing, but
-it does not close the Profile/Food save contract. Their current
-`Not loaded`/`Unauthorized` states are an explicit remaining API/auth gap, not
-a successful workflow claim.
+it does not close the Profile/Food save contract. Direct requests made after
+the browser run returned HTTP 200 for both page-data endpoints, including the
+stored simulated profile. Therefore the browser's initial `Not loaded` text is
+not classified as a backend API failure; the credentialed save workflow simply
+was not re-exercised in this release.
 
 ## Known limitations
 

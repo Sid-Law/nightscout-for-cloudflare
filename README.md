@@ -242,11 +242,13 @@ The current deployed code is commit `0319a8d5e78fc77c4c53c0a94724b706d7ec8255`
 rebuilt 248 official asset entries, passed the 161-route/111-test-file audit,
 14/14 audit-tool tests and 141/141 Workers-runtime tests, then passed remote
 API/EIO4 polling-and-alarm smoke and real-browser homepage, Settings, Profile,
-Food, Admin, Report and color-clock checks. Profile and Food currently render
-their official editors but report `Not loaded`/`Unauthorized`; that is recorded
-as an incomplete protected workflow, not a successful page-data claim. These
-counts cover only the named adapter subset; they are not evidence of a complete
-Nightscout port.
+Food, Admin, Report and color-clock checks. Profile and Food rendered their
+official editors; the browser snapshot caught their initial `Not loaded` state
+while authentication was `Unauthorized`, but direct public reads returned HTTP
+200 (including the stored simulated profile). No credentialed save was
+attempted, so this is neither a backend-failure claim nor proof of the protected
+workflow. These counts cover only the named adapter subset; they are not
+evidence of a complete Nightscout port.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
