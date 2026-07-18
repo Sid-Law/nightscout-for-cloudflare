@@ -673,6 +673,45 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     });
   });
 
+  it("wakes a poll for queued data, then waits only until the original ping deadline", async () => {
+    const stub = store("realtime-poll-remaining");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const service = new RealtimeSessionService(state.storage, { pollWaitMs: 500 });
+      const { sid } = service.createHandshake();
+      const pingAt = Date.now() + 150;
+      state.storage.sql.exec(
+        "UPDATE realtime_sessions SET next_ping_at = ?, expires_at = ? WHERE sid = ?",
+        pingAt,
+        pingAt + 300,
+        sid,
+      );
+
+      const firstPoll = service.poll(sid);
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
+      const firstPackets = decodeEngineIoV4PollingPayload(await firstPoll)
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      expect(firstPackets[0]).toMatchObject({ type: "connect", namespace: "/" });
+
+      // The POST refreshed the general liveness deadline. Put a nearer expiry
+      // back so a reopened GET that waits the full 500 ms would lose the SID.
+      state.storage.sql.exec(
+        "UPDATE realtime_sessions SET expires_at = ? WHERE sid = ?",
+        pingAt + 300,
+        sid,
+      );
+      const secondStartedAt = Date.now();
+      expect(await service.poll(sid)).toBe("2");
+      expect(Date.now() - secondStartedAt).toBeLessThan(350);
+      expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid))
+        .toMatchObject({
+          pongDeadline: expect.any(Number),
+          pollToken: null,
+        });
+    });
+  });
+
   it("closes the session on concurrent GET or POST leases", async () => {
     const pollStub = store("realtime-poll-overlap");
     await runInDurableObject(pollStub, async (_instance, state) => {

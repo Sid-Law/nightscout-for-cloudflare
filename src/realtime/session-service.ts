@@ -367,9 +367,20 @@ export class RealtimeSessionService {
         session.pollToken = null;
         session.pollDeadline = null;
         this.repository.updateSession(session);
-        return { overlap: false as const, token: "", immediate };
+        return { overlap: false as const, token: "", immediate, waitMs: 0 };
       }
-      return { overlap: false as const, token: session.pollToken, immediate: null };
+      const heartbeatDeadline = session.pongDeadline ?? session.nextPingAt;
+      const waitUntil = Math.min(
+        startedAt + Math.max(0, this.pollWaitMs),
+        heartbeatDeadline,
+        session.expiresAt,
+      );
+      return {
+        overlap: false as const,
+        token: session.pollToken,
+        immediate: null,
+        waitMs: Math.max(0, waitUntil - startedAt),
+      };
     });
 
     if (acquired.overlap) {
@@ -384,7 +395,7 @@ export class RealtimeSessionService {
     }
 
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, this.pollWaitMs);
+      const timer = setTimeout(resolve, acquired.waitMs);
       this.waiters.set(sid, { token: pollToken, resolve, timer });
     });
     const waiter = this.waiters.get(sid);
