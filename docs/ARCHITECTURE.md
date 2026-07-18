@@ -11,13 +11,15 @@ system is a compatible subset, not a full server.
 ```text
 Official Nightscout v15.0.7 pages and browser bundle / compatible uploader
         |
-        | static HTML/CSS/JS, v1/v2 page API, transport polling
+        | static HTML/CSS/JS, v1/v2 page API, REST shim polling
+        | or independent EIO4 polling clients
         v
 Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
   - API_SECRET, subject access-token and signed-JWT authorization
   - bounded parsing, upstream query subset and tenant routing
   - Socket.IO client-surface polling adapter
+  - strict `/socket.io/` EIO4 polling HTTP adapter
         |
         | ENTRY_STORE.getByName(tenant), typed RPC
         v
@@ -33,6 +35,7 @@ Embedded SQLite
   - food, profile, treatments, devicestatus, activity, roles and subjects
   - per-collection sort and lookup indexes
   - tenant-local JWT signing material
+  - persisted EIO4 sessions and bounded outbound packet queues
   - local schema migration table
 ```
 
@@ -63,6 +66,17 @@ server for the current subset; it is not a Socket.IO or Engine.IO server.
 The adapter dispatches the first `dataUpdate` before completing `authorize`, as
 the upstream `lib/server/websocket.js` path does, so profile-dependent plugins
 can initialize from the first payload.
+
+Separately, exact `/socket.io` and `/socket.io/` requests can now reach a real
+tenant-local Engine.IO 4 polling endpoint. It implements the official open
+shape with `upgrades: []`, 25-second server ping / 20-second client-pong
+heartbeat, RS payload framing, SIO5 root CONNECT, `clients`, read-only
+`authorize`, initial `dataUpdate`, and `loadRetro`. Sessions, root authorization
+and ordered outbound frames are stored in the existing tenant `EntryStore`
+SQLite database, while only an in-flight long-poll waiter is ephemeral. DO
+eviction therefore does not lose protocol authority or queued packets. This
+endpoint is independently tested but is not loaded by the official homepage;
+the built `/socket.io/socket.io.js` remains the REST shim described above.
 
 The official v15.0.7 service worker uses a cache-first list that includes
 `/socket.io/socket.io.js`. A cache key derived only from the upstream release
@@ -371,14 +385,31 @@ fixed deployment footprint.
 
 `platform/socket-io-polling-shim.js` currently creates browser-side `connect`,
 `authorize`, `subscribe`, `loadRetro` and `dataUpdate` events and polls every
-15 seconds. It deliberately does not implement:
+15 seconds. It still supplies the official page and does not use the new
+server endpoint. The separate endpoint now implements strict EIO4 HTTP polling
+with persisted session/queue state, root namespace CONNECT, read-only
+authorization ACKs, initial/retro data and connection-count broadcasts.
 
-- Engine.IO handshake, ping/pong, session IDs or polling queues;
-- WebSocket upgrade and reconnect;
-- Socket.IO acknowledgements, rooms or namespaces;
-- `dbAdd`, `dbUpdate`, `dbUpdateUnset` and `dbRemove`;
-- `/storage` and `/alarm` namespaces;
-- immediate write broadcasts.
+The current server boundary is explicit:
+
+- EIO4 polling only; EIO3 HTTP, WebSocket upgrades and binary packets are
+  rejected, and the handshake advertises `upgrades: []`;
+- 256 sessions per tenant, 128 queued packets and a 1,000,000-byte whole
+  polling payload per session; incoming POST bodies are counted while streamed;
+- 32-session opportunity cleanup on normal requests, with no new alarm;
+- `/storage` and `/alarm` return SIO5 `CONNECT_ERROR` and do not terminate an
+  already connected root namespace;
+- root `subscribe` and all write events have no handler or ACK, matching the
+  locked root's lack of `subscribe` while deliberately exposing no mutation;
+- no `document_changes` row is consumed and no database mutation is broadcast.
+
+Initial authorization data mirrors `dataWithRecentStatuses()`. `loadRetro`
+correctly uses a separate unfiltered device-status loader, but the current SQL
+adapter loads at most 100 statuses rather than the locked one-day `lastData`
+window. Websocket status preserves the locked key set/order, with fixed
+platform assumptions for API/careportal/boluscalc enablement and no active
+profile. `authorize` and `loadRetro` require exactly one object payload; this is
+a resource/safety tightening over permissive upstream JavaScript call shapes.
 
 The target transport persists a change record in the same DO turn as each
 mutation, then broadcasts only after the write succeeds. Hibernated sessions
@@ -416,6 +447,8 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
 ## Runtime and safety boundaries
 
 - Maximum request body: 512 KiB; maximum POST batch: 100 records.
+- EIO4 polling POST body/advertised payload: 1,000,000 UTF-8 bytes; maximum 128
+  queued packets and 256 persisted sessions per tenant.
 - SGV range accepted by this prototype: integer 20–600 mg/dL.
 - History count defaults to 10 and is capped at 10,000.
 - Official UI and calculations are not changed; no NSCF dosing logic exists.
@@ -423,7 +456,8 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
   and role documents are tenant-local SQLite records. The API_SECRET value is a
   Cloudflare binding, never a committed Wrangler variable; the current lab uses
   a plain-text dashboard variable at the owner's request.
-- The polling shim is transport-only, runs every 15 seconds and has no medical or
-  display logic.
+- The homepage polling shim is transport-only, runs every 15 seconds and has no
+  medical or display logic. The separately routed EIO4 server is read-only and
+  is not yet the homepage transport.
 - Text asset responses are streamed rather than buffered when UTF-8 headers are
   adapted, keeping the extra Worker CPU and memory work constant.

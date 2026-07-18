@@ -35,8 +35,13 @@ for diagnosis, dosing, or medical decisions.
   the unmodified source snapshot in `vendor/nightscout`.
 - A transport-only polling shim for the upstream client's Socket.IO surface;
   it loads one aggregate data payload and emits the upstream `dataUpdate`.
-- Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs, isolated from
-  routing until a tenant-DO polling/WebSocket session server is complete.
+- A separately routed, tenant-local `/socket.io/` server slice for strict EIO4
+  HTTP polling and the read-only SIO5 root namespace. Sessions, heartbeat state,
+  authorization state and bounded outbound queues persist in the existing
+  `EntryStore` SQLite Durable Object across eviction.
+- Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs. Only EIO4
+  polling is routed: the endpoint advertises `upgrades: []`, rejects EIO3, and
+  does not implement binary packets.
 - Content-addressed loading for that platform shim, so an older upstream
   service worker cannot keep serving an obsolete adapter after deployment.
 - A response-header adapter that preserves upstream asset bytes while supplying
@@ -51,12 +56,14 @@ This is not yet a drop-in Nightscout server. Important missing work includes
 the complete v1/v2/v3 route and error surface, API v3 collections other than
 treatments, API v3 CSV/XML rendering, the authorization delay list and
 legacy access-token derivation, Mongo query/collection parity,
-Engine.IO/Socket.IO polling sessions, WebSocket upgrade and namespaces,
-real-time write broadcasts, bounded outbox retention, Durable Object alarms,
-server plugin execution,
+WebSocket upgrade, EIO3 HTTP transport, `/storage` and `/alarm` namespaces,
+root write handlers, real-time database-change broadcasts, bounded change
+outbox retention, Durable Object alarms, server plugin execution,
 notification/summary persistence and end-to-end verification of every official
 page workflow. The polling shim only keeps the official browser bundle supplied
-with aggregate data; it is not a Socket.IO implementation.
+with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
+homepage to the official Socket.IO client is a later slice that also requires
+safe non-default tenant propagation and the page-used alarm namespace.
 
 The evidence-based compatibility matrix and acceptance criteria are in
 [`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md). The storage
@@ -143,6 +150,13 @@ v15.0.7 tree currently reports 66 inherited findings (9 low, 18 moderate, 37
 high, 2 critical). They are recorded rather than silently changed because
 `npm audit fix` would mutate the official release dependency graph.
 
+The routed EIO4 root namespace is read-only even when a credential could grant
+HTTP writes: its authorization ACK is always `{read:true, write:false,
+write_treatment:false}`. Anonymous reads follow the current readable default;
+invalid explicit credentials disconnect only the root namespace without
+closing the Engine.IO SID. This narrow transport surface does not authorize any
+database mutation event.
+
 ## Configure API_SECRET on Cloudflare
 
 Open **Workers & Pages → `nscf-phase1` → Settings → Variables and Secrets**,
@@ -191,18 +205,19 @@ and the `EntryStore` SQLite Durable Object namespace. A normal Wrangler deploy
 requires an authenticated Cloudflare session and a verified Cloudflare account
 email.
 
-The automated suite currently contains 98 Workers-runtime tests.
-It covers the shipped page routes, dynamic clock template, polling-adapter
+The automated Workers-runtime suite covers the shipped page routes, dynamic
+clock template, polling-adapter
 asset/version contracts, implemented status and page-data contracts, API-secret
 failure modes, the implemented entries and document CRUD subset, activity
 conditional requests, JWT issue/verify/expiry/tamper/cross-tenant behavior,
 Shiro permission matching, `verifyauth`, the API v3 version/status envelopes,
-SQLite persistence across eviction, tenant isolation and invalid input. The
-suite also covers schema-v4 repair, v1/API3 treatment time separation, UUID
-query handling, API3 materialization, mutation rollback and the treatments
-JSON HTTP workflow, including permissions, ordering, history and tombstones.
-The locked upstream has 111 JavaScript test files and about 873 test cases; the
-98 adapter tests do not prove complete Nightscout compatibility.
+SQLite persistence across eviction, tenant isolation and invalid input. It also
+covers schema-v4 repair, v1/API3 treatment time separation, UUID query handling,
+API3 materialization and rollback, the treatments JSON HTTP workflow, and the
+EIO4 polling HTTP/session boundary: packet ordering, root authorization,
+heartbeat, eviction, overlap, body/session/queue caps and cross-tenant SID
+rejection. The locked upstream has 111 JavaScript test files and about 873 test
+cases; the local adapter tests do not prove complete Nightscout compatibility.
 
 The current simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally

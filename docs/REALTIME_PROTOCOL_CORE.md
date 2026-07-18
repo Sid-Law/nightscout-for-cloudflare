@@ -1,16 +1,17 @@
 # Engine.IO / Socket.IO protocol core
 
-Status: protocol codecs, explicit version negotiation, and contract tests only.
-Nothing in this module is connected to `src/index.ts`; it does not replace the
-existing polling shim, modify `EntryStore`, implement a session lifecycle,
-upgrade a connection, persist namespace membership, or broadcast live data.
+Status: versioned protocol codecs plus a routed, persisted, read-only EIO4
+polling/root-namespace slice. The server endpoint is connected to `src/index.ts`
+and the existing tenant `EntryStore`, but it deliberately does not replace the
+homepage REST polling shim, upgrade to WebSocket, accept EIO3 over HTTP, expose
+write events, or broadcast database changes.
 
 ## Supported stacks
 
-| Role | Engine.IO | Socket.IO parser | Polling framing | Heartbeat |
-| --- | ---: | ---: | --- | --- |
-| Official Nightscout v15.0.7 browser path | 4 | 5 | raw RS (`0x1e`) between packets | server ping, client pong |
-| Legacy compatibility (`allowEIO3`) | 3 | 4 | `<UTF-16 length>:<packet>` | client ping, server pong |
+| Role | Engine.IO | Socket.IO parser | Polling framing | Heartbeat | HTTP status |
+| --- | ---: | ---: | --- | --- | --- |
+| Locked official Nightscout v15.0.7 path | 4 | 5 | raw RS (`0x1e`) between packets | server ping, client pong | Routed read-only subset |
+| Legacy compatibility (`allowEIO3`) | 3 | 4 | `<UTF-16 length>:<packet>` | client ping, server pong | Codec only; rejected |
 
 `negotiateProtocolStack()` accepts only an exact `EIO=3` or `EIO=4` value and
 binds it to the matching complete stack. Missing, coerced, and unknown versions
@@ -75,6 +76,46 @@ stringification escapes a U+001E inside event data as the six printable
 characters `\\u001e`, so it cannot become a polling delimiter. Raw RS in an
 arbitrary Engine.IO packet is rejected to preserve a one-to-one packet round
 trip and prevent separator injection.
+
+## Routed read-only polling slice
+
+Exact `/socket.io` and `/socket.io/` requests with `EIO=4` and
+`transport=polling` resolve the explicit/default tenant and address the existing
+tenant `EntryStore` DO. The open packet advertises no upgrades and fixes
+`pingInterval=25000`, `pingTimeout=20000`, and `maxPayload=1000000`. GET returns
+`text/plain; charset=UTF-8`; successful POST returns locked `text/html` / `ok`.
+Unknown SID/query errors, overlapping GET/POST leases, oversized POST bodies,
+malformed protocol close behavior and tenant crossing have Workers-runtime
+HTTP tests.
+
+SQLite schema v5 stores the Engine.IO SID, current Socket.IO SID, root connect/
+authorization/read flags, heartbeat deadlines, GET/POST leases, queue counters
+and ordered outbound packets. The only memory-only item is the resolver for a
+currently waiting GET. Eviction tests prove a stored SID and queued output can
+resume in a reconstructed DO. Cleanup is opportunistic and bounded; this slice
+does not allocate an alarm.
+
+The supported SIO5 root behavior is deliberately narrow:
+
+- root CONNECT reply precedes the locked `clients` event; disconnect and
+  queue-overflow/transport closure correct the remaining client count;
+- `authorize` emits `connected`, optional initial `dataUpdate`, then an ACK;
+  valid anonymous or tenant credentials are reduced to a fixed read-only ACK;
+- invalid authorization emits root DISCONNECT without ACK while keeping the
+  Engine.IO transport available for namespace reconnect;
+- `loadRetro` ACKs before `retroUpdate`, or emits only `retroUpdate` if there is
+  no ACK id;
+- root `subscribe` and all writes have no listener/ACK; non-root namespace
+  CONNECT receives `CONNECT_ERROR` without terminating root.
+
+Initial data matches locked `dataWithRecentStatuses()` field order and recent
+device-status filtering. Retro data comes from a distinct raw normalized loader
+as upstream requires, but the adapter queries at most 100 device-status
+documents instead of reconstructing the locked one-day in-memory window. The
+websocket status object has the locked field set/order; fixed API/careportal
+enabled, boluscalc disabled, and absent active profile are named platform
+assumptions. Requiring exactly one object argument for `authorize` and
+`loadRetro` is a deliberate safety/resource tightening.
 
 `src/protocol/engine-io-v4.ts` provides:
 
@@ -141,25 +182,20 @@ unknown packet types, raw/binary frames outside the supported subset, invalid
 namespace delimiters, unsafe ack ids, malformed JSON, reserved event names,
 wrong payload shapes, and excessive size/depth/complexity.
 
-Cloudflare's current Workers limit is 128 MB memory per isolate. A future HTTP
-adapter must therefore establish a body-size maximum before buffering, check
-`Content-Length` when present, and stream/count when it is absent. Passing an
-already-unbounded `request.text()` result into a bounded codec is not safe.
+The routed HTTP adapter checks `Content-Length` when present and always streams/
+counts the body before decoding, so it never obtains an already-unbounded
+`request.text()` value. Runtime caps add 256 sessions per tenant, 128 queued
+packets per session, a 1,000,000-byte whole framed queue, and cleanup batches of
+32. Cloudflare's current Workers memory limit remains 128 MB per isolate.
 
-## Future tenant Durable Object integration (not implemented)
+## Remaining tenant Durable Object integration
 
-The tenant remains the coordination atom: a stateless Worker can resolve the
-tenant and address one deterministic tenant Durable Object. A later increment
-should add dedicated session and queue storage rather than modifying the
-existing `EntryStore` schema implicitly.
-
-Suggested authoritative records include:
-
-- Engine.IO session: sid, negotiated stack, transport, state, timestamps,
-  heartbeat deadline, and monotonic inbound/outbound sequence numbers;
-- bounded outbound polling queue: sid, sequence, encoded packet, byte length,
-  and expiry;
-- namespace membership and authorization state keyed by sid and namespace.
+The tenant is now the coordination atom for polling, and authoritative session/
+queue state is persisted in explicit tables within its existing DO. Remaining
+work is not permission to infer broader support: the static homepage client
+still uses the REST shim; safe non-default tenant propagation, `/alarm`,
+`/storage`, mutation handlers, persisted-change broadcasts, EIO3 HTTP and
+WebSocket upgrade are absent.
 
 For WebSockets, use the Durable Objects WebSocket Hibernation API:
 
@@ -181,7 +217,7 @@ Cloudflare numerical facts above were rechecked on 2026-07-18 against:
 - <https://developers.cloudflare.com/durable-objects/best-practices/websockets/#websocketserializeattachment>
 - <https://developers.cloudflare.com/workers/platform/limits/#memory>
 
-This remains a handoff design, not a lifecycle completion claim. Routing, HTTP
-body handling, persisted sessions and queues, polling concurrency, WebSocket
-Hibernation, runtime authorization and namespace membership, upgrades, and
-real-time broadcasts are all still unimplemented.
+The WebSocket steps remain a handoff design, not a completion claim. Current
+routing/body/session/queue/polling-concurrency/read-authorization behavior is
+implemented only for the named EIO4 HTTP/root slice; Hibernation, upgrades,
+other namespaces, writes and real-time database broadcasts remain unimplemented.

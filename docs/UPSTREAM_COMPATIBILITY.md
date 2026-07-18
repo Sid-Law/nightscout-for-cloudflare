@@ -17,10 +17,13 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-The current local suite has 98 Workers-runtime tests. The locked
+The local Workers-runtime suite includes focused EIO4 protocol, persisted
+session, HTTP-boundary, eviction, authorization, tenant-isolation and resource-
+cap contracts in addition to API v3 treatments, storage and official-page
+tests. The locked
 upstream has 111 `*.test.js` files and approximately 873 `it(...)` cases. Those
-numbers are not directly comparable, but they make clear why the current suite
-does not prove full compatibility.
+sets are not directly comparable, and the local suite does not prove full
+compatibility.
 
 ## Generated route and test inventory
 
@@ -91,7 +94,7 @@ required and unresolved.
 | MongoDB connection and collections | `lib/storage/mongo-storage.js:105-221` creates a connection pool, retries forever, exposes `db.collection()` and creates indexes. | **Cannot run unchanged within the fixed platform scope.** This project deliberately has no Mongo service and must use SQLite Durable Objects. | Implement a Mongo-compatible repository contract over DO SQLite, including query conversion, indexes, collection behavior and migration tests. [SQLite-backed DO storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/). |
 | Mongo ObjectId and query semantics | `lib/server/query.js:28-175`, `lib/server/entries.js`, `lib/server/treatments.js` and `lib/authorization/storage.js` depend on ObjectId, nested Mongo operators, sort, projection and upsert behavior. | **Engineering adaptation.** ObjectId formatting is easy; behavioral parity is not. | Preserve 24-hex identity and UUID fallback rules, then port operators and collection-specific dedupe as contract-tested SQL/JSON operations. |
 | Process-global bus and mutable caches | `lib/bus.js:4-36`, `lib/server/bootevent.js:271-330`, `lib/notifications.js` and `lib/adminnotifies.js` keep timers, listeners and alarm state in memory. | **Runtime lifecycle conflict.** Workers and DOs may be evicted and reconstructed. | Persist authoritative state in SQLite, rebuild caches on activation, and make mutations idempotent. |
-| Socket.IO / Engine.IO | `lib/server/websocket.js:87-164` attaches Socket.IO with polling and WebSocket transports. The official 4.5.4 browser bundle uses EIO4/SIO5; `allowEIO3` retains EIO3/SIO4 legacy clients. Later handlers implement authorization and database mutations. | **Server-model conflict, but solvable.** Versioned protocol codecs now exist, but the current polling shim is not a Socket.IO session server. | Implement Engine.IO/Socket.IO sessions and namespaces on a tenant DO using the WebSocket Hibernation API, plus polling compatibility and mutation broadcasts. [DO WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/). |
+| Socket.IO / Engine.IO | `lib/server/websocket.js:87-164` attaches Socket.IO with polling and WebSocket transports. The official 4.5.4 browser bundle uses EIO4/SIO5; `allowEIO3` retains EIO3/SIO4 legacy clients. Later handlers implement authorization and database mutations. | **Partial platform adaptation.** A real persisted EIO4 polling/read-only-root slice now runs on the tenant DO, separately from the homepage REST shim. It is not the complete namespace/write/WebSocket server. | Add the page-required namespace/tenant behavior before switching the static client, then use DO WebSocket Hibernation for upgrades and persisted change delivery. [DO WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/). |
 | `setInterval` and periodic work | `lib/bus.js:35`, `lib/plugins/bridge.js:116` and `lib/plugins/mmconnect.js:25` assume a permanent event loop. | **Runtime conflict.** Intervals cannot be the durable scheduler. | Store a task schedule in SQLite and multiplex it through the DO's single alarm. Alarms are at-least-once and must be idempotent. [DO alarms](https://developers.cloudflare.com/durable-objects/api/alarms/). |
 | Server plugin registration | `lib/plugins/index.js:25-80` statically requires the official plugin set; `lib/server/bootevent.js:209-246` creates server plugins from runtime settings. | **Mostly build/runtime adaptation.** Static requires can bundle; process-global contexts and plugin state cannot be trusted. | Generate a build-time registry from the locked tree and give each server plugin a persisted, tenant-scoped execution context. Do not rewrite official calculations. |
 
@@ -121,7 +124,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/api2/notifications-v2.js` | **Missing.** | Reuse upstream processors without adding medical logic; add notification acknowledgement/persistence tests. |
 | API v3 version/status | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.basic.test.js` | **Compatible named subset.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. | Local valid/missing/bad/eviction/cross-tenant JWT contracts plus remote missing/bad-token smoke; do not infer generic API support from this endpoint. |
 | API v3 treatments JSON/lastModified/history | `lib/api3/generic/**`, `specific/lastModified.js` | **Partial JSON vertical.** The eight locked treatments routes plus GET `/lastModified` are wired with JWT-only auth, JSON envelopes, conditional headers, dynamic create/update permission selection inside the mutation transaction, soft/permanent delete, ordered sort and both history cursors. READ/ordinary SEARCH virtually resolve legacy missing srv fields only after raw filtering; srv-field SEARCH and HISTORY see only persisted srv fields. The locked history-fields header fallback and repeated `permanent` scalar behavior are tested. CSV/XML return 406 and only treatments contributes to lastModified. | Add byte-compatible `csv-stringify`/`easyxml` renderers, the other five generic collections, full mixed-type query parity and whole-file upstream API3 execution. Do not mark any complete `api3.*` test file adapted from this named slice alone. |
-| Main Socket.IO namespace | `lib/server/websocket.js` | **Protocol core only.** Official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs are isolated and tested, but `platform/socket-io-polling-shim.js` still polls REST every 15 seconds and fabricates client events. No Engine.IO session handshake is routed. | Engine.IO polling/WebSocket lifecycle on the tenant DO, authorize/loadRetro/dbAdd/dbUpdate/dbRemove, acknowledgements, reconnect and multi-client broadcast tests. |
+| Main Socket.IO namespace | `lib/server/websocket.js` | **Partial read-only EIO4 polling slice.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted EIO4 sessions/queues, heartbeat, SIO5 root CONNECT, `clients`, read-only authorize/dataUpdate/ACK and loadRetro are tested across eviction and tenant boundaries. The official page still loads the REST shim, so this is not a homepage realtime completion claim. | Switch the page only after safe tenant propagation and `/alarm`; add WebSocket, EIO3 HTTP if retained, root writes, persisted-change broadcasts and browser workflows. |
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Missing.** | Namespace authorization, room subscription, create/update/delete events and alarm lifecycle tests. |
 | Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Partial persistence only.** Treatments mutations persist `document_changes` atomically with the current document, including rollback-on-change-failure coverage. No transport consumes or broadcasts those rows; the browser still polls. | Define cursors/retention and broadcast only after commit; test eviction, reconnect and multi-client delivery. |
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Missing.** | One-alarm task table, retry/idempotency tests and bounded Free-plan scheduling. |
@@ -178,6 +181,25 @@ The 512 KiB and query-limit errors are platform controls, not upstream claims.
 
 ## Current deployed evidence
 
+The read-only EIO4 polling server described above is a local, not-yet-deployed
+increment. Its current bounds and named differences are:
+
+- strict `EIO=4`, `transport=polling`, non-binary payloads and `upgrades: []`;
+- 256 sessions per tenant, 128 outbound packets, a 1,000,000-byte whole queue/
+  body limit, and opportunity cleanup in batches of 32 without an alarm;
+- tenant-local anonymous/API-secret-digest/access-token/JWT reads, with ACKs
+  always fixed to `{read:true, write:false, write_treatment:false}`;
+- invalid authorization disconnects only `/`; unknown namespaces such as
+  `/alarm` return `CONNECT_ERROR`, while root `subscribe` and every write event
+  remain unhandled;
+- initial `dataUpdate` uses the locked recent-device-status shape. `loadRetro`
+  uses raw normalized statuses, but only the latest 100 SQL documents rather
+  than the locked one-day cache;
+- websocket status has the locked field set/order, but API/careportal enabled,
+  boluscalc disabled, and no active profile are platform assumptions;
+- requiring exactly one object for `authorize` and `loadRetro` is a deliberate
+  safety/resource tightening.
+
 The public deployment at
 `https://nscf-phase1.nscf-lab-20260717.workers.dev/` was rechecked on
 2026-07-18 after version `e3e9b197-bd1d-45b1-b2c8-a5b18b907e90`
@@ -202,8 +224,7 @@ The public deployment at
 - `/api/v1/activity?count=2` returned HTTP 200 and an empty list for the
   simulated default tenant.
 - A real `/socket.io/?EIO=4&transport=polling` handshake still returned HTTP
-  404, as the matrix requires until the isolated protocol codecs are backed by
-  a routed tenant-DO session server.
+  404 because that deployed version predates the current routed local slice.
 - A real Chrome session loaded the official Profile Editor from `Not loaded`
   to `Values loaded`. Its already-authorized browser session completed a real
   profile Save, and the current-profile API confirmed persistence.
@@ -238,8 +259,9 @@ completion claim.
 3. Complete JWT authorization before secured API v3 operations.
 4. Port v1, then v2, then v3 modules in dependency order, reusing upstream
    calculation code rather than translating it by hand.
-5. Replace the polling shim only after Engine.IO polling, WebSocket and
-   namespaces pass protocol tests on a tenant DO.
+5. Replace the polling shim only after the implemented Engine.IO polling root
+   is joined by safe tenant propagation, the page-used alarm namespace and
+   real-browser tests; WebSocket remains a separate later capability.
 6. Move tick/prune/plugin jobs to a persisted alarm task table.
 7. Run the applicable upstream tests through the adapter, then execute local
    Workers tests, deployment dry-run, remote API smoke and real-browser flows.

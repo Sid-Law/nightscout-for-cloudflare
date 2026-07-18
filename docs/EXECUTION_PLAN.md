@@ -46,7 +46,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 5. API v2 | Partial | JWT issuance/refresh is implemented; complete body credentials, delay-list behavior, summary, notifications and full ddata/properties behavior. |
 | 6. API v3 | Partial JSON treatments slice | Public `/version`, JWT-protected `/status`, the eight locked treatments routes and treatments-aware `/lastModified` are implemented for JSON; add locked CSV/XML renderer parity before generalizing to the other five collections. |
 | 7. Authentication/admin | Partial | Tenant JWT keys, eight-hour HS256 tokens, live subject/role lookup, Shiro matching and `verifyauth` are implemented; port derived access-token and persistent IP delay-list behavior. |
-| 8. Engine.IO/Socket.IO | Protocol core only | EIO4/SIO5 official-path and EIO3/SIO4 legacy codecs are isolated and tested; polling sessions, WebSocket upgrade, namespaces, authorization, acknowledgements and database mutation messages on a tenant DO remain unimplemented. |
+| 8. Engine.IO/Socket.IO | Partial read-only polling slice | Strict EIO4 polling is routed to tenant `EntryStore` DOs with persisted sessions/queues, EIO4 heartbeat, SIO5 root CONNECT, read-only authorize ACK/dataUpdate, loadRetro and clients-count events. Complete the official-page switch only after `/alarm` and tenant propagation; WebSocket, EIO3 HTTP, `/storage`, writes and change broadcasts remain missing. |
 | 9. Real-time storage updates | Storage foundation only | Treatments persist an atomic change snapshot, but no transport consumes it; define bounded outbox retention, cursors and reconnect/eviction tests before broadcasting. |
 | 10. Alarms/background tasks | Not started | One-alarm SQLite task scheduler for heartbeat, cleanup, API v3 pruning and server-plugin evaluation. |
 | 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
@@ -85,7 +85,7 @@ Mongo-to-SQLite, Express-to-Worker, process-lifecycle, Socket.IO,
 notification-state and browser adaptations remain required work and must not be
 relabeled as scope exclusions.
 
-## Current verified baseline
+## Last deployed baseline and current local increment
 
 Code commit `78502a01c624d3f8b38e207abd5b7c9d1cea50c8` is deployed as Worker
 version `e3e9b197-bd1d-45b1-b2c8-a5b18b907e90`. Its gate passed the official
@@ -122,12 +122,28 @@ or show a dialog. The same browser rendered Admin, Food, Report and color-clock
 pages with no console errors. Their official chart-container warnings on
 standalone pages are recorded in `DEPLOYMENT.md`.
 
-This is still not a full port. API v3 CSV/XML renderers, five generic
-collections, broader Mongo type/query parity, Engine.IO sessions/WebSocket
-upgrade, namespace handlers, bounded outbox/broadcasts, alarms, server plugins,
-notifications and most upstream test files remain incomplete. A real EIO4
-polling handshake intentionally returns 404 rather than advertising a
-half-implemented session server.
+That deployed version predates the current local real-time increment and still
+returns 404 for a real EIO4 handshake. The current branch now routes
+`/socket.io` and `/socket.io/` to the tenant DO and implements a bounded,
+read-only EIO4/SIO5 polling root slice. It has not been deployed or browser-
+switched in this increment. This is still not a full port: API v3 CSV/XML
+renderers, five generic collections, broader Mongo query/type parity, WebSocket
+upgrade, EIO3 HTTP, `/storage` and `/alarm`, root write handlers, change
+broadcasts, alarms, server plugins, notifications and most upstream test files
+remain incomplete.
+
+The local polling slice is intentionally bounded to 256 sessions per tenant,
+128 queued packets and one 1,000,000-byte polling payload per session. It uses
+25-second server pings, 20-second pong timeouts, strict non-binary request
+shapes and opportunity cleanup in batches of 32; it adds no DO alarm. Root
+authorization always ACKs `write:false` and `write_treatment:false`. Initial
+`dataUpdate` follows locked recent-device-status filtering, while `loadRetro`
+uses the unfiltered runtime-normalized device-status loader but is limited by
+this adapter's 100-document SQL query rather than upstream's one-day cache.
+The websocket status shape is locked, but `apiEnabled:true`,
+`careportalEnabled:true`, `boluscalcEnabled:false` and the absence of
+`activeProfile` are current platform assumptions. Strict one-object
+`authorize`/`loadRetro` validation is a named safety tightening.
 
 ## Ordered implementation milestones
 
@@ -168,15 +184,21 @@ error logs.
 
 ### Milestone D — real-time transport
 
-1. Route `/socket.io/` requests to the tenant DO.
-2. Implement EIO4/SIO5 polling sessions and server-ping/client-pong as the official path; retain EIO3/SIO4 client-ping/server-pong as explicit legacy compatibility.
+1. **Complete for the named slice:** route exact `/socket.io` and `/socket.io/`
+   polling requests to the tenant DO without intercepting the static
+   `/socket.io/socket.io.js` shim asset.
+2. **Partial:** EIO4/SIO5 polling sessions, server-ping/client-pong, persisted
+   queues and root CONNECT are implemented. EIO3/SIO4 remains codec-only and
+   is deliberately rejected by the HTTP endpoint; `upgrades` is empty.
 3. Add hibernatable WebSocket upgrade and reconnect.
-4. Implement Socket.IO packets, acknowledgements, rooms and `/`, `/storage`,
-   `/alarm` namespaces.
-5. Implement authorize/loadRetro/dbAdd/dbUpdate/dbUpdateUnset/dbRemove.
-6. Broadcast persisted collection changes immediately.
-7. Remove the browser polling shim only after official client protocol tests and
-   browser workflows pass.
+4. Extend beyond the read-only `/` subset to `/storage` and `/alarm`, including
+   authorization, subscriptions and room behavior.
+5. Extend the implemented root `authorize` and `loadRetro` reads with the
+   locked write handlers only after storage/change-outbox contracts exist.
+6. Broadcast persisted collection changes immediately after their transaction
+   commits; current clients-count broadcasts are connection metadata only.
+7. Replace the REST polling shim with the official client only after protocol
+   tests, safe tenant propagation, `/alarm`, and real browser workflows pass.
 
 ### Milestone E — background/server behavior
 
