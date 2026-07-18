@@ -21,6 +21,13 @@ for diagnosis, dosing, or medical decisions.
   device-status, activity, roles, subjects, status, authorization and
   page-data endpoints. The v1/v2 Status surface now follows the locked
   routing, negotiation, redirect, format, authorization and error contracts.
+- A substantial but still partial v1/v2 Entries uploader/read slice: ordered
+  batch prefix commits, single-object/array/urlencoded shapes, server-owned ID
+  normalization, bounded numeric/string filters and request sorting,
+  current/model/ID reads, JSON/plain/CSV/TSV representations, weak ETags,
+  Last-Modified/conditional 304 and HEAD. HTML-like upload leaves are
+  recursively entity-encoded before preview or persistence; this safe Workers
+  adaptation is stricter than the locked JSDOM/DOMPurify output.
 - Tenant-local, SQLite-persisted HS256 JWT signing, the upstream eight-hour
   authorization-token lifetime, derived subject access tokens and prefix
   matching, body/query/header credential precedence, persisted per-IP failure
@@ -88,6 +95,12 @@ page workflow. The polling shim only keeps the official browser bundle supplied
 with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
 homepage to the official Socket.IO client is a later slice that also requires
 safe non-default tenant propagation and the page-used alarm namespace.
+Entries also remains incomplete: `echo`, `times/echo`, `times`, `count` and
+`slice` are absent; Mongo operators, nested/array/mixed-type behavior and
+collation extend beyond the fail-closed query subset; and the conservative
+Workers sanitizer is not byte-equivalent to upstream DOMPurify. The 512 KiB
+body, 100-item batch and 10,000-row query/scan bounds are explicit Free-plan
+controls rather than upstream limits.
 
 The evidence-based compatibility matrix and acceptance criteria are in
 [`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md). The storage
@@ -250,7 +263,10 @@ The automated Workers-runtime suite covers the shipped page routes, dynamic
 clock template, polling-adapter
 asset/version contracts, strict v1/v2 Status and page-data contracts,
 API-secret failure modes, derived/body credentials and persisted failure delay,
-the implemented entries and document CRUD subset, activity conditional
+the implemented Entries uploader/query/read representations and document CRUD
+subset, including ordered partial batch failure, recursive upload sanitization,
+preview, numeric filter coercion, sort-before-limit, conditional GET/HEAD and
+v2 inheritance, plus activity conditional
 requests, JWT issue/verify/expiry/tamper/cross-tenant behavior, Shiro permission
 matching, `verifyauth`, and the API v3 version/status envelopes. It also covers
 fresh-only Entries schema repair, v1/API3 entries/treatments/device-status/profile
@@ -262,9 +278,10 @@ authorization, alarm-driven heartbeat/expiry, eviction, overlap,
 body/session/queue caps, cursor-bounded initial/retro snapshots,
 byte/node/document truncation, removal of the fixed 100-status cutoff,
 deterministic older-tail truncation and cross-tenant session rejection. The
-locked upstream has 111
-JavaScript test files and about 873 test cases; the local adapter tests do not
-prove complete Nightscout compatibility.
+locked upstream has 111 JavaScript test files; a static declaration audit finds
+883 active `it(...)` cases plus one skipped case. Those declarations are not
+directly comparable with the adapter suite and do not prove complete Nightscout
+compatibility.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
 `39761161590977570a46a64976f9e59bc99d84f4`. After rebuilding the locked

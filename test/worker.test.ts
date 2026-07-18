@@ -1239,10 +1239,12 @@ describe("Nightscout compatibility API", () => {
     expect(rows.map((row) => row.sgv)).toEqual([155]);
   });
 
-  it("rejects invalid SGV, JSON, query and tenant input", async () => {
+  it("accepts upstream SGV values while rejecting malformed JSON, query and tenant input", async () => {
     const name = tenant("invalid");
-    expect((await post(name, entry(10, Date.now()))).status).toBe(400);
-    expect((await post(name, { sgv: 100 })).status).toBe(400);
+    expect((await post(name, entry(10, Date.now()))).status).toBe(200);
+    const ignoredSingleWithoutDate = await post(name, { sgv: 100 });
+    expect(ignoredSingleWithoutDate.status).toBe(200);
+    expect(await ignoredSingleWithoutDate.json()).toEqual([]);
 
     const malformed = await SELF.fetch(`https://example.test/api/v1/entries?tenant=${name}`, {
       method: "POST",

@@ -5,8 +5,9 @@ import {
   runInDurableObject,
 } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { SqliteDocumentRepository } from "../src/document-repository";
 import type { EntryStore } from "../src/entry-store";
-import { parseEntryPayload } from "../src/model";
+import { parseEntryPayload, parseHistoryQuery } from "../src/model";
 
 /**
  * Differential contract sources, locked to Nightscout v15.0.7 commit
@@ -769,17 +770,44 @@ describe("API v3 Entries vertical slice", () => {
       ).toArray().map((row) => row.detail).join("\n");
       expect(api3DatePlan).toMatch(/documents_collection_(?:valid_)?sort/);
       expect(api3DatePlan).toMatch(/sort_time>[?]/);
-      const dateStringPlan = state.storage.sql.exec<{ detail: string }>(
-        `EXPLAIN QUERY PLAN
-         SELECT id FROM documents INDEXED BY documents_entries_date_string_sort
-         WHERE collection = 'entries'
-           AND json_type(body, '$.dateString') = 'text'
-           AND json_extract(body, '$.dateString') >= ?
-         ORDER BY sort_time DESC, id ASC
-         LIMIT 10`,
-        new Date(date - 60_000).toISOString(),
+      let productionQuery: { statement: string; bindings: SqlStorageValue[] } | null = null;
+      const rawSql = state.storage.sql;
+      const interceptedSql = new Proxy(rawSql, {
+        get(target, property) {
+          if (property === "exec") {
+            return (statement: string, ...bindings: SqlStorageValue[]) => {
+              if (statement.startsWith("SELECT * FROM documents")) {
+                productionQuery = { statement, bindings };
+              }
+              return target.exec(statement, ...bindings);
+            };
+          }
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      const interceptedStorage = new Proxy(state.storage, {
+        get(target, property) {
+          if (property === "sql") return interceptedSql;
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      const repository = new SqliteDocumentRepository(interceptedStorage);
+      repository.queryLegacyEntries(parseHistoryQuery(new URL(
+        `https://example.test/api/v1/entries.json?count=10&find[dateString][$gte]=${encodeURIComponent(new Date(date - 60_000).toISOString())}`,
+      )));
+      const capturedQuery = productionQuery as {
+        statement: string;
+        bindings: SqlStorageValue[];
+      } | null;
+      if (capturedQuery === null) throw new Error("production Entries SELECT was not captured");
+      const dateStringPlan = rawSql.exec<{ detail: string }>(
+        `EXPLAIN QUERY PLAN ${capturedQuery.statement}`,
+        ...capturedQuery.bindings,
       ).toArray().map((row) => row.detail).join("\n");
       expect(dateStringPlan).toContain("documents_entries_date_string_sort");
+      expect(dateStringPlan).not.toContain("SCAN documents");
     });
   });
 
@@ -839,7 +867,7 @@ describe("API v3 Entries vertical slice", () => {
     const staleId = String(savedStale?._id);
 
     expect(await v1Entries(name)).toEqual([]);
-    for (const route of ["/api/v1/entries/current", "/api/v2/entries/current.json"]) {
+    for (const route of ["/api/v1/entries/current.json", "/api/v2/entries/current.json"]) {
       const response = await SELF.fetch(withTenant(route, name));
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual([]);
@@ -923,7 +951,7 @@ describe("API v3 Entries vertical slice", () => {
     const ordinaryWindow = await v1Entries(name, 10);
     expect(ordinaryWindow.some((document) => document._id === oldestId)).toBe(false);
     for (const version of ["v1", "v2"] as const) {
-      const byId = await SELF.fetch(withTenant(`/api/${version}/entries/${oldestId}`, name));
+      const byId = await SELF.fetch(withTenant(`/api/${version}/entries/${oldestId}.json`, name));
       expect(byId.status).toBe(200);
       expect(await byId.json()).toMatchObject([{
         _id: oldestId,
@@ -1086,9 +1114,19 @@ describe("API v3 Entries vertical slice", () => {
     expect(await broadDateString.json()).toMatchObject({
       error: {
         code: "entry_query_limit",
-        message: expect.stringContaining("add a narrower range"),
+        message: expect.stringContaining("add a narrower date filter"),
       },
     });
+
+    const sparseDateString = await SELF.fetch(withTenant(
+      `/api/v1/entries.json?count=1&find[dateString]=${encodeURIComponent(new Date(needleDate).toISOString())}`,
+      name,
+    ));
+    expect(sparseDateString.status).toBe(200);
+    expect(await sparseDateString.json()).toMatchObject([{
+      identifier: "scan-budget-needle",
+      device: "needle-cgm",
+    }]);
 
     const narrow = await api3Fetch(
       name,
@@ -1525,7 +1563,7 @@ describe("API v3 Entries vertical slice", () => {
     });
   });
 
-  it("rolls back the full v1 SQLite batch when a later entry conflicts", async () => {
+  it("keeps the ordered v1 batch prefix when a later entry conflicts", async () => {
     const name = tenant("api3-entry-rollback");
     const id = "eeeeeeeeeeeeeeeeeeeeeeee";
     const base = Date.now() - 60 * 60_000;
@@ -1546,13 +1584,13 @@ describe("API v3 Entries vertical slice", () => {
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM documents WHERE collection = 'entries'",
-      ).one().count).toBe(0);
+      ).one().count).toBe(1);
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM document_changes WHERE collection = 'entries'",
-      ).one().count).toBe(0);
+      ).one().count).toBe(1);
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM entries",
-      ).one().count).toBe(0);
+      ).one().count).toBe(1);
     });
   });
 
@@ -1621,14 +1659,8 @@ describe("API v3 Entries vertical slice", () => {
     await evictDurableObject(stub);
     expect(await stub.getEntries({
       count: 10,
-      gt: null,
-      gte: null,
-      lt: null,
-      lte: null,
-      dateStringGt: null,
-      dateStringGte: null,
-      dateStringLt: null,
-      dateStringLte: null,
+      filters: [],
+      sort: [{ field: "date", direction: "desc" }],
       type: null,
     })).toEqual([]);
     expect(JSON.parse(await stub.listDocuments("profile", 10))).toMatchObject([{

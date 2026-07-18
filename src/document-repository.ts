@@ -637,6 +637,29 @@ function fieldExpression(
       arrayBindings: [],
     };
   }
+  if (collection === ENTRIES && field === "dateString") {
+    return {
+      sql: "json_extract(body, '$.dateString')",
+      bindings: [],
+      existsSql: "json_type(body, '$.dateString') IS NOT NULL",
+      existsBindings: [],
+      textSql: "json_type(body, '$.dateString') = 'text'",
+      textBindings: [],
+      typeSql: "json_type(body, '$.dateString')",
+      typeBindings: [],
+      // V1 normalization stores dateString only as text. Keeping the generic
+      // API3 array branch on this legacy path would wrap the scalar predicate
+      // in an OR/json_each expression and make SQLite abandon the partial
+      // documents_entries_date_string_sort index. API3 retains its wider
+      // mixed-type behavior; the bounded legacy adapter stays index-safe.
+      ...(policy === "api3"
+        ? {
+            arrayEachSql: "json_each(body, '$.dateString')",
+            arrayBindings: [],
+          }
+        : {}),
+    };
+  }
   switch (field) {
     case "_id":
       return {
@@ -883,6 +906,27 @@ function entryScanProbe(query: DocumentQuery): SqlPredicate {
       && typeof filter.value === "string"
     ) {
       clauses.push(`${filter.field === "_id" ? "id" : "identifier"} = ?`);
+      bindings.push(filter.value);
+    } else if (filter.field === "dateString" && typeof filter.value === "string") {
+      const operators: Partial<Record<FilterOperator, string>> = {
+        eq: "=",
+        gt: ">",
+        gte: ">=",
+        lt: "<",
+        lte: "<=",
+      };
+      const operator = operators[filter.operator];
+      if (operator !== undefined) {
+        clauses.push("json_type(body, '$.dateString') = 'text'");
+        clauses.push(`json_extract(body, '$.dateString') ${operator} ?`);
+        bindings.push(filter.value);
+      }
+    } else if (
+      filter.field === "type"
+      && filter.operator === "eq"
+      && typeof filter.value === "string"
+    ) {
+      clauses.push("json_extract(body, '$.type') = ?");
       bindings.push(filter.value);
     }
   }
@@ -1760,10 +1804,16 @@ export class SqliteDocumentRepository {
     document: JsonDocument,
   ): void {
     const identifier = typeof document.identifier === "string" ? document.identifier : null;
-    const sgv = typeof document.sgv === "number" && Number.isFinite(document.sgv)
+    const sgv = typeof document.sgv === "number"
+      && Number.isFinite(document.sgv)
+      && document.sgv >= 20
+      && document.sgv <= 600
       ? Math.trunc(document.sgv)
       : null;
-    const mbg = typeof document.mbg === "number" && Number.isFinite(document.mbg)
+    const mbg = typeof document.mbg === "number"
+      && Number.isFinite(document.mbg)
+      && document.mbg >= 20
+      && document.mbg <= 600
       ? Math.trunc(document.mbg)
       : null;
     const date = timestamp(document.date);
@@ -2036,6 +2086,20 @@ export class SqliteDocumentRepository {
     policy: MaterializationPolicy,
     collection: Api3CollectionName = TREATMENTS,
   ): DbDocumentV4[] {
+    const useLegacyDateStringIndex = collection === ENTRIES
+      && policy === "legacy"
+      && (query.filters ?? []).some((filter) =>
+        filter.field === "dateString"
+        && typeof filter.value === "string"
+        && (filter.operator === "eq"
+          || filter.operator === "gt"
+          || filter.operator === "gte"
+          || filter.operator === "lt"
+          || filter.operator === "lte")
+      );
+    const source = useLegacyDateStringIndex
+      ? "documents INDEXED BY documents_entries_date_string_sort"
+      : "documents";
     // A literal Entries collection predicate lets SQLite prove partial-index
     // eligibility. Other collections retain the shared bound predicate.
     const clauses = collection === ENTRIES ? ["collection = 'entries'"] : ["collection = ?"];
@@ -2087,7 +2151,7 @@ export class SqliteDocumentRepository {
         );
       }
     }
-    const statement = `SELECT * FROM documents
+    const statement = `SELECT * FROM ${source}
        WHERE ${clauses.join(" AND ")}
        ORDER BY ${order}
        LIMIT ? OFFSET ?`;
@@ -2116,143 +2180,95 @@ export class SqliteDocumentRepository {
       .map((document) => project(document, query.fields));
   }
 
-  upsertLegacyEntries(entries: ValidatedEntry[]): DocumentMutationResult[] {
-    return this.storage.transactionSync(() => entries.map((entry) => {
-      const incoming = parseBody(entry.documentJson);
-      let shadow = this.findEntryShadowByDedupeKey(entry.dedupeKey);
-      let existing: DbDocumentV4 | undefined;
-      if (shadow !== undefined) {
-        const candidate = this.findByIdRow(shadow.id, ENTRIES);
-        if (candidate !== undefined) {
-          const candidateDocument = parseBody(candidate.body);
-          if (
-            candidateDocument.sysTime === entry.sysTime
-            && candidateDocument.type === entry.type
-          ) {
-            // The ordinary replay path is two indexed lookups: shadow's UNIQUE
-            // dedupe key followed by documents' (collection,id) primary key.
-            existing = candidate;
-          } else {
-            this.sql.exec("DELETE FROM entries WHERE id = ?", shadow.id);
-            shadow = undefined;
-          }
-        }
-      }
-      existing ??= this.findLegacyEntryBySysTimeType(entry.sysTime, entry.type);
-      if (shadow !== undefined && existing?.id !== shadow.id) {
-        const shadowCanonical = this.findByIdRow(shadow.id, ENTRIES);
-        if (existing !== undefined || shadowCanonical !== undefined) {
-          // The canonical Mongo-equivalent sysTime+type lookup wins. This can
-          // repair a shadow left stale by an older deployment after API3
-          // changed type, without forcing a duplicate primary-key insert.
+  private upsertLegacyEntry(entry: ValidatedEntry): DocumentMutationResult {
+    const incoming = parseBody(entry.documentJson);
+    let shadow = this.findEntryShadowByDedupeKey(entry.dedupeKey);
+    let existing: DbDocumentV4 | undefined;
+    if (shadow !== undefined) {
+      const candidate = this.findByIdRow(shadow.id, ENTRIES);
+      if (candidate !== undefined) {
+        const candidateDocument = parseBody(candidate.body);
+        if (
+          candidateDocument.sysTime === entry.sysTime
+          && candidateDocument.type === entry.type
+        ) {
+          // The ordinary replay path is two indexed lookups: shadow's UNIQUE
+          // dedupe key followed by documents' (collection,id) primary key.
+          existing = candidate;
+        } else {
           this.sql.exec("DELETE FROM entries WHERE id = ?", shadow.id);
           shadow = undefined;
         }
       }
-      if (
-        existing !== undefined
-        && entry.requestedId !== null
-        && entry.requestedId !== existing.id
-      ) {
-        // Mongo rejects changing _id in the $set portion of an upsert. Keeping
-        // that failure inside this synchronous transaction also verifies that
-        // a mixed v1 batch cannot partially commit in SQLite.
-        throw new Error("MongoServerError: immutable field _id was altered");
+    }
+    existing ??= this.findLegacyEntryBySysTimeType(entry.sysTime, entry.type);
+    if (shadow !== undefined && existing?.id !== shadow.id) {
+      const shadowCanonical = this.findByIdRow(shadow.id, ENTRIES);
+      if (existing !== undefined || shadowCanonical !== undefined) {
+        // The canonical Mongo-equivalent sysTime+type lookup wins. This can
+        // repair a shadow left stale by an older deployment after API3
+        // changed type, without forcing a duplicate primary-key insert.
+        this.sql.exec("DELETE FROM entries WHERE id = ?", shadow.id);
+        shadow = undefined;
       }
-      if (
-        existing === undefined
-        && entry.requestedId !== null
-        && this.findByIdRow(entry.requestedId, ENTRIES) !== undefined
-      ) {
-        throw new Error("E11000 duplicate key error collection: entries index: _id_");
-      }
-      delete incoming._id;
-      const original = existing === undefined ? {} : parseBody(existing.body);
-      delete original._id;
-      const document = { ...original, ...incoming };
-      const id = existing?.id ?? shadow?.id ?? entry.requestedId ?? randomObjectId();
-      const mutation = this.writeSnapshot(
-        id,
-        document,
-        existing,
-        existing === undefined ? "create" : "replace",
-        "legacy",
-        undefined,
-        ENTRIES,
-      );
-      this.writeLegacyEntryShadow(id, entry.dedupeKey, mutation.document);
-      return mutation;
-    }));
+    }
+    if (
+      existing !== undefined
+      && entry.requestedId !== null
+      && entry.requestedId !== existing.id
+    ) {
+      // Mongo rejects changing _id in the $set portion of an upsert. The
+      // current item rolls back atomically; earlier ordered-batch items have
+      // already committed and the remaining suffix is never attempted.
+      throw new Error("MongoServerError: immutable field _id was altered");
+    }
+    if (
+      existing === undefined
+      && entry.requestedId !== null
+      && this.findByIdRow(entry.requestedId, ENTRIES) !== undefined
+    ) {
+      throw new Error("E11000 duplicate key error collection: entries index: _id_");
+    }
+    delete incoming._id;
+    const original = existing === undefined ? {} : parseBody(existing.body);
+    delete original._id;
+    const document = { ...original, ...incoming };
+    const id = existing?.id ?? shadow?.id ?? entry.requestedId ?? randomObjectId();
+    const mutation = this.writeSnapshot(
+      id,
+      document,
+      existing,
+      existing === undefined ? "create" : "replace",
+      "legacy",
+      undefined,
+      ENTRIES,
+    );
+    this.writeLegacyEntryShadow(id, entry.dedupeKey, mutation.document);
+    return mutation;
+  }
+
+  upsertLegacyEntries(entries: ValidatedEntry[]): DocumentMutationResult[] {
+    const mutations: DocumentMutationResult[] = [];
+    for (const entry of entries) {
+      // Mongo bulkWrite({ ordered: true }) commits every successful operation
+      // before the first failure and never executes the remaining suffix. A
+      // transaction per item is the matching SQLite DO boundary; wrapping the
+      // whole array in one transaction would incorrectly erase that prefix.
+      mutations.push(this.storage.transactionSync(() => this.upsertLegacyEntry(entry)));
+    }
+    return mutations;
   }
 
   queryLegacyEntries(query: HistoryQuery): JsonDocument[] {
-    const clauses = ["collection = 'entries'"];
-    const bindings: SqlStorageValue[] = [];
-    const dateStringClauses: string[] = [];
-    const dateStringBindings: SqlStorageValue[] = [];
-    const hasDateStringFilter = query.dateStringGt !== null
-      || query.dateStringGte !== null
-      || query.dateStringLt !== null
-      || query.dateStringLte !== null;
-    for (const [operator, value] of [
-      [">", query.gt],
-      [">=", query.gte],
-      ["<", query.lt],
-      ["<=", query.lte],
-    ] as const) {
-      if (value === null) continue;
-      clauses.push(`sort_time ${operator} ?`);
-      bindings.push(value);
-    }
-    for (const [operator, value] of [
-      [">", query.dateStringGt],
-      [">=", query.dateStringGte],
-      ["<", query.dateStringLt],
-      ["<=", query.dateStringLte],
-    ] as const) {
-      if (value === null) continue;
-      // `dateString` is a Mongo string field. It is deliberately not folded
-      // into sort_time/date: locked v1 permits a stored date and dateString to
-      // differ, and Mongo compares this predicate lexically as text.
-      clauses.push(`json_type(body, '$.dateString') = 'text'`);
-      clauses.push(`json_extract(body, '$.dateString') ${operator} ?`);
-      bindings.push(value);
-      dateStringClauses.push(`json_extract(body, '$.dateString') ${operator} ?`);
-      dateStringBindings.push(value);
-    }
-    if (hasDateStringFilter) {
-      const beyondBudget = this.sql.exec<{ present: number }>(
-        `SELECT EXISTS(
-           SELECT 1
-           FROM documents INDEXED BY documents_entries_date_string_sort
-           WHERE collection = 'entries'
-             AND json_type(body, '$.dateString') = 'text'
-             AND ${dateStringClauses.join(" AND ")}
-           LIMIT 1 OFFSET ${MAX_UNINDEXED_ENTRY_CANDIDATES}
-         ) AS present`,
-        ...dateStringBindings,
-      ).one().present !== 0;
-      if (beyondBudget) {
-        throw new DocumentQueryError(
-          "QUERY_SCAN_LIMIT",
-          `Entries dateString query exceeds the ${MAX_UNINDEXED_ENTRY_CANDIDATES}-row scan budget; add a narrower range`,
-        );
-      }
-    }
+    const filters: DocumentFilter[] = query.filters.map((filter) => ({ ...filter }));
     if (query.type !== null && query.type !== undefined) {
-      clauses.push("json_extract(body, '$.type') = ?");
-      bindings.push(query.type);
+      filters.push({ field: "type", operator: "eq", value: query.type });
     }
-    bindings.push(query.count);
-    return this.sql.exec<DbDocumentV4>(
-      `SELECT * FROM documents${hasDateStringFilter
-        ? " INDEXED BY documents_entries_date_string_sort"
-        : ""}
-       WHERE ${clauses.join(" AND ")}
-       ORDER BY sort_time DESC, id ASC
-       LIMIT ?`,
-      ...bindings,
-    ).toArray().map(materializeLegacy);
+    return this.queryTreatmentRows({
+      filters,
+      sort: query.sort.map((sort) => ({ ...sort })),
+      limit: query.count,
+    }, "legacy", ENTRIES).map(materializeLegacy);
   }
 
   queryLegacySgvBucket(count: number): JsonDocument[] {
@@ -2287,14 +2303,12 @@ export class SqliteDocumentRepository {
   currentLegacyEntries(): JsonDocument[] {
     return this.queryLegacyEntries({
       count: 1,
-      gt: null,
-      gte: Date.now() - LEGACY_ENTRY_DEFAULT_WINDOW_MS,
-      lt: null,
-      lte: null,
-      dateStringGt: null,
-      dateStringGte: null,
-      dateStringLt: null,
-      dateStringLte: null,
+      filters: [{
+        field: "date",
+        operator: "gte",
+        value: Date.now() - LEGACY_ENTRY_DEFAULT_WINDOW_MS,
+      }],
+      sort: [{ field: "date", direction: "desc" }],
       type: null,
     });
   }

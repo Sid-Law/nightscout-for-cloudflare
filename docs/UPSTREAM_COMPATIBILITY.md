@@ -27,9 +27,9 @@ entries/treatments/device-status/profile, storage and official-page tests. This
 is not full-port evidence. The code is deployed as Cloudflare version
 `6336334e-002c-4ccf-9e9f-ddb7f2191b10`; exact release evidence is recorded in
 `DEPLOYMENT.md`. The locked
-upstream has 111 `*.test.js` files and approximately 873 `it(...)` cases. Those
-sets are not directly comparable, and the local suite does not prove full
-compatibility.
+upstream has 111 `*.test.js` files; a static declaration audit finds 883 active
+`it(...)` cases plus one skipped case. Those sets are not directly comparable,
+and the local suite does not prove full compatibility.
 
 The final Wrangler dry-run reports 248 official assets, 766.80 KiB raw /
 136.08 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
@@ -123,9 +123,9 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Upstream identity and UI bytes | `package.json`, `webpack/webpack.config.js`, `views/**`, `static/**`, `translations/**` | **Compatible for built assets.** v15.0.7 is pinned; official pages and bundle are served without a replacement UI. | Rebuild from clean vendor snapshot; byte/provenance assertions; browser rendering on every deploy. |
 | Express boot model | `lib/server/server.js`, `lib/server/app.js`, `lib/server/bootevent.js` | **Partial.** Routes are currently hand-dispatched by `src/index.ts`; upstream Express boot is not running. | Decide router-by-router reuse versus adapter; contract-test middleware order, content negotiation and error handling. |
 | Collections and indexes | `lib/storage/mongo-storage.js`, server storage modules | **Partial.** SQLite generic documents cover entries, treatments, device status and profile with indexed collection metadata, an API3 allocation clock and atomic change snapshots. Profile v1 writes share the repository and older rows receive idempotent metadata/fallback repair. Entries has date/dateString/type indexes plus a narrow compatibility shadow. Its v6 probe resets only an incompatible pre-1.0 shadow and preserves canonical documents/profile; it is deliberately not a legacy importer. Healthy activation is a read-only probe. This does not import an external Nightscout/MongoDB database. | Extend the repository to food/settings and prove in-place activation from every supported NSCF schema while preserving canonical data. Keep external Nightscout/MongoDB history import as separately scoped future work; make no first-release import claim. |
-| ObjectId, UUID and dedupe | `lib/server/query.js`, `lib/server/treatments.js`, `lib/api3/storage/mongoCollection/utils.js` | **Partial four-collection slice.** Generated IDs are random 24-hex strings. V1 Entries, treatments and profile preserve their locked identity/type-specific selector behavior; UUID and identifier/fallback retransmits preserve the server ID. API v3 fallback requires identifier-field absence where the locked collection does. Arbitrary body `_id` is not an overwrite selector, and exact 24-hex collisions fail without replacing an existing row. IDs are not BSON ObjectIds. | Add duplicate-row, batch/partial-failure and every-collection fixtures; the atomic two-document `preBolus` fan-out remains unported and carbs are retained until it exists. |
-| Mongo query behavior | `lib/server/query.js`, `lib/api3/storage/mongoCollection/**` | **Partial.** V1 Entries/treatments push their supported date/type/scalar filters, ordering and limits into SQLite; Entries keeps the four-day default and distinct string `dateString`. API3 implemented collections support locked scalar operators, safe nested/unknown fields, projection/paging, ordered sort chains and a bounded case-sensitive `$re` subset compiled to GLOB. Unsupported regex constructs and unsafe/over-limit SQL fail closed. SQLite/Mongo mixed-type, array, projection and collation parity remains unproven. | Build a broader regex and mixed-type/array differential matrix before calling generic search compatible. Other v1 collections still use limited filtering. |
-| API v1 entries | `lib/api/entries/index.js`, `lib/server/entries.js` | **Substantial partial slice.** Create/list/current/model/delete cover SGV/MBG/other types, locked ID and date/dateString behavior, four-day default reads, controlled 10,000-candidate failures and 128-row/revision delete bounds. Preview, echo, times, count, slice, all formats and some historical errors remain incomplete. | Port the remaining upstream Entries utilities and whole-file shape/error contracts; keep the fresh-only pre-1.0 reset explicit. |
+| ObjectId, UUID and dedupe | `lib/server/query.js`, `lib/server/treatments.js`, `lib/api3/storage/mongoCollection/utils.js` | **Partial four-collection slice.** Generated IDs are random 24-hex strings. V1 Entries, treatments and profile preserve their tested identity/type-specific selectors; UUID and identifier/fallback retransmits preserve the server ID. V1 removes another string `_id` before server allocation, retains valid ObjectIds and commits an ordered batch prefix before the first duplicate/immutable-ID failure. API v3 fallback requires identifier-field absence where the locked collection does. IDs are not BSON ObjectIds. | Extend duplicate/partial-failure fixtures to every collection; the atomic two-document `preBolus` fan-out remains unported and carbs are retained until it exists. The 100-item v1 batch cap is a Free-plan control. |
+| Mongo query behavior | `lib/server/query.js`, `lib/api3/storage/mongoCollection/**` | **Partial.** V1 Entries supports equality/comparison for numeric date/SGV/filter/RSSI/noise/MBG fields and bounded string ID/dateString/device/direction/identifier/sysTime fields, supported-field sort-before-limit and final time ordering; it keeps the four-day default and distinct string `dateString`. V1 treatments retain their named subset. API3 implemented collections support locked scalar operators, safe nested/unknown fields, projection/paging, ordered sort chains and a bounded case-sensitive `$re` subset compiled to GLOB. Unsupported/over-limit SQL fails closed. SQLite/Mongo operators, mixed types, arrays, projections and collation remain incomplete. | Add `$in`/`$nin`/regex/exists and nested/array/mixed-type differential coverage before widening the v1 allowlist or calling generic search compatible. Other v1 collections still use limited filtering. |
+| API v1 entries | `lib/api/entries/index.js`, `lib/server/entries.js` | **Substantial adapted partial slice.** Create/list/current/model/ID/delete now include single/array/urlencoded uploads, preview, server-owned identity, ordered-prefix failures, the bounded query/sort subset, four-day reads, JSON/plain/CSV/TSV, Last-Modified/weak ETag/IMS/INM, HEAD, controlled 10,000-candidate failures and 128-row/revision delete bounds. V2 inherits the same router behavior. Echo, times, count, slice, exact DOMPurify output, the wider Mongo/document semantics and some historical errors remain incomplete. | Port the remaining Entries utilities and whole-file shape/error contracts; retain the explicit Free-plan and sanitizer adaptations and the fresh-only pre-1.0 reset. |
 | API v1 document CRUD | food/profile/treatments/devicestatus modules | **Partial.** Page-used JSON CRUD exists with bounded filters. Treatments keep legacy materialization and mutation rules: `isValid:false` remains visible, `srv*` is not synthesized, read-only flags do not block v1 PUT/DELETE, numeric values, conditional GET and empty-array POST follow the locked shapes, and `/api/v2/ddata` keeps its raw legacy body. | Port every remaining route, content type, batch, validation and error variant; implement the atomic `preBolus` fan-out. |
 | API v1 activity | `lib/api/activity/index.js`, `lib/server/activity.js`, `tests/api.activity.test.js` | **Compatible subset deployed.** Create/list/filter/conditional GET/update/delete and empty-array create now follow the upstream shapes. | Remote authenticated create/read/update/delete smoke when a credential is explicitly supplied; expand remaining upstream shape tests. |
 | Remaining API v1 | notifications, Alexa, Google Home and entries utility routes | **Missing or partial.** `adminnotifies` is a hard-coded empty response. | Route inventory from Express registration plus contract tests for each enabled/scope-allowed route. External integrations remain disabled in the simulated-data deployment. |
@@ -137,7 +137,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v3 generic collections/lastModified/history | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js` | **Partial four-collection vertical.** Entries and Profile join the 16 treatments/device-status routes, and all four contribute independently to `/lastModified`. JWT auth, conditional headers, transactional permission selection, collection-specific dedupe, soft/permanent delete, ordered sort, both history cursors and locked JSON/CSV/XML are wired. Profile also covers the locked AAPS create/retry/new-version contract and v1 current ordering. Entries supplies controlled 10,000-candidate/128-delete bounds and the safe `$re` subset. | Add food and settings; implement large-result CPU/memory adaptation, broader mixed-type/nested/regex parity and whole-file upstream API3 execution. Do not mark any complete `api3.*` test file adapted from this named slice alone. |
 | Main Socket.IO namespace | `lib/server/websocket.js` | **Partial read-only EIO4 polling + direct WebSocket slice.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted sessions/queues, heartbeat, SIO5 root CONNECT, `clients`, read-only authorize/dataUpdate/ACK and loadRetro are tested across polling, direct Hibernatable WebSocket, eviction and tenant boundaries. A SQL-derived alarm persists ping/pong/session/poll/POST/closure deadlines. The official page still loads the REST shim; polling upgrade is not implemented, and a crash between durable dequeue and direct `send()` can lose one frame. | Switch the page only after safe tenant propagation and `/alarm`; close the at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP if retained, root writes, persisted-change broadcasts and browser workflows. |
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Missing.** | Namespace authorization, room subscription, create/update/delete events and alarm lifecycle tests. |
-| Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Partial persistence only.** Implemented generic mutations persist `document_changes` atomically with the current document, including rollback-on-change-failure coverage. No transport consumes or broadcasts those rows; the browser still polls. | Define cursors/retention and broadcast only after commit; test eviction, reconnect and multi-client delivery. |
+| Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Partial persistence only.** Each implemented document mutation persists `document_changes` atomically with its current document, including rollback-on-change-failure coverage. V1 Entries ordered batches intentionally commit successful per-document prefixes. No transport consumes or broadcasts those rows; the browser still polls. | Define cursors/retention and broadcast only after commit; test eviction, reconnect and multi-client delivery. |
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
@@ -159,6 +159,48 @@ silently repair upstream behavior and then claim byte-for-byte compatibility.
 The same evidence rule applies to future contradictions: actual locked source
 and tests take priority unless a deliberate compatibility fix is named,
 documented and contract-tested.
+
+### API v1 Entries adapted differences
+
+The implemented Entries slice is contract-tested but not whole-router
+compatibility. Its controlled differences and remaining gaps are:
+
+- request bodies are capped at 512 KiB and persistent batches at 100 items;
+  locked `body-parser` permits 50 MiB and the Mongo adapter has no equivalent
+  item cap;
+- repeated query parameters, unsupported fields/operators and counts outside
+  1–10,000 fail closed. Locked Express/Mongo accepts a wider and sometimes
+  ambiguous surface;
+- missing array dates and numeric-string/urlencoded dates are normalized into
+  an indexed numeric `date` for SQLite. The locked code can leave the public
+  date missing/string while using a separate current-time or invalid `sysTime`;
+- canonical records still receive compatibility defaults for missing `type`,
+  `direction` and `device`; this makes fresh-family data queryable but is not
+  the locked response shape and can affect identity for malformed multi-item
+  batches;
+- the locked recursive purifier is DOMPurify 2.5.8 over JSDOM 11.11.0. Workers
+  has no DOM at this boundary, so NSCF recursively entity-encodes HTML-like or
+  entity-bearing nonnumeric strings before preview/persistence. Active markup
+  is not stored, but safe markup upstream would retain is returned as text;
+- Mongo ordered bulk failure preserves the successful prefix. SQLite matches
+  that boundary with one `transactionSync()` per item, then exposes the stable
+  500 `{status,message,description:{}}` envelope rather than serializing
+  driver-specific enumerable error properties;
+- the locked source's `format_post_response` returns preview success with the
+  default HTTP 200, while `tests/api.unauthorized.test.js` contains a stale 201
+  assertion. NSCF follows the executable locked source and records the
+  contradiction instead of changing the route to satisfy that assertion;
+- `echo`, `times/echo`, `times`, `count` and `slice` are still missing. Count's
+  client-controlled aggregation pipeline and times/slice brace/regex expansion
+  require separate bounded adaptations before exposure.
+
+The GET/HEAD representation subset is tighter: differential probes lock
+extensionless plain text by default, JSON/CSV/TSV/TXT bytes, lowercase
+extension override and uppercase-extension fallthrough, result-derived
+Last-Modified, Express weak ETags, early IMS and normal INM 304 behavior, and
+sort-before-limit followed by formatter time ordering. Workers adds the common
+`no-store`/CORS headers; Cloudflare may strip dynamic `Content-Length` at the
+public boundary.
 
 ### API v3 implemented-collection controlled differences
 

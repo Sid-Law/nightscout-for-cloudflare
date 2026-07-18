@@ -21,7 +21,8 @@ import {
 } from "./documents";
 import {
   ApiError,
-  parseEntryPayload,
+  legacyEntryPreview,
+  parseLegacyEntryPayload,
   parseEntryTypeFilter,
   parseHistoryQuery,
 } from "./model";
@@ -1142,26 +1143,207 @@ function hasFindQuery(url: URL): boolean {
   return Array.from(url.searchParams.keys()).some((name) => name.startsWith("find["));
 }
 
+type LegacyEntryFormat = "json" | "csv" | "tsv" | "text";
+type LegacyEntryExtension = "json" | "svg" | "csv" | "txt" | "png" | "html" | "tsv";
+
+interface LegacyEntriesPath {
+  pathname: string;
+  extension?: LegacyEntryExtension;
+}
+
+function splitLegacyEntriesExtension(pathname: string): LegacyEntriesPath {
+  // The locked extension middleware's regexp is case-insensitive, but its
+  // MIME lookup uses the original match as a lowercase-only object key. That
+  // long-standing quirk means `.JSON` is not stripped and falls through.
+  const match = /\.(json|svg|csv|txt|png|html|tsv)$/.exec(pathname);
+  if (match === null) return { pathname };
+  return {
+    pathname: pathname.slice(0, -match[0].length),
+    extension: match[1]! as LegacyEntryExtension,
+  };
+}
+
+function legacyEntryFormat(request: Request, extension: LegacyEntryExtension | undefined): LegacyEntryFormat {
+  if (extension !== undefined) {
+    if (extension === "csv") return "csv";
+    if (extension === "tsv") return "tsv";
+    if (extension === "txt") return "text";
+    // json is direct; html/svg/png select no offered representation and hit
+    // the locked res.format() default, which is also JSON.
+    return "json";
+  }
+  return negotiatedFormat(request, [
+    ["text", "text/plain"],
+    ["tsv", "text/tab-separated-values"],
+    ["csv", "text/csv"],
+    ["json", "application/json"],
+  ] as const) ?? "json";
+}
+
+function legacyEntryTime(entry: PublicEntry): number {
+  const candidate = (entry as PublicEntry & { mills?: unknown }).mills;
+  if (typeof candidate === "number" && candidate !== 0) return candidate;
+  return entry.date;
+}
+
+function prepareLegacyEntries(entries: PublicEntry[], assumedType: string | undefined): PublicEntry[] {
+  return entries.map((entry) => {
+    const prepared = { ...entry };
+    if (!prepared.type && assumedType) prepared.type = assumedType;
+    return prepared;
+  }).sort((left, right) => legacyEntryTime(right) - legacyEntryTime(left));
+}
+
+function formatLegacyEntryCells(entries: PublicEntry[], separator: "," | "\t"): string {
+  const fields = ["dateString", "date", "sgv", "direction", "device"] as const;
+  return entries.map((entry) => fields.map((field) => {
+    const value = entry[field];
+    const rendered = JSON.stringify(value, (_key, item: unknown) => item === null ? "" : item);
+    return rendered ?? "";
+  }).join(separator)).join("\r\n");
+}
+
+function base64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+async function expressWeakEtag(body: string): Promise<string> {
+  const bytes = new TextEncoder().encode(body);
+  if (bytes.byteLength === 0) return 'W/"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-1", bytes));
+  return `W/"${bytes.byteLength.toString(16)}-${base64(digest).slice(0, 27)}"`;
+}
+
+async function legacyEntryJson(data: unknown, status = 200): Promise<Response> {
+  const body = JSON.stringify(data);
+  const headers = new Headers(corsHeaders());
+  headers.set("Cache-Control", "no-store");
+  headers.set("Content-Type", "application/json; charset=utf-8");
+  headers.set("Content-Length", String(new TextEncoder().encode(body).byteLength));
+  headers.set("ETag", await expressWeakEtag(body));
+  return new Response(body, { status, headers });
+}
+
+function requestValidatorsAreFresh(request: Request, headers: Headers): boolean {
+  if (/(?:^|,)\s*?no-cache\s*?(?:,|$)/i.test(request.headers.get("Cache-Control") ?? "")) {
+    return false;
+  }
+  const noneMatch = request.headers.get("If-None-Match");
+  const modifiedSince = request.headers.get("If-Modified-Since");
+  if (noneMatch === null && modifiedSince === null) return false;
+  if (noneMatch !== null && noneMatch !== "*") {
+    const etag = headers.get("ETag");
+    if (etag === null) return false;
+    const matched = noneMatch.split(",").map((value) => value.trim()).some((value) =>
+      value === etag || value === `W/${etag}` || `W/${value}` === etag
+    );
+    if (!matched) return false;
+  }
+  if (modifiedSince !== null) {
+    const lastModified = headers.get("Last-Modified");
+    if (
+      lastModified === null
+      || !(Date.parse(lastModified) <= Date.parse(modifiedSince))
+    ) return false;
+  }
+  return true;
+}
+
+async function legacyEntryNotModified(lastModified: number): Promise<Response> {
+  const body = JSON.stringify({ status: 304, message: "Not modified", type: "internal" });
+  const headers = new Headers(corsHeaders());
+  headers.set("Cache-Control", "no-store");
+  headers.set("Last-Modified", new Date(lastModified).toUTCString());
+  headers.set("ETag", await expressWeakEtag(body));
+  return new Response(null, { status: 304, headers });
+}
+
+async function renderLegacyEntries(
+  request: Request,
+  entries: PublicEntry[],
+  extension: LegacyEntryExtension | undefined,
+  assumedType?: string,
+): Promise<Response> {
+  const prepared = prepareLegacyEntries(entries, assumedType);
+  const firstTime = prepared.length === 0 ? null : legacyEntryTime(prepared[0]!);
+  const lastModified = firstTime !== null && Number.isFinite(firstTime) && firstTime !== 0
+    ? firstTime
+    : null;
+  const ifModifiedSince = request.headers.get("If-Modified-Since");
+  if (
+    lastModified !== null
+    && ifModifiedSince !== null
+    && lastModified <= new Date(ifModifiedSince).getTime()
+  ) {
+    return legacyEntryNotModified(lastModified);
+  }
+
+  const format = legacyEntryFormat(request, extension);
+  const body = format === "json"
+    ? JSON.stringify(prepared)
+    : formatLegacyEntryCells(prepared, format === "csv" ? "," : "\t");
+  const headers = new Headers(corsHeaders());
+  headers.set("Cache-Control", "no-store");
+  headers.set("Vary", "Accept");
+  headers.set("Content-Type", format === "json"
+    ? "application/json; charset=utf-8"
+    : format === "csv"
+      ? "text/csv; charset=utf-8"
+      : format === "tsv"
+        ? "text/tab-separated-values; charset=utf-8"
+        : "text/plain; charset=utf-8");
+  if (lastModified !== null) headers.set("Last-Modified", new Date(lastModified).toUTCString());
+  headers.set("Content-Length", String(new TextEncoder().encode(body).byteLength));
+  headers.set("ETag", await expressWeakEtag(body));
+  if (requestValidatorsAreFresh(request, headers)) {
+    headers.delete("Content-Type");
+    headers.delete("Content-Length");
+    return new Response(null, { status: 304, headers });
+  }
+  return withoutBodyForHead(request, new Response(body, { status: 200, headers }));
+}
+
 async function handleEntriesApi(
   request: Request,
   env: AppEnv,
   url: URL,
 ): Promise<Response | null> {
+  const splitPath = splitLegacyEntriesExtension(url.pathname);
+  const readMethod = request.method === "GET" || request.method === "HEAD";
   if (
-    request.method === "GET" &&
-    /^\/api\/v[12]\/entries\/current\/?(?:\.json)?\/?$/.test(url.pathname)
+    readMethod &&
+    /^\/api\/v[12]\/entries\/current\/?$/.test(splitPath.pathname)
   ) {
     await requirePermission(request, env, url, "api:entries:read");
     const tenant = resolveTenant(request, url);
-    return json(await env.ENTRY_STORE.getByName(tenant).getCurrent());
+    return renderLegacyEntries(
+      request,
+      await env.ENTRY_STORE.getByName(tenant).getCurrent(),
+      splitPath.extension,
+      "sgv",
+    );
   }
 
   // API v2 mounts the complete v1 router at `/` before registering its
   // additional v2-only endpoints (locked upstream lib/api2/index.js:14-19).
-  const match = /^\/api\/v[12]\/entries(?:\/([^/.]+))?\/?(?:\.json)?\/?$/.exec(url.pathname);
+  const match = /^\/api\/v[12]\/entries(?:\/([^/]+))?\/?$/.exec(splitPath.pathname);
   if (match === null) return null;
   const tenant = resolveTenant(request, url);
   const spec = match[1];
+
+  if (request.method === "POST" && spec === "preview") {
+    const payload = await readBoundedBody(request);
+    await requirePermissions(
+      request,
+      env,
+      url,
+      ["api:entries:read", "api:entries:create"],
+      payload,
+    );
+    return legacyEntryJson(legacyEntryPreview(payload));
+  }
 
   if (request.method === "POST" && spec === undefined) {
     const payload = await readBoundedBody(request);
@@ -1173,15 +1355,20 @@ async function handleEntriesApi(
       payload,
     );
     const store = env.ENTRY_STORE.getByName(tenant);
-    const entries = parseEntryPayload(payload);
-    const saved = await store.putEntries(entries);
-    return json(JSON.parse(saved.entriesJson), { status: 200 });
+    const entries = parseLegacyEntryPayload(payload);
+    const decision = JSON.parse(await store.putEntriesJson(entries)) as
+      | { ok: true; result: { entriesJson: string } }
+      | { ok: false; message: string };
+    if (!decision.ok) {
+      return legacyEntryJson({ status: 500, message: "Mongo Error", description: {} }, 500);
+    }
+    return legacyEntryJson(JSON.parse(decision.result.entriesJson));
   }
 
-  if (request.method === "GET") {
+  if (readMethod) {
     await requirePermission(request, env, url, "api:entries:read");
     const store = env.ENTRY_STORE.getByName(tenant);
-    if (spec !== undefined && OBJECT_ID.test(spec)) {
+    if (spec !== undefined && /^[a-f\d]{24}$/.test(spec)) {
       // Locked getEntry() bypasses the default count/date window and the
       // formatter always emits an array, even for this single-record route.
       const entries = await store.getEntryById(spec.toLowerCase());
@@ -1192,7 +1379,7 @@ async function handleEntriesApi(
           description: `No such id: '${spec}'`,
         }, { status: 500 });
       }
-      return json(entries);
+      return renderLegacyEntries(request, entries, splitPath.extension, entries[0]?.type);
     }
     const query = parseHistoryQuery(url);
     if (spec !== undefined) query.type = spec;
@@ -1205,7 +1392,12 @@ async function handleEntriesApi(
       }
       throw new Error(decision.message);
     }
-    return json(decision.result);
+    return renderLegacyEntries(
+      request,
+      decision.result,
+      splitPath.extension,
+      spec ?? query.type ?? undefined,
+    );
   }
 
   if (request.method === "DELETE") {
@@ -1218,7 +1410,7 @@ async function handleEntriesApi(
       payload,
     );
     const store = env.ENTRY_STORE.getByName(tenant);
-    const id = spec !== undefined && OBJECT_ID.test(spec);
+    const id = spec !== undefined && /^[a-f\d]{24}$/.test(spec);
     const model = spec !== undefined && spec !== "*" && !id
       ? spec
       : null;

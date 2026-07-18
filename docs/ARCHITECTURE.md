@@ -187,6 +187,30 @@ Wrangler check confirmed fixed `Content-Length` for the production 406, while
 the platform HTTP boundary may still transfer the HTML finalhandler 404 as
 chunked; that transport-level P2 remains a post-deploy smoke item.
 
+V1/v2 Entries now has its own bounded Worker boundary. The Worker extracts the
+locked lowercase extension forms, negotiates JSON/plain/CSV/TSV, compiles the
+supported query fields/operators and request sort, then calls typed `EntryStore`
+RPC. SQLite applies the requested sort and limit first; the response formatter
+then reorders only that selected set by `mills`/`date` descending, preserving
+the locked upstream quirk. JSON and the three text representations share
+Last-Modified, weak Express-style ETags, IMS/INM freshness and HEAD metadata.
+Cloudflare can remove a dynamic response's `Content-Length` at the public HTTP
+boundary even though Workers-runtime responses retain it, the same transport
+P2 already recorded for Status.
+
+Upload and preview share one recursive sanitizer before normalization or
+persistence. The locked server uses DOMPurify with JSDOM; neither DOM runtime is
+available at this Worker boundary. NSCF therefore entity-encodes HTML-like and
+entity-bearing nonnumeric strings so active markup cannot enter SQLite. This is
+a deliberate fail-closed safety adaptation: safe HTML that upstream preserves
+may be returned as text, so byte-equivalent DOMPurify output remains open.
+Persistent batches cross the RPC boundary as validated values. Each item runs
+in its own synchronous SQLite transaction that atomically updates the canonical
+document, narrow Entries shadow and change snapshot. A conflict rolls back that
+item, retains the already committed ordered prefix, and prevents the suffix
+from running, matching `bulkWrite({ordered:true})` rather than request-wide
+atomicity.
+
 ## Target complete-port architecture
 
 ```text
@@ -331,11 +355,17 @@ shadow above, not the database as a whole.
 V1 Entries preserves the locked four-day default date window and keeps
 `dateString` as a distinct string field rather than folding it into numeric
 `date`. Realtime/ddata loading uses a separate two-day canonical-document
-window. Indexed date/type searches stay in SQLite. A `dateString` scan or other
-unindexed candidate set that would cross 10,000 rows fails closed with HTTP
-413; synchronous delete and per-document revision cleanup are capped at 128.
-These are explicit Free-plan controls rather than claims that SQLite and Mongo
-have identical unbounded behavior.
+window. Indexed date/type searches stay in SQLite. The adapted query surface
+accepts equality/comparison over numeric `date`, `sgv`, `filtered`,
+`unfiltered`, `rssi`, `noise` and `mbg`, plus bounded string `_id`,
+`dateString`, `device`, `direction`, `identifier` and `sysTime` fields; it
+supports ordered sorts over those fields and type. Unsupported operators,
+nested/array/mixed-type behavior and unsafe fields fail closed rather than
+being silently ignored. A `dateString` scan or other unindexed candidate set
+that would cross 10,000 rows fails closed with HTTP 413; synchronous delete and
+per-document revision cleanup are capped at 128. Bodies are capped at 512 KiB
+and upload batches at 100. These are explicit Free-plan controls rather than
+claims that SQLite and Mongo have identical unbounded behavior.
 
 Treatments and device status now share an internal SQLite repository and DO RPC
 boundary for:
@@ -393,6 +423,9 @@ real persisted numeric `srvModified`, orders them ascending and includes soft
 delete tombstones. It does not use audit timestamps or virtual `created_at`
 fallbacks. Permanent deletion removes the document and its snapshots together,
 matching upstream history behavior for `permanent=true`.
+This transaction guarantee is per document. V1 Entries deliberately uses one
+such transaction per ordered batch item, so a later error does not roll back a
+successful prefix.
 
 ### Deployed generic slice: API v3 entries, treatments, device-status and profile
 
@@ -611,7 +644,9 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
 - Maximum request body: 512 KiB; maximum POST batch: 100 records.
 - EIO4 polling/direct-WebSocket payload controls: 1,000,000-byte advertised
   polling maximum, 128 queued packets and 256 persisted sessions per tenant.
-- SGV range accepted by this prototype: integer 20–600 mg/dL.
+- The narrow realtime shadow stores numeric SGV/MBG only in its historical
+  20–600 columns; the canonical v1 document no longer rejects an upstream
+  uploader value solely for falling outside that range.
 - History count defaults to 10 and is capped at 10,000.
 - Entries unindexed/dateString candidates are capped at 10,000 with controlled
   HTTP 413; synchronous deletion and stored-revision cleanup are capped at 128.

@@ -1,24 +1,7 @@
-const MIN_DATE = Date.UTC(2000, 0, 1);
-const MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
 const MAX_BATCH_SIZE = 100;
 export const LEGACY_ENTRY_DEFAULT_WINDOW_MS = 4 * 24 * 60 * 60 * 1_000;
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
-const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
-const SAFE_IDENTIFIER = /^[A-Za-z0-9._:-]{1,128}$/;
-const DIRECTIONS = [
-  "TripleUp",
-  "DoubleUp",
-  "SingleUp",
-  "FortyFiveUp",
-  "Flat",
-  "FortyFiveDown",
-  "SingleDown",
-  "DoubleDown",
-  "TripleDown",
-  "NOT COMPUTABLE",
-  "RATE OUT OF RANGE",
-  "NONE",
-] as const;
+const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export class ApiError extends Error {
   constructor(
@@ -69,25 +52,37 @@ export interface PublicEntry {
 
 export interface HistoryQuery {
   count: number;
-  gt: number | null;
-  gte: number | null;
-  lt: number | null;
-  lte: number | null;
-  dateStringGt: string | null;
-  dateStringGte: string | null;
-  dateStringLt: string | null;
-  dateStringLte: string | null;
+  filters: HistoryFilter[];
+  sort: HistorySort[];
   type?: string | null;
 }
 
+export type HistoryFilterOperator = "eq" | "ne" | "gt" | "gte" | "lt" | "lte";
+
+export interface HistoryFilter {
+  field: string;
+  operator: HistoryFilterOperator;
+  value: string | number;
+}
+
+export interface HistorySort {
+  field: string;
+  direction: "asc" | "desc";
+}
+
 export function parseEntryTypeFilter(url: URL): string | null {
-  const direct = url.searchParams.get("find[type]");
-  const equality = url.searchParams.get("find[type][$eq]");
+  const directValues = url.searchParams.getAll("find[type]");
+  const equalityValues = url.searchParams.getAll("find[type][$eq]");
+  if (directValues.length > 1 || equalityValues.length > 1) {
+    throw new ApiError(400, "invalid_query", "find[type] filters must not be repeated");
+  }
+  const direct = directValues[0] ?? null;
+  const equality = equalityValues[0] ?? null;
   if (direct !== null && equality !== null && direct !== equality) {
     throw new ApiError(400, "invalid_query", "find[type] filters conflict");
   }
   const type = equality ?? direct;
-  if (type !== null && (type.length === 0 || type.length > 32 || !/^[A-Za-z0-9_-]+$/.test(type))) {
+  if (type !== null && (type.length === 0 || type.length > 256)) {
     throw new ApiError(400, "invalid_query", "find[type] has an invalid format");
   }
   return type;
@@ -107,25 +102,33 @@ function boundedString(
   if (typeof value !== "string") {
     throw new ApiError(400, "invalid_entry", `${field} must be a string`);
   }
-  const normalized = value.trim();
-  if (normalized.length === 0 || normalized.length > maxLength) {
+  if (value.length === 0 || value.length > maxLength) {
     throw new ApiError(400, "invalid_entry", `${field} has an invalid length`);
   }
-  return normalized;
+  return value;
 }
 
 function parseDate(entry: Record<string, unknown>): number {
   let date: number;
   if (typeof entry.date === "number" && Number.isFinite(entry.date)) {
     date = Math.trunc(entry.date);
+  } else if (
+    typeof entry.date === "string"
+    && entry.date.trim().length > 0
+    && Number.isFinite(Number(entry.date))
+  ) {
+    date = Math.trunc(Number(entry.date));
   } else if (typeof entry.dateString === "string") {
     date = Date.parse(entry.dateString);
   } else {
-    throw new ApiError(400, "invalid_entry", "date or dateString is required");
+    // Locked entries.create() uses moment() when an array item has no usable
+    // date. Canonical SQLite requires an indexed date, so persist that same
+    // request-time instant explicitly instead of leaving an unqueryable row.
+    date = Date.now();
   }
 
-  if (!Number.isFinite(date) || date < MIN_DATE || date > Date.now() + MAX_FUTURE_MS) {
-    throw new ApiError(400, "invalid_entry", "date is outside the accepted range");
+  if (!Number.isSafeInteger(date)) {
+    throw new ApiError(400, "invalid_entry", "date must be a safe epoch-millisecond integer");
   }
   return date;
 }
@@ -144,7 +147,7 @@ function parseIdentity(entry: Record<string, unknown>): {
     && entry.identifier !== undefined;
 
   if (identifierPresent && entry.identifier !== null) {
-    if (typeof entry.identifier !== "string" || !SAFE_IDENTIFIER.test(entry.identifier)) {
+    if (typeof entry.identifier !== "string" || entry.identifier.length > 4096) {
       throw new ApiError(400, "invalid_entry", "identifier has an invalid format");
     }
     identifier = entry.identifier;
@@ -159,9 +162,10 @@ function parseIdentity(entry: Record<string, unknown>): {
     } else if (UUID.test(entry._id)) {
       identifier ??= entry._id;
       identifierPresent = true;
-    } else {
-      throw new ApiError(400, "invalid_entry", "_id must be a 24-hex ObjectId or UUID");
     }
+    // Locked normalizeEntryId() removes every other string `_id` so Mongo can
+    // allocate the server identity. UUID strings are the only invalid IDs
+    // copied to `identifier` when UUID_HANDLING is enabled.
   }
 
   return { requestedId, identifier, identifierPresent };
@@ -181,34 +185,9 @@ function validateEntry(value: unknown): ValidatedEntry {
   }
 
   const date = parseDate(value);
-  const type = boundedString(value.type, "type", "sgv", 32);
-  if (!/^[A-Za-z0-9_-]+$/.test(type)) {
-    throw new ApiError(400, "invalid_entry", "type has an invalid format");
-  }
-  const measurementField = type === "mbg" ? "mbg" : type === "sgv" ? "sgv" : null;
-  if (measurementField !== null) {
-    const measurement = value[measurementField];
-    const numericMeasurement = typeof measurement === "number"
-      ? measurement
-      : typeof measurement === "string" && measurement.trim().length > 0
-        ? Number(measurement)
-        : Number.NaN;
-    if (!Number.isInteger(numericMeasurement)) {
-      throw new ApiError(400, "invalid_entry", `${measurementField} must be an integer or numeric string`);
-    }
-    if (numericMeasurement < 20 || numericMeasurement > 600) {
-      throw new ApiError(
-        400,
-        "invalid_entry",
-        `${measurementField} must be between 20 and 600 mg/dL`,
-      );
-    }
-  }
-  const direction = boundedString(value.direction, "direction", "NONE", 32);
-  if (type === "sgv" && !DIRECTIONS.includes(direction as (typeof DIRECTIONS)[number])) {
-    throw new ApiError(400, "invalid_entry", "direction is not a known Nightscout direction");
-  }
-  const device = boundedString(value.device, "device", "unknown", 80);
+  const type = boundedString(value.type, "type", "sgv", 256);
+  const direction = boundedString(value.direction, "direction", "NONE", 4096);
+  const device = boundedString(value.device, "device", "unknown", 4096);
   const identity = parseIdentity(value);
   const sourceDateString = typeof value.dateString === "string" && value.dateString.length > 0
     ? value.dateString
@@ -257,7 +236,88 @@ export function parseEntryPayload(value: unknown): ValidatedEntry[] {
   return values.map(validateEntry);
 }
 
-function parseTime(value: string | null, name: string): number | null {
+function escapeLegacyHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function sanitizeLegacyValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeLegacyValue);
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, sanitizeLegacyValue(item)]),
+    );
+  }
+  // Locked purifier applies DOMPurify only to nonnumeric leaves. Workers has
+  // no JSDOM document; entity-encoding every nonnumeric string is a bounded,
+  // fail-closed adaptation that cannot persist active markup or HTML entities.
+  if (
+    typeof value === "string"
+    && Number.isNaN(Number(value))
+    && /[<&]/.test(value)
+  ) {
+    return escapeLegacyHtml(value);
+  }
+  return value;
+}
+
+export function legacyEntryPreview(value: unknown): unknown[] {
+  const sanitized = sanitizeLegacyValue(value);
+  if (Array.isArray(sanitized)) return sanitized;
+  if (isRecord(sanitized) && Object.prototype.hasOwnProperty.call(sanitized, "date")) {
+    return [sanitized];
+  }
+  return [];
+}
+
+export function parseLegacyEntryPayload(value: unknown): ValidatedEntry[] {
+  // Locked insert_entries accepts a single object only when it owns `date`;
+  // an array is passed through by length. Preserve that uploader quirk before
+  // the adapter's explicit storage validation and 100-item Free-plan bound.
+  return parseEntryPayload(legacyEntryPreview(value));
+}
+
+const LEGACY_NUMERIC_ENTRY_FIELDS = new Set([
+  "date",
+  "sgv",
+  "filtered",
+  "unfiltered",
+  "rssi",
+  "noise",
+  "mbg",
+]);
+
+const LEGACY_STRING_ENTRY_FIELDS = new Set([
+  "_id",
+  "dateString",
+  "device",
+  "direction",
+  "identifier",
+  "sysTime",
+]);
+
+const LEGACY_ENTRY_SORT_FIELDS = new Set([
+  ...LEGACY_NUMERIC_ENTRY_FIELDS,
+  ...LEGACY_STRING_ENTRY_FIELDS,
+  "type",
+]);
+
+function parseLegacyInteger(value: string, name: string): number {
+  // Locked lib/server/query.js recursively applies parseInt without a radix to
+  // each numeric Entries query leaf. Preserve that coercion (including 0x)
+  // while rejecting NaN before it reaches a Durable Object RPC/SQL binding.
+  const parsed = Number.parseInt(value);
+  if (!Number.isFinite(parsed)) {
+    throw new ApiError(400, "invalid_query", `${name} must begin with an integer`);
+  }
+  return parsed;
+}
+
+function parseAliasTime(value: string | null, name: string): number | null {
   if (value === null || value === "") return null;
   const numeric = Number(value);
   const parsed = Number.isFinite(numeric) ? numeric : Date.parse(value);
@@ -267,47 +327,98 @@ function parseTime(value: string | null, name: string): number | null {
   return Math.trunc(parsed);
 }
 
+function uniqueParameter(url: URL, name: string): string | null {
+  const values = url.searchParams.getAll(name);
+  if (values.length > 1) {
+    throw new ApiError(400, "invalid_query", `${name} must not be repeated`);
+  }
+  return values[0] ?? null;
+}
+
 export function parseHistoryQuery(url: URL): HistoryQuery {
-  const rawCount = url.searchParams.get("count") ?? "10";
+  const rawCount = uniqueParameter(url, "count") || "10";
   const count = Number(rawCount);
   if (!Number.isInteger(count) || count < 1 || count > 10000) {
     throw new ApiError(400, "invalid_query", "count must be an integer from 1 to 10000");
   }
 
   const type = parseEntryTypeFilter(url);
-  const gt = parseTime(url.searchParams.get("find[date][$gt]"), "find[date][$gt]");
-  let gte = parseTime(
-    url.searchParams.get("find[date][$gte]")
-      ?? url.searchParams.get("from"),
-    "find[date][$gte]",
-  );
-  const lt = parseTime(url.searchParams.get("find[date][$lt]"), "find[date][$lt]");
-  const lte = parseTime(
-    url.searchParams.get("find[date][$lte]")
-      ?? url.searchParams.get("to"),
-    "find[date][$lte]",
-  );
-  const dateStringGt = url.searchParams.get("find[dateString][$gt]");
-  const dateStringGte = url.searchParams.get("find[dateString][$gte]");
-  const dateStringLt = url.searchParams.get("find[dateString][$lt]");
-  const dateStringLte = url.searchParams.get("find[dateString][$lte]");
-  if (
-    gt === null && gte === null && lt === null && lte === null
-    && dateStringGt === null && dateStringGte === null
-    && dateStringLt === null && dateStringLte === null
-  ) {
-    gte = Date.now() - LEGACY_ENTRY_DEFAULT_WINDOW_MS;
+  const filters: HistoryFilter[] = [];
+  const seen = new Set<string>();
+  const findPattern = /^find\[([A-Za-z0-9_.-]+)\](?:\[\$(eq|ne|gt|gte|lt|lte)\])?$/;
+  for (const [name, value] of url.searchParams) {
+    if (!name.startsWith("find[")) continue;
+    if (name === "find[type]" || name === "find[type][$eq]") continue;
+    if (seen.has(name)) {
+      throw new ApiError(400, "invalid_query", `${name} must not be repeated`);
+    }
+    seen.add(name);
+    const match = findPattern.exec(name);
+    if (match === null) {
+      throw new ApiError(400, "unsupported_query_filter", `unsupported Entries filter ${name}`);
+    }
+    const field = match[1]!;
+    const operator = (match[2] ?? "eq") as HistoryFilterOperator;
+    if (!LEGACY_NUMERIC_ENTRY_FIELDS.has(field) && !LEGACY_STRING_ENTRY_FIELDS.has(field)) {
+      throw new ApiError(400, "unsupported_query_filter", `unsupported Entries filter ${name}`);
+    }
+    if (field === "_id" && operator !== "eq") {
+      throw new ApiError(400, "unsupported_query_filter", `unsupported Entries filter ${name}`);
+    }
+    const parsedValue = LEGACY_NUMERIC_ENTRY_FIELDS.has(field)
+      ? parseLegacyInteger(value, name)
+      : field === "_id" && /^[0-9a-fA-F]{24}$/.test(value)
+        ? value.toLowerCase()
+        : value;
+    filters.push({
+      field,
+      operator,
+      value: parsedValue,
+    });
   }
-  return {
-    count,
-    gt,
-    gte,
-    lt,
-    lte,
-    dateStringGt,
-    dateStringGte,
-    dateStringLt,
-    dateStringLte,
-    type,
-  };
+
+  const from = parseAliasTime(uniqueParameter(url, "from"), "from");
+  const to = parseAliasTime(uniqueParameter(url, "to"), "to");
+  if (from !== null) filters.push({ field: "date", operator: "gte", value: from });
+  if (to !== null) filters.push({ field: "date", operator: "lte", value: to });
+
+  const sort: HistorySort[] = [];
+  const sortPattern = /^sort\[([A-Za-z0-9_.-]+)\]$/;
+  const seenSorts = new Set<string>();
+  for (const [name, value] of url.searchParams) {
+    if (!name.startsWith("sort[")) continue;
+    if (seenSorts.has(name)) {
+      throw new ApiError(400, "invalid_query", `${name} must not be repeated`);
+    }
+    seenSorts.add(name);
+    const match = sortPattern.exec(name);
+    const field = match?.[1];
+    if (field === undefined || !LEGACY_ENTRY_SORT_FIELDS.has(field)) {
+      throw new ApiError(400, "unsupported_query_sort", `unsupported Entries sort ${name}`);
+    }
+    const normalized = value.toLowerCase();
+    const direction = normalized === "1" || normalized === "asc" || normalized === "ascending"
+      ? "asc"
+      : normalized === "-1" || normalized === "desc" || normalized === "descending"
+        ? "desc"
+        : null;
+    if (direction === null) {
+      throw new ApiError(400, "invalid_query", `${name} must be 1, -1, asc, or desc`);
+    }
+    sort.push({ field, direction });
+  }
+  if (sort.length === 0) sort.push({ field: "date", direction: "desc" });
+
+  // Locked query.js skips its four-day default only for `_id`, date, or
+  // dateString predicates. Other filters remain bounded by the date index.
+  if (!filters.some((filter) =>
+    filter.field === "_id" || filter.field === "date" || filter.field === "dateString"
+  )) {
+    filters.push({
+      field: "date",
+      operator: "gte",
+      value: Date.now() - LEGACY_ENTRY_DEFAULT_WINDOW_MS,
+    });
+  }
+  return { count, filters, sort, type };
 }

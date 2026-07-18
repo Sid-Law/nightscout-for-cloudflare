@@ -1642,6 +1642,20 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     };
   }
 
+  async putEntriesJson(entries: ValidatedEntry[]): Promise<string> {
+    try {
+      return JSON.stringify({ ok: true, result: await this.putEntries(entries) });
+    } catch (error) {
+      // Keep an expected Mongo-compatible ordered-batch failure inside the DO
+      // RPC boundary. The HTTP adapter emits the locked public envelope while
+      // the successful SQLite prefix remains committed.
+      return JSON.stringify({
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   async getEntries(query: HistoryQuery): Promise<PublicEntry[]> {
     return this.documentRepository().queryLegacyEntries(query).map(toPublicEntry);
   }

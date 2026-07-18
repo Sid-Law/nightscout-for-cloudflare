@@ -48,7 +48,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
 | 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. Protected Profile Save was not attempted in this release; add that regression plus the remaining mutation/report and pushed-live-update workflows. |
 | 3. SQLite collection compatibility | In progress | Entries, treatments, device status and profile share the generic API3 repository. Extend it to food/settings, close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
-| 4. API v1 | In progress | The Entries create/list/current/model/delete slice now covers locked identity, type, date/dateString and bounded failure behavior; Activity CRUD is implemented. Complete preview/echo/times/count/slice/formats and the remaining document routes. |
+| 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and conservative recursive sanitization, single/array/urlencoded uploads, a bounded numeric/string query-and-sort subset, current/model/ID reads, JSON/plain/CSV/TSV, validators and HEAD; Activity CRUD is implemented. Complete echo/times/count/slice, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
 | 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
 | 6. API v3 | Partial four-collection slice | Public `/version`, JWT-protected `/status`, the generic routes for entries/treatments/device-status/profile and four-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add food and settings plus large-response resource controls and broader mixed-type query parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
@@ -138,6 +138,13 @@ realtime/ddata reads use two days; `dateString` and other unindexed candidate
 sets stop with controlled HTTP 413 above 10,000 rows; synchronous delete and
 per-document revision deletion are capped at 128; and `$re` accepts only the
 bounded, case-sensitive subset that can be safely compiled to SQLite `GLOB`.
+The v1 uploader additionally caps bodies at 512 KiB and batches at 100 items.
+Within that batch each SQLite item is atomic, successful items before the first
+conflict remain committed, and the suffix is not attempted, matching Mongo's
+ordered bulk prefix rather than pretending the full request is atomic. Preview
+and persistence share recursive string sanitization; Workers entity-encodes
+HTML-like input because the locked JSDOM/DOMPurify runtime is not portable, so
+exact safe-markup preservation remains a named compatibility task.
 
 The deployed increment includes:
 
