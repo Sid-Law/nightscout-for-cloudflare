@@ -133,6 +133,11 @@ const REALTIME_WEBSOCKET_ATTACHMENT_VERSION = 1;
 const REALTIME_WEBSOCKET_EVENT_TIMEOUT_MS = 15_000;
 const REALTIME_SID = /^[A-Za-z0-9_-]{20}$/;
 const REALTIME_ENTRY_WINDOW_MS = 2 * 24 * 60 * 60 * 1_000;
+// Locked Profile.last() is the source for /profile/current, status settings,
+// and dataloader realtime profiles. json_valid keeps the adapter resilient to
+// a corrupt SQLite row that MongoDB itself could never have stored.
+const PROFILE_CURRENT_ORDER_BY =
+  "CASE WHEN json_valid(body) THEN json_extract(body, '$.startDate') ELSE NULL END DESC, id DESC";
 
 interface RealtimeWebSocketAttachment {
   version: typeof REALTIME_WEBSOCKET_ATTACHMENT_VERSION;
@@ -1076,7 +1081,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       `SELECT id, body, sort_time, updated_at
        FROM documents
        WHERE collection = 'profile'
-       ORDER BY sort_time DESC, updated_at DESC
+       ORDER BY ${PROFILE_CURRENT_ORDER_BY}
        LIMIT 10`,
     ).toArray();
     for (const row of rows) {
@@ -1159,8 +1164,8 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       `SELECT id, body, sort_time
        FROM documents
        WHERE collection = 'profile'
-       ORDER BY sort_time DESC, updated_at DESC
-       LIMIT 10`,
+       ORDER BY ${PROFILE_CURRENT_ORDER_BY}
+       LIMIT 1`,
       [],
       budget,
       (document) => document,
@@ -1694,12 +1699,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     if (collection === "treatments") {
       return JSON.stringify(this.documentRepository().queryLegacyTreatments({ limit: boundedLimit }));
     }
+    const orderBy = collection === "profile"
+      ? PROFILE_CURRENT_ORDER_BY
+      : "sort_time DESC, updated_at DESC";
     const documents = this.ctx.storage.sql
       .exec<DbDocument>(
         `SELECT id, body, sort_time
          FROM documents
          WHERE collection = ?
-         ORDER BY sort_time DESC, updated_at DESC
+         ORDER BY ${orderBy}
          LIMIT ?`,
         collection,
         boundedLimit,
@@ -1717,6 +1725,17 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     if (collection === "treatments") {
       return JSON.stringify(
         documents.map((document) => this.documentRepository().upsertTreatment(document).document),
+      );
+    }
+    if (collection === "profile") {
+      return JSON.stringify(
+        documents.map((document) =>
+          this.documentRepository().createLegacyDocument(
+            collection,
+            document.created_at
+              ? document
+              : { ...document, created_at: new Date().toISOString() },
+          ).document),
       );
     }
     if (collection === "devicestatus") {
@@ -1802,6 +1821,17 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     if (collection === "treatments") {
       return JSON.stringify(
         documents.map((document) => this.documentRepository().upsertTreatment(document).document),
+      );
+    }
+    if (collection === "profile") {
+      return JSON.stringify(
+        documents.map((document) =>
+          this.documentRepository().saveLegacyDocument(
+            collection,
+            Object.prototype.hasOwnProperty.call(document, "created_at")
+              ? document
+              : { ...document, created_at: new Date().toISOString() },
+          ).document),
       );
     }
     if (collection === "devicestatus") {
@@ -1890,7 +1920,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async deleteDocuments(collection: DocumentCollection, ids: string[]): Promise<number> {
-    if (collection === "treatments" || collection === "devicestatus") {
+    if (
+      collection === "treatments"
+      || collection === "devicestatus"
+      || collection === "profile"
+    ) {
       let deleted = 0;
       for (const id of ids) {
         if (this.documentRepository().deleteDocumentById(collection, id)) deleted += 1;

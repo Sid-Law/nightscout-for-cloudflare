@@ -3,11 +3,12 @@ import { LEGACY_ENTRY_DEFAULT_WINDOW_MS } from "./model";
 import type { HistoryQuery, ValidatedEntry } from "./model";
 import { compileMongoRegexToSqlGlob } from "./safe-regex";
 
-export type Api3CollectionName = "devicestatus" | "entries" | "treatments";
+export type Api3CollectionName = "devicestatus" | "entries" | "profile" | "treatments";
 
 const TREATMENTS: Api3CollectionName = "treatments";
 const DEVICESTATUS: Api3CollectionName = "devicestatus";
 const ENTRIES: Api3CollectionName = "entries";
+const PROFILE: Api3CollectionName = "profile";
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FIELD_NAME = /^[A-Za-z0-9_,.-]+$/;
@@ -257,11 +258,17 @@ function fallbackKey(
 ): string | null {
   // Locked v15.0.7 lib/api3/generic/setup.js configures the API3 legacy
   // fallback as date+type for entries, created_at+device for devicestatus,
-  // and created_at+eventType for treatments. This is deliberately separate
-  // from v1's sysTime+type upsert selector in lib/server/entries.js.
+  // created_at alone for profile, and created_at+eventType for treatments.
+  // This is deliberately separate from v1's sysTime+type upsert selector in
+  // lib/server/entries.js. Settings must not inherit the created_at fallback.
   const dateValue = collection === ENTRIES
     ? document.date
     : canonicalCreatedAt(document.created_at);
+  if (collection === PROFILE) {
+    return typeof dateValue === "string" || typeof dateValue === "number"
+      ? JSON.stringify([dateValue])
+      : null;
+  }
   const distinguishingValue = collection === ENTRIES
     ? document.type
     : collection === DEVICESTATUS
@@ -1133,6 +1140,8 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
        OR (collection = 'entries' AND fallback_key IS NULL
            AND json_type(body, '$.date') IS NOT NULL
            AND json_type(body, '$.type') IS NOT NULL)
+       OR (collection = 'profile' AND fallback_key IS NULL
+           AND json_type(body, '$.created_at') IS NOT NULL)
        OR NOT EXISTS (
          SELECT 1 FROM document_changes
          WHERE document_changes.collection = documents.collection
@@ -1160,6 +1169,7 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     const documentFallback = collection === TREATMENTS
       || collection === DEVICESTATUS
       || collection === ENTRIES
+      || collection === PROFILE
       ? fallbackKey(document, collection as Api3CollectionName)
       : row.fallback_key;
     const revision = row.revision ?? 1;

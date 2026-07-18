@@ -32,10 +32,12 @@ import { normalizePlatformAuthFailDelay } from "./status";
 import {
   handleApi3DeviceStatus,
   handleApi3Entries,
+  handleApi3Profile,
   handleApi3Treatments,
   handleApi3TreatmentsLastModified,
   matchApi3DeviceStatusRoute,
   matchApi3EntriesRoute,
+  matchApi3ProfileRoute,
   matchApi3TreatmentRoute,
   api3BodyParserFailure,
   splitApi3Extension,
@@ -1759,10 +1761,13 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   const matchedTreatmentRoute = matchApi3TreatmentRoute(request.method, api3Pathname);
   const matchedDeviceStatusRoute = matchApi3DeviceStatusRoute(request.method, api3Pathname);
   const matchedEntriesRoute = matchApi3EntriesRoute(request.method, api3Pathname);
+  const matchedProfileRoute = matchApi3ProfileRoute(request.method, api3Pathname);
   const matchedApi3Route = matchedTreatmentRoute === null
     ? matchedDeviceStatusRoute === null
       ? matchedEntriesRoute === null
-        ? null
+        ? matchedProfileRoute === null
+          ? null
+          : { route: matchedProfileRoute, collection: "profile" as const }
         : { route: matchedEntriesRoute, collection: "entries" as const }
       : { route: matchedDeviceStatusRoute, collection: "devicestatus" as const }
     : { route: matchedTreatmentRoute, collection: "treatments" as const };
@@ -1789,13 +1794,21 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
           authentication.authorized,
           api3CollectionRoute,
         )
-        : handleApi3Entries(
-          request,
-          url,
-          authentication.store,
-          authentication.authorized,
-          api3CollectionRoute,
-        );
+        : matchedApi3Route.collection === "entries"
+          ? handleApi3Entries(
+            request,
+            url,
+            authentication.store,
+            authentication.authorized,
+            api3CollectionRoute,
+          )
+          : handleApi3Profile(
+            request,
+            url,
+            authentication.store,
+            authentication.authorized,
+            api3CollectionRoute,
+          );
   }
 
   if (isApi3) return api3Error(404, "Bad operation or collection");
