@@ -1,7 +1,7 @@
 export type PresentedToken = string | string[];
 
 export interface RequestCredentials {
-  apiSecret: string | null;
+  apiSecret: PresentedToken | null;
   token: PresentedToken | null;
   tokenSource: "bearer" | "access-token" | null;
 }
@@ -119,7 +119,9 @@ export function extractRequestCredentials(
   if (!rawSecret) rawSecret = bodyCredential(body, "secret");
   const apiSecret = typeof rawSecret === "string" && rawSecret !== "null"
     ? rawSecret
-    : null;
+    : Array.isArray(rawSecret) && rawSecret.every((value) => typeof value === "string")
+      ? rawSecret
+      : null;
 
   const authorization = request.headers.get("Authorization");
   if (authorization !== null) {

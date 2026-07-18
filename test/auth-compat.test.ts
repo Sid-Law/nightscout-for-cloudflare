@@ -414,7 +414,10 @@ describe("locked Nightscout v15.0.7 authorization compatibility", () => {
 
   it("matches independent secret/token extraction priority and deletes selected body credentials", async () => {
     const tenantName = tenant("auth-priority");
-    await createRole(tenantName, "activity-writer", ["api:activity:create"]);
+    await createRole(tenantName, "activity-writer", [
+      "api:activity:read",
+      "api:activity:create",
+    ]);
     const { listed } = await createSubject(
       tenantName,
       "Priority Phone",
@@ -446,6 +449,73 @@ describe("locked Nightscout v15.0.7 authorization compatibility", () => {
     });
     expect(invalidQueryResponse.status).toBe(401);
     expect(await invalidQueryResponse.json()).toEqual(UNAUTHORIZED);
+
+    const orderedSecretArray = new URL(endpoint("/api/v1/activity", tenantName));
+    orderedSecretArray.searchParams.append("secret[]", "invalid-array-first");
+    orderedSecretArray.searchParams.append("secret[]", listed.accessToken);
+    const orderedSecretArrayResponse = await configuredFetch(
+      tenantName,
+      `${orderedSecretArray.pathname}${orderedSecretArray.search}`,
+      "denied",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(activity("ordered-secret-array")),
+      },
+    );
+    expect(orderedSecretArrayResponse.status).toBe(200);
+
+    const orderedRepeatedSecret = new URL(endpoint("/api/v1/activity", tenantName));
+    orderedRepeatedSecret.searchParams.append("secret", "invalid-repeated-first");
+    orderedRepeatedSecret.searchParams.append("secret", listed.accessToken);
+    const orderedRepeatedSecretResponse = await configuredFetch(
+      tenantName,
+      `${orderedRepeatedSecret.pathname}${orderedRepeatedSecret.search}`,
+      "denied",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(activity("ordered-repeated-secret")),
+      },
+    );
+    expect(orderedRepeatedSecretResponse.status).toBe(200);
+
+    const invalidSecretArray = new URL(endpoint("/api/v1/entries.json", tenantName));
+    invalidSecretArray.searchParams.append("secret[]", "invalid-only");
+    const invalidSecretArrayResponse = await configuredFetch(
+      tenantName,
+      `${invalidSecretArray.pathname}${invalidSecretArray.search}`,
+      "readable",
+    );
+    expect(invalidSecretArrayResponse.status).toBe(401);
+    expect(await invalidSecretArrayResponse.json()).toEqual(UNAUTHORIZED);
+
+    const adminSecretArray = new URL(endpoint("/api/v1/activity", tenantName));
+    adminSecretArray.searchParams.append("secret[]", sha1);
+    const adminSecretArrayResponse = await configuredFetch(
+      tenantName,
+      `${adminSecretArray.pathname}${adminSecretArray.search}`,
+      "denied",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(activity("array-is-not-admin")),
+      },
+    );
+    expect(adminSecretArrayResponse.status).toBe(401);
+    expect(await adminSecretArrayResponse.json()).toEqual(UNAUTHORIZED);
+
+    const oversizedSecretArray = new URL(endpoint("/api/v1/entries.json", tenantName));
+    for (let index = 0; index < 33; index += 1) {
+      oversizedSecretArray.searchParams.append("secret[]", `candidate-${index}`);
+    }
+    const oversizedSecretArrayResponse = await configuredFetch(
+      tenantName,
+      `${oversizedSecretArray.pathname}${oversizedSecretArray.search}`,
+      "readable",
+    );
+    expect(oversizedSecretArrayResponse.status).toBe(401);
+    expect(await oversizedSecretArrayResponse.json()).toEqual(UNAUTHORIZED);
 
     const bearerWins = new URL(endpoint("/api/v1/activity", tenantName));
     bearerWins.searchParams.set("token", listed.accessToken);

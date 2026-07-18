@@ -463,9 +463,18 @@ async function resolveRequestAuthorization(
 ): Promise<AuthorizationResolution> {
   const credentials = extractRequestCredentials(request, url, body);
   const configured = configuredApiSecret(env);
+  // Locked v15.0.7 passes query-string secret arrays into
+  // enclave.isApiKey(), whose scalar-only toLowerCase() throws before the
+  // storage layer can perform its documented ordered subject lookup. Treat
+  // arrays as subject candidates but never as an admin API secret: this keeps
+  // valid access-token arrays useful and makes invalid explicit credentials
+  // fail closed instead of falling back to anonymous defaults.
+  const scalarApiSecret = typeof credentials.apiSecret === "string"
+    ? credentials.apiSecret
+    : null;
 
   if (env.ENTRY_STORE === undefined) {
-    if (await apiSecretDigestMatches(credentials.apiSecret, configured)) {
+    if (await apiSecretDigestMatches(scalarApiSecret, configured)) {
       return { admin: true, authorized: null, defaults: false };
     }
     return {
@@ -477,7 +486,7 @@ async function resolveRequestAuthorization(
   const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
   const ip = requestRemoteIp(request);
   await waitForAuthorizationDelay(store, ip);
-  if (await apiSecretDigestMatches(credentials.apiSecret, configured)) {
+  if (await apiSecretDigestMatches(scalarApiSecret, configured)) {
     await store.authorizationSucceeded(ip);
     return { admin: true, authorized: null, defaults: false };
   }
