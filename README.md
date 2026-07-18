@@ -23,11 +23,13 @@ for diagnosis, dosing, or medical decisions.
 - Tenant-local, SQLite-persisted HS256 JWT signing, the upstream eight-hour
   authorization-token lifetime, locked `shiro-trie` permission matching and
   corrected `verifyauth` behavior.
-- The public API v3 version envelope and JWT-protected status endpoint; the
-  generic API v3 collection surface is not implemented.
-- A treatments-focused SQLite schema-v4/repository foundation for legacy/API3
-  identity, query, mutation, server timestamps, tombstones/history and atomic
-  change snapshots; its generic API v3 HTTP routes are not wired yet.
+- The public API v3 version envelope, JWT-protected status endpoint and a
+  treatments-only JSON HTTP vertical: collection search/create, resource
+  read/replace/patch/delete, both history forms and treatments-aware
+  `lastModified`.
+- A treatments-focused SQLite schema-v4/repository for legacy/API3 identity,
+  ordered search, branch-sensitive mutation permissions, server timestamps,
+  tombstones/history and atomic change snapshots.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -46,7 +48,8 @@ for diagnosis, dosing, or medical decisions.
 ## What is not complete
 
 This is not yet a drop-in Nightscout server. Important missing work includes
-the complete v1/v2/v3 route and error surface, the authorization delay list and
+the complete v1/v2/v3 route and error surface, API v3 collections other than
+treatments, API v3 CSV/XML rendering, the authorization delay list and
 legacy access-token derivation, Mongo query/collection parity,
 Engine.IO/Socket.IO polling sessions, WebSocket upgrade and namespaces,
 real-time write broadcasts, bounded outbox retention, Durable Object alarms,
@@ -121,9 +124,10 @@ is not access control.
 
 The current deployment is a public simulated-data lab, not a personal
 Nightscout deployment.
-All writes require a Nightscout-compatible API-secret digest or an authorized
-subject access token; the tenant selector provides storage routing, not
-authorization. Missing or shorter-than-12-character `API_SECRET` configuration
+Current v1/v2 writes require a Nightscout-compatible API-secret digest or an
+authorized subject credential; API v3 treatments writes require a Bearer JWT.
+The tenant selector provides storage routing, not authorization. Missing or
+shorter-than-12-character `API_SECRET` configuration
 fails closed with HTTP 503 for API-secret writes. A request must carry the
 SHA-1 or SHA-512 hexadecimal digest in `api-secret` (or `?secret=`); the raw
 passphrase is deliberately rejected on the wire. A subject's long-lived access
@@ -150,7 +154,9 @@ passphrase and hashes it before sending. Secret storage
 code as `env.API_SECRET`.
 
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
-into an issue. Current GET endpoints remain publicly readable.
+into an issue. Most current GET endpoints remain publicly readable. API v3
+`/status`, `/lastModified` and every treatments operation require a valid
+Bearer JWT.
 
 If Nightscout says `Wrong API secret`, verify that the Worker setting has no
 leading/trailing spaces, save it, wait for the deployment to finish, then enter
@@ -185,7 +191,7 @@ and the `EntryStore` SQLite Durable Object namespace. A normal Wrangler deploy
 requires an authenticated Cloudflare session and a verified Cloudflare account
 email.
 
-The automated suite currently contains 75 Workers-runtime integration tests.
+The automated suite currently contains 98 Workers-runtime tests.
 It covers the shipped page routes, dynamic clock template, polling-adapter
 asset/version contracts, implemented status and page-data contracts, API-secret
 failure modes, the implemented entries and document CRUD subset, activity
@@ -193,9 +199,10 @@ conditional requests, JWT issue/verify/expiry/tamper/cross-tenant behavior,
 Shiro permission matching, `verifyauth`, the API v3 version/status envelopes,
 SQLite persistence across eviction, tenant isolation and invalid input. The
 suite also covers schema-v4 repair, v1/API3 treatment time separation, UUID
-query handling, API3 `_id` removal and atomic rollback. The locked upstream has
-111 JavaScript test files and about 873 test cases; the 75 adapter tests do not
-prove complete Nightscout compatibility.
+query handling, API3 materialization, mutation rollback and the treatments
+JSON HTTP workflow, including permissions, ordering, history and tombstones.
+The locked upstream has 111 JavaScript test files and about 873 test cases; the
+98 adapter tests do not prove complete Nightscout compatibility.
 
 The current simulated-data lab is deployed at
 <https://nscf-phase1.nscf-lab-20260717.workers.dev/>. It is intentionally

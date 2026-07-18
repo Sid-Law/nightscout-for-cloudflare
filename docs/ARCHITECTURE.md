@@ -101,9 +101,10 @@ Token-bearing authorization paths are redacted from unhandled-error logs.
 This remains a partial authorization port. The current subject access token is
 a stored random value rather than the upstream API-secret/ObjectId-derived
 format, and body-carried credentials, historical prefix matching and the
-per-source-IP failure delay list are not yet implemented. Current GET routes
-remain public except API v3 `/status`, which follows the upstream Bearer-JWT
-requirement.
+per-source-IP failure delay list are not yet implemented. Most current GET
+routes remain public. API v3 `/status`, `/lastModified` and all treatments
+routes accept only a verified Bearer JWT; API secrets and query tokens are not
+API v3 credentials.
 
 The Worker is otherwise stateless. An optional `tenant` query parameter is
 validated and passed to `ENTRY_STORE.getByName()`. The default is `demo`. A
@@ -235,7 +236,8 @@ Treatments now have an internal SQLite repository and DO RPC boundary for:
 - strictly increasing API v3 server modification-time allocation persisted
   across eviction; v1 writes do not advance that clock. Observable
   last-modified is recalculated from current documents and falls back after
-  permanent deletion;
+  permanent deletion. The strict monotonic allocator is a platform enhancement
+  over locked upstream's direct `Date.now()` assignment, which can collide;
 - ascending, field-projected history with tombstones;
 - live v1 treatments filtering in SQL before sort/limit rather than loading
   5,000 documents first. Scalar equality/comparison, `$in` and `$exists` are
@@ -271,14 +273,59 @@ delete tombstones. It does not use audit timestamps or virtual `created_at`
 fallbacks. Permanent deletion removes the document and its snapshots together,
 matching upstream history behavior for `permanent=true`.
 
-This is storage infrastructure, not API v3 route completion. No generic API v3
-treatments route was added. Existing `/api/v1/treatments` GET/POST/PUT/DELETE
-handlers and the `/api/v2/ddata` treatment materialization path are already
-wired to the repository, including the v1 UUID query and empty-array batch
-contracts. The generic API adapter still needs request validation, conditional
-headers, exact envelopes/renderers and authorization before these RPCs can be
-exposed as `/api/v3/treatments/**`. Other document collections also remain on
-the v3-era generic path until they receive collection-specific contract slices.
+### API v3 treatments JSON boundary
+
+The HTTP adapter now exposes exactly the eight locked treatments routes: GET
+and POST on `/api/v3/treatments`; GET on both history forms; and GET, PUT,
+PATCH and DELETE on an identifier. GET `/api/v3/lastModified` reports the
+treatments collection when the subject can read it. Unmatched API v3 routes use
+the locked `{status,message}` 404 envelope rather than falling into the older
+adapter error shape.
+
+The public request still accepts only one `sort` or `sort$desc` value. Internally
+it preserves the locked ordered chain—requested field, `identifier`,
+`created_at`, then `date`—instead of collapsing it into an object or SQL
+expression. Repeated query values retain Express/JavaScript key coercion, so
+two `sort` parameters select the comma-containing field name. Nested and
+unknown safe field names are passed to SQLite JSON paths. A final server-ID
+tie-break makes otherwise equal SQLite results deterministic; upstream Mongo
+does not promise that additional tie-break.
+
+POST dedupe and PUT conditional-upsert choose create versus update permission
+inside the same `transactionSync()` that performs candidate lookup and the
+write. PATCH permission, existence, tombstone, precondition, immutable/common
+validation and actor injection follow the locked order in that transaction.
+Soft delete stores `modifiedBy`; permanent delete removes current and change
+rows. Mutation and change-row failure rolls back the document, history and
+monotonic clock together.
+
+Only the JSON renderer is implemented in this vertical slice. CSV and XML
+requests return controlled 406 responses until locked `csv-stringify` and
+`easyxml` byte-level fixtures are ported. The upstream `mime` 2.6.0 extension
+middleware is preserved separately: an unknown extension is rejected after
+JSON parsing but before routing/authentication, while a known MIME extension is
+stripped and may reach a write handler (whose upstream response is JSON). A
+known but unsupported read format reaches authentication/querying and then
+returns 406.
+
+Other deliberate or unresolved platform differences are explicit:
+
+- JSON bodies are bounded at 512 KiB rather than upstream's 50 MiB;
+- API v3 `$re` is rejected with 400 instead of silently approximating Mongo
+  regular expressions with SQLite `LIKE`;
+- unsafe JSON-path field syntax and queries beyond SQLite binding/statement
+  limits return controlled 400 responses;
+- SQLite/Mongo comparison and ordering across mixed JSON types, nested
+  projection behavior and array semantics are not yet claimed compatible;
+- only treatments is represented by API v3 `lastModified`; the other five
+  generic collections remain unimplemented.
+
+The locked history projection quirk is retained: when `fields` excludes
+`srvModified`, the response body excludes it and Last-Modified/ETag are derived
+from the always-projected treatments `created_at` fallback. Legacy documents
+can be read with virtual srv fields but do not match raw srv filters or HISTORY.
+This is a treatments JSON vertical slice, not completion of generic API v3 or
+of any whole upstream `api3.*` test file.
 
 ### SQLite limits and change-retention risk
 
@@ -287,6 +334,8 @@ bound parameters per query and a 50-byte final `LIKE`/`GLOB` pattern; final SQL
 statement size is also checked against exactly 100,000 bytes. These checks use
 final binding counts and UTF-8 bytes, including JSON paths, sort expressions,
 limit and offset. See [Durable Objects limits](https://developers.cloudflare.com/durable-objects/platform/limits/).
+These bounds do not prove Mongo-compatible mixed-type comparison or sort
+collation; that differential matrix remains open.
 
 The current Free-plan allowances include 100,000 Durable Object requests,
 5,000,000 SQL rows read and 100,000 SQL rows written per day, plus 5 GB of

@@ -44,7 +44,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 3. SQLite collection compatibility | In progress | Treatments schema-v4/repository slice is implemented; extend the contract to every collection and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. |
 | 4. API v1 | In progress | Complete entries utilities/types/errors and all document routes; activity CRUD is the latest completed increment. |
 | 5. API v2 | Partial | JWT issuance/refresh is implemented; complete body credentials, delay-list behavior, summary, notifications and full ddata/properties behavior. |
-| 6. API v3 | Started | Public `/version`, JWT-protected `/status` and a treatments storage foundation are implemented; wire the authenticated treatments HTTP vertical with exact envelopes, sorting, history and lastModified before generalizing. |
+| 6. API v3 | Partial JSON treatments slice | Public `/version`, JWT-protected `/status`, the eight locked treatments routes and treatments-aware `/lastModified` are implemented for JSON; add locked CSV/XML renderer parity before generalizing to the other five collections. |
 | 7. Authentication/admin | Partial | Tenant JWT keys, eight-hour HS256 tokens, live subject/role lookup, Shiro matching and `verifyauth` are implemented; port derived access-token and persistent IP delay-list behavior. |
 | 8. Engine.IO/Socket.IO | Protocol core only | EIO4/SIO5 official-path and EIO3/SIO4 legacy codecs are isolated and tested; polling sessions, WebSocket upgrade, namespaces, authorization, acknowledgements and database mutation messages on a tenant DO remain unimplemented. |
 | 9. Real-time storage updates | Storage foundation only | Treatments persist an atomic change snapshot, but no transport consumes it; define bounded outbox retention, cursors and reconnect/eviction tests before broadcasting. |
@@ -108,6 +108,13 @@ The current baseline includes:
   atomic change snapshots;
 - isolated, tested official EIO4/SIO5 and legacy EIO3/SIO4 protocol codecs.
 
+The unreleased branch adds a treatments-only API v3 JSON HTTP vertical. It does
+not change the deployed evidence above: no deployment, remote smoke or browser
+claim has been made for these routes. The local contracts cover JWT-only
+authentication, dynamic create/update permission branches, ordered sorting,
+conditional read, both history cursors, lastModified, tombstones, permanent
+delete and transaction rollback.
+
 Post-deploy API smoke passed. A real existing Chrome session saved the official
 Profile Editor, closed it to `/`, stayed there for six seconds and remained on
 the homepage after reload with `BASAL 0.100U`; it did not reopen Profile Editor
@@ -115,9 +122,9 @@ or show a dialog. The same browser rendered Admin, Food, Report and color-clock
 pages with no console errors. Their official chart-container warnings on
 standalone pages are recorded in `DEPLOYMENT.md`.
 
-This is still not a full port. The treatments API3 HTTP routes, ordered
-multi-field sort, Engine.IO sessions/WebSocket upgrade, namespace handlers,
-bounded outbox/broadcasts, other collections, alarms, server plugins,
+This is still not a full port. API v3 CSV/XML renderers, five generic
+collections, broader Mongo type/query parity, Engine.IO sessions/WebSocket
+upgrade, namespace handlers, bounded outbox/broadcasts, alarms, server plugins,
 notifications and most upstream test files remain incomplete. A real EIO4
 polling handshake intentionally returns 404 rather than advertising a
 half-implemented session server.
@@ -154,8 +161,9 @@ error logs.
 
 1. Finish v1 entries and document routes from Express registration and Swagger.
 2. Finish v2 properties, ddata, summary, notifications and authorization.
-3. Implement API v3 generic search/create/read/update/patch/delete/history,
-   version/status/lastModified, conditional headers and JSON/CSV/XML formats.
+3. Extend the implemented treatments JSON search/create/read/update/patch/
+   delete/history and lastModified slice to the other collections, then add
+   byte-compatible locked CSV/XML renderers.
 4. Port upstream API tests in module order and record any fixed-scope exclusion.
 
 ### Milestone D — real-time transport
