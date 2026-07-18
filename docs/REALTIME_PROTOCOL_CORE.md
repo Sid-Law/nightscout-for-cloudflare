@@ -14,10 +14,19 @@ upgrade a connection, persist namespace membership, or broadcast live data.
 
 `negotiateProtocolStack()` accepts only an exact `EIO=3` or `EIO=4` value and
 binds it to the matching complete stack. Missing, coerced, and unknown versions
-are rejected. The former ambiguous `SOCKET_IO_PROTOCOL` export no longer
-exists; the public constants are `SOCKET_IO_V4_PROTOCOL` and
-`SOCKET_IO_V5_PROTOCOL`, and stack-aware dispatchers prevent a caller from
-silently pairing EIO4 with the legacy Socket.IO codec.
+are rejected. Raw public codec and type names are always versioned:
+
+- the official path uses `encodeEngineIoV4*`, `EngineIoV4*`, and
+  `encodeSocketIoV5*` APIs;
+- the legacy path is available only through explicit `encodeEngineIoV3*`,
+  `EngineIoV3*`, and `encodeSocketIoV4*` APIs;
+- the generic `*ForStack` dispatchers require a negotiated stack argument.
+
+The former ambiguous `SOCKET_IO_PROTOCOL` and unversioned EIO3 barrel exports
+do not exist. Public constants are `SOCKET_IO_V4_PROTOCOL` and
+`SOCKET_IO_V5_PROTOCOL`; runtime and compile-only barrel contract tests prevent
+the legacy names from being reintroduced. This makes EIO4/SIO5 the visible
+Nightscout default and prevents accidental selection of EIO3/SIO4.
 
 ## Locked evidence
 

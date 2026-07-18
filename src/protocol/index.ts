@@ -7,15 +7,15 @@ export {
 
 export {
   ENGINE_IO_V3_PROTOCOL,
-  createEngineIoHandshakePacket,
-  decodeEngineIoHandshake,
-  decodeEngineIoPacket,
-  decodeEngineIoPollingPayload,
-  encodeEngineIoPacket,
-  encodeEngineIoPollingPayload,
-  type EngineIoHandshake,
-  type EngineIoPacket,
-  type EngineIoPacketType,
+  createEngineIoHandshakePacket as createEngineIoV3HandshakePacket,
+  decodeEngineIoHandshake as decodeEngineIoV3Handshake,
+  decodeEngineIoPacket as decodeEngineIoV3Packet,
+  decodeEngineIoPollingPayload as decodeEngineIoV3PollingPayload,
+  encodeEngineIoPacket as encodeEngineIoV3Packet,
+  encodeEngineIoPollingPayload as encodeEngineIoV3PollingPayload,
+  type EngineIoHandshake as EngineIoV3Handshake,
+  type EngineIoPacket as EngineIoV3Packet,
+  type EngineIoPacketType as EngineIoV3PacketType,
 } from "./engine-io-v3";
 
 export {

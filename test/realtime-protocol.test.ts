@@ -3,18 +3,18 @@ import {
   ENGINE_IO_V3_PROTOCOL,
   SOCKET_IO_V4_PROTOCOL,
   ProtocolError,
-  createEngineIoHandshakePacket,
-  decodeEngineIoHandshake,
-  decodeEngineIoPacket,
-  decodeEngineIoPollingPayload,
+  createEngineIoV3HandshakePacket,
+  decodeEngineIoV3Handshake,
+  decodeEngineIoV3Packet,
+  decodeEngineIoV3PollingPayload,
   decodeSocketIoV4Packet,
-  encodeEngineIoPacket,
-  encodeEngineIoPollingPayload,
+  encodeEngineIoV3Packet,
+  encodeEngineIoV3PollingPayload,
   encodeSocketIoV4Packet,
   unwrapSocketIoV4Packet,
   wrapSocketIoV4Packet,
-  type EngineIoHandshake,
-  type EngineIoPacket,
+  type EngineIoV3Handshake,
+  type EngineIoV3Packet,
   type SocketIoV4Packet,
 } from "../src/protocol";
 
@@ -28,7 +28,7 @@ function expectProtocolError(operation: () => unknown, code: string): void {
   }
 }
 
-const HANDSHAKE: EngineIoHandshake = {
+const HANDSHAKE: EngineIoV3Handshake = {
   sid: "abc123",
   upgrades: ["websocket"],
   pingInterval: 25_000,
@@ -39,7 +39,7 @@ const HANDSHAKE: EngineIoHandshake = {
 describe("Engine.IO 3 packet codec", () => {
   it("uses the locked protocol version and packet type bytes", () => {
     expect(ENGINE_IO_V3_PROTOCOL).toBe(3);
-    const cases: Array<[EngineIoPacket, string]> = [
+    const cases: Array<[EngineIoV3Packet, string]> = [
       [{ type: "open", data: "{}" }, "0{}"],
       [{ type: "close" }, "1"],
       [{ type: "ping" }, "2"],
@@ -51,14 +51,14 @@ describe("Engine.IO 3 packet codec", () => {
     ];
 
     for (const [packet, encoded] of cases) {
-      expect(encodeEngineIoPacket(packet)).toBe(encoded);
-      expect(decodeEngineIoPacket(encoded)).toEqual(packet);
+      expect(encodeEngineIoV3Packet(packet)).toBe(encoded);
+      expect(decodeEngineIoV3Packet(encoded)).toEqual(packet);
     }
   });
 
   it("encodes the EIO3 polling handshake and root Socket.IO connect sequence", () => {
-    const payload = encodeEngineIoPollingPayload([
-      createEngineIoHandshakePacket(HANDSHAKE),
+    const payload = encodeEngineIoV3PollingPayload([
+      createEngineIoV3HandshakePacket(HANDSHAKE),
       wrapSocketIoV4Packet({ type: "connect", namespace: "/" }),
     ]);
 
@@ -67,20 +67,20 @@ describe("Engine.IO 3 packet codec", () => {
       "\"pingTimeout\":20000,\"maxPayload\":1000000}2:40",
     );
 
-    const packets = decodeEngineIoPollingPayload(payload);
+    const packets = decodeEngineIoV3PollingPayload(payload);
     expect(packets).toHaveLength(2);
-    expect(decodeEngineIoHandshake(packets[0] as EngineIoPacket)).toEqual(HANDSHAKE);
-    expect(unwrapSocketIoV4Packet(packets[1] as EngineIoPacket)).toEqual({
+    expect(decodeEngineIoV3Handshake(packets[0] as EngineIoV3Packet)).toEqual(HANDSHAKE);
+    expect(unwrapSocketIoV4Packet(packets[1] as EngineIoV3Packet)).toEqual({
       type: "connect",
       namespace: "/",
     });
   });
 
   it("matches the EIO3 client-ping/server-pong polling exchange", () => {
-    expect(encodeEngineIoPollingPayload([{ type: "ping" }])).toBe("1:2");
-    expect(decodeEngineIoPollingPayload("1:2")).toEqual([{ type: "ping" }]);
-    expect(encodeEngineIoPollingPayload([{ type: "pong" }])).toBe("1:3");
-    expect(decodeEngineIoPollingPayload("1:3")).toEqual([{ type: "pong" }]);
+    expect(encodeEngineIoV3PollingPayload([{ type: "ping" }])).toBe("1:2");
+    expect(decodeEngineIoV3PollingPayload("1:2")).toEqual([{ type: "ping" }]);
+    expect(encodeEngineIoV3PollingPayload([{ type: "pong" }])).toBe("1:3");
+    expect(decodeEngineIoV3PollingPayload("1:3")).toEqual([{ type: "pong" }]);
   });
 
   it("matches an upstream polling event with an acknowledgement id", () => {
@@ -90,13 +90,13 @@ describe("Engine.IO 3 packet codec", () => {
       id: 0,
       data: ["subscribe", { collections: ["entries"] }],
     });
-    expect(encodeEngineIoPollingPayload([event])).toBe(
+    expect(encodeEngineIoV3PollingPayload([event])).toBe(
       '44:420["subscribe",{"collections":["entries"]}]',
     );
-    const [decoded] = decodeEngineIoPollingPayload(
+    const [decoded] = decodeEngineIoV3PollingPayload(
       '44:420["subscribe",{"collections":["entries"]}]',
     );
-    expect(unwrapSocketIoV4Packet(decoded as EngineIoPacket)).toEqual({
+    expect(unwrapSocketIoV4Packet(decoded as EngineIoV3Packet)).toEqual({
       type: "event",
       namespace: "/",
       id: 0,
@@ -105,14 +105,14 @@ describe("Engine.IO 3 packet codec", () => {
   });
 
   it("counts EIO3 polling lengths in JavaScript UTF-16 code units", () => {
-    expect(encodeEngineIoPollingPayload([{ type: "message", data: "🙂" }])).toBe("3:4🙂");
-    expect(decodeEngineIoPollingPayload("3:4🙂")).toEqual([
+    expect(encodeEngineIoV3PollingPayload([{ type: "message", data: "🙂" }])).toBe("3:4🙂");
+    expect(decodeEngineIoV3PollingPayload("3:4🙂")).toEqual([
       { type: "message", data: "🙂" },
     ]);
   });
 
   it("round-trips Unicode and multiple packets in one polling payload", () => {
-    const packets: EngineIoPacket[] = [
+    const packets: EngineIoV3Packet[] = [
       { type: "ping" },
       wrapSocketIoV4Packet({
         type: "event",
@@ -121,45 +121,45 @@ describe("Engine.IO 3 packet codec", () => {
       }),
       { type: "close" },
     ];
-    const payload = encodeEngineIoPollingPayload(packets);
+    const payload = encodeEngineIoV3PollingPayload(packets);
     expect(payload).toBe('1:235:42["dataUpdate",{"message":"血糖🙂"}]1:1');
-    expect(decodeEngineIoPollingPayload(payload)).toEqual(packets);
+    expect(decodeEngineIoV3PollingPayload(payload)).toEqual(packets);
   });
 
   it("represents an empty polling batch with the canonical 0: payload", () => {
-    expect(encodeEngineIoPollingPayload([])).toBe("0:");
-    expect(decodeEngineIoPollingPayload("0:")).toEqual([]);
+    expect(encodeEngineIoV3PollingPayload([])).toBe("0:");
+    expect(decodeEngineIoV3PollingPayload("0:")).toEqual([]);
     expectProtocolError(
-      () => encodeEngineIoPollingPayload([], { maxPayloadBytes: 1 }),
+      () => encodeEngineIoV3PollingPayload([], { maxPayloadBytes: 1 }),
       "engine_payload_too_large",
     );
   });
 
   it("rejects malformed, binary, unknown and truncated Engine.IO frames", () => {
-    expectProtocolError(() => decodeEngineIoPacket(""), "invalid_engine_packet");
-    expectProtocolError(() => decodeEngineIoPacket("7bad"), "unknown_engine_packet");
-    expectProtocolError(() => decodeEngineIoPacket("b4AAAA"), "unsupported_binary_packet");
-    expectProtocolError(() => decodeEngineIoPollingPayload("x:4"), "invalid_length_header");
-    expectProtocolError(() => decodeEngineIoPollingPayload("2:4"), "truncated_engine_packet");
-    expectProtocolError(() => decodeEngineIoPollingPayload("1:7"), "unknown_engine_packet");
-    expectProtocolError(() => decodeEngineIoPollingPayload("0:1:4"), "empty_engine_packet");
+    expectProtocolError(() => decodeEngineIoV3Packet(""), "invalid_engine_packet");
+    expectProtocolError(() => decodeEngineIoV3Packet("7bad"), "unknown_engine_packet");
+    expectProtocolError(() => decodeEngineIoV3Packet("b4AAAA"), "unsupported_binary_packet");
+    expectProtocolError(() => decodeEngineIoV3PollingPayload("x:4"), "invalid_length_header");
+    expectProtocolError(() => decodeEngineIoV3PollingPayload("2:4"), "truncated_engine_packet");
+    expectProtocolError(() => decodeEngineIoV3PollingPayload("1:7"), "unknown_engine_packet");
+    expectProtocolError(() => decodeEngineIoV3PollingPayload("0:1:4"), "empty_engine_packet");
     expectProtocolError(
-      () => decodeEngineIoPollingPayload("00000000001:4"),
+      () => decodeEngineIoV3PollingPayload("00000000001:4"),
       "length_header_too_large",
     );
   });
 
   it("enforces explicit payload, packet and packet-count limits", () => {
     expectProtocolError(
-      () => encodeEngineIoPacket({ type: "message", data: "abcd" }, { maxPacketBytes: 4 }),
+      () => encodeEngineIoV3Packet({ type: "message", data: "abcd" }, { maxPacketBytes: 4 }),
       "engine_packet_too_large",
     );
     expectProtocolError(
-      () => decodeEngineIoPollingPayload("3:4🙂", { maxPayloadBytes: 6 }),
+      () => decodeEngineIoV3PollingPayload("3:4🙂", { maxPayloadBytes: 6 }),
       "engine_payload_too_large",
     );
     expectProtocolError(
-      () => decodeEngineIoPollingPayload("1:21:31:4", { maxPacketsPerPayload: 2 }),
+      () => decodeEngineIoV3PollingPayload("1:21:31:4", { maxPacketsPerPayload: 2 }),
       "too_many_engine_packets",
     );
   });
@@ -167,13 +167,13 @@ describe("Engine.IO 3 packet codec", () => {
 
 describe("Engine.IO 3 handshake contract", () => {
   it("requires sid, upgrades, pingInterval and pingTimeout", () => {
-    const packet = createEngineIoHandshakePacket({
+    const packet = createEngineIoV3HandshakePacket({
       sid: "session_123",
       upgrades: [],
       pingInterval: 25_000,
       pingTimeout: 20_000,
     });
-    expect(decodeEngineIoHandshake(packet)).toEqual({
+    expect(decodeEngineIoV3Handshake(packet)).toEqual({
       sid: "session_123",
       upgrades: [],
       pingInterval: 25_000,
@@ -182,36 +182,36 @@ describe("Engine.IO 3 handshake contract", () => {
   });
 
   it("accepts the locked Engine.IO maxPayload extension", () => {
-    expect(decodeEngineIoHandshake(createEngineIoHandshakePacket(HANDSHAKE))).toEqual(HANDSHAKE);
+    expect(decodeEngineIoV3Handshake(createEngineIoV3HandshakePacket(HANDSHAKE))).toEqual(HANDSHAKE);
   });
 
   it("rejects invalid JSON, shape, session ids, transports and timers", () => {
     expectProtocolError(
-      () => decodeEngineIoHandshake({ type: "message", data: "{}" }),
+      () => decodeEngineIoV3Handshake({ type: "message", data: "{}" }),
       "invalid_handshake",
     );
     expectProtocolError(
-      () => decodeEngineIoHandshake({ type: "open", data: "{" }),
+      () => decodeEngineIoV3Handshake({ type: "open", data: "{" }),
       "invalid_handshake",
     );
     expectProtocolError(
-      () => decodeEngineIoHandshake({ type: "open", data: '{"sid":"x"}' }),
+      () => decodeEngineIoV3Handshake({ type: "open", data: '{"sid":"x"}' }),
       "invalid_handshake",
     );
     expectProtocolError(
-      () => createEngineIoHandshakePacket({ ...HANDSHAKE, sid: "bad sid" }),
+      () => createEngineIoV3HandshakePacket({ ...HANDSHAKE, sid: "bad sid" }),
       "invalid_handshake",
     );
     expectProtocolError(
-      () => createEngineIoHandshakePacket({ ...HANDSHAKE, upgrades: ["websocket", "websocket"] }),
+      () => createEngineIoV3HandshakePacket({ ...HANDSHAKE, upgrades: ["websocket", "websocket"] }),
       "invalid_handshake",
     );
     expectProtocolError(
-      () => createEngineIoHandshakePacket({ ...HANDSHAKE, pingTimeout: 0 }),
+      () => createEngineIoV3HandshakePacket({ ...HANDSHAKE, pingTimeout: 0 }),
       "invalid_handshake",
     );
     expectProtocolError(
-      () => decodeEngineIoHandshake({
+      () => decodeEngineIoV3Handshake({
         type: "open",
         data: '{"sid":"x","upgrades":[],"pingInterval":1,"pingTimeout":1,"extra":true}',
       }),
