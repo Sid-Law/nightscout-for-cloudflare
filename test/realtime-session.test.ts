@@ -24,6 +24,11 @@ import {
   buildRealtimeDdataSnapshot,
   buildRealtimeRetroDeviceStatus,
 } from "../src/realtime/ddata-snapshot";
+import {
+  REALTIME_MAX_PAYLOAD_BYTES,
+  REALTIME_MAX_QUEUE_PACKETS,
+  REALTIME_MAX_SESSIONS_PER_TENANT,
+} from "../src/realtime/constants";
 import { nightscoutWebsocketStatus } from "../src/status";
 
 function store(prefix: string): DurableObjectStub<EntryStore> {
@@ -54,6 +59,17 @@ async function post(
 ): Promise<void> {
   const token = service.beginPost(sid);
   await service.submitPost(sid, token, payload);
+}
+
+async function rpcPost(
+  stub: DurableObjectStub<EntryStore>,
+  sid: string,
+  payload: string,
+): Promise<void> {
+  const lease = await stub.realtimeBeginPost(sid);
+  if (!lease.ok) throw new Error(lease.error.message);
+  const submitted = await stub.realtimeSubmitPost(sid, lease.value, payload);
+  if (!submitted.ok) throw new Error(submitted.error.message);
 }
 
 describe("tenant Durable Object EIO4 polling state machine", () => {
@@ -121,6 +137,66 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     if (!polled.ok) throw new Error(polled.error.message);
     expect(unwrapSocketIoV5Packet(decodeEngineIoV4PollingPayload(polled.value)[0]!))
       .toMatchObject({ type: "connect", namespace: "/" });
+  });
+
+  it("accepts only tenant-valid explicit realtime credentials and always ACKs read-only", async () => {
+    const stub = store("realtime-explicit-auth");
+    const accessToken = `viewer-${crypto.randomUUID()}`;
+    await stub.createDocuments("subjects", JSON.stringify([{ name: "viewer", accessToken }]));
+    const issued = JSON.parse(await stub.issueAccessJwt(accessToken)) as { token: string };
+    const digest = await crypto.subtle.digest(
+      "SHA-1",
+      new TextEncoder().encode("nscf-test-secret-20260717"),
+    );
+    const apiSecretDigest = Array.from(
+      new Uint8Array(digest),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+
+    const credentials: Array<Record<string, unknown>> = [
+      { secret: apiSecretDigest },
+      { secret: accessToken },
+      { token: issued.token },
+    ];
+    for (const [index, credential] of credentials.entries()) {
+      const opened = await stub.realtimeHandshake();
+      if (!opened.ok) throw new Error(opened.error.message);
+      await rpcPost(stub, opened.value.sid, clientPayload({ type: "connect", namespace: "/" }));
+      await stub.realtimePoll(opened.value.sid);
+      await rpcPost(stub, opened.value.sid, clientPayload({
+        type: "event",
+        namespace: "/",
+        id: 20 + index,
+        data: ["authorize", { client: "web", ...credential }],
+      }));
+      const polled = await stub.realtimePoll(opened.value.sid);
+      if (!polled.ok) throw new Error(polled.error.message);
+      const packets = decodeEngineIoV4PollingPayload(polled.value)
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      expect(packets.at(-1)).toEqual({
+        type: "ack",
+        namespace: "/",
+        id: 20 + index,
+        data: [{ read: true, write: false, write_treatment: false }],
+      });
+    }
+
+    const invalid = await stub.realtimeHandshake();
+    if (!invalid.ok) throw new Error(invalid.error.message);
+    await rpcPost(stub, invalid.value.sid, clientPayload({ type: "connect", namespace: "/" }));
+    await stub.realtimePoll(invalid.value.sid);
+    await rpcPost(stub, invalid.value.sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 30,
+      data: ["authorize", { client: "web", secret: "invalid-explicit-value" }],
+    }));
+    const rejected = await stub.realtimePoll(invalid.value.sid);
+    if (!rejected.ok) throw new Error(rejected.error.message);
+    expect(
+      decodeEngineIoV4PollingPayload(rejected.value)
+        .map((packet) => unwrapSocketIoV5Packet(packet)),
+    ).toEqual([{ type: "disconnect", namespace: "/" }]);
   });
 
   it("installs the realtime schema through the EntryStore migration marker", async () => {
@@ -639,6 +715,52 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     await runInDurableObject(beta, async (_instance, state) => {
       migrateRealtimeSessions(state.storage);
       expect(new SqliteRealtimeSessionRepository(state.storage).getSession(sid)).toBeNull();
+    });
+  });
+
+  it("enforces per-tenant session and FIFO polling queue caps", async () => {
+    const stub = store("realtime-capacity");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      for (let index = 0; index < REALTIME_MAX_SESSIONS_PER_TENANT; index += 1) {
+        repository.createSession(5_000_000);
+      }
+      expect(() => repository.createSession(5_000_000)).toThrowError(
+        expect.objectContaining({ code: "capacity" }),
+      );
+    });
+
+    const queueStub = store("realtime-queue-capacity");
+    await runInDurableObject(queueStub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const session = repository.createSession(5_100_000);
+      const frames = Array.from({ length: REALTIME_MAX_QUEUE_PACKETS }, () => "2");
+      repository.enqueueFrames(session.sid, frames, 5_100_001);
+      expect(repository.requireSession(session.sid)).toMatchObject({
+        outboundPackets: REALTIME_MAX_QUEUE_PACKETS,
+        outboundBytes: REALTIME_MAX_QUEUE_PACKETS,
+      });
+      expect(() => repository.enqueueFrames(session.sid, ["2"], 5_100_002)).toThrowError(
+        expect.objectContaining({ code: "queue_overflow" }),
+      );
+      expect(repository.dequeuePayload(session.sid)).toBe(frames.join("\x1e"));
+
+      const exactLimit = `4${"a".repeat(REALTIME_MAX_PAYLOAD_BYTES - 1)}`;
+      repository.enqueueFrames(session.sid, [exactLimit], 5_100_003);
+      expect(repository.dequeuePayload(session.sid)).toBe(exactLimit);
+
+      const separatorOverflow = `4${"a".repeat(REALTIME_MAX_PAYLOAD_BYTES - 2)}`;
+      expect(() => repository.enqueueFrames(
+        session.sid,
+        [separatorOverflow, "2"],
+        5_100_004,
+      )).toThrowError(expect.objectContaining({ code: "queue_overflow" }));
+      expect(repository.requireSession(session.sid)).toMatchObject({
+        outboundPackets: 0,
+        outboundBytes: 0,
+      });
     });
   });
 
