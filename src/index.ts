@@ -578,12 +578,17 @@ async function handleEntriesApi(
   env: AppEnv,
   url: URL,
 ): Promise<Response | null> {
-  if (request.method === "GET" && url.pathname === "/api/v1/entries/current.json") {
+  if (
+    request.method === "GET" &&
+    /^\/api\/v[12]\/entries\/current(?:\.json)?\/?$/.test(url.pathname)
+  ) {
     const tenant = resolveTenant(request, url);
     return json(await env.ENTRY_STORE.getByName(tenant).getCurrent());
   }
 
-  const match = /^\/api\/v1\/entries(?:\.json)?(?:\/([^/]+))?\/?$/.exec(url.pathname);
+  // API v2 mounts the complete v1 router at `/` before registering its
+  // additional v2-only endpoints (locked upstream lib/api2/index.js:14-19).
+  const match = /^\/api\/v[12]\/entries(?:\.json)?(?:\/([^/]+))?\/?$/.exec(url.pathname);
   if (match === null) return null;
   const tenant = resolveTenant(request, url);
   const id = match[1];
@@ -630,7 +635,9 @@ interface CollectionRoute {
 }
 
 function collectionRoute(pathname: string): CollectionRoute | null {
-  const match = /^\/api\/v1\/(activity|food|profile|profiles|treatments|devicestatus)(?:\.json)?(?:\/([^/]+))?\/?$/.exec(
+  // API v2 inherits these v1 collection routers unchanged; only the mount
+  // prefix differs (locked upstream lib/api2/index.js:14).
+  const match = /^\/api\/v[12]\/(activity|food|profile|profiles|treatments|devicestatus)(?:\.json)?(?:\/([^/]+))?\/?$/.exec(
     pathname,
   );
   if (match === null) return null;
@@ -953,11 +960,14 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     }
   }
 
-  if (request.method === "GET" && ["/api/v1/status", "/api/v1/status.json"].includes(url.pathname)) {
+  if (
+    request.method === "GET" &&
+    /^\/api\/v[12]\/status(?:\.json)?\/?$/.test(url.pathname)
+  ) {
     return json(await statusForRequest(request, env, url));
   }
 
-  if (request.method === "GET" && url.pathname === "/api/v1/status.js") {
+  if (request.method === "GET" && /^\/api\/v[12]\/status\.js\/?$/.test(url.pathname)) {
     return javascript(`this.serverSettings = ${JSON.stringify(await statusForRequest(request, env, url))};`);
   }
 
@@ -1078,7 +1088,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     return json(toClockProperties(entries));
   }
 
-  if (request.method === "GET" && url.pathname === "/api/v1/verifyauth") {
+  if (request.method === "GET" && /^\/api\/v[12]\/verifyauth\/?$/.test(url.pathname)) {
     const admin = await hasWriteAccess(request, env, url);
     const credentialAttempted =
       bearerToken(request) !== null ||
@@ -1106,7 +1116,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     });
   }
 
-  if (request.method === "GET" && url.pathname === "/api/v1/adminnotifies") {
+  if (request.method === "GET" && /^\/api\/v[12]\/adminnotifies\/?$/.test(url.pathname)) {
     return json({ message: { notifies: [], notifyCount: 0 } });
   }
 
