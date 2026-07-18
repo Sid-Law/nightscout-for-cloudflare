@@ -118,7 +118,7 @@ describe("official Nightscout UI assets", () => {
     for (const [path, marker] of pages) {
       const response = await SELF.fetch(`https://example.test${path}`);
       expect(response.status, path).toBe(200);
-      expect(response.headers.get("Content-Type"), path).toMatch(/charset=utf-8/i);
+      expect(response.headers.get("Content-Type"), path).toBe("text/html; charset=utf-8");
       expect(await response.text(), path).toContain(marker);
     }
   });

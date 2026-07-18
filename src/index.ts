@@ -140,6 +140,17 @@ function withUtf8Charset(response: Response): Response {
   });
 }
 
+function asHtml(response: Response): Response {
+  if (!response.ok) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 async function assetAt(
   request: Request,
   env: AppEnv,
@@ -178,9 +189,7 @@ async function servePlatformPage(
 ): Promise<Response | null> {
   const staticPage = /^\/(admin|profile|food|report|split)\/?$/.exec(url.pathname);
   if (staticPage !== null) {
-    return withUtf8Charset(
-      await assetAt(request, env, `/${staticPage[1]}/index.html`),
-    );
+    return asHtml(await assetAt(request, env, `/${staticPage[1]}/index.html`));
   }
 
   const clock = /^\/clock\/([a-z0-9-]{1,100})\/?$/.exec(url.pathname);
@@ -195,7 +204,7 @@ async function servePlatformPage(
   }
 
   if (url.pathname === "/api-docs" || url.pathname === "/api-docs/") {
-    return withUtf8Charset(await assetAt(request, env, "/api-docs/index.html"));
+    return asHtml(await assetAt(request, env, "/api-docs/index.html"));
   }
   if (url.pathname === "/api3-docs" || url.pathname === "/api3-docs/") {
     return transformedHtml(
