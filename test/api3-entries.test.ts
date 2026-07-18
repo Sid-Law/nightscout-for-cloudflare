@@ -73,10 +73,24 @@ async function issueSubject(
     { name: subjectName, roles: [roleName] },
   );
   expect(subjectResponse.status).toBe(200);
-  const subject = await subjectResponse.json<JsonObject>();
+  const created = await subjectResponse.json<JsonObject>();
+  // Locked Nightscout returns the stored subject on mutation and derives the
+  // access token while reloading/listing authorization state. The integrated
+  // adapter therefore never leaks derived credential fields from POST.
+  const subjectsResponse = await SELF.fetch(withTenant(
+    "/api/v2/authorization/subjects",
+    tenantName,
+  ), {
+    headers: { "api-secret": await secretDigest() },
+  });
+  expect(subjectsResponse.status).toBe(200);
+  const subject = (await subjectsResponse.json<JsonObject[]>()).find(
+    (candidate) => candidate._id === created._id,
+  );
+  expect(subject?.accessToken).toEqual(expect.any(String));
   const authorization = await SELF.fetch(
     withTenant(
-      `/api/v2/authorization/request/${encodeURIComponent(String(subject.accessToken))}`,
+      `/api/v2/authorization/request/${encodeURIComponent(String(subject?.accessToken))}`,
       tenantName,
     ),
   );
