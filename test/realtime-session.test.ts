@@ -536,6 +536,40 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     });
   });
 
+  it("does not revive a session that expires while authorization is awaiting", async () => {
+    const stub = store("realtime-auth-expiry");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      let now = 3_800_000;
+      let resolveAuthorization: ((value: RealtimeAuthorization) => void) | undefined;
+      const authorization = new Promise<RealtimeAuthorization>((resolve) => {
+        resolveAuthorization = resolve;
+      });
+      const service = new RealtimeSessionService(state.storage, {
+        now: () => now,
+        authorize: () => authorization,
+        snapshot,
+      });
+      const { sid } = service.createHandshake();
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
+      await service.poll(sid);
+
+      const lease = service.beginPost(sid);
+      const pendingAuthorization = service.submitPost(sid, lease, clientPayload({
+        type: "event",
+        namespace: "/",
+        id: 15,
+        data: ["authorize", { client: "web" }],
+      }));
+      await Promise.resolve();
+      now += 45_001;
+      resolveAuthorization?.({ read: true, write: false, write_treatment: false });
+
+      await expect(pendingAuthorization).rejects.toMatchObject({ code: "unknown_sid" });
+      expect(new SqliteRealtimeSessionRepository(state.storage).getSession(sid)).toBeNull();
+    });
+  });
+
   it("sends the EIO4 server ping, accepts only the client pong, and expires it opportunistically", async () => {
     const stub = store("realtime-heartbeat");
     let now = 4_000_000;

@@ -248,14 +248,44 @@ export class RealtimeSessionService {
     }
 
     const now = this.now();
-    const commitError = this.storage.transactionSync((): RealtimeSessionError | null => {
+    const commit = this.storage.transactionSync((): {
+      error: RealtimeSessionError | null;
+      wakeTargets: string[];
+    } => {
+      const wakeTargets = new Set<string>();
       const current = this.repository.getSession(sid);
       if (current === null) {
-        return new RealtimeSessionError("unknown_sid", "session ID is unknown");
+        return {
+          error: new RealtimeSessionError("unknown_sid", "session ID is unknown"),
+          wakeTargets: [],
+        };
       }
-      if (current.postToken !== token) {
+      const closeCurrent = (
+        error: RealtimeSessionError,
+        wasConnected: boolean,
+      ): { error: RealtimeSessionError; wakeTargets: string[] } => {
         this.repository.deleteSessionInTransaction(sid);
-        return new RealtimeSessionError("invalid_post_lease", "polling POST lease changed");
+        if (wasConnected) {
+          for (const targetSid of this.enqueueClientsForConnectedSessions(now)) {
+            wakeTargets.add(targetSid);
+          }
+        }
+        return { error, wakeTargets: [...wakeTargets] };
+      };
+      if (
+        current.expiresAt <= now ||
+        (current.pongDeadline !== null && current.pongDeadline <= now)
+      ) {
+        return closeCurrent(
+          new RealtimeSessionError("unknown_sid", "session ID is unknown or expired"),
+          current.socketConnected,
+        );
+      }
+      if (current.postToken !== token || (current.postDeadline ?? 0) <= now) {
+        return closeCurrent(
+          new RealtimeSessionError("invalid_post_lease", "polling POST lease changed or expired"),
+          current.socketConnected,
+        );
       }
       session.postToken = null;
       session.postDeadline = null;
@@ -278,39 +308,45 @@ export class RealtimeSessionService {
       try {
         this.repository.enqueueFrames(sid, engineFrames(outbound), now);
       } catch (error) {
-        this.repository.deleteSessionInTransaction(sid);
-        return this.translateRepositoryError(error);
+        return closeCurrent(
+          this.translateRepositoryError(error),
+          session.socketConnected,
+        );
       }
       for (const broadcast of broadcasts) {
         const frame = encodeEngineIoV4Packet(broadcast);
+        let droppedTarget = false;
         for (const targetSid of this.repository.listConnectedSessionIds()) {
           if (targetSid === sid) continue;
           try {
             this.repository.enqueueFrames(targetSid, [frame], now);
+            wakeTargets.add(targetSid);
           } catch (error) {
             if (
               error instanceof RealtimeRepositoryError &&
               error.code === "queue_overflow"
             ) {
               this.repository.deleteSessionInTransaction(targetSid);
+              droppedTarget = true;
               continue;
             }
             throw error;
           }
         }
+        if (droppedTarget) {
+          for (const targetSid of this.enqueueClientsForConnectedSessions(now)) {
+            wakeTargets.add(targetSid);
+          }
+        }
       }
-      return null;
+      return { error: null, wakeTargets: [...wakeTargets] };
     });
-    if (commitError !== null) {
+    for (const targetSid of commit.wakeTargets) this.wake(targetSid);
+    if (commit.error !== null) {
       this.wake(sid);
-      throw commitError;
+      throw commit.error;
     }
     if (outbound.length > 0) this.wake(sid);
-    if (broadcasts.length > 0) {
-      for (const targetSid of this.repository.listConnectedSessionIds()) {
-        if (targetSid !== sid) this.wake(targetSid);
-      }
-    }
   }
 
   async poll(sid: string): Promise<string> {
@@ -610,30 +646,37 @@ export class RealtimeSessionService {
   }
 
   private enqueueClientsForConnectedSessions(now: number): string[] {
-    const targets = this.repository.listConnectedSessionIds();
-    if (targets.length === 0) return [];
-    const frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
-      type: "event",
-      namespace: "/",
-      data: ["clients", targets.length],
-    }));
-    const enqueued: string[] = [];
-    for (const targetSid of targets) {
-      try {
-        this.repository.enqueueFrames(targetSid, [frame], now);
-        enqueued.push(targetSid);
-      } catch (error) {
-        if (
-          error instanceof RealtimeRepositoryError &&
-          error.code === "queue_overflow"
-        ) {
-          this.repository.deleteSessionInTransaction(targetSid);
-          continue;
+    const enqueued = new Set<string>();
+    // A saturated client's removal changes the count. Append a corrected count
+    // and repeat until every surviving connected session has received the final
+    // value (or all saturated sessions have been removed).
+    while (true) {
+      const targets = this.repository.listConnectedSessionIds();
+      if (targets.length === 0) return [...enqueued];
+      const frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+        type: "event",
+        namespace: "/",
+        data: ["clients", targets.length],
+      }));
+      let droppedTarget = false;
+      for (const targetSid of targets) {
+        try {
+          this.repository.enqueueFrames(targetSid, [frame], now);
+          enqueued.add(targetSid);
+        } catch (error) {
+          if (
+            error instanceof RealtimeRepositoryError &&
+            error.code === "queue_overflow"
+          ) {
+            this.repository.deleteSessionInTransaction(targetSid);
+            droppedTarget = true;
+            continue;
+          }
+          throw error;
         }
-        throw error;
       }
+      if (!droppedTarget) return [...enqueued];
     }
-    return enqueued;
   }
 
   private badPacket(error: unknown): RealtimeSessionError {
