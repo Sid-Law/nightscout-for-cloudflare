@@ -94,25 +94,24 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`39761161590977570a46a64976f9e59bc99d84f4` combine the strict v1/v2 Status,
+`e2526c3fca53f4891564088127cf38a066571bbd` combine the adapted v1/v2 Entries
+uploader/query/read-protocol slice with the prior strict Status,
 authorization, direct Hibernatable EIO4 WebSocket and four generic API v3
-collections, including Profile. Cloudflare Worker version
-`6336334e-002c-4ccf-9e9f-ddb7f2191b10` reached 100% traffic at
-2026-07-18T17:00:31.552157Z with a reported 21 ms startup. Wrangler processed
-248 official asset entries with no asset-byte uploads, reported 766.80 KiB raw
-/ 136.08 KiB gzip, and exposed only `ENTRY_STORE` plus `ASSETS`. Deployment
+collections. Cloudflare Worker version
+`8bd1a80c-a3a8-405e-bde1-10c16d74f5b9` reached 100% traffic at
+2026-07-18T18:39:24.472Z with a reported 23 ms startup. Wrangler processed
+248 official asset entries with no asset-byte uploads, reported 776.61 KiB raw
+/ 138.22 KiB gzip, and exposed only `ENTRY_STORE` plus `ASSETS`. Deployment
 used `--keep-vars`; the configured secret was neither read nor printed. The
-19-file Workers-runtime suite passed 224/224, both audit suites passed 20/20,
+20-file Workers-runtime suite passed 230/230, both audit suites passed 20/20,
 and TypeScript plus the official UI build completed before deployment. These
 remain subset facts, not a full-port claim.
 
-This increment includes API v3 Profile, AAPS create/retry/new-version behavior,
-v1/API3 shared storage, idempotent legacy metadata repair and common
-startDate-current selection for v1, Status and realtime. It also corrects the
-Cloudflare HTML boundary for secondary pages. Split discards stale conditional
-asset validators and returns the unchanged official bytes with
-`text/html; charset=utf-8` and `no-store`, replacing an older cached source
-view after the user returns through the homepage.
+This increment adds ordered Entries batch-prefix commits, preview and recursive
+safe string adaptation, the bounded scalar query/sort subset, current/model/ID
+reads, JSON/plain/CSV/TSV, validators and HEAD. It retains API v3 Profile,
+AAPS create/retry/new-version behavior, v1/API3 shared storage, idempotent
+legacy metadata repair and the official HTML/cache boundary fixes.
 
 Entries deliberately follows a fresh-only pre-1.0 policy. If activation finds
 the old narrow `entries` shadow structurally incompatible, it resets that
@@ -152,6 +151,9 @@ The deployed increment includes:
 - one tenant-sharded SQLite Durable Object and Workers Static Assets only;
 - page-used entries, food, profile, treatments, device-status, activity,
   role/subject/token subsets and aggregate REST polling;
+- adapted v1/v2 Entries single/array/urlencoded uploads, preview, ordered
+  batch-prefix failures, bounded indexed query/sort, current/model/ID reads and
+  JSON/plain/CSV/TSV conditional GET/HEAD;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
 - all eight generic API v3 routes for entries, treatments, device status and
@@ -166,25 +168,24 @@ The deployed increment includes:
   Durable Object alarm survives eviction and drives ping, pong timeout,
   session/lease expiry, closure retry and client-count updates.
 
-Final remote API smoke returned HTTP 200 for health, homepage, Split, v1
-Entries/Profile reads and `/api/v2/ddata/at`; Split reported HTML and API v3
-Profile without a token returned 401. Earlier checks on the same integration
-also verified API v3 version and strict Status forms. The later Split-only
-commits did not change realtime code; its last remote EIO4 polling smoke
-completed open, SIO5 CONNECT,
-`clients`, authorize, `dataUpdate` and read-only ACK. Direct WebSocket completed
-the same sequence. The polling open advertised `upgrades: []`, a 25-second
-ping interval, 20-second timeout and 1,000,000-byte maximum.
+Final credential-free remote smoke returned HTTP 200 for health, homepage,
+Profile/current and empty v1/v2 Entries JSON, default text, TXT, CSV, TSV and
+HTML-fallback reads. Uppercase `.JSON` and the missing Entries utility path
+returned 404; HEAD preserved representation metadata and curl confirmed an
+ETag 304. The repeated EIO4 polling smoke completed open, SIO5 root CONNECT
+and `clients`; it advertised `upgrades: []`, a 25-second ping interval,
+20-second timeout and 1,000,000-byte maximum. The earlier full polling and
+direct-WebSocket authorize/dataUpdate/ACK checks remain historical evidence;
+they were not repeated for this release.
 
 A real browser run rendered the official homepage/chart and kept Settings
-closed through a complete 17-second polling interval with no new
-warning/error. Profile reported `Values loaded.` and exposed its official Save
-control. Admin, Food, Report, both clock views and both Swagger pages rendered.
-The browser reproduced an old cached Split source view, returned through the
-homepage, then verified the original `/split/` URL as HTML with the official
-multiframe title/table and no literal source. Secondary pages retain the known
-upstream `#chartContainer` warning. No credentialed Profile Save or other
-protected write was attempted, so those workflows remain unproven.
+closed through a 16-second observation spanning the 15-second REST-shim poll,
+with no console warning/error. About reported v15.0.7; Profile reported
+`Values loaded.` and exposed its official Save control. Admin, Food, Report,
+both clock views and both Swagger pages rendered. `/split/` was HTML with the
+official multiframe title/table and no literal source. No credentialed Profile
+Save or other protected write was attempted, so those workflows remain
+unproven.
 
 The code is still not a full port: API v3 food and settings,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,

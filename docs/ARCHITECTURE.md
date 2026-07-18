@@ -7,12 +7,12 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`39761161590977570a46a64976f9e59bc99d84f4`. It produced Cloudflare version
-`6336334e-002c-4ccf-9e9f-ddb7f2191b10`, active at 100% traffic since
-2026-07-18T17:00:31.552157Z. Its 19-file Workers-runtime suite passes 224/224
+`e2526c3fca53f4891564088127cf38a066571bbd`. It produced Cloudflare version
+`8bd1a80c-a3a8-405e-bde1-10c16d74f5b9`, active at 100% traffic since
+2026-07-18T18:39:24.472Z. Its 20-file Workers-runtime suite passes 230/230
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries, reported 766.80 KiB raw / 136.08 KiB gzip, and declared only the
-`ENTRY_STORE` Durable Object and `ASSETS` bindings. Cloudflare reported a 21 ms
+entries, reported 776.61 KiB raw / 138.22 KiB gzip, and declared only the
+`ENTRY_STORE` Durable Object and `ASSETS` bindings. Cloudflare reported a 23 ms
 startup. These are release facts for the named subset, not evidence of a
 complete port.
 
@@ -286,7 +286,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`39761161590977570a46a64976f9e59bc99d84f4` implements four generic vertical
+`e2526c3fca53f4891564088127cf38a066571bbd` implements four generic vertical
 slices—entries, treatments, device status and profile—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
 with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
@@ -593,12 +593,12 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`6336334e-002c-4ccf-9e9f-ddb7f2191b10`. The later Split response/cache commits
-did not change realtime code; its last remote polling smoke completed EIO4
-open, SIO5 root CONNECT, `clients`, read-only `authorize`, `dataUpdate` and ACK.
-Its last direct-WebSocket smoke completed open, CONNECT, `clients`, connected
-authorization, `dataUpdate` and ACK. The polling open retained `upgrades: []`,
-a 25-second ping interval, 20-second timeout and 1,000,000-byte maximum. The
+`8bd1a80c-a3a8-405e-bde1-10c16d74f5b9`. This release repeated EIO4 polling
+open, SIO5 root CONNECT and the `clients` packet. The earlier credential-free
+authorize/`dataUpdate`/ACK polling and direct-WebSocket sequences remain
+historical evidence and were not repeated. The current polling open retained
+`upgrades: []`, a 25-second ping interval, 20-second timeout and
+1,000,000-byte maximum. The
 at-most-once dequeue/send crash window described above remains open. The official homepage
 intentionally still uses the REST polling shim, so these transport smokes prove
 the separate server slice rather than a page transport switch. The named

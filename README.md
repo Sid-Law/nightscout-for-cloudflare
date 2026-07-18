@@ -284,15 +284,16 @@ directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`39761161590977570a46a64976f9e59bc99d84f4`. After rebuilding the locked
-official UI, its 19-file Workers-runtime suite passes 224/224 tests and both
+`e2526c3fca53f4891564088127cf38a066571bbd`. After rebuilding the locked
+official UI, its 20-file Workers-runtime suite passes 230/230 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 766.80 KiB raw / 136.08 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment includes the named API v3 Profile vertical,
-v1/API3 shared Profile storage, idempotent legacy metadata repair and the Split
-HTML/cache boundary repair. It does not add `/storage` realtime broadcasts and
-is not closed-loop completion. Deployment used `--keep-vars`; the configured
-secret was neither read nor printed. Entries migration remains intentionally
+reports 776.61 KiB raw / 138.22 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds the adapted v1/v2 Entries uploader,
+preview, bounded query/sort and read-protocol slice described above while
+retaining the prior API v3 Profile and official-page work. It does not add the
+remaining Entries utilities or `/storage` realtime broadcasts and is not
+closed-loop completion. Deployment used `--keep-vars`; the configured secret
+was neither read nor printed. Entries migration remains intentionally
 fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
 being imported, while canonical documents and other collections such as
 profile are preserved. A read-only check found zero Entries and one profile in
@@ -319,28 +320,26 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `6336334e-002c-4ccf-9e9f-ddb7f2191b10` reached 100% traffic
-at 2026-07-18T17:00:31.552157Z with a reported 21 ms startup. No asset bytes
+Cloudflare version `8bd1a80c-a3a8-405e-bde1-10c16d74f5b9` reached 100% traffic
+at 2026-07-18T18:39:24.472Z with a reported 23 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
-Final remote smoke returned HTTP 200 for health, the homepage, Split, v1
-Entries/Profile reads and `/api/v2/ddata/at`; Split reported
-`text/html; charset=utf-8`, while API v3 Profile without a token correctly
-returned 401. The previously verified EIO4 polling and direct WebSocket flows
-each completed open, SIO5 connect, `clients`, read-only authorize,
-`dataUpdate` and ACK. The polling open advertised no upgrades, a 25-second
-ping interval, 20-second timeout and 1,000,000-byte maximum.
+Final credential-free remote smoke returned HTTP 200 for health, the homepage,
+Profile/current and empty v1/v2 Entries JSON, default text, TXT, CSV, TSV and
+HTML-fallback reads. It also confirmed uppercase `.JSON` and the still-missing
+Entries utility route return 404, HEAD preserves representation metadata, and
+an ETag validator returns 304. The repeated EIO4 polling smoke completed open,
+SIO5 root CONNECT and `clients`; the open packet advertised no upgrades, a
+25-second ping interval, 20-second timeout and 1,000,000-byte maximum. No
+credentialed remote upload or protected mutation was attempted.
 
-A real browser run rendered the official homepage chart and completed a full
-17-second polling interval with Settings closed and no new warning/error. The
+A real browser run rendered the official homepage chart and kept Settings
+closed through a 16-second observation spanning the 15-second REST-shim poll,
+with no console warning/error. The About panel reported v15.0.7. The
 Profile Editor reported `Values loaded.` and exposed its official Save control;
 no credentialed Save was attempted. Admin, Food, Report, both clock views and
-both Swagger pages rendered. The same browser reproduced the old cached Split
-source view, then verified that returning through the homepage replaced it:
-the original `/split/` URL reported `text/html`, title `Nightscout multiframe
-view`, a table root and no literal HTML source. Secondary-page observations
-retained the upstream bundle's known `#chartContainer` warning. These checks do
-not prove
-every protected mutation, report, plugin or realtime workflow.
+both Swagger pages rendered. Split reported title `Nightscout multiframe view`,
+a table root and no literal HTML source. These checks do not prove every
+protected mutation, report, plugin or realtime workflow.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

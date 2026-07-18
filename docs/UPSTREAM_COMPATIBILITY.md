@@ -18,21 +18,21 @@ storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
 Deployed integration commit and Git HEAD used by Wrangler
-`39761161590977570a46a64976f9e59bc99d84f4` pass 224/224 tests across 19
+`e2526c3fca53f4891564088127cf38a066571bbd` pass 230/230 tests across 20
 Workers-runtime files plus 20/20 audit tests. The suite includes focused
 EIO4 polling/direct-Hibernatable-WebSocket protocol, persisted session,
 HTTP-boundary, eviction, authorization, tenant-isolation and resource-cap
 contracts in addition to strict v1/v2 Status, API v3
 entries/treatments/device-status/profile, storage and official-page tests. This
 is not full-port evidence. The code is deployed as Cloudflare version
-`6336334e-002c-4ccf-9e9f-ddb7f2191b10`; exact release evidence is recorded in
+`8bd1a80c-a3a8-405e-bde1-10c16d74f5b9`; exact release evidence is recorded in
 `DEPLOYMENT.md`. The locked
 upstream has 111 `*.test.js` files; a static declaration audit finds 883 active
 `it(...)` cases plus one skipped case. Those sets are not directly comparable,
 and the local suite does not prove full compatibility.
 
-The final Wrangler dry-run reports 248 official assets, 766.80 KiB raw /
-136.08 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The final Wrangler dry-run reports 248 official assets, 776.61 KiB raw /
+138.22 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
@@ -141,7 +141,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The final browser pass rendered the homepage, kept Settings closed through a complete polling interval, loaded Profile Values, rendered Admin/Food/Report/clock/Swagger and verified Split as real HTML rather than a `text/plain` source view. It did not authenticate or repeat a protected Save; mutations/report generation and pushed live updates are not complete. Secondary pages retain the upstream bundle's known missing-`#chartContainer` warning. | Re-run authenticated Profile Save on the current deployment when a credential is explicitly supplied, then add profile delete, food/admin mutations, report generation and pushed live updates with console/network assertions. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current browser pass rendered the homepage, kept Settings closed through the 15-second polling interval, loaded Profile Values, rendered Admin/Food/Report/clock/Swagger and verified Split as real HTML. It did not authenticate or repeat a protected Save; mutations/report generation and pushed live updates are not complete. No console warning/error was observed in this pass. | Re-run authenticated Profile Save on the current deployment when a credential is explicitly supplied, then add profile delete, food/admin mutations, report generation and pushed live updates with console/network assertions. |
 | Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; compatibility unresolved.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations, but no whole upstream file is yet claimed green against the DO adapter. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
@@ -251,18 +251,18 @@ controls, not upstream claims.
 ## Current deployed integration evidence
 
 Code candidate and Git HEAD used by Wrangler
-`39761161590977570a46a64976f9e59bc99d84f4` pass 224/224 tests in 19
-Workers-runtime files plus 20/20 audit tests. They combine the strict v1/v2
-Status, authorization, direct Hibernatable EIO4 WebSocket and API v3
-entries/treatments/device-status/profile slices with the Split HTML/cache
-boundary repair. Cloudflare version
-`6336334e-002c-4ccf-9e9f-ddb7f2191b10` reached 100% traffic at
-2026-07-18T17:00:31.552157Z; Wrangler reported a 21 ms startup. It processed
-248 unchanged official asset entries, reported 766.80 KiB raw / 136.08 KiB
+`e2526c3fca53f4891564088127cf38a066571bbd` pass 230/230 tests in 20
+Workers-runtime files plus 20/20 audit tests. They combine the adapted v1/v2
+Entries uploader/query/read-protocol slice with strict Status, authorization,
+direct Hibernatable EIO4 WebSocket and API v3
+entries/treatments/device-status/profile slices. Cloudflare version
+`8bd1a80c-a3a8-405e-bde1-10c16d74f5b9` reached 100% traffic at
+2026-07-18T18:39:24.472Z; its version was created at
+2026-07-18T18:39:23.682Z and Wrangler reported a 23 ms startup. It processed
+248 unchanged official asset entries, reported 776.61 KiB raw / 138.22 KiB
 gzip, and listed only `ENTRY_STORE` and `ASSETS`. Deployment used `--keep-vars`;
-the configured secret was neither read nor printed. The successful command did
-not separately display a version-creation timestamp or Deployment ID, so none
-is inferred.
+the configured secret was neither read nor printed. Wrangler did not display a
+separate Deployment ID, so none is inferred.
 
 Entries is fresh-only for the pre-1.0 lab. An incompatible old narrow
 `entries` shadow is reset without importing its rows, while canonical documents
@@ -271,7 +271,8 @@ the public instance returned an empty array from
 `/api/v1/entries.json?count=10000` and a one-element array from
 `/api/v1/profile.json`. Post-deployment reads confirmed zero Entries and one
 profile. Thus this deployment had no simulated Entry row to lose and preserved
-its profile; no profile content was inspected or copied into this record.
+its profile. Remote evidence recorded only collection counts/status and the
+browser load state; no profile values are copied into this record.
 The deferred work is importing an external legacy Nightscout/MongoDB history.
 It does not defer correctness of NSCF's own forward-only SQLite schema
 activation. Redeploying the current Worker preserves that namespace; the
@@ -319,29 +320,27 @@ homepage REST shim. Their current bounds and named differences are:
   safety/resource tightening.
 
 
-Final remote checks returned HTTP 200 for health, homepage, Split, v1
-Entries/Profile reads and `/api/v2/ddata/at`; Split reported
-`text/html; charset=utf-8`, and API v3 Profile without a Bearer token returned
-401. Earlier checks on the same integrated code also covered API v3 version and
-strict v1/v2 Status forms. No protected remote mutation was attempted.
+Final credential-free remote checks returned HTTP 200 for health, homepage,
+Profile/current and empty v1/v2 Entries JSON, default text, TXT, CSV, TSV and
+HTML-fallback reads. Uppercase `.JSON` and the still-missing Entries utility
+route returned 404. HEAD preserved the selected representation metadata and a
+curl request with the emitted weak ETag returned 304. The post-deploy count
+check remained zero Entries and one profile. No protected remote mutation or
+credentialed Entries upload was attempted.
 
-The later Split response/cache commits did not change realtime code. Its last
-remote EIO4 polling handshake advertised no upgrades, a 25-second ping
+The repeated EIO4 polling handshake advertised no upgrades, a 25-second ping
 interval, 20-second timeout and 1,000,000-byte maximum, then completed SIO5
-root CONNECT, `clients`, read-only authorize, `dataUpdate` and ACK. The last
-direct-WebSocket smoke completed open, CONNECT, `clients`, connected
-authorization, `dataUpdate` and ACK. These smokes prove the separate routed
-transport slices, not a homepage transport switch, and were not repeated after
-the final HTML-only deployment.
+root CONNECT and `clients`. Earlier polling/direct-WebSocket authorize,
+`dataUpdate` and ACK sequences remain historical evidence and were not
+repeated. These smokes prove the separate routed transport slices, not a
+homepage transport switch.
 
 A real browser run rendered the official homepage chart and kept Settings
-closed through a complete 17-second polling interval with no new
-warning/error. Profile reported `Values loaded.` and exposed Save; Admin, Food,
-Report, both clock views and both Swagger pages rendered. The browser
-reproduced the old cached Split source view, returned through the homepage and
-then verified the original `/split/` URL as HTML with the official title/table
-and no literal source. Secondary pages retained only the known upstream
-`#chartContainer` warning. No authenticated Save or protected mutation was
+closed through a 16-second observation spanning the 15-second REST-shim poll,
+with no console warning/error. About reported v15.0.7. Profile reported
+`Values loaded.` and exposed Save; Admin, Food, Report, both clock views and
+both Swagger pages rendered. `/split/` was HTML with the official title/table
+and no literal source. No authenticated Save or protected mutation was
 attempted.
 
 An earlier deployed version completed an authenticated Profile Editor save and
