@@ -25,6 +25,7 @@ import {
 } from "./document-repository";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
 import {
+  migrateRealtimeClosuresV8,
   migrateRealtimeSessions,
   migrateRealtimeTransportsV7,
 } from "./realtime/session-repository";
@@ -420,6 +421,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (7)",
       );
+
+      migrateRealtimeClosuresV8(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (8)",
+      );
     });
   }
 
@@ -622,6 +628,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private flushRealtimeWebSockets(): void {
+    const now = Date.now();
     let remainingSockets = REALTIME_WEBSOCKET_FLUSH_MAX_SOCKETS;
     let remainingFrames = REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES;
     let remainingBytes = REALTIME_WEBSOCKET_FLUSH_MAX_BYTES;
@@ -631,7 +638,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     // durable closure to many physical sockets, so bulk-taking rows before an
     // early budget return could otherwise lose unprocessed tombstones.
     while (remainingSockets > 0 && remainingClosureRows > 0) {
-      const closure = this.realtime.takeWebSocketClosures(1)[0];
+      const closure = this.realtime.takeWebSocketClosures(1, now)[0];
       if (closure === undefined) break;
       remainingClosureRows -= 1;
       const sockets = this.ctx.getWebSockets(
@@ -640,7 +647,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       const activeSockets = sockets.filter((ws) =>
         ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING
       );
-      const selectedSockets = activeSockets.slice(0, remainingSockets);
+      const socketOffset = activeSockets.length === 0
+        ? 0
+        : closure.socketOffset % activeSockets.length;
+      const rotatedSockets = socketOffset === 0
+        ? activeSockets
+        : activeSockets.slice(socketOffset).concat(activeSockets.slice(0, socketOffset));
+      const selectedSockets = rotatedSockets.slice(0, remainingSockets);
+      const nextSocketOffset = activeSockets.length === 0
+        ? 0
+        : (socketOffset + selectedSockets.length) % activeSockets.length;
       let closeFailed = false;
       for (const ws of selectedSockets) {
         const result = this.safeCloseWebSocket(ws, closure.code, closure.reason);
@@ -648,8 +664,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         remainingSockets -= 1;
         if (result === "failed") closeFailed = true;
       }
-      if (activeSockets.length > selectedSockets.length || closeFailed) {
-        this.realtime.requeueWebSocketClosure(closure);
+      const budgetDeferred = activeSockets.length > selectedSockets.length;
+      if (budgetDeferred || closeFailed) {
+        this.realtime.requeueWebSocketClosure(
+          closure,
+          { budgetDeferred, closeFailed, nextSocketOffset },
+          now,
+        );
       }
     }
     if (remainingSockets === 0) return;

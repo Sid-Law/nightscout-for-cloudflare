@@ -520,6 +520,29 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
       flush();
       expect(activeCount()).toBe(4);
       expect(closureCount()).toBe(1);
+
+      const deferred = state.storage.sql.exec<{
+        attempt_count: number;
+        next_attempt_at: number;
+      }>(
+        `SELECT attempt_count, next_attempt_at
+         FROM realtime_websocket_closures WHERE sid = ?`,
+        session.sid,
+      ).one();
+      expect(deferred.attempt_count).toBe(0);
+      expect(deferred.next_attempt_at).toBeGreaterThan(Date.now());
+
+      // An ordinary turn before the bounded continuation is due must not
+      // bypass the persisted deadline.
+      flush();
+      expect(activeCount()).toBe(4);
+      expect(closureCount()).toBe(1);
+      state.storage.sql.exec(
+        `UPDATE realtime_websocket_closures
+         SET next_attempt_at = ? WHERE sid = ?`,
+        Date.now() - 1,
+        session.sid,
+      );
       flush();
       expect(activeCount()).toBe(0);
       expect(closureCount()).toBe(0);
@@ -527,7 +550,112 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     });
   });
 
-  it("retains a closure tombstone when the physical socket close throws", async () => {
+  it("backs off and rotates when every socket in an oversized close batch fails", async () => {
+    const name = tenant("ws-duplicate-tag-failure");
+    const stub = store(name);
+    await runInDurableObject(stub, async (instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const session = repository.createSession(Date.now(), "websocket");
+      const servers: WebSocket[] = [];
+      const clients: WebSocket[] = [];
+      const originalCloses: Array<WebSocket["close"]> = [];
+      const closeCalls = Array.from({ length: 20 }, () => 0);
+      for (let index = 0; index < 20; index += 1) {
+        const pair = new WebSocketPair();
+        const client = pair[0];
+        const server = pair[1];
+        state.acceptWebSocket(server, [
+          "eio4-websocket",
+          `eio4-sid:${session.sid}`,
+        ]);
+        server.serializeAttachment({
+          version: 1,
+          objectId: state.id.toString(),
+          sid: session.sid,
+        });
+        client.accept();
+        originalCloses.push(server.close);
+        server.close = (): void => {
+          closeCalls[index] = (closeCalls[index] ?? 0) + 1;
+          throw new Error("forced duplicate close failure");
+        };
+        servers.push(server);
+        clients.push(client);
+      }
+      repository.deleteSession(session.sid);
+
+      const flush = (instance as unknown as {
+        flushRealtimeWebSockets(): void;
+      }).flushRealtimeWebSockets.bind(instance);
+      const closureState = (): {
+        attempt_count: number;
+        next_attempt_at: number;
+        socket_offset: number;
+      } => state.storage.sql.exec<{
+        attempt_count: number;
+        next_attempt_at: number;
+        socket_offset: number;
+      }>(
+        `SELECT attempt_count, next_attempt_at, socket_offset
+         FROM realtime_websocket_closures WHERE sid = ?`,
+        session.sid,
+      ).one();
+      const totalCloseCalls = (): number =>
+        closeCalls.reduce((total, count) => total + count, 0);
+
+      const firstStartedAt = Date.now();
+      flush();
+      const firstFailure = closureState();
+      expect(totalCloseCalls()).toBe(16);
+      expect(firstFailure.attempt_count).toBe(1);
+      expect(firstFailure.next_attempt_at).toBeGreaterThanOrEqual(
+        firstStartedAt + 1_000,
+      );
+      expect(firstFailure.socket_offset).toBe(16);
+
+      flush();
+      expect(totalCloseCalls()).toBe(16);
+      expect(closureState()).toEqual(firstFailure);
+
+      state.storage.sql.exec(
+        `UPDATE realtime_websocket_closures
+         SET next_attempt_at = ? WHERE sid = ?`,
+        Date.now() - 1,
+        session.sid,
+      );
+      const secondStartedAt = Date.now();
+      flush();
+      const secondFailure = closureState();
+      expect(totalCloseCalls()).toBe(32);
+      expect(closeCalls.slice(16)).toEqual([1, 1, 1, 1]);
+      expect(secondFailure.attempt_count).toBe(2);
+      expect(secondFailure.next_attempt_at).toBeGreaterThanOrEqual(
+        secondStartedAt + 2_000,
+      );
+      expect(secondFailure.socket_offset).toBe(12);
+
+      // Restore the runtime implementation and finish the bounded teardown.
+      for (let index = 0; index < servers.length; index += 1) {
+        servers[index]!.close = originalCloses[index]!;
+      }
+      for (let turn = 0; turn < 2; turn += 1) {
+        state.storage.sql.exec(
+          `UPDATE realtime_websocket_closures
+           SET next_attempt_at = ? WHERE sid = ?`,
+          Date.now() - 1,
+          session.sid,
+        );
+        flush();
+      }
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_websocket_closures WHERE sid = ?",
+        session.sid,
+      ).one().count).toBe(0);
+      expect(clients).toHaveLength(20);
+    });
+  });
+
+  it("backs off persistent physical close failures across early alarm turns", async () => {
     const name = tenant("ws-close-failure");
     const stub = store(name);
     await runInDurableObject(stub, async (instance, state) => {
@@ -549,23 +677,81 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
       repository.deleteSession(session.sid);
 
       const originalClose = server.close;
+      let closeCalls = 0;
       server.close = (): void => {
+        closeCalls += 1;
         throw new Error("forced close failure");
       };
       const flush = (instance as unknown as {
         flushRealtimeWebSockets(): void;
       }).flushRealtimeWebSockets.bind(instance);
+      const synchronizeAlarm = (instance as unknown as {
+        synchronizeRealtimeAlarm(): Promise<void>;
+      }).synchronizeRealtimeAlarm.bind(instance);
       const closureCount = (): number => state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM realtime_websocket_closures WHERE sid = ?",
         session.sid,
       ).one().count;
+      const closureState = (): { attempt_count: number; next_attempt_at: number } =>
+        state.storage.sql.exec<{
+          attempt_count: number;
+          next_attempt_at: number;
+        }>(
+          `SELECT attempt_count, next_attempt_at
+           FROM realtime_websocket_closures WHERE sid = ?`,
+          session.sid,
+        ).one();
 
+      const firstStartedAt = Date.now();
       flush();
       expect(server.readyState).toBe(WebSocket.OPEN);
       expect(closureCount()).toBe(1);
+      expect(closeCalls).toBe(1);
+      const firstFailure = closureState();
+      expect(firstFailure.attempt_count).toBe(1);
+      expect(firstFailure.next_attempt_at).toBeGreaterThanOrEqual(
+        firstStartedAt + 1_000,
+      );
+      await synchronizeAlarm();
+      expect(await state.storage.getAlarm()).toBe(firstFailure.next_attempt_at);
+
+      // Repeated normal turns and even an early at-least-once alarm delivery
+      // preserve the future retry without another close attempt.
+      flush();
+      flush();
+      await instance.alarm();
+      expect(closeCalls).toBe(1);
+      expect(closureState()).toEqual(firstFailure);
+      expect(await state.storage.getAlarm()).toBe(firstFailure.next_attempt_at);
+
+      state.storage.sql.exec(
+        `UPDATE realtime_websocket_closures
+         SET next_attempt_at = ? WHERE sid = ?`,
+        Date.now() - 1,
+        session.sid,
+      );
+      const secondStartedAt = Date.now();
+      await instance.alarm();
+      expect(closeCalls).toBe(2);
+      const secondFailure = closureState();
+      expect(secondFailure.attempt_count).toBe(2);
+      expect(secondFailure.next_attempt_at).toBeGreaterThanOrEqual(
+        secondStartedAt + 2_000,
+      );
+      expect(await state.storage.getAlarm()).toBe(secondFailure.next_attempt_at);
+
+      await instance.alarm();
+      expect(closeCalls).toBe(2);
+      expect(closureState()).toEqual(secondFailure);
 
       server.close = originalClose;
-      flush();
+      state.storage.sql.exec(
+        `UPDATE realtime_websocket_closures
+         SET next_attempt_at = ? WHERE sid = ?`,
+        Date.now() - 1,
+        session.sid,
+      );
+      await instance.alarm();
       expect(server.readyState).not.toBe(WebSocket.OPEN);
       expect(closureCount()).toBe(0);
     });
@@ -747,5 +933,74 @@ describe("realtime transport schema migration", () => {
 
     await evictDurableObject(stub);
     expect(await stub.realtimeValidateSession(sid)).toEqual({ ok: true, value: null });
+  });
+
+  it("repairs v7 closure rows to v8 despite a higher independent marker", async () => {
+    const name = tenant("ws-migrate-v8");
+    const stub = store(name);
+    const createdAt = Date.now() - 5_000;
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(`
+        DROP INDEX IF EXISTS realtime_websocket_closures_due;
+        DROP TABLE realtime_websocket_closures;
+        CREATE TABLE realtime_websocket_closures (
+          sid TEXT PRIMARY KEY,
+          close_code INTEGER NOT NULL,
+          close_reason TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+        CREATE INDEX realtime_websocket_closures_created
+          ON realtime_websocket_closures(created_at, sid);
+      `);
+      state.storage.sql.exec(
+        `INSERT INTO realtime_websocket_closures
+           (sid, close_code, close_reason, created_at)
+         VALUES ('abcdefghijklmnopqrst', 1008, 'legacy close', ?)`,
+        createdAt,
+      );
+      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 8");
+      state.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (7)",
+      );
+      state.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (99)",
+      );
+    });
+
+    await evictDurableObject(stub);
+    await runInDurableObject(stub, async (_instance, state) => {
+      const row = state.storage.sql.exec<{
+        attempt_count: number;
+        next_attempt_at: number;
+        socket_offset: number;
+      }>(
+        `SELECT attempt_count, next_attempt_at, socket_offset
+         FROM realtime_websocket_closures
+         WHERE sid = 'abcdefghijklmnopqrst'`,
+      ).one();
+      expect(row).toEqual({
+        attempt_count: 0,
+        next_attempt_at: createdAt,
+        socket_offset: 0,
+      });
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id = 8",
+      ).one().count).toBe(1);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id = 99",
+      ).one().count).toBe(1);
+      expect(state.storage.sql.exec<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM sqlite_master
+         WHERE type = 'index' AND name = 'realtime_websocket_closures_due'`,
+      ).one().count).toBe(1);
+    });
+
+    await evictDurableObject(stub);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id = 8",
+      ).one().count).toBe(1);
+    });
   });
 });

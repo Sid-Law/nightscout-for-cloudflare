@@ -28,6 +28,8 @@ import {
   RealtimeRepositoryError,
   SqliteRealtimeSessionRepository,
   type RealtimeSession,
+  type RealtimeWebSocketClosure,
+  type RealtimeWebSocketClosureRetry,
 } from "./session-repository";
 
 export interface RealtimeAuthorization {
@@ -420,23 +422,19 @@ export class RealtimeSessionService {
     return this.repository.listQueuedWebSocketSessionIds(limit);
   }
 
-  takeWebSocketClosures(limit: number): Array<{
-    sid: string;
-    code: number;
-    reason: string;
-  }> {
+  takeWebSocketClosures(limit: number, now: number): RealtimeWebSocketClosure[] {
     return this.storage.transactionSync(() =>
-      this.repository.takeWebSocketClosures(limit)
+      this.repository.takeWebSocketClosures(limit, now)
     );
   }
 
-  requeueWebSocketClosure(closure: {
-    sid: string;
-    code: number;
-    reason: string;
-  }): void {
+  requeueWebSocketClosure(
+    closure: RealtimeWebSocketClosure,
+    retry: RealtimeWebSocketClosureRetry,
+    now: number,
+  ): void {
     this.storage.transactionSync(() => {
-      this.repository.requeueWebSocketClosure(closure);
+      this.repository.requeueWebSocketClosure(closure, retry, now);
     });
   }
 

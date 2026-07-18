@@ -13,6 +13,9 @@ import {
   REALTIME_PING_INTERVAL_MS,
   REALTIME_PING_TIMEOUT_MS,
   REALTIME_TRANSPORT,
+  REALTIME_WEBSOCKET_CLOSE_CONTINUATION_MS,
+  REALTIME_WEBSOCKET_CLOSE_RETRY_BASE_MS,
+  REALTIME_WEBSOCKET_CLOSE_RETRY_MAX_MS,
   type RealtimeTransport,
 } from "./constants";
 
@@ -50,12 +53,26 @@ interface WebSocketClosureRow {
   sid: string;
   close_code: number;
   close_reason: string;
+  created_at: number;
+  attempt_count: number;
+  next_attempt_at: number;
+  socket_offset: number;
 }
 
 export interface RealtimeWebSocketClosure {
   sid: string;
   code: number;
   reason: string;
+  createdAt: number;
+  attemptCount: number;
+  nextAttemptAt: number;
+  socketOffset: number;
+}
+
+export interface RealtimeWebSocketClosureRetry {
+  budgetDeferred: boolean;
+  closeFailed: boolean;
+  nextSocketOffset: number;
 }
 
 interface CountRow {
@@ -142,6 +159,9 @@ export function createRealtimeSocketId(): string {
 }
 
 export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
+  // The v8 repair owns the closure due-time index. Keeping index creation out
+  // of this legacy-safe bootstrap avoids create/drop schema churn on every
+  // activation of an already-migrated object.
   storage.sql.exec(`
     CREATE TABLE IF NOT EXISTS realtime_sessions (
       sid TEXT PRIMARY KEY,
@@ -180,10 +200,11 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
       sid TEXT PRIMARY KEY,
       close_code INTEGER NOT NULL,
       close_reason TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      next_attempt_at INTEGER NOT NULL,
+      socket_offset INTEGER NOT NULL DEFAULT 0 CHECK (socket_offset >= 0)
     );
-    CREATE INDEX IF NOT EXISTS realtime_websocket_closures_created
-      ON realtime_websocket_closures(created_at, sid);
   `);
 }
 
@@ -244,6 +265,52 @@ export function migrateRealtimeTransportsV7(storage: DurableObjectStorage): void
     DROP TABLE realtime_sessions_polling_v5;
     CREATE INDEX realtime_sessions_expiry
       ON realtime_sessions(expires_at, sid);
+  `);
+}
+
+interface TableInfoRow {
+  [key: string]: SqlStorageValue;
+  name: string;
+}
+
+/**
+ * v8 adds durable close retry state. Keep this repair idempotent because a
+ * higher independent migration marker is not proof that these columns exist.
+ */
+export function migrateRealtimeClosuresV8(storage: DurableObjectStorage): void {
+  const columns = new Set(
+    storage.sql
+      .exec<TableInfoRow>("PRAGMA table_info(realtime_websocket_closures)")
+      .toArray()
+      .map((row) => row.name),
+  );
+  if (!columns.has("attempt_count")) {
+    storage.sql.exec(
+      `ALTER TABLE realtime_websocket_closures
+       ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0)`,
+    );
+  }
+  if (!columns.has("next_attempt_at")) {
+    storage.sql.exec(
+      `ALTER TABLE realtime_websocket_closures
+       ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0`,
+    );
+  }
+  if (!columns.has("socket_offset")) {
+    storage.sql.exec(
+      `ALTER TABLE realtime_websocket_closures
+       ADD COLUMN socket_offset INTEGER NOT NULL DEFAULT 0 CHECK (socket_offset >= 0)`,
+    );
+  }
+  storage.sql.exec(
+    `UPDATE realtime_websocket_closures
+     SET next_attempt_at = created_at
+     WHERE next_attempt_at <= 0`,
+  );
+  storage.sql.exec(`
+    DROP INDEX IF EXISTS realtime_websocket_closures_created;
+    CREATE INDEX IF NOT EXISTS realtime_websocket_closures_due
+      ON realtime_websocket_closures(next_attempt_at, created_at, sid);
   `);
 }
 
@@ -312,13 +379,16 @@ export class SqliteRealtimeSessionRepository {
   }
 
   deleteSessionInTransaction(sid: string): void {
+    const now = Date.now();
     this.storage.sql.exec(
       `INSERT OR IGNORE INTO realtime_websocket_closures
-         (sid, close_code, close_reason, created_at)
-       SELECT sid, 1008, 'session unavailable', ?
+         (sid, close_code, close_reason, created_at, attempt_count,
+          next_attempt_at, socket_offset)
+       SELECT sid, 1008, 'session unavailable', ?, 0, ?, 0
        FROM realtime_sessions
        WHERE sid = ? AND transport = 'websocket'`,
-      Date.now(),
+      now,
+      now,
       sid,
     );
     this.storage.sql.exec("DELETE FROM realtime_outbound_packets WHERE sid = ?", sid);
@@ -398,7 +468,7 @@ export class SqliteRealtimeSessionRepository {
            INNER JOIN realtime_sessions AS session ON session.sid = packet.sid
            WHERE session.transport = 'websocket'
            UNION ALL
-           SELECT MIN(created_at) AS deadline
+           SELECT MIN(next_attempt_at) AS deadline
            FROM realtime_websocket_closures
          )`,
       )
@@ -495,17 +565,20 @@ export class SqliteRealtimeSessionRepository {
       .map((row) => row.sid);
   }
 
-  takeWebSocketClosures(limit: number): RealtimeWebSocketClosure[] {
+  takeWebSocketClosures(limit: number, now: number): RealtimeWebSocketClosure[] {
     const boundedLimit = Math.max(
       1,
       Math.min(REALTIME_MAX_SESSIONS_PER_TENANT, Math.trunc(limit)),
     );
     const rows = this.storage.sql
       .exec<WebSocketClosureRow>(
-        `SELECT sid, close_code, close_reason
+        `SELECT sid, close_code, close_reason, created_at, attempt_count,
+                next_attempt_at, socket_offset
          FROM realtime_websocket_closures
-         ORDER BY created_at, sid
+         WHERE next_attempt_at <= ?
+         ORDER BY next_attempt_at, created_at, sid
          LIMIT ?`,
+        now,
         boundedLimit,
       )
       .toArray();
@@ -519,22 +592,61 @@ export class SqliteRealtimeSessionRepository {
       sid: row.sid,
       code: row.close_code,
       reason: row.close_reason,
+      createdAt: row.created_at,
+      attemptCount: row.attempt_count,
+      nextAttemptAt: row.next_attempt_at,
+      socketOffset: row.socket_offset,
     }));
   }
 
-  requeueWebSocketClosure(closure: RealtimeWebSocketClosure): void {
+  requeueWebSocketClosure(
+    closure: RealtimeWebSocketClosure,
+    retry: RealtimeWebSocketClosureRetry,
+    now: number,
+  ): void {
+    if (!retry.budgetDeferred && !retry.closeFailed) return;
+    const attemptCount = retry.closeFailed
+      ? Math.min(closure.attemptCount + 1, 31)
+      : closure.attemptCount;
+    let nextAttemptAt: number;
+    if (retry.closeFailed) {
+      const exponent = Math.min(closure.attemptCount, 30);
+      const retryDelay = Math.min(
+        REALTIME_WEBSOCKET_CLOSE_RETRY_MAX_MS,
+        REALTIME_WEBSOCKET_CLOSE_RETRY_BASE_MS * (2 ** exponent),
+      );
+      // A real close failure always wins over the short budget continuation.
+      // Otherwise a corrupt SID with more than one batch of sockets can retain
+      // both conditions forever and wake the object at 10 Hz.
+      nextAttemptAt = now + retryDelay;
+    } else {
+      nextAttemptAt = now + REALTIME_WEBSOCKET_CLOSE_CONTINUATION_MS;
+    }
     this.storage.sql.exec(
       `INSERT INTO realtime_websocket_closures
-         (sid, close_code, close_reason, created_at)
-       VALUES (?, ?, ?, ?)
+         (sid, close_code, close_reason, created_at, attempt_count,
+          next_attempt_at, socket_offset)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(sid) DO UPDATE SET
          close_code = excluded.close_code,
          close_reason = excluded.close_reason,
-         created_at = MIN(realtime_websocket_closures.created_at, excluded.created_at)`,
+         created_at = MIN(realtime_websocket_closures.created_at, excluded.created_at),
+         attempt_count = MAX(
+           realtime_websocket_closures.attempt_count,
+           excluded.attempt_count
+         ),
+         next_attempt_at = MIN(
+           realtime_websocket_closures.next_attempt_at,
+           excluded.next_attempt_at
+         ),
+         socket_offset = excluded.socket_offset`,
       closure.sid,
       closure.code,
       closure.reason,
-      Date.now(),
+      closure.createdAt,
+      attemptCount,
+      nextAttemptAt,
+      Math.max(0, Math.trunc(retry.nextSocketOffset)),
     );
   }
 
