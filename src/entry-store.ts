@@ -29,6 +29,7 @@ import {
   type DocumentQuery,
 } from "./document-repository";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
+import { normalizeLegacyDeviceStatusDocument } from "./documents";
 import {
   migrateRealtimeAlarmNamespaceV10,
   migrateRealtimeClosuresV8,
@@ -1924,7 +1925,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     if (collection === "devicestatus") {
       return JSON.stringify(
         documents.map((document) =>
-          this.documentRepository().createLegacyDocument(collection, document).document),
+          this.documentRepository().createLegacyDocument(
+            collection,
+            normalizeLegacyDeviceStatusDocument(document),
+          ).document),
       );
     }
     if (collection === "subjects" || collection === "roles") {

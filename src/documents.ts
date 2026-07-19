@@ -14,6 +14,58 @@ const SQLITE_MAX_BINDINGS = 100;
 const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000;
 const TREATMENT_NUMERIC_QUERY_FIELDS = new Set(["insulin", "carbs", "glucose"]);
 
+export interface InvalidLegacyObjectId {
+  index: number;
+  id: unknown;
+}
+
+/** Mirrors locked lib/api/shared/objectid-validation.js. */
+export function isValidLegacyObjectId(id: unknown): boolean {
+  if (id === undefined || id === null) return true;
+  return typeof id === "string" && OBJECT_ID.test(id);
+}
+
+/** Mirrors the locked first-invalid batch scan without mutating the input. */
+export function findInvalidLegacyObjectId(
+  documents: readonly unknown[],
+): InvalidLegacyObjectId | null {
+  for (let index = 0; index < documents.length; index += 1) {
+    const candidate = documents[index];
+    const id = typeof candidate === "object" && candidate !== null && !Array.isArray(candidate)
+      ? (candidate as Record<string, unknown>)._id
+      : undefined;
+    if (!isValidLegacyObjectId(id)) return { index, id };
+  }
+  return null;
+}
+
+function legacyUtcOffsetMinutes(value: unknown): number {
+  if (typeof value !== "string" || /[zZ]$/.test(value)) return 0;
+  const match = /([+-])(\d{2}):?(\d{2})$/.exec(value);
+  if (match === null) return 0;
+  const minutes = Number(match[2]) * 60 + Number(match[3]);
+  return match[1] === "-" ? -minutes : minutes;
+}
+
+/** Mirrors locked devicestatus.create() date normalization on the UTC Worker runtime. */
+export function normalizeLegacyDeviceStatusDocument(
+  input: JsonDocument,
+  now = Date.now(),
+): JsonDocument {
+  const source = input.created_at;
+  const parsed = typeof source === "number"
+    ? source
+    : typeof source === "string"
+      ? Date.parse(source)
+      : Number.NaN;
+  const millis = Number.isFinite(parsed) ? parsed : now;
+  return {
+    ...input,
+    created_at: new Date(millis).toISOString(),
+    utcOffset: legacyUtcOffsetMinutes(source),
+  };
+}
+
 function assertJsonValue(value: unknown, depth = 0): void {
   if (depth > MAX_DEPTH) {
     throw new ApiError(400, "invalid_document", "document nesting is too deep");
@@ -59,12 +111,16 @@ function normalizeDocument(
   }
   assertJsonValue(value);
   const document = { ...(value as JsonDocument) };
-  if (document._id !== undefined && document._id !== "") {
+  if (collection !== "treatments" && !isValidLegacyObjectId(document._id)) {
+    throw new ApiError(400, "invalid_document", "_id must be a 24-character hexadecimal string");
+  }
+  if (
+    document._id !== undefined
+    && document._id !== null
+    && !(collection === "treatments" && document._id === "")
+  ) {
     if (typeof document._id !== "string") {
       throw new ApiError(400, "invalid_document", "_id must be a string");
-    }
-    if (collection !== "treatments" && !OBJECT_ID.test(document._id)) {
-      throw new ApiError(400, "invalid_document", "_id must be a 24-character hexadecimal string");
     }
     if (OBJECT_ID.test(document._id)) document._id = document._id.toLowerCase();
   } else {

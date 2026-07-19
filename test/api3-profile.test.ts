@@ -610,7 +610,7 @@ describe("API v3 Profile vertical slice", () => {
 
     const deleted = await v1Write(name, "DELETE", `/api/v1/profile/${legacyId}`);
     expect(deleted.status).toBe(200);
-    expect(await deleted.json()).toEqual({ n: 1, ok: 1 });
+    expect(await deleted.json()).toEqual({});
     expect((await api3Fetch(name, jwt, "/api/v3/profile/modern-profile")).status).toBe(404);
     expect(await result<JsonObject[]>(await api3Fetch(
       name,

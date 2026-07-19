@@ -350,6 +350,34 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/api.activity.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime Activity contract in test/api-v1-collections-contract.test.ts: PUT and POST create/query/delete lifecycles, single-object and multi-object POST response arrays, empty-array success, ID allocation, existing and missing-ID PUT behavior, Last-Modified reads, exact legacy ObjectId errors, and empty final state."
+    },
+    "vendor/nightscout/tests/api.devicestatus.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime DeviceStatus contract in test/api-v1-collections-contract.test.ts: zoned created_at/utcOffset normalization, nested Loop payloads, single and ten-item batches, empty object/array, valid/generated/invalid IDs, preflight validation without partial writes, filtered wildcard deletion, and exact legacy ID errors."
+    },
+    "vendor/nightscout/tests/api.food.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime Food contract in test/api-v1-collections-contract.test.ts: urlencoded POST/PUT, JSON object and multi-item POST/PUT arrays, missing-ID upsert, existing-ID replacement with changed created_at, empty-array success, generated IDs, exact invalid-ID errors, delete response shape and read-after-delete."
+    },
+    "vendor/nightscout/tests/api.id-validation.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime Activity/Food ID contracts in test/api-v1-collections-contract.test.ts: invalid POST, PUT and path DELETE return the locked 400 status/message/description shape while missing IDs auto-generate 24-hex IDs."
+    },
+    "vendor/nightscout/tests/api.objectid-validation.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the pure Workers-runtime helper contract in test/api-v1-collections-contract.test.ts: undefined/null acceptance, 24-hex acceptance, UUID/number rejection, first-invalid batch reporting and all-valid null result."
+    },
+    "vendor/nightscout/tests/api.profiles.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime Profile contract in test/api-v1-collections-contract.test.ts: POST/PUT/query/delete workflows, single and multi-profile Loop/NightscoutKit shapes, empty-array success, valid/generated/invalid IDs, existing and missing-ID replacement, atomic mixed-ID rejection and exact legacy error envelopes."
+    },
+    "vendor/nightscout/tests/api.shape-handling.test.js": {
+      "status": "adapted",
+      "reason": "Represented across test/api-v1-collections-contract.test.ts, test/api-v1-entries-contract.test.ts, test/api-v1-treatments-contract.test.ts and test/worker.test.ts: every locked Entries, Treatments, DeviceStatus and Profile single/array/ten-item/empty response shape, mixed SGV/MBG and treatment types, nested Loop fixtures, syncIdentifier preservation, and legacy Food/Activity PUT-by-ID behavior."
+    },
     "vendor/nightscout/tests/api3.aaps-patterns.test.js": {
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime AndroidAPS contracts in test/api3-aaps-patterns.test.ts using the locked upstream fixture: treatment identity and pump metadata, repeated/different pumpId/date/eventType behavior, monotonic rapid deduplication, full payloads, sequential SMBs, meal events, rapid SGVs, and profile retry/new-LocalProfileLastChange behavior."

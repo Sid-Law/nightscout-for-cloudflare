@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 17, excluded-fixed-scope: 2, unresolved: 92
-- Input fingerprint: `d53af80929bc456c518ea1303b524adab257e7bde9467ce83debfc90ba8e47bb`
+- Statuses: pass: 0, adapted: 24, excluded-fixed-scope: 2, unresolved: 85
+- Input fingerprint: `84f026dc39940ef611e79a268e4aa7afc284fc4f362b45cb5ca58e217169ce34`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -19,9 +19,9 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
-| 1-storage-foundation | none | 15 | 15 | 0 |
+| 1-storage-foundation | none | 15 | 14 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 6 | 0 |
-| 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 14 | 0 |
+| 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 8 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 40 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 1 | 0 |
@@ -48,7 +48,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | --- | --- | ---: | --- |
 | `vendor/nightscout/tests/api.deduplication.test.js` | unresolved | 4 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api.entries.uuid.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api.objectid-validation.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api.objectid-validation.test.js` | adapted | 0 | Represented by the pure Workers-runtime helper contract in test/api-v1-collections-contract.test.ts: undefined/null acceptance, 24-hex acceptance, UUID/number rejection, first-invalid batch reporting and all-valid null result. |
 | `vendor/nightscout/tests/api.partial-failures.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/cache-objectid-compat.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/concurrent-writes.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
@@ -78,15 +78,15 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | Test file | Status | Candidate routes (heuristic) | Reason |
 | --- | --- | ---: | --- |
 | `vendor/nightscout/tests/api.aaps-client.test.js` | unresolved | 4 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api.activity.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api.activity.test.js` | adapted | 8 | Represented by the named Workers-runtime Activity contract in test/api-v1-collections-contract.test.ts: PUT and POST create/query/delete lifecycles, single-object and multi-object POST response arrays, empty-array success, ID allocation, existing and missing-ID PUT behavior, Last-Modified reads, exact legacy ObjectId errors, and empty final state. |
 | `vendor/nightscout/tests/api.alexa.test.js` | unresolved | 1 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api.devicestatus.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api.devicestatus.test.js` | adapted | 8 | Represented by the named Workers-runtime DeviceStatus contract in test/api-v1-collections-contract.test.ts: zoned created_at/utcOffset normalization, nested Loop payloads, single and ten-item batches, empty object/array, valid/generated/invalid IDs, preflight validation without partial writes, filtered wildcard deletion, and exact legacy ID errors. |
 | `vendor/nightscout/tests/api.entries.test.js` | unresolved | 22 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api.food.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api.id-validation.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api.profiles.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api.food.test.js` | adapted | 8 | Represented by the named Workers-runtime Food contract in test/api-v1-collections-contract.test.ts: urlencoded POST/PUT, JSON object and multi-item POST/PUT arrays, missing-ID upsert, existing-ID replacement with changed created_at, empty-array success, generated IDs, exact invalid-ID errors, delete response shape and read-after-delete. |
+| `vendor/nightscout/tests/api.id-validation.test.js` | adapted | 8 | Represented by the named Workers-runtime Activity/Food ID contracts in test/api-v1-collections-contract.test.ts: invalid POST, PUT and path DELETE return the locked 400 status/message/description shape while missing IDs auto-generate 24-hex IDs. |
+| `vendor/nightscout/tests/api.profiles.test.js` | adapted | 8 | Represented by the named Workers-runtime Profile contract in test/api-v1-collections-contract.test.ts: POST/PUT/query/delete workflows, single and multi-profile Loop/NightscoutKit shapes, empty-array success, valid/generated/invalid IDs, existing and missing-ID replacement, atomic mixed-ID rejection and exact legacy error envelopes. |
 | `vendor/nightscout/tests/api.root.test.js` | unresolved | 1 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api.shape-handling.test.js` | unresolved | 12 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api.shape-handling.test.js` | adapted | 12 | Represented across test/api-v1-collections-contract.test.ts, test/api-v1-entries-contract.test.ts, test/api-v1-treatments-contract.test.ts and test/worker.test.ts: every locked Entries, Treatments, DeviceStatus and Profile single/array/ten-item/empty response shape, mixed SGV/MBG and treatment types, nested Loop fixtures, syncIdentifier preservation, and legacy Food/Activity PUT-by-ID behavior. |
 | `vendor/nightscout/tests/api.status.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api.treatments.test.js` | unresolved | 10 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api.unauthorized.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |

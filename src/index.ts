@@ -16,6 +16,8 @@ import {
 import { newTrie } from "shiro-trie";
 import {
   filterDocuments,
+  findInvalidLegacyObjectId,
+  isValidLegacyObjectId,
   normalizeTreatmentNumbers,
   parseDocumentPayload,
   parseTreatmentQuery,
@@ -130,6 +132,19 @@ function legacyOk(): Response {
   headers.set("Content-Length", String(body.byteLength));
   headers.set("Cache-Control", "no-store");
   return new Response(body, { status: 200, headers });
+}
+
+function legacyDocumentIdError(id: unknown, create: boolean): Response {
+  return json(
+    {
+      status: 400,
+      message: "Invalid _id format",
+      description: create
+        ? `Must be 24-character hex string or omit for auto-generation. Got: ${String(id)}`
+        : `Must be 24-character hex string. Got: ${String(id)}`,
+    },
+    { status: 400 },
+  );
 }
 
 function withUtf8Charset(response: Response): Response {
@@ -1743,12 +1758,10 @@ async function handleCollectionApi(
       [`api:${collection}:read`, `api:${collection}:create`],
       payload,
     );
-    if (
-      (collection === "activity" || collection === "treatments")
-      && Array.isArray(payload)
-      && payload.length === 0
-    ) {
-      return json([]);
+    if (Array.isArray(payload) && payload.length === 0) return json([]);
+    if (collection !== "treatments") {
+      const invalid = findInvalidLegacyObjectId(Array.isArray(payload) ? payload : [payload]);
+      if (invalid !== null) return legacyDocumentIdError(invalid.id, true);
     }
     const parsed = parseDocumentPayload(payload, collection, false);
     if (collection === "treatments") {
@@ -1760,6 +1773,7 @@ async function handleCollectionApi(
   }
 
   if (request.method === "PUT" && segment === undefined) {
+    if (collection === "devicestatus") return null;
     const payload = await readBoundedBody(request);
     await requirePermissions(
       request,
@@ -1768,11 +1782,12 @@ async function handleCollectionApi(
       [`api:${collection}:read`, `api:${collection}:update`],
       payload,
     );
-    const parsed = parseDocumentPayload(
-      payload,
-      collection,
-      collection !== "activity" && collection !== "profile" && collection !== "treatments",
-    );
+    if (collection === "food" && Array.isArray(payload) && payload.length === 0) return json([]);
+    if (collection !== "treatments") {
+      const invalid = findInvalidLegacyObjectId(Array.isArray(payload) ? payload : [payload]);
+      if (invalid !== null) return legacyDocumentIdError(invalid.id, false);
+    }
+    const parsed = parseDocumentPayload(payload, collection, false);
     if (collection === "treatments") {
       const saved = parseDocuments(
         await store.saveDocuments(collection, JSON.stringify(parsed.documents)),
@@ -1807,25 +1822,24 @@ async function handleCollectionApi(
         const deleted = await store.deleteLegacyTreatment(segment);
         return json({ n: deleted ? 1 : 0, ok: 1 });
       }
-      if (!OBJECT_ID.test(segment)) {
-        throw new ApiError(400, "invalid_document", "document id must be a 24-character hexadecimal string");
-      }
+      if (!isValidLegacyObjectId(segment)) return legacyDocumentIdError(segment, false);
       selected = [{ _id: segment }];
     } else {
       if (segment !== "*" && !hasFindQuery(url)) {
         throw new ApiError(400, "invalid_query", "a find query is required for bulk deletion");
       }
-      selected = segment === "*" ? parseDocuments(await store.listDocuments(collection)) : filterDocuments(
-        parseDocuments(await store.listDocuments(collection)),
-        url,
-        5000,
-      );
+      const available = parseDocuments(await store.listDocuments(collection));
+      selected = segment === "*" && !hasFindQuery(url)
+        ? available
+        : filterDocuments(available, url, 5000);
     }
     const ids = selected
       .map((document) => document._id)
       .filter((id): id is string => typeof id === "string" && OBJECT_ID.test(id));
     const deleted = await store.deleteDocuments(collection, ids);
-    if (collection === "activity") return json({});
+    if (collection === "activity" || collection === "food" || collection === "profile") {
+      return json({});
+    }
     return json({ n: deleted, ok: 1 });
   }
 
