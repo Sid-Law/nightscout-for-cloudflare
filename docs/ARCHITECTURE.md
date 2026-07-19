@@ -7,11 +7,11 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`121db7ca5a0b45784713a5ac909a5bcbb3c1f499`. It produced Cloudflare version
-`00ecdd3a-240c-4fc1-a984-ad6449bb0b84`, reported as the Current Version by
-direct deploy. Its 22-file Workers-runtime suite passes 245/245
+`f872343a6851198f3d18d6cf80108cdf05c13ede`. It produced Cloudflare version
+`9e4ce398-8035-4d57-be1d-ab85373d3782`, reported as the Current Version by
+direct deploy. Its 23-file Workers-runtime suite passes 251/251
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries, reported 895.01 KiB raw / 160.79 KiB gzip, and the dry run declared
+entries, reported 907.72 KiB raw / 162.85 KiB gzip, and the dry run declared
 only the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Cloudflare
 reported a 22 ms startup. These are release facts for the named subset, not
 evidence of a complete port.
@@ -30,7 +30,7 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - bounded parsing, upstream query subset and tenant routing
   - Socket.IO client-surface polling adapter
   - strict `/socket.io/` EIO4 polling and direct-WebSocket adapters
-  - SIO5 root and API3 `/storage` namespace protocol adaptation
+  - SIO5 root plus API3 `/storage` and `/alarm` namespace protocol adaptation
         |
         | ENTRY_STORE.getByName(tenant), typed RPC
         v
@@ -47,6 +47,7 @@ Embedded SQLite
   - tenant-local JWT signing material
   - persisted EIO4 sessions and bounded outbound packet queues
   - persisted `/storage` namespace connections and collection subscriptions
+  - persisted `/alarm` connections, subscription/ACK authority and snoozes
   - hibernatable WebSocket attachments backed by persisted session authority
   - persisted authorization-failure delays
   - one SQL-derived Durable Object alarm for realtime/auth deadlines
@@ -113,6 +114,19 @@ PATCHes/deletes enqueue the official SIO5 `create`, `update` or `delete` frame
 for each current subscriber inside the document mutation transaction. A failed
 or saturated subscriber is removed without rolling back the document. V1 and
 direct repository mutations do not emit this channel, matching upstream.
+The transports also expose `/alarm` independently. A truthy native
+`accessToken` branch has priority and accepts a valid subject without requiring
+notification roles, matching the locked listener behavior. The web branch
+accepts the API secret, JWT or current anonymous default and returns separate
+read/ACK authority. Connection and accumulated ACK authority persist in SQLite.
+A trusted internal RPC accepts only an already-computed notification object,
+classifies it as `clear_alarm`, `alarm`, `urgent_alarm`, `announcement` or
+`notification`, and broadcasts it live to every current tenant-local `/alarm`
+connection; no disconnected replay is stored. Authorized `ack` events persist
+the group/level snooze, mirror Urgent to Warning and broadcast the exact
+all-clear object. The adapter bounds state to 256 distinct group names of at
+most 256 characters. It does not yet run `lib/notifications.js` or server
+plugins, so transport readiness is not notification-generation readiness.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
 deadlines, bounded WebSocket close retries and stale authorization-failure
 cleanup are multiplexed through the DO's single persistent alarm. The handler
@@ -318,7 +332,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`121db7ca5a0b45784713a5ac909a5bcbb3c1f499` implements all six official generic
+`f872343a6851198f3d18d6cf80108cdf05c13ede` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -595,7 +609,9 @@ server endpoint. The separate endpoint now implements strict EIO4 HTTP polling
 and direct Hibernatable WebSocket with persisted session/queue state, root
 namespace CONNECT, read-only authorization ACKs, initial/retro data and
 connection-count broadcasts. It also implements the API v3 `/storage`
-namespace, persisted authorized collection rooms and API3-only mutation events.
+namespace, persisted authorized collection rooms and API3-only mutation events,
+plus the API v3 `/alarm` namespace's persisted subscription/ACK/snooze slice
+and trusted live notification outlet.
 
 The current server boundary is explicit:
 
@@ -616,8 +632,18 @@ The current server boundary is explicit:
   order, ignores unknown collection names, requires `api:settings:admin` for
   Settings and the collection read permission otherwise, and persists granted
   rooms across eviction;
-- `/alarm` still returns SIO5 `CONNECT_ERROR` and does not terminate an already
-  connected namespace;
+- `/alarm` can connect without root or `/storage`. A truthy native access token
+  takes branch priority; web subscription accepts secret, JWT or the current
+  anonymous-readable default and returns separate read/ACK flags. Repeated
+  successful subscriptions accumulate ACK authority as upstream's listeners
+  do. Authorized ACKs persist one of at most 256 bounded alarm groups, default
+  a falsy silence time to 30 minutes, mirror Urgent to Warning, and broadcast
+  the exact live `clear_alarm` payload;
+- trusted alarm publication broadcasts one of the five locked event names to
+  all currently connected tenant-local `/alarm` sockets, subscribed or not.
+  Broken/overflow recipients are dropped independently and disconnected
+  clients receive no replay. Actual notification/plugin computation remains
+  missing;
 - root `subscribe` and all write events have no handler or ACK, matching the
   locked root's lack of `subscribe` while deliberately exposing no mutation;
 - HTTP API3 create/upsert/PUT/PATCH/soft-delete/permanent-delete emits the
@@ -649,12 +675,14 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`00ecdd3a-240c-4fc1-a984-ad6449bb0b84`. Credential-free remote smoke opened a
+`9e4ce398-8035-4d57-be1d-ab85373d3782`. Credential-free remote smoke opened a
 fresh EIO4 polling SID, connected `/storage` independently and received the
-locked missing-accessToken ACK; a separate fresh SID confirmed `/alarm` remains
-an invalid namespace. Protected event delivery is covered locally rather than
-by a credentialed remote mutation. The at-most-once dequeue/send crash window
-described above remains open for direct WebSocket. The official homepage
+locked missing-accessToken ACK. A separate fresh SID connected `/alarm`
+independently: anonymous subscription returned the exact successful
+`{read:true,ack:false}` response and a truthy invalid access token returned the
+locked failure response. Protected event delivery and ACK are covered locally
+rather than by a credentialed remote mutation. The at-most-once dequeue/send
+crash window described above remains open for direct WebSocket. The official homepage
 intentionally still uses the REST polling shim, so these transport smokes prove
 the separate server slice rather than a page transport switch. The named
 polling HTTP edge difference is admission at the
@@ -665,9 +693,11 @@ The current API3 `/storage` adapter persists each accepted subscriber frame in
 the same SQLite transaction as its mutation, then wakes polling waiters or
 hibernated WebSockets after commit. Hibernated sessions restore tenant and SID
 authority from WebSocket attachments plus SQLite; namespace connection and room
-subscriptions come from SQLite schema v9. The remaining target work is
-`/alarm`, root write/update behavior, EIO3, polling upgrade and the direct-send
-replay/acknowledgement boundary.
+subscriptions come from SQLite schema v9. `/alarm` connection/subscription
+authority and silence rows come from idempotently repaired schema v10. The
+remaining transport work is root write/update behavior, EIO3, polling upgrade
+and the direct-send replay/acknowledgement boundary; server-side notification
+generation remains background/plugin work.
 
 ### Background work and server plugins
 
@@ -702,6 +732,8 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
 - Maximum request body: 512 KiB; maximum POST batch: 100 records.
 - EIO4 polling/direct-WebSocket payload controls: 1,000,000-byte advertised
   polling maximum, 128 queued packets and 256 persisted sessions per tenant.
+- `/alarm` silence state is bounded to 256 distinct group names, each at most
+  256 characters; it is durable ACK state, not a notification history queue.
 - The narrow realtime shadow stores numeric SGV/MBG only in its historical
   20–600 columns; the canonical v1 document no longer rejects an upstream
   uploader value solely for falling outside that range.
@@ -722,7 +754,8 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
   can display a plaintext dashboard variable, so the lab credential must be
   rotated and converted to an encrypted Worker Secret before non-lab use.
 - The homepage polling shim is transport-only, runs every 15 seconds and has no
-  medical or display logic. The separately routed EIO4 server is read-only and
-  is not yet the homepage transport.
+  medical or display logic. The separately routed EIO4 root is read-only;
+  `/alarm` can persist only its bounded ACK/silence state. This server is not
+  yet the homepage transport.
 - Text asset responses are streamed rather than buffered when UTF-8 headers are
   adapted, keeping the extra Worker CPU and memory work constant.

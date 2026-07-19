@@ -71,6 +71,15 @@ for diagnosis, dosing, or medical decisions.
   state persist in SQLite. API v3 create/upsert/PUT/PATCH/soft-delete/permanent-
   delete events use the official `create`, `update` and `delete` payloads;
   changes made through v1 are deliberately not broadcast, as upstream specifies.
+- The API v3 `/alarm` Socket.IO namespace on both current EIO4 transports.
+  It can connect independently, preserves the locked native-access-token and
+  web secret/JWT/anonymous subscription branches and ACK shapes, persists
+  ACK/silence authority across Durable Object eviction, and exposes a trusted
+  tenant-local outlet that classifies the official `clear_alarm`, `alarm`,
+  `urgent_alarm`, `announcement` and `notification` events. ACKs broadcast the
+  locked all-clear payload, including Urgent-to-Warning snooze behavior. This
+  is the transport/auth/ACK slice only; server plugins do not yet generate the
+  notifications that feed it.
 - A tenant-local Durable Object alarm derived from persisted realtime
   deadlines and authorization-delay cleanup. It survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
@@ -98,14 +107,15 @@ the complete v1/v2/v3 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
 failed-auth admin notifications, Mongo query/collection parity beyond the
 tested safe subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
-the direct-WebSocket at-most-once crash window, the `/alarm` namespace, root
-write handlers, main-namespace real-time database-update broadcasts, the
-general background-task scheduler, server plugin execution,
-notification/summary persistence and end-to-end verification of every official
-page workflow. The polling shim only keeps the official browser bundle supplied
+the direct-WebSocket at-most-once crash window, root write handlers,
+main-namespace real-time database-update broadcasts, the general
+background-task scheduler, server plugin execution, notification generation
+and summary persistence, and end-to-end verification of every official page
+workflow. The polling shim only keeps the official browser bundle supplied
 with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
 homepage to the official Socket.IO client is a later slice that also requires
-safe non-default tenant propagation and the page-used alarm namespace.
+safe non-default tenant propagation and integration with the still-missing
+server-side notification/plugin pipeline.
 Entries also remains incomplete: `times/echo`, `times` and `slice` are absent;
 non-Entries `echo`, client-supplied count aggregation pipelines, Mongo
 operators, nested/array/mixed-type behavior and collation extend beyond the
@@ -233,6 +243,13 @@ database mutation event. The separate `/storage` namespace accepts only a
 subject access token, joins only rooms for which that subject has the locked
 read permission (`api:settings:admin` for Settings), and emits notifications
 about successful HTTP API v3 mutations; it does not grant mutation permission.
+The separate `/alarm` namespace follows the locked native access-token and web
+secret/JWT/anonymous subscription branches. Web subscriptions report separate
+`read` and notification-ACK rights; native subject access tokens retain the
+upstream ACK behavior regardless of roles. ACK permission only persists an
+alarm-group snooze and broadcasts the locked all-clear event; it cannot mutate
+medical records. Alarm groups are bounded to 256 distinct names of at most 256
+characters, and disconnected clients receive no replay.
 
 ## Configure API_SECRET on Cloudflare
 
@@ -310,22 +327,27 @@ deterministic older-tail truncation and cross-tenant session rejection. It now
 also covers `/storage` namespace connection, access-token/room authorization,
 persisted subscriptions, API3-only create/update/delete delivery, collection
 and tenant isolation, hibernated WebSocket delivery, broken-subscriber
-containment and v8-to-v9 schema repair. The
+containment and v8-to-v9 schema repair. `/alarm` coverage locks independent
+namespace connection, all native/web subscription branches, exact ACKs, all
+five event classifications, live-only tenant isolation, persisted snooze and
+Hibernatable-WebSocket eviction behavior, broken-recipient containment and
+idempotent v10 schema repair. The
 locked upstream has 111 JavaScript test files; a static declaration audit finds
 883 active `it(...)` cases plus one skipped case. Those declarations are not
 directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`121db7ca5a0b45784713a5ac909a5bcbb3c1f499`. After rebuilding the locked
-official UI, its 22-file Workers-runtime suite passes 245/245 tests and both
+`f872343a6851198f3d18d6cf80108cdf05c13ede`. After rebuilding the locked
+official UI, its 23-file Workers-runtime suite passes 251/251 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 895.01 KiB raw / 160.79 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds the persisted API v3 `/storage`
-namespace and live API3-only collection-change events while retaining the prior
+reports 907.72 KiB raw / 162.85 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds the persisted API v3 `/alarm`
+transport/auth/ACK/notification-outlet slice while retaining `/storage`, the
 six generic collection verticals, bounded Entries echo/count work and official
-UI. It does not add `times/echo`, `times`, `slice`, `/alarm`, EIO3, root writes
-or polling-to-WebSocket upgrade and is not closed-loop completion.
+UI. It does not add `times/echo`, `times`, `slice`, EIO3, root writes,
+polling-to-WebSocket upgrade or the server-side notification/plugin engine and
+is not closed-loop completion.
 Deployment used `--keep-vars`; no deployed credential was supplied to remote
 smoke requests, and no credential value is stored or quoted in this repository.
 Entries migration remains intentionally
@@ -355,9 +377,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `00ecdd3a-240c-4fc1-a984-ad6449bb0b84` was made current by
+Cloudflare version `9e4ce398-8035-4d57-be1d-ab85373d3782` was made current by
 the direct Wrangler deployment, with a reported 22 ms startup. Version tag
-`git-121db7c` and its deployment message record the Git mapping. Wrangler did
+`git-f872343` and its deployment message record the Git mapping. Wrangler did
 not print a separate creation/activation timestamp. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Final credential-free remote smoke returned HTTP 200 for health, v15.0.7
@@ -367,16 +389,18 @@ CRUD/history/renderer/dedupe/permission contracts passed locally; no
 credentialed remote upload or protected mutation was attempted. A fresh EIO4
 polling session connected `/storage` independently and returned the locked
 `Missing or bad accessToken` ACK for an empty subscription. A separate fresh
-session confirmed that `/alarm` remains an explicit `Invalid namespace` gap.
+session connected `/alarm` independently: anonymous web subscription returned
+the exact successful `{read:true,ack:false}` response, and a truthy invalid
+`accessToken` returned the exact locked failure response. No credentialed
+remote alarm ACK or notification event was attempted.
 
 A real browser run rendered the official homepage and its empty chart state
 without warning/error logs. The public tenant currently has no Entries, so
 `---` is the expected empty-data display. The official Food Editor reached
 `Database loaded` and showed the expected anonymous read-only state without
-submitting a write. It emitted two non-fatal upstream-bundle warnings that the
-chartless Food page has no `#chartContainer`; there were no script errors.
-These checks do not prove every protected mutation, report, plugin or realtime
-workflow.
+submitting a write. The current pass recorded no console warning or error on
+either page. These checks do not prove every protected mutation, report,
+plugin or realtime workflow.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

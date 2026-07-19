@@ -46,16 +46,16 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current Food Editor reached `Database loaded` anonymously with no script error; its official bundle emitted two non-fatal chart-container warnings on the chartless page. Protected mutation/report and pushed-live-update workflows remain. |
+| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current homepage and Food Editor pass loaded without console warning/error; Food reached `Database loaded` anonymously. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. `/storage` now atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD. Bounded Entries echo plus direct SQLite count for entries/treatments/device status are deployed; Activity CRUD is implemented. Complete times/echo, times, slice, non-Entries echo, bounded aggregation-pipeline parity, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
 | 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
 | 6. API v3 | Partial six-collection slice | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add large-response resource controls, broader mixed-type/nested query parity and whole upstream API3 test execution. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
-| 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read-only data events and the API3 `/storage` namespace. One derived alarm survives eviction. Complete the official-page switch only after `/alarm` and tenant propagation; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP and root writes. |
+| 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read-only data events and the API3 `/storage` and `/alarm` namespaces. `/alarm` has locked subscription/auth/ACK behavior and a trusted notification outlet, but the server-side notification engine is missing. Complete the official-page switch only after safe tenant propagation and notification integration; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP and root writes. |
 | 9. Real-time storage updates | API3 `/storage` named slice implemented | Successful HTTP API3 mutations atomically enqueue official create/update/delete frames for authorized collection rooms; subscription/queue state survives DO eviction, v1 changes do not broadcast, and overflow/failure drops only the broken subscriber. Add main-namespace database updates and browser/credentialed remote workflows; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
-| 10. Alarms/background tasks | Realtime/auth foundation only | The DO's single alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share it. |
-| 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
+| 10. Alarms/background tasks | Realtime/auth plus notification-ACK foundation | The DO's single Cloudflare alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Separately, Socket.IO alarm-group ACK/silence rows now survive eviction. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share the scheduler. |
+| 11. Server plugins/notifications | Transport outlet only | `/alarm` can publish trusted, already-computed notification objects and persist ACK/snooze state. Build the official registry and tenant platform context, then port upstream plugin/data/notification calculation and persistence tests without rewriting formulas. |
 | 12. Upstream regression suite | Tracked, execution not started | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; 109 files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
@@ -94,16 +94,16 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`121db7ca5a0b45784713a5ac909a5bcbb3c1f499` combines the persisted API v3
-`/storage` namespace with the prior six-collection API3, Entries, Status,
-authorization and direct Hibernatable EIO4 WebSocket slices. Cloudflare Worker
-version `00ecdd3a-240c-4fc1-a984-ad6449bb0b84` was reported as the Current
+`f872343a6851198f3d18d6cf80108cdf05c13ede` combines the persisted API v3
+`/alarm` namespace with the prior `/storage`, six-collection API3, Entries,
+Status, authorization and direct Hibernatable EIO4 WebSocket slices. Cloudflare
+Worker version `9e4ce398-8035-4d57-be1d-ab85373d3782` was reported as the Current
 Version by the direct deployment, with a 22 ms startup. Wrangler processed 248
-official asset entries with no asset-byte uploads, reported 895.01 KiB raw /
-160.79 KiB gzip, and the
+official asset entries with no asset-byte uploads, reported 907.72 KiB raw /
+162.85 KiB gzip, and the
 dry run exposed only `ENTRY_STORE` plus `ASSETS`. Deployment used `--keep-vars`
-and version tag `git-121db7c`; no deployed credential was supplied to remote
-smoke requests. The 22-file Workers-runtime suite passed 245/245,
+and version tag `git-f872343`; no deployed credential was supplied to remote
+smoke requests. The 23-file Workers-runtime suite passed 251/251,
 both audit suites passed 20/20, the dependency audit reported zero known
 vulnerabilities, and TypeScript plus the official UI build completed before
 deployment. A plaintext API credential can be rendered by metadata tooling;
@@ -111,8 +111,10 @@ the lab credential must be rotated and converted to a Worker Secret before
 non-lab use. Its value is absent from repository documentation. These remain
 subset facts, not a full-port claim.
 
-This increment adds the API v3 `/storage` namespace, persisted authorized room
-subscriptions and API3-only mutation events while retaining all eight generic
+This increment adds the API v3 `/alarm` namespace, persisted subscription/ACK
+authority, alarm-group silence state and a trusted live notification outlet
+while retaining the `/storage` namespace, its authorized room subscriptions
+and API3-only mutation events, plus all eight generic
 API v3 routes for Food and Settings, six-collection `lastModified` and v1 Food
 writes on the same repository/history contract. Food uses the locked
 `created_at`-only fallback; Settings has no fallback identity, and its search/
@@ -206,28 +208,34 @@ The deployed increment includes:
   session/lease expiry, closure retry and client-count updates;
 - a tenant-local API3 `/storage` namespace with subject access-token room
   authorization, persisted subscriptions and bounded create/update/delete
-  delivery for successful API3 mutations only.
+  delivery for successful API3 mutations only;
+- a tenant-local API3 `/alarm` namespace with independent connection, native
+  access-token and web secret/JWT/anonymous subscription branches, exact ACKs,
+  persisted snooze state and bounded live delivery of the five locked alarm
+  event names. The trusted publisher accepts precomputed notification objects;
+  upstream plugin/notification generation is not part of this slice.
 
 Final credential-free remote smoke returned HTTP 200 for health, v15.0.7 and
 the empty v1 Food collection. Missing JWTs on API v3 Food and Settings returned
 the locked HTTP 401 envelope. A fresh EIO4 polling session connected `/storage`
 and its empty subscription received the locked missing-accessToken ACK; another
-fresh session confirmed `/alarm` remains `Invalid namespace`. Full protected
-CRUD/history/renderer/permission and credentialed event behaviors remain
-locally tested because no deployed credential was used.
+fresh session connected `/alarm` independently. Its anonymous web subscription
+returned the exact successful `{read:true,ack:false}` response, while a truthy
+invalid `accessToken` returned the locked failure response. Full protected
+CRUD/history/renderer/permission, credentialed event delivery and alarm ACK
+behaviors remain locally tested because no deployed credential was used.
 
 A real browser run rendered the official homepage and empty chart state without
 warning/error. The official Food Editor reached `Database loaded` and showed
-its anonymous read-only state. The chartless Food page emitted two non-fatal
-official-bundle `#chartContainer` warnings but no script error. No credentialed
+its anonymous read-only state without console warning/error. No credentialed
 Food/Profile write was attempted, so protected workflows remain unproven.
 
 The code is still not a full port: Entries times/echo/times/slice and
 non-Entries echo, large-response CSV/XML
 resource adaptation, broader Mongo query/type parity,
-WebSocket upgrade, EIO3 HTTP, `/alarm`, root writes, main-namespace persisted
-change broadcasts, the shared background-task scheduler, server plugins,
-notifications and most upstream test files remain incomplete.
+WebSocket upgrade, EIO3 HTTP, root writes, main-namespace persisted change
+broadcasts, the shared background-task scheduler, server plugins, notification
+generation/processing and most upstream test files remain incomplete.
 The homepage still consumes the REST polling shim and does not yet use the
 separate EIO4 server.
 
@@ -304,14 +312,17 @@ Token-bearing authorization paths are redacted from adapter error logs.
    server-ping/client-pong, persisted queues, root CONNECT and a SQL-derived DO
    alarm for ping/pong/session/lease/closure deadlines are implemented. API3
    `/storage` CONNECT, access-token room authorization and live mutation events
-   are implemented on both current EIO4 transports.
+   are implemented on both current EIO4 transports. API3 `/alarm` CONNECT,
+   native/web subscription authorization, ACK/silence persistence and the live
+   notification outlet are also implemented on both current transports.
    EIO3/SIO4 remains codec-only and is deliberately rejected by the HTTP
    endpoint; polling advertises `upgrades: []`.
 3. Add the Engine.IO polling-to-WebSocket upgrade path; direct WebSocket open
    is already implemented and tested across DO eviction.
-4. **Complete for `/storage`; missing for `/alarm`:** preserve the tested
-   persisted namespace/room behavior and implement the page-used alarm
-   lifecycle next.
+4. **Complete for the named `/storage` and `/alarm` transport slices:** preserve
+   the tested persisted namespace/room/subscription behavior, exact alarm ACKs,
+   live-only delivery and tenant isolation. The upstream notification producer
+   remains Milestone E work; this transport milestone does not compute alarms.
 5. Extend the implemented root `authorize` and `loadRetro` reads with the
    locked write handlers only after their exact permission, mutation and
    broadcast contracts are mapped.
@@ -320,7 +331,8 @@ Token-bearing authorization paths are redacted from adapter error logs.
    separate locked main-namespace database-update behavior; v1 remains excluded
    from `/storage` by upstream contract.
 7. Replace the REST polling shim with the official client only after protocol
-   tests, safe tenant propagation, `/alarm`, and real browser workflows pass.
+   tests, safe tenant propagation, notification integration and real browser
+   workflows pass.
 
 ### Milestone E — background/server behavior
 
@@ -331,7 +343,10 @@ Token-bearing authorization paths are redacted from adapter error logs.
 3. Generate the official server plugin registry at build time.
 4. Execute official dataloader/sandbox/plugin/notification modules through a
    persisted tenant context.
-5. Keep external integrations disabled unless separately authorized and within
+5. Make that engine consult the persisted `/alarm` ACK/silence rows before
+   publishing through the existing trusted outlet; cover retry, eviction and
+   all-clear behavior without inventing medical algorithms.
+6. Keep external integrations disabled unless separately authorized and within
    the fixed simulated-data scope.
 
 ### Milestone F — page and upstream closure

@@ -12,11 +12,11 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `121db7ca5a0b45784713a5ac909a5bcbb3c1f499`
-- Git HEAD used by Wrangler: `121db7ca5a0b45784713a5ac909a5bcbb3c1f499`
-- Cloudflare Version ID: `00ecdd3a-240c-4fc1-a984-ad6449bb0b84`
-- Version tag/message: `git-121db7c` /
-  `git 121db7c api3 storage socket`
+- Deployed code candidate: `f872343a6851198f3d18d6cf80108cdf05c13ede`
+- Git HEAD used by Wrangler: `f872343a6851198f3d18d6cf80108cdf05c13ede`
+- Cloudflare Version ID: `9e4ce398-8035-4d57-be1d-ab85373d3782`
+- Version tag/message: `git-f872343` /
+  `git f872343 api3 alarm socket`
 - Version creation time: not printed by this Wrangler deployment; none is
   inferred
 - Activation: direct `wrangler deploy` reported this as the Current Version;
@@ -25,10 +25,11 @@ is not counted as API, plugin or real-time compatibility.
 - Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
-  persisted API3 storage-namespace tables
+  persisted API3 storage-namespace tables plus the v10 alarm connection and
+  silence tables
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 895.01 KiB raw / 160.79 KiB gzip
+- Upload: 907.72 KiB raw / 162.85 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -95,6 +96,13 @@ This increment deploys:
   namespace connection/subscription state and bounded outbound packets persist
   across Durable Object eviction, and only successful API3 mutations emit the
   locked `create`, `update` or `delete` event;
+- the EIO4/SIO5 API v3 `/alarm` namespace with independent connection, locked
+  native access-token and web secret/JWT/anonymous subscription branches,
+  exact response envelopes, persisted ACK/silence authority and a trusted
+  tenant-local notification outlet. It classifies and broadcasts the five
+  locked event names live to current namespace connections, with exact
+  all-clear ACK payloads and Urgent-to-Warning snooze behavior. Server plugins
+  and the notification engine do not yet produce those events;
 - the locked official v15.0.7 UI and the existing REST polling shim.
 
 The homepage still uses the REST shim; deploying the separate EIO4 server does
@@ -138,9 +146,10 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`121db7ca5a0b45784713a5ac909a5bcbb3c1f499`. It adds the persisted API v3
-`/storage` namespace and API3-only change-event delivery while retaining the
-prior six-collection API3, Entries, Profile, transport and official-page work.
+`f872343a6851198f3d18d6cf80108cdf05c13ede`. It adds the persisted API v3
+`/alarm` transport/auth/ACK/notification-outlet slice while retaining the
+prior `/storage`, six-collection API3, Entries, Profile, transport and
+official-page work.
 The table below records the exact local gate completed before deployment.
 
 | Check | Result |
@@ -152,20 +161,20 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 22 files, 245/245 passed |
+| Workers integration tests | 23 files, 251/251 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 895.01 KiB raw / 160.79 KiB gzip |
+| Worker dry run | 907.72 KiB raw / 162.85 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 245 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 251 Workers
 tests cover the implemented adapter subset; no whole upstream test file is
 claimed green. Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `00ecdd3a-240c-4fc1-a984-ad6449bb0b84` as the Current
+Wrangler reports version `9e4ce398-8035-4d57-be1d-ab85373d3782` as the Current
 Version. These credential-free checks verified response content and protocol
 markers, not only Wrangler command success.
 
@@ -193,16 +202,24 @@ boundary without reading or sending the deployed credential.
 | --- | --- |
 | EIO4 polling open | `upgrades: []`, 25 s ping interval, 20 s timeout, 1,000,000-byte maximum |
 | `/storage` CONNECT | independent SIO5 namespace connection returned a namespace SID |
-| Missing subscription token | ACK exactly `{success:false,message:"Missing or bad accessToken"}` |
-| `/alarm` CONNECT | SIO5 `CONNECT_ERROR` with `Invalid namespace`; this namespace remains unported |
+| `/storage` missing subscription token | ACK exactly `{success:false,message:"Missing or bad accessToken"}` |
+| `/alarm` CONNECT | independent SIO5 namespace connection returned a namespace SID |
+| `/alarm` anonymous web subscribe | ACK exactly `{success:true,message:"Subscribed for alarms",read:true,ack:false}` |
+| `/alarm` invalid truthy access token | ACK exactly `{success:false,message:"Missing or bad accessToken"}` |
 
 Local tests additionally prove collection filtering/default order, the
 Settings-admin exception, persisted subscriptions across eviction, API3
 create/deduplicated update/PUT/PATCH/soft/permanent delete events, v1 exclusion,
 tenant/room isolation, hibernated-WebSocket delivery, broken-subscriber
 containment and v8-to-v9 schema repair. No credentialed remote mutation was
-attempted, so the remote pass alone does not prove protected event delivery.
-Neither layer proves polling upgrade, EIO3, `/alarm` or root write handlers.
+attempted. Separate `/alarm` contracts prove native/web authorization priority,
+all five event classifications, broadcast to current unsubscribed connections,
+tenant isolation, no disconnected replay, exact ACK/all-clear behavior,
+Urgent-to-Warning snooze, eviction/Hibernation persistence, broken-recipient
+containment and idempotent v10 schema repair. The remote pass did not use a
+credential, publish a trusted notification or perform an alarm ACK. Neither
+layer proves polling upgrade, EIO3, root write handlers or the server-side
+plugin/notification generation pipeline.
 
 ## Real-browser evidence
 
@@ -214,9 +231,8 @@ credential storage or submitting protected mutations:
   no Entries, so the displayed `---` is expected;
 - the official Food Editor reached `Database loaded`, populated its empty
   database controls and showed the expected anonymous
-  read-only authentication state. Its upstream bundle emitted two non-fatal
-  `#chartContainer`-missing warnings on this chartless page; there were no
-  script errors.
+  read-only authentication state. The current pass recorded no console warning
+  or error.
 
 Profile load/Save-control and its inherited chartless-page warning remain
 historical evidence from an earlier version; no authenticated Food/Profile
@@ -248,10 +264,13 @@ mutation, report generation or every other protected page workflow.
 - Cloudflare can strip `Content-Length` from some dynamic Status/finalhandler
   responses. This release's Entries GET/HEAD smoke retained its exact length;
   the remaining transport difference stays scoped and non-blocking.
-- Polling-to-WebSocket upgrade, EIO3 HTTP, `/alarm`, root writes and the main
-  namespace's database-update broadcasts remain missing. `/storage` currently
-  supports EIO4/SIO5 polling and direct WebSocket only. Direct WebSocket retains
+- Polling-to-WebSocket upgrade, EIO3 HTTP, root writes and the main namespace's
+  database-update broadcasts remain missing. `/storage` and `/alarm` currently
+  support EIO4/SIO5 polling and direct WebSocket only. Direct WebSocket retains
   a named at-most-once crash window between durable dequeue and `send()`.
+  `/alarm` is only a live transport/auth/ACK outlet: server-side plugins and
+  notification calculations do not yet feed it, and credentialed remote event
+  delivery has not been exercised.
 - `document_changes` is still an unbounded full-body journal. No transport
   consumes it; `/storage` instead atomically queues bounded frames only for
   currently subscribed live sessions. Journal retention and pruning are still
@@ -261,8 +280,10 @@ mutation, report generation or every other protected page workflow.
   named 60-second platform cap. Repeated/bracket secret arrays are deliberately
   handled safely instead of reproducing the locked upstream unhandled
   rejection.
-- Server plugin jobs, notifications, summary persistence and the general
-  alarm-driven background scheduler remain incomplete.
+- Server plugin jobs, notification generation/processing, summary persistence
+  and the general alarm-driven background scheduler remain incomplete. Alarm
+  ACK/silence state itself is persisted in schema v10 and must be consumed by
+  that future notification engine.
 - Official pages are present, but not every mutation, report, plugin and
   real-time workflow has an upstream-derived browser contract.
 - No medical algorithm or dosing advice was added.
@@ -273,9 +294,9 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediate prior Cloudflare version is
-`7385728f-b498-4360-93f5-dbcdac5131c2` (deployed code commit
-`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`). It contains the six-collection
-API3/Food/Settings increment but not the persisted `/storage` namespace.
+`00ecdd3a-240c-4fc1-a984-ad6449bb0b84` (deployed code commit
+`121db7ca5a0b45784713a5ac909a5bcbb3c1f499`). It contains the persisted
+`/storage` namespace but not the `/alarm` namespace introduced by this release.
 
 Wrangler version rollback can restore Worker code and assets. Neither rollback
 nor redeployment clears or rolls back SQLite Durable Object data, and rollback
