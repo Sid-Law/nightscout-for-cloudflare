@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 32, excluded-fixed-scope: 2, unresolved: 77
-- Input fingerprint: `0f20c3545c5440d4ea82f1a39e18d555278e847c4ecef84c0dc9e4e90daa0f85`
+- Statuses: pass: 0, adapted: 33, excluded-fixed-scope: 2, unresolved: 76
+- Input fingerprint: `c4dd389461651478ccfcdc7aa3bd00554e9cdbaf0b723bbd7094997cbbcefeb7`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -22,7 +22,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 1-storage-foundation | none | 15 | 14 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 6 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
-| 4-plugins-and-calculations | 1-storage-foundation | 40 | 40 | 0 |
+| 4-plugins-and-calculations | 1-storage-foundation | 40 | 39 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 1 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
@@ -110,7 +110,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/data.treatmenttocurve.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/dataloader.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/dbsize.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/ddata.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/ddata.test.js` | adapted | 0 | Represented by the named Workers-runtime contract in test/api-v2-data-contract.test.ts: creation and deep clone of every locked data bucket, created_at-to-mills normalization, durationInMilliseconds-to-rounded-duration and exact endmills derivation, source immutability, and prefer-new identifier collision merging. The production snapshot adapter additionally covers recent device-status windows and public-profile filtering. |
 | `vendor/nightscout/tests/direction.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/errorcodes.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/expressextensions.test.js` | unresolved | 5 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |

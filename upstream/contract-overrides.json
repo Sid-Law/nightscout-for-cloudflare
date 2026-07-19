@@ -478,6 +478,10 @@
       "status": "adapted",
       "reason": "Represented by Workers-runtime contracts in test/api3-alarm-socket.test.ts: authenticated v1/v2 inherited ACK routes, exact 200/OK response and clear_alarm payload, durable repeated-snooze suppression, Urgent-to-Warning cascade, Hibernation delivery, bounded malformed input, and broken-recipient isolation."
     },
+    "vendor/nightscout/tests/ddata.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime contract in test/api-v2-data-contract.test.ts: creation and deep clone of every locked data bucket, created_at-to-mills normalization, durationInMilliseconds-to-rounded-duration and exact endmills derivation, source immutability, and prefer-new identifier collision merging. The production snapshot adapter additionally covers recent device-status windows and public-profile filtering."
+    },
     "vendor/nightscout/tests/bridge.test.js": {
       "status": "excluded-fixed-scope",
       "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope permits only simulated data."

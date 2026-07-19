@@ -55,6 +55,7 @@ import {
 } from "./api3/treatments";
 import { nightscoutCorsHeaders as corsHeaders } from "./api3/response";
 import { normalizeApi3MaxLimit } from "./api3/input";
+import { buildNightscoutSummary } from "./api2/summary";
 
 export { EntryStore };
 
@@ -118,12 +119,12 @@ type AppEnv = Env & {
   AUTH_FAIL_DELAY?: string;
 };
 
-function json(data: unknown, init: ResponseInit = {}): Response {
+function json(data: unknown, init: ResponseInit = {}, space?: number): Response {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json; charset=utf-8");
   headers.set("Cache-Control", "no-store");
   for (const [name, value] of Object.entries(corsHeaders())) headers.set(name, value);
-  return new Response(JSON.stringify(data), { ...init, headers });
+  return new Response(JSON.stringify(data, null, space), { ...init, headers });
 }
 
 function legacyOk(): Response {
@@ -2729,7 +2730,8 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     return json(JSON.parse(await store.getDdataSnapshotJson(at, frame)));
   }
 
-  if (request.method === "GET" && url.pathname === "/api/v2/properties") {
+  const propertiesRoute = /^\/api\/v2\/properties(?:\/.*)?$/.test(url.pathname);
+  if (request.method === "GET" && propertiesRoute) {
     await requirePermissions(
       request,
       env,
@@ -2740,7 +2742,40 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     // The upstream sandbox properties are derived from the runtime SGV bucket,
     // whose mbg-first/truthy-sgv classification is not equivalent to type=sgv.
     const entries = await env.ENTRY_STORE.getByName(tenant).getSgvEntries(4);
-    return json(toClockProperties(entries));
+    const properties = toClockProperties(entries);
+    let result = properties;
+    const rawSelection = url.pathname
+      .slice("/api/v2/properties".length)
+      .split("/")
+      .find((segment) => segment.length > 0);
+    if (rawSelection !== undefined) {
+      let decodedSelection: string;
+      try {
+        decodedSelection = decodeURIComponent(rawSelection);
+      } catch {
+        throw new ApiError(400, "invalid_query", "properties selection is invalid");
+      }
+      const selected = decodedSelection.split(",").filter((property) => property.length > 0);
+      if (selected.length > 0) {
+        result = Object.fromEntries(
+          selected
+            .filter((property) => Object.prototype.hasOwnProperty.call(properties, property))
+            .map((property) => [property, properties[property]]),
+        );
+      }
+    }
+    // Express only enables the indented form for a truthy query value.
+    const pretty = Boolean(url.searchParams.get("pretty"));
+    return json(result, {}, pretty ? 2 : undefined);
+  }
+
+  if (request.method === "GET" && /^\/api\/v2\/summary\/?$/.test(url.pathname)) {
+    await requirePermission(request, env, url, "api:*:read");
+    const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+    const now = Date.now();
+    const snapshot = JSON.parse(await store.getDdataSnapshotJson(now, false));
+    const hours = url.searchParams.get("hours") || 6;
+    return json(buildNightscoutSummary(snapshot, hours, now));
   }
 
   if (

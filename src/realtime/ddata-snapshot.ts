@@ -15,8 +15,53 @@ export interface RealtimeDdataInput {
   dbstats?: Record<string, never>;
 }
 
+/**
+ * JSON state exposed by locked Nightscout v15.0.7's `lib/data/ddata.js`.
+ * Methods from the Node singleton are represented by the pure adapter
+ * functions below so request state never leaks through a Worker global.
+ */
+export interface LegacyRealtimeDdataState {
+  sgvs: RealtimeDocument[];
+  treatments: RealtimeDocument[];
+  mbgs: RealtimeDocument[];
+  cals: RealtimeDocument[];
+  profiles: RealtimeDocument[];
+  devicestatus: RealtimeDocument[];
+  food: RealtimeDocument[];
+  activity: RealtimeDocument[];
+  dbstats: Record<string, unknown>;
+  lastUpdated: number;
+}
+
 function cloneDocument(document: RealtimeDocument): RealtimeDocument {
   return JSON.parse(JSON.stringify(document)) as RealtimeDocument;
+}
+
+function cloneDocuments(documents: RealtimeDocument[]): RealtimeDocument[] {
+  return documents.map(cloneDocument);
+}
+
+/** Creates the same empty data buckets as the locked upstream ddata module. */
+export function createLegacyRealtimeDdataState(): LegacyRealtimeDdataState {
+  return {
+    sgvs: [],
+    treatments: [],
+    mbgs: [],
+    cals: [],
+    profiles: [],
+    devicestatus: [],
+    food: [],
+    activity: [],
+    dbstats: {},
+    lastUpdated: 0,
+  };
+}
+
+/** JSON-safe equivalent of upstream ddata.clone(). */
+export function cloneLegacyRealtimeDdataState(
+  state: LegacyRealtimeDdataState,
+): LegacyRealtimeDdataState {
+  return JSON.parse(JSON.stringify(state)) as LegacyRealtimeDdataState;
 }
 
 export function normalizeRealtimeDocument(
@@ -46,6 +91,48 @@ export function normalizeRealtimeDocument(
     }
   }
   return normalized;
+}
+
+/**
+ * Pure equivalent of locked processRawDataForRuntime(). The upstream helper
+ * accepts either an array or a keyed object and returns a deep-cloned value.
+ */
+export function processRealtimeRawDataForRuntime<
+  T extends RealtimeDocument[] | Record<string, RealtimeDocument>,
+>(data: T): T {
+  if (Array.isArray(data)) {
+    return data.map(normalizeRealtimeDocument) as T;
+  }
+
+  return Object.fromEntries(
+    Object.entries(data).map(([key, document]) => [key, normalizeRealtimeDocument(document)]),
+  ) as T;
+}
+
+/**
+ * Pure equivalent of locked idMergePreferNew(): new documents win when an
+ * ObjectId or an identifier collides; unmatched old documents are appended.
+ */
+export function mergeRealtimeDocumentsPreferNew(
+  oldData: RealtimeDocument[] | undefined,
+  newData: RealtimeDocument[] | undefined,
+): RealtimeDocument[] | undefined {
+  if (newData === undefined) return oldData;
+  if (oldData === undefined) return newData;
+
+  const merged = cloneDocuments(newData);
+  for (const oldDocument of oldData) {
+    const found = newData.some((newDocument) => {
+      const oldId = oldDocument._id;
+      const newId = newDocument._id;
+      const idMatches = Boolean(oldId) && Boolean(newId) && String(oldId) === String(newId);
+      const identifierMatches = Boolean(oldDocument.identifier) &&
+        oldDocument.identifier === newDocument.identifier;
+      return idMatches || identifierMatches;
+    });
+    if (!found) merged.push(oldDocument);
+  }
+  return merged;
 }
 
 export function normalizeRealtimeDeviceStatus(
