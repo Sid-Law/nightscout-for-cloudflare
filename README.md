@@ -22,12 +22,14 @@ for diagnosis, dosing, or medical decisions.
   page-data endpoints. The v1/v2 Status surface now follows the locked
   routing, negotiation, redirect, format, authorization and error contracts.
 - A substantial but still partial v1/v2 Entries uploader/read slice: ordered
-  batch prefix commits, single-object/array/urlencoded shapes, server-owned ID
-  normalization, bounded numeric/string filters and request sorting,
+  batch prefix commits, single-object/array/extended-urlencoded shapes,
+  server-owned ID normalization with non-ObjectId uploader IDs preserved as
+  `identifier`, bounded numeric/string filters and request sorting,
   current/model/ID reads, JSON/plain/CSV/TSV representations, weak ETags,
-  Last-Modified/conditional 304 and HEAD. HTML-like upload leaves are
-  recursively entity-encoded before preview or persistence; this safe Workers
-  adaptation is stricter than the locked JSDOM/DOMPurify output.
+  result/runtime-SGV Last-Modified/conditional 304 and HEAD. HTML-like upload
+  leaves are recursively and idempotently entity-encoded before preview or
+  persistence; this safe Workers adaptation is stricter than the locked
+  JSDOM/DOMPurify output.
 - Tenant-local, SQLite-persisted HS256 JWT signing, the upstream eight-hour
   authorization-token lifetime, derived subject access tokens and prefix
   matching, body/query/header credential precedence, persisted per-IP failure
@@ -100,7 +102,13 @@ Entries also remains incomplete: `echo`, `times/echo`, `times`, `count` and
 collation extend beyond the fail-closed query subset; and the conservative
 Workers sanitizer is not byte-equivalent to upstream DOMPurify. The 512 KiB
 body, 100-item batch and 10,000-row query/scan bounds are explicit Free-plan
-controls rather than upstream limits.
+controls rather than upstream limits. The adapter still materializes a selected
+Entries response before sorting, formatting and hashing it; an artificial
+request for thousands of records containing abnormally large custom fields can
+therefore approach the Workers Free CPU/memory boundary. Ordinary compact SGV
+rows and normal recent-data clients are not expected to do so. A total-response
+budget or streaming redesign is explicitly deferred rather than presented as
+solved.
 
 The evidence-based compatibility matrix and acceptance criteria are in
 [`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md). The storage
@@ -284,16 +292,18 @@ directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`e2526c3fca53f4891564088127cf38a066571bbd`. After rebuilding the locked
-official UI, its 20-file Workers-runtime suite passes 230/230 tests and both
+`a732524271e9a282ad50d7b86817a10ad8a250a3`. After rebuilding the locked
+official UI, its 20-file Workers-runtime suite passes 232/232 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 776.61 KiB raw / 138.22 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds the adapted v1/v2 Entries uploader,
-preview, bounded query/sort and read-protocol slice described above while
-retaining the prior API v3 Profile and official-page work. It does not add the
-remaining Entries utilities or `/storage` realtime broadcasts and is not
-closed-loop completion. Deployment used `--keep-vars`; the configured secret
-was neither read nor printed. Entries migration remains intentionally
+reports 874.79 KiB raw / 157.16 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment preserves every non-ObjectId uploader
+sync ID, makes recursive upload sanitization idempotent, adopts the locked
+extended-urlencoded shape, returns controlled client errors for SQLite query
+limits, and restores the exact base-`/entries` runtime-SGV IMS precheck. It
+does not add the remaining Entries utilities or `/storage` realtime
+broadcasts and is not closed-loop completion. Deployment used `--keep-vars`;
+the configured secret was neither read nor printed. Entries migration remains
+intentionally
 fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
 being imported, while canonical documents and other collections such as
 profile are preserved. A read-only check found zero Entries and one profile in
@@ -320,25 +330,24 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `8bd1a80c-a3a8-405e-bde1-10c16d74f5b9` reached 100% traffic
-at 2026-07-18T18:39:24.472Z with a reported 23 ms startup. No asset bytes
+Cloudflare version `be7b9bee-7c9a-43d2-a26c-66b58ed196ad` reached 100% traffic
+at 2026-07-19T02:25:09.076Z with a reported 21 ms startup. Version tag
+`git-a732524` and its deployment message record the Git mapping. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Final credential-free remote smoke returned HTTP 200 for health, the homepage,
 Profile/current and empty v1/v2 Entries JSON, default text, TXT, CSV, TSV and
 HTML-fallback reads. It also confirmed uppercase `.JSON` and the still-missing
 Entries utility route return 404, HEAD preserves representation metadata, and
-an ETag validator returns 304. The repeated EIO4 polling smoke completed open,
-SIO5 root CONNECT and `clients`; the open packet advertised no upgrades, a
-25-second ping interval, 20-second timeout and 1,000,000-byte maximum. No
+an ETag validator returns 304. A legal-but-overcomplex Entries filter now
+returns the controlled HTTP 400 `invalid_query` envelope instead of 500. No
 credentialed remote upload or protected mutation was attempted.
 
-A real browser run rendered the official homepage chart and kept Settings
-closed through a 16-second observation spanning the 15-second REST-shim poll,
-with no console warning/error. The About panel reported v15.0.7. The
-Profile Editor reported `Values loaded.` and exposed its official Save control;
-no credentialed Save was attempted. Admin, Food, Report, both clock views and
-both Swagger pages rendered. Split reported title `Nightscout multiframe view`,
-a table root and no literal HTML source. These checks do not prove every
+A real browser run rendered the official homepage chart and observed repeated
+15-second REST-shim data updates without a homepage warning/error. The Profile
+Editor reported `Values loaded.` and exposed its official Save control; no
+credentialed Save was attempted. The locked bundle emitted its known inherited
+`Unable to find element for #chartContainer` warning on Profile, which has no
+chart container; no browser error was observed. These checks do not prove every
 protected mutation, report, plugin or realtime workflow.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes

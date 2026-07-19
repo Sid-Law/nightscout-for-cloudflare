@@ -7,12 +7,12 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`e2526c3fca53f4891564088127cf38a066571bbd`. It produced Cloudflare version
-`8bd1a80c-a3a8-405e-bde1-10c16d74f5b9`, active at 100% traffic since
-2026-07-18T18:39:24.472Z. Its 20-file Workers-runtime suite passes 230/230
+`a732524271e9a282ad50d7b86817a10ad8a250a3`. It produced Cloudflare version
+`be7b9bee-7c9a-43d2-a26c-66b58ed196ad`, active at 100% traffic since
+2026-07-19T02:25:09.076Z. Its 20-file Workers-runtime suite passes 232/232
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries, reported 776.61 KiB raw / 138.22 KiB gzip, and declared only the
-`ENTRY_STORE` Durable Object and `ASSETS` bindings. Cloudflare reported a 23 ms
+entries, reported 874.79 KiB raw / 157.16 KiB gzip, and declared only the
+`ENTRY_STORE` Durable Object and `ASSETS` bindings. Cloudflare reported a 21 ms
 startup. These are release facts for the named subset, not evidence of a
 complete port.
 
@@ -171,8 +171,9 @@ RPC boundary to avoid recursive generic values unsupported by the generated
 Cloudflare RPC types. Its constructor uses `blockConcurrencyWhile()` only for
 idempotent schema setup. Critical data is written synchronously before
 returning. The upstream v15.0.7 rule of one SGV per normalized timestamp/type
-is represented by a unique dedupe key; client UUIDs are preserved as
-`identifier`, while valid 24-hex IDs may be retained as `_id`. Generic document
+is represented by a unique dedupe key; every non-ObjectId uploader `_id` is
+preserved as `identifier` when the supplied identifier is falsy, while valid
+24-hex IDs may be retained as `_id`. Generic document
 records store bounded JSON plus normalized sort/create/update timestamps.
 
 The v1/v2 Status adapter is a deliberately narrow Express-contract boundary.
@@ -190,10 +191,16 @@ chunked; that transport-level P2 remains a post-deploy smoke item.
 V1/v2 Entries now has its own bounded Worker boundary. The Worker extracts the
 locked lowercase extension forms, negotiates JSON/plain/CSV/TSV, compiles the
 supported query fields/operators and request sort, then calls typed `EntryStore`
-RPC. SQLite applies the requested sort and limit first; the response formatter
+RPC. Extended URL-encoded bodies use maintained `qs` with the locked
+body-parser depth/parameter/array shape; legal queries above SQLite's
+binding/statement budget return a controlled client error. SQLite applies the
+requested sort and limit first; the response formatter
 then reorders only that selected set by `mills`/`date` descending, preserving
 the locked upstream quirk. JSON and the three text representations share
-Last-Modified, weak Express-style ETags, IMS/INM freshness and HEAD metadata.
+result-derived Last-Modified, weak Express-style ETags, IMS/INM freshness and
+HEAD metadata. Exact base `/entries` first checks the latest bounded runtime
+SGV, matching upstream `ifModifiedSinceCTX`; that time remains the fallback
+Last-Modified header when the requested result is empty.
 Cloudflare can remove a dynamic response's `Content-Length` at the public HTTP
 boundary even though Workers-runtime responses retain it, the same transport
 P2 already recorded for Status.
@@ -201,9 +208,11 @@ P2 already recorded for Status.
 Upload and preview share one recursive sanitizer before normalization or
 persistence. The locked server uses DOMPurify with JSDOM; neither DOM runtime is
 available at this Worker boundary. NSCF therefore entity-encodes HTML-like and
-entity-bearing nonnumeric strings so active markup cannot enter SQLite. This is
-a deliberate fail-closed safety adaptation: safe HTML that upstream preserves
-may be returned as text, so byte-equivalent DOMPurify output remains open.
+entity-bearing nonnumeric strings so active markup cannot enter SQLite, while
+preserving existing named/numeric entities to make read-then-reupload
+idempotent. This is a deliberate fail-closed safety adaptation: safe HTML that
+upstream preserves may be returned as text, so byte-equivalent DOMPurify output
+remains open.
 Persistent batches cross the RPC boundary as validated values. Each item runs
 in its own synchronous SQLite transaction that atomically updates the canonical
 document, narrow Entries shadow and change snapshot. A conflict rolls back that
@@ -286,7 +295,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`e2526c3fca53f4891564088127cf38a066571bbd` implements four generic vertical
+`a732524271e9a282ad50d7b86817a10ad8a250a3` implements four generic vertical
 slices—entries, treatments, device status and profile—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
 with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
@@ -593,16 +602,14 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`8bd1a80c-a3a8-405e-bde1-10c16d74f5b9`. This release repeated EIO4 polling
-open, SIO5 root CONNECT and the `clients` packet. The earlier credential-free
-authorize/`dataUpdate`/ACK polling and direct-WebSocket sequences remain
-historical evidence and were not repeated. The current polling open retained
-`upgrades: []`, a 25-second ping interval, 20-second timeout and
-1,000,000-byte maximum. The
-at-most-once dequeue/send crash window described above remains open. The official homepage
-intentionally still uses the REST polling shim, so these transport smokes prove
-the separate server slice rather than a page transport switch. The named
-polling HTTP edge difference is admission at the
+`be7b9bee-7c9a-43d2-a26c-66b58ed196ad`. This release changes no transport
+code, so EIO4 polling/direct-WebSocket protocol smokes were not repeated; their
+prior credential-free open/root-CONNECT/clients/authorize/`dataUpdate`/ACK
+evidence remains historical. The at-most-once dequeue/send crash window
+described above remains open. The official homepage intentionally still uses
+the REST polling shim, so these transport smokes prove the separate server
+slice rather than a page transport switch. The named polling HTTP edge
+difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
 
@@ -650,6 +657,11 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
 - History count defaults to 10 and is capped at 10,000.
 - Entries unindexed/dateString candidates are capped at 10,000 with controlled
   HTTP 413; synchronous deletion and stored-revision cleanup are capped at 128.
+- A selected Entries set is currently materialized across DO RPC, final sort,
+  representation and ETag hashing. Compact SGV records at ordinary client
+  counts are the supported path; thousands of abnormally large custom
+  documents can approach Workers Free CPU/memory limits. A total-result budget
+  or streaming redesign is deferred rather than hidden.
 - Official UI and calculations are not changed; no NSCF dosing logic exists.
 - `API_SECRET` is the bootstrap application credential; subject access tokens
   and role documents are tenant-local SQLite records. The API_SECRET value is a

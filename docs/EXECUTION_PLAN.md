@@ -48,7 +48,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
 | 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. Protected Profile Save was not attempted in this release; add that regression plus the remaining mutation/report and pushed-live-update workflows. |
 | 3. SQLite collection compatibility | In progress | Entries, treatments, device status and profile share the generic API3 repository. Extend it to food/settings, close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
-| 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and conservative recursive sanitization, single/array/urlencoded uploads, a bounded numeric/string query-and-sort subset, current/model/ID reads, JSON/plain/CSV/TSV, validators and HEAD; Activity CRUD is implemented. Complete echo/times/count/slice, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
+| 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD; Activity CRUD is implemented. Complete echo/times/count/slice, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
 | 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
 | 6. API v3 | Partial four-collection slice | Public `/version`, JWT-protected `/status`, the generic routes for entries/treatments/device-status/profile and four-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add food and settings plus large-response resource controls and broader mixed-type query parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
@@ -94,22 +94,29 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`e2526c3fca53f4891564088127cf38a066571bbd` combine the adapted v1/v2 Entries
+`a732524271e9a282ad50d7b86817a10ad8a250a3` combine the adapted v1/v2 Entries
 uploader/query/read-protocol slice with the prior strict Status,
 authorization, direct Hibernatable EIO4 WebSocket and four generic API v3
 collections. Cloudflare Worker version
-`8bd1a80c-a3a8-405e-bde1-10c16d74f5b9` reached 100% traffic at
-2026-07-18T18:39:24.472Z with a reported 23 ms startup. Wrangler processed
-248 official asset entries with no asset-byte uploads, reported 776.61 KiB raw
-/ 138.22 KiB gzip, and exposed only `ENTRY_STORE` plus `ASSETS`. Deployment
-used `--keep-vars`; the configured secret was neither read nor printed. The
-20-file Workers-runtime suite passed 230/230, both audit suites passed 20/20,
-and TypeScript plus the official UI build completed before deployment. These
+`be7b9bee-7c9a-43d2-a26c-66b58ed196ad` reached 100% traffic at
+2026-07-19T02:25:09.076Z with a reported 21 ms startup. Wrangler processed
+248 official asset entries with no asset-byte uploads, reported 874.79 KiB raw
+/ 157.16 KiB gzip, and exposed only `ENTRY_STORE` plus `ASSETS`. Deployment
+used `--keep-vars` and version tag `git-a732524`; the configured secret was
+neither read nor printed. The 20-file Workers-runtime suite passed 232/232,
+both audit suites passed 20/20, the dependency audit reported zero known
+vulnerabilities, and TypeScript plus the official UI build completed before
+deployment. These
 remain subset facts, not a full-port claim.
 
-This increment adds ordered Entries batch-prefix commits, preview and recursive
-safe string adaptation, the bounded scalar query/sort subset, current/model/ID
-reads, JSON/plain/CSV/TSV, validators and HEAD. It retains API v3 Profile,
+This increment fixes the audited uploader edges: every non-ObjectId client
+`_id` is retained as `identifier` when the supplied identifier is falsy;
+recursive string adaptation is idempotent; extended URL-encoded nested/array
+fields use the locked qs-style parser; SQLite binding/statement limits return a
+controlled client error; and exact base `/entries` restores the upstream
+runtime-SGV IMS precheck. It retains ordered batch-prefix commits, preview,
+bounded query/sort, current/model/ID reads, JSON/plain/CSV/TSV, validators and
+HEAD, plus API v3 Profile,
 AAPS create/retry/new-version behavior, v1/API3 shared storage, idempotent
 legacy metadata repair and the official HTML/cache boundary fixes.
 
@@ -143,7 +150,15 @@ conflict remain committed, and the suffix is not attempted, matching Mongo's
 ordered bulk prefix rather than pretending the full request is atomic. Preview
 and persistence share recursive string sanitization; Workers entity-encodes
 HTML-like input because the locked JSDOM/DOMPurify runtime is not portable, so
-exact safe-markup preservation remains a named compatibility task.
+existing entities are preserved across read-then-reupload while active markup
+still cannot be stored. Exact safe-HTML DOMPurify bytes remain incomplete.
+
+The ordinary compact-SGV path retains a requested count up to 10,000. A single
+request selecting thousands of records that each contain abnormally large
+custom fields is still materialized for RPC, sort, representation and ETag
+generation and can approach the Workers Free CPU/memory boundary. This
+extreme-request hardening is explicitly deferred; it is not counted as a
+normal-family blocker and is not claimed solved.
 
 The deployed increment includes:
 
@@ -151,9 +166,9 @@ The deployed increment includes:
 - one tenant-sharded SQLite Durable Object and Workers Static Assets only;
 - page-used entries, food, profile, treatments, device-status, activity,
   role/subject/token subsets and aggregate REST polling;
-- adapted v1/v2 Entries single/array/urlencoded uploads, preview, ordered
-  batch-prefix failures, bounded indexed query/sort, current/model/ID reads and
-  JSON/plain/CSV/TSV conditional GET/HEAD;
+- adapted v1/v2 Entries single/array/extended-urlencoded uploads, preview,
+  uploader-owned sync identity, ordered batch-prefix failures, bounded indexed
+  query/sort, current/model/ID reads and JSON/plain/CSV/TSV conditional GET/HEAD;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
 - all eight generic API v3 routes for entries, treatments, device status and
@@ -171,21 +186,17 @@ The deployed increment includes:
 Final credential-free remote smoke returned HTTP 200 for health, homepage,
 Profile/current and empty v1/v2 Entries JSON, default text, TXT, CSV, TSV and
 HTML-fallback reads. Uppercase `.JSON` and the missing Entries utility path
-returned 404; HEAD preserved representation metadata and curl confirmed an
-ETag 304. The repeated EIO4 polling smoke completed open, SIO5 root CONNECT
-and `clients`; it advertised `upgrades: []`, a 25-second ping interval,
-20-second timeout and 1,000,000-byte maximum. The earlier full polling and
-direct-WebSocket authorize/dataUpdate/ACK checks remain historical evidence;
-they were not repeated for this release.
+returned 404; HEAD preserved representation metadata, curl confirmed an ETag
+304, and an over-budget legal filter returned controlled HTTP 400. EIO4
+polling/direct-WebSocket protocol smokes were not repeated because this commit
+does not change transport; their prior evidence remains historical.
 
-A real browser run rendered the official homepage/chart and kept Settings
-closed through a 16-second observation spanning the 15-second REST-shim poll,
-with no console warning/error. About reported v15.0.7; Profile reported
-`Values loaded.` and exposed its official Save control. Admin, Food, Report,
-both clock views and both Swagger pages rendered. `/split/` was HTML with the
-official multiframe title/table and no literal source. No credentialed Profile
-Save or other protected write was attempted, so those workflows remain
-unproven.
+A real browser run rendered the official homepage/chart and observed repeated
+15-second REST-shim updates without a homepage warning/error. Profile reported
+`Values loaded.` and exposed its official Save control. The locked bundle
+emitted its known inherited `#chartContainer` warning on the chartless Profile
+page; no browser error appeared. No credentialed Profile Save or other
+protected write was attempted, so those workflows remain unproven.
 
 The code is still not a full port: API v3 food and settings,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
