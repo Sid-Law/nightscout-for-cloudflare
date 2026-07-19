@@ -378,28 +378,30 @@ locked upstream has 111 JavaScript test files; a static declaration audit finds
 directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
-`rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js` and 15 v1
-client/API files are classified as fully `adapted`.
+`rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
+`data.calcdelta.test.js` and 15 v1 client/API files are classified as fully
+`adapted`.
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 69 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 68 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`df676c7afe8cf81beb949e832788b545f4cbd224`. After rebuilding the locked
-official UI, its 33-file Workers-runtime suite passes 321/321 tests and both
+`f5aaa5d94c44db9d5af3741743cb74744cc182c2`. After rebuilding the locked
+official UI, its 34-file Workers-runtime suite passes 331/331 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 961.70 KiB raw / 175.27 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds complete named contracts for locked
-`times.test.js`, `units.test.js`, `levels.test.js`, `rawbg.test.js` and
-`upbat.test.js`, including the live default-enabled uploader-battery property,
-while retaining the official `bgnow`/`direction` work and the
-prior v1/API3/authorization/realtime slices. This does not make the whole
+reports 971.63 KiB raw / 177.25 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds the complete named
+`data.calcdelta.test.js` contract and schema-v11 tenant root baseline. Successful
+implemented v1/v2 and API3 mutations now derive and enqueue the official root
+`dataUpdate` delta for authorized live polling sessions; the same persisted
+queue/flush path serves direct Hibernatable WebSockets. It retains the prior
+property, API, authorization, `/storage` and `/alarm` slices. This does not make the whole
 Nightscout port or the complete v1/v2 API compatible.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
-type/nested/array semantics, safe-attribute DOMPurify byte parity, EIO3, root
-writes, polling-to-WebSocket upgrade and the server-side notification/plugin
+type/nested/array semantics, safe-attribute DOMPurify byte parity, EIO3, client
+root writes, polling-to-WebSocket upgrade and the server-side notification/plugin
 engine, including plugin-derived summary state, remain missing. No deployed
 credential was read or supplied to remote smoke requests, and no credential
 value is stored or quoted in this repository.
@@ -430,12 +432,12 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `ea1a004c-eb45-48d4-a9d7-70224f753d9a` was made current by
-deployment `0280373b-f50b-4b64-920a-a7933ed28d1b` at
-`2026-07-19T21:16:23.945257Z`, with a reported 27 ms startup. No asset bytes
+Cloudflare version `eaf8b72b-939d-43c6-827f-05014fa3bf9b` was made current by
+deployment `c79cda69-5d96-4ac3-aef4-3b4596e2eca9` at
+`2026-07-19T21:53:25.858703Z`, with a reported 25 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
-Credential-free remote smoke returned HTTP 200 for selected/pretty v2
-properties, v2 summary, API3 version, v1 Status and EIO4 polling. The public
+Credential-free remote smoke returned HTTP 200 for health, a bounded v1 Entries
+read, selected v2 properties, v2 summary, API3 version and EIO4 polling. The public
 tenant had no recent SGV rows, so the deployed property response correctly used
 its empty `bgnow` shape and the official `upbat` `?%` empty state; non-empty
 official calculations are covered by the local contracts. Missing-token API3
@@ -451,11 +453,9 @@ then returned 200 immediately; real storage/parser failures are still surfaced.
 A real browser run reloaded the current deployment and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
-official controls; the clock used locked `status.js` and `bundle.clock.js`.
-Profile reached `Values loaded.` and
-Food reached `Database loaded`; no credential was entered and no protected
-write was submitted. Browser console inspection found no errors or warnings,
-and the homepage's connecting indicator cleared. The
+official controls. Without a credential the Food and Profile editors correctly
+remained in `Not loaded`; no protected read or write was claimed. Browser console
+inspection found no errors or warnings. The
 browser was returned to the homepage. The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.

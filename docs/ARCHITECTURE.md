@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`df676c7afe8cf81beb949e832788b545f4cbd224`. It produced Cloudflare version
-`ea1a004c-eb45-48d4-a9d7-70224f753d9a`, reported as 100% active by direct
-deploy. Its 33-file Workers-runtime suite passes 321/321 plus 20/20 audit
+`f5aaa5d94c44db9d5af3741743cb74744cc182c2`. It produced Cloudflare version
+`eaf8b72b-939d-43c6-827f-05014fa3bf9b`, reported as 100% active by direct
+deploy. Its 34-file Workers-runtime suite passes 331/331 plus 20/20 audit
 tests. Wrangler processed 248 unchanged official asset entries; deployment and
-the final dry run both reported 961.70 KiB raw / 175.27 KiB gzip, with the dry
+the final dry run both reported 971.63 KiB raw / 177.25 KiB gzip, with the dry
 run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
-bindings. Cloudflare reported a 27 ms startup.
+bindings. Cloudflare reported a 25 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -49,6 +49,7 @@ Embedded SQLite
   - per-collection sort and lookup indexes
   - tenant-local JWT signing material
   - persisted EIO4 sessions and bounded outbound packet queues
+  - persisted root `dataUpdate` baseline for server-originated deltas
   - persisted `/storage` namespace connections and collection subscriptions
   - persisted `/alarm` connections, shared HTTP/Socket ACK authority and snoozes
   - hibernatable WebSocket attachments backed by persisted session authority
@@ -133,7 +134,8 @@ tenant-local Engine.IO 4 polling and direct-WebSocket endpoints. Polling
 implements the official open
 shape with `upgrades: []`, 25-second server ping / 20-second client-pong
 heartbeat, RS payload framing, SIO5 root CONNECT, `clients`, read-only
-`authorize`, initial `dataUpdate`, and `loadRetro`. Sessions, root authorization
+`authorize`, initial and subsequent server-originated `dataUpdate`, and
+`loadRetro`. Sessions, root authorization
 and ordered outbound frames are stored in the existing tenant `EntryStore`
 SQLite database, while only an in-flight long-poll waiter is ephemeral. DO
 eviction therefore does not lose protocol authority or queued packets. This
@@ -144,6 +146,22 @@ through WebSocket Hibernation, and restores its tenant/SID authority from a
 validated attachment plus SQLite state after eviction. It is not an Engine.IO
 upgrade from an existing polling SID: polling continues to advertise no
 upgrade.
+
+`src/realtime/calcdelta.ts` ports the locked `lib/data/calcdelta.js` comparison
+semantics without keeping Node process state. Schema v11 stores one complete
+tenant baseline in `realtime_root_state`. After successful implemented v1/v2
+or HTTP API3 changes, the DO loads the current database snapshot, calculates
+SGV/MBG/calibration/device-status replacement fields, treatment
+add/update/remove actions and profile replacement, advances the baseline and
+queues a non-empty root `dataUpdate` only for connected, authorized,
+read-allowed live sessions. API3 queues its root frame and `/storage` frames in
+the document mutation transaction; legacy paths publish in a follow-up DO
+transaction. Existing polling and Hibernatable-WebSocket flush paths deliver
+the same durable queue. Food and activity still advance the baseline but emit
+no delta because the locked calculator exposes neither field. Upstream
+profile-switch status injection and server-plugin preprocessing before the
+comparison remain unadapted, as do client-originated root mutation events.
+
 The same transports expose the API v3 `/storage` namespace independently of
 the root namespace. A `subscribe` event resolves only the subject access token,
 checks the locked collection read permission (Settings requires admin), and
@@ -381,7 +399,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`df676c7afe8cf81beb949e832788b545f4cbd224` implements all six official generic
+`f5aaa5d94c44db9d5af3741743cb74744cc182c2` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -750,8 +768,10 @@ The current server boundary is explicit:
   Broken/overflow recipients are dropped independently and disconnected
   clients receive no replay. Actual notification/plugin computation remains
   missing;
-- root `subscribe` and all write events have no handler or ACK, matching the
-  locked root's lack of `subscribe` while deliberately exposing no mutation;
+- root `subscribe` and all client-originated write events have no handler or
+  ACK, matching the locked root's lack of `subscribe` while deliberately
+  exposing no client mutation. Server-originated implemented v1/v2/API3
+  changes do enqueue locked `dataUpdate` deltas from a persisted baseline;
 - HTTP API3 create/upsert/PUT/PATCH/soft-delete/permanent-delete emits the
   locked `/storage` payload only after a successful mutation decision; v1 and
   direct database changes do not broadcast. `document_changes` is not consumed.
@@ -783,9 +803,9 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`ea1a004c-eb45-48d4-a9d7-70224f753d9a`. Current credential-free remote smoke
-returned 200 for selected/pretty v2 properties, v2 summary, API3 version, v1
-Status and an EIO4 polling open packet; API3 Entries without a token returned
+`eaf8b72b-939d-43c6-827f-05014fa3bf9b`. Current credential-free remote smoke
+returned 200 for health, a bounded v1 Entries read, selected v2 properties, v2
+summary, API3 version and an EIO4 polling open packet; API3 Entries without a token returned
 the expected 401. Protected
 realtime event/ACK behavior remains covered locally rather than by a
 credentialed remote mutation. The at-most-once dequeue/send
@@ -802,8 +822,10 @@ the same SQLite transaction as its mutation, then wakes polling waiters or
 hibernated WebSockets after commit. Hibernated sessions restore tenant and SID
 authority from WebSocket attachments plus SQLite; namespace connection and room
 subscriptions come from SQLite schema v9. `/alarm` connection/subscription
-authority and silence rows come from idempotently repaired schema v10. The
-remaining transport work is root write/update behavior, EIO3, polling upgrade
+authority and silence rows come from idempotently repaired schema v10. Root
+delta authority and the last full comparison snapshot come from schema v11.
+The remaining transport work is client root write behavior, profile-switch
+status/plugin preprocessing, EIO3, polling upgrade
 and the direct-send replay/acknowledgement boundary; server-side notification
 generation remains background/plugin work.
 

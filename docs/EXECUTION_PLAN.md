@@ -46,17 +46,17 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, prior authenticated Profile Save evidence, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current credential-free browser pass rendered homepage, Admin, Food, Profile and `clock-color`; Profile reached `Values loaded.`, Food reached `Database loaded`, and the locked app/clock bundles were present. Protected mutation/report and pushed-live-update workflows remain. |
+| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, prior authenticated Profile Save evidence, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current credential-free browser pass rendered homepage, Admin, Food, Profile and `clock-color`; unauthenticated Food/Profile correctly remained `Not loaded`, and no protected read or Save was claimed. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. `/storage` now atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 15 locked files adapted | Entries now adapts its complete locked upstream file: ordered batch-prefix failure, preview, single/array/extended-urlencoded uploads, uploader identity, bounded query/sort, current/model/ID reads, representations/validators/HEAD, exact and dateString-range deletion, numeric-brace `times/echo`, `times` and `slice` fixtures. The complete locked Treatments file is mapped with fail-closed HTML sanitization, time/numeric normalization, UUID/identifier and AAPS dedupe behavior. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are also mapped. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, the wider Mongo query/document surface and remaining v1 routes/test files. |
 | 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. The complete locked `ddata`, `bgnow`, `direction`, `rawbg` and `upbat` test files are adapted; `/properties` uses official buckets/interpolation/mmol/direction logic and now exposes default-enabled uploader battery from a bounded property projection. Raw BG retains the official enabled-plugin gate. Remaining plugin properties and summary state (IOB/COB/BWP/ages/battery), summary persistence and v2-only `/notifications/loop` remain; ddata uses a bounded two-day SGV window. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
-| 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read-only data events and the API3 `/storage` and `/alarm` namespaces. `/alarm` has locked subscription/auth/ACK behavior and a trusted notification outlet, but the server-side notification engine is missing. Complete the official-page switch only after safe tenant propagation and notification integration; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP and root writes. |
-| 9. Real-time storage updates | API3 `/storage` named slice implemented | Successful HTTP API3 mutations atomically enqueue official create/update/delete frames for authorized collection rooms; subscription/queue state survives DO eviction, v1 changes do not broadcast, and overflow/failure drops only the broken subscriber. Add main-namespace database updates and browser/credentialed remote workflows; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
+| 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read-only authorization, initial/retro data and subsequent server-originated deltas, plus API3 `/storage` and `/alarm`. `/alarm` has locked subscription/auth/ACK behavior and a trusted notification outlet, but the server-side notification engine is missing. Add client root write events and profile-switch/plugin preprocessing, close the direct-send at-most-once crash window, then add polling upgrade/EIO3 and the official-page switch. |
+| 9. Real-time storage updates | Root server deltas plus API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline/queue state survives reconstruction, unauthorized sessions stay silent, v1 changes correctly do not emit `/storage`, and overflow drops only the broken recipient. Add client root writes and browser/credentialed remote workflows; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Realtime/auth plus notification-ACK foundation | The DO's single Cloudflare alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Stale already-due platform alarms are replaced so a queued delivery cannot erase the only SQL wakeup. Socket.IO and inherited v1/v2 HTTP ACK share the same durable group/level transaction. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share the scheduler. |
 | 11. Server plugins/notifications | Expanded property foundation plus ACK/outlet | Stateless ports of official `bgnow`, `direction`, `rawbg` and `upbat` plus shared `times`, `units` and `levels` now feed or support v2. The property dispatcher preserves official plugin order/enable gates and uses a request-scoped tenant projection; `/alarm` publishes trusted precomputed notification objects and Socket/HTTP ACK persist the same snooze/all-clear state. Build the remaining registry/sandbox/tenant context and port notification/background tests without rewriting formulas. |
-| 12. Upstream regression suite | Tracked; 40 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js` and 15 v1 client/API files are adapted, 69 files remain unresolved and two are fixed-scope exclusions. |
+| 12. Upstream regression suite | Tracked; 41 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js` and 15 v1 client/API files are adapted, 68 files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -94,21 +94,35 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`df676c7afe8cf81beb949e832788b545f4cbd224` ports the locked `times`, `units`,
-`levels`, `rawbg` and `upbat` contracts, wires uploader battery into v2
-properties, and handles Cloudflare rolling Durable Object RPC upgrades.
-All prior v1, API3, authorization, realtime and notification-ACK contracts
-remain green. Cloudflare Worker version
-`ea1a004c-eb45-48d4-a9d7-70224f753d9a` is active at 100%; deployment
-`0280373b-f50b-4b64-920a-a7933ed28d1b` was created at
-`2026-07-19T21:16:23.945257Z` and Wrangler reported a 27 ms startup. It
+`f5aaa5d94c44db9d5af3741743cb74744cc182c2` ports the locked
+`data.calcdelta` contract and adds a schema-v11 persisted main-namespace
+baseline. Successful implemented v1/v2 and API3 mutations now calculate and
+queue root `dataUpdate` deltas for connected, authorized, read-allowed live
+sessions; the existing queue flush also serves direct Hibernatable WebSockets.
+All prior property, API3 `/storage`, `/alarm`, authorization and notification-
+ACK contracts remain green. Cloudflare Worker version
+`eaf8b72b-939d-43c6-827f-05014fa3bf9b` is active at 100%; deployment
+`c79cda69-5d96-4ac3-aef4-3b4596e2eca9` was created at
+`2026-07-19T21:53:25.858703Z` and Wrangler reported a 25 ms startup. It
 processed 248 unchanged official asset entries; deployment and dry run
-reported 961.70 KiB raw / 175.27 KiB gzip, and the dry run exposed only
+reported 971.63 KiB raw / 177.25 KiB gzip, and the dry run exposed only
 `ENTRY_STORE` plus `ASSETS`. No deployed credential was read or supplied to
-remote smoke. The 33-file Workers-runtime suite passed 321/321, both audit
+remote smoke. The 34-file Workers-runtime suite passed 331/331, both audit
 suites passed 20/20, and TypeScript plus the official UI build completed
-before deployment. The manifest now records 40 adapted, 69 unresolved and two
+before deployment. The manifest now records 41 adapted, 68 unresolved and two
 fixed-scope excluded files. These remain subset facts, not a full-port claim.
+
+The delta adapter preserves the locked SGV/MBG/calibration/device-status field
+replacement rules, treatment add/update/remove classification, `mgdl`
+suppression, profile replacement and `lastUpdated` semantics. The authoritative
+previous snapshot lives in SQLite rather than process memory and survives DO
+reconstruction. HTTP API3 writes enqueue `/storage` and root frames inside the
+same SQLite mutation transaction. Implemented legacy v1/v2 writes publish in a
+follow-up DO transaction after the successful mutation (and after an Entries
+ordered-prefix partial failure), so that path is durable eventual delivery,
+not a claim of one cross-operation atomic transaction. Food/activity changes
+advance the baseline but correctly produce no delta because locked
+`calcdelta.js` has no food/activity output field.
 
 The new pure adapters preserve every named time/unit/level assertion, the
 official raw calibration/noise/assistant property contract and uploader
@@ -242,22 +256,22 @@ The deployed increment includes:
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
-Final credential-free remote smoke returned HTTP 200 for selected/pretty v2
-properties, v2 summary, API3 version, v1 Status and EIO4 polling; missing-token
+Final credential-free remote smoke returned HTTP 200 for health, a bounded v1
+Entries read, selected v2 properties, v2 summary, API3 version and EIO4 polling; missing-token
 API3 Entries returned the expected 401. The public tenant had no recent SGVs,
 so properties returned empty `bgnow` plus the official `upbat` `?%` state. The
 same old DO that had exposed the rolling-RPC 500 returned 200 after the
 fallback deployment. No deployed credential was read or sent. A real browser
 loaded the official homepage, Admin, Food, Profile and `clock-color` without
-protected writes. Profile reached `Values loaded.`, Food reached `Database
-loaded`, the official app/clock bundles were present, the homepage connection
-indicator cleared, and console inspection found no errors or warnings before
-the browser was returned home.
+protected writes. The unauthenticated Food/Profile pages correctly remained
+`Not loaded`; this pass did not claim protected reads or Save. Console
+inspection found no errors or warnings before the browser was returned home.
 
 The code is still not a full port: non-Entries echo, arbitrary aggregation,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
-WebSocket upgrade, EIO3 HTTP, root writes, main-namespace persisted change
-broadcasts, the shared background-task scheduler, server plugins, notification
+WebSocket upgrade, EIO3 HTTP, client root write events, profile-switch status/
+plugin preprocessing before deltas, the shared background-task scheduler,
+server plugins, notification
 generation/processing, plugin-derived summary state and most upstream test
 files remain incomplete.
 The homepage still consumes the REST polling shim and does not yet use the
@@ -285,6 +299,15 @@ Exact `application/octet-stream` POSTs close their SID and return a controlled
 400/code-3 response. Small malformed UTF-8 follows replacement decode and
 parser-close behavior; raw-byte versus replacement-expanded accounting at the
 1,000,000-byte boundary remains a controlled P2 parity task.
+
+Subsequent server-originated root updates now use the persisted full current
+snapshot as their delta baseline and queue only non-empty locked
+`data.calcdelta` output for authorized live sessions. The official page still
+uses the REST shim, and no credentialed remote mutation was performed; local
+contracts prove v1 SGV and API3 Treatment polling delivery, unauthorized
+silence, baseline survival across service reconstruction and update
+classification. Client `dbAdd`, `dbUpdate`, `dbUpdateUnset` and `dbRemove`
+handlers from `websocket.shape-handling.test.js` remain the next realtime slice.
 
 ## Ordered implementation milestones
 

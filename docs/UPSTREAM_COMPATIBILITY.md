@@ -18,20 +18,21 @@ storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
 Deployed integration commit and Git HEAD used by Wrangler
-`df676c7afe8cf81beb949e832788b545f4cbd224` passes 321/321 tests across 33
+`f5aaa5d94c44db9d5af3741743cb74744cc182c2` passes 331/331 tests across 34
 Workers-runtime files plus 20/20 audit tests. The suite retains focused EIO4,
 API3 `/storage` and `/alarm`, authorization, v1/v2 Status, all 16 locked API3
 files and 15 locked v1 client/API files, and now completely maps locked
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
-`rawbg.test.js`, `times.test.js`, `units.test.js` and `upbat.test.js`. This is not full-port
+`rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js` and
+`data.calcdelta.test.js`. This is not full-port
 evidence. The code is deployed as
-Cloudflare version `ea1a004c-eb45-48d4-a9d7-70224f753d9a`; exact release
+Cloudflare version `eaf8b72b-939d-43c6-827f-05014fa3bf9b`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
 
-The final Wrangler dry-run reports 248 official assets, 961.70 KiB raw /
-175.27 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The final Wrangler dry-run reports 248 official assets, 971.63 KiB raw /
+177.25 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
@@ -71,10 +72,11 @@ byte-for-byte freshness of both generated outputs. A mount chain is not a full
 runtime provenance or call-graph proof: it does not prove reachability,
 middleware order, handler execution, or test coverage, and API v3 dynamic
 chains intentionally stop at the locked `genericSetup` call. The
-default test-file status is `unresolved`. At this audit point, 69 files are
+default test-file status is `unresolved`. At this audit point, 68 files are
 `unresolved`, two real-CGM bridge files are `excluded-fixed-scope`,
 all 16 API3 files, `notifications-api.test.js`, `ddata.test.js`, the seven
-adapted property/foundation files and 15 v1 client/API files are `adapted`,
+adapted property/foundation files, `data.calcdelta.test.js` and 15 v1
+client/API files are `adapted`,
 and zero files are claimed as
 unchanged `pass`.
 
@@ -137,14 +139,14 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/api2/notifications-v2.js` | **Core summary mapper plus inherited ACK deployed; plugin state partial.** `/summary/` ports the locked hour filter, SGV/noise mapping, carb/insulin events, temporary targets, temp-basal/profile schedule processor, current-profile selection and recursive `timeAsSeconds` removal. Without the server plugin engine, IOB/COB/BWP serialize as `null` and cage/sage/iage/bage/battery are absent. API v2 also inherits the adapted v1 `/notifications/ack`; `/notifications/loop` external APNs delivery is disabled. | Reuse official plugin modules to supply summary state and persistence without rewriting formulas; keep external delivery disabled while adapting internal notification contracts. |
 | API v3 version/status/security | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.{basic,security}.test.js` | **Two adapted whole-file contracts.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. Missing and invalid Bearer errors, denied/allowed permissions, API OPTIONS and implicit HEAD are locked. | Named Workers-runtime coverage adapts the complete locked `api3.basic.test.js` and `api3.security.test.js`; the security fixture uses its exact empty default-role setting. Current-version remote GET/HEAD/OPTIONS and missing-token smoke confirm the public boundary. |
 | API v3 generic collections/lastModified/history/rendering | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js`, `tests/api3.*.test.js` | **Locked 16-file API3 test set adapted; bounded platform parity.** All eight generic routes are wired for entries, treatments, device status, profile, food and settings, and all six participate independently in `/lastModified`. JWT auth, validation/permission order, shape handling, UUID/ObjectId/fallback identity, dedupe/resurrection, conditional/projection reads, complete CRUD/history/tombstone/permanent-delete workflow, v1-created reads, AAPS patterns, ordered search, storage paging/mutation metadata and locked JSON/CSV/XML negotiation are represented. Settings retains its admin/read exception. Search/history share the configured lower `API3_MAX_LIMIT` under a hard 1,000-row Workers ceiling. | All 16 locked `api3.*` files have complete named Workers-runtime contract mappings. Keep large-result CPU/memory controls and broader Mongo mixed-type/nested/array/regex differential behavior documented as controlled platform work; do not infer unrestricted behavior beyond the locked suite. |
-| Main Socket.IO namespace | `lib/server/websocket.js` | **Partial read-only EIO4 polling + direct WebSocket slice.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted sessions/queues, heartbeat, SIO5 root CONNECT, `clients`, read-only authorize/dataUpdate/ACK and loadRetro are tested across polling, direct Hibernatable WebSocket, eviction and tenant boundaries. A SQL-derived alarm persists ping/pong/session/poll/POST/closure deadlines. The official page still loads the REST shim; polling upgrade is not implemented, root write/database-update behavior is missing, and a crash between durable dequeue and direct `send()` can lose one frame. | Switch the page only after safe tenant propagation and notification integration; close the at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP if retained, root writes and browser workflows. |
+| Main Socket.IO namespace | `lib/server/websocket.js`, `lib/data/calcdelta.js` | **Partial EIO4 polling + direct WebSocket slice.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted sessions/queues, heartbeat, SIO5 root CONNECT, `clients`, read-only authorize/ACK, initial/retro data and subsequent server-originated locked `dataUpdate` deltas are tested across polling, reconstruction and tenant/authorization boundaries. Schema v11 persists the full delta baseline; implemented v1/v2 and API3 writes publish through the existing bounded queues. A SQL-derived alarm persists ping/pong/session/poll/POST/closure deadlines. The official page still loads the REST shim; polling upgrade, EIO3, client root write events and profile-switch/plugin preprocessing remain missing, and a crash between durable dequeue and direct `send()` can lose one frame. | Add the locked `dbAdd`/`dbUpdate`/`dbUpdateUnset`/`dbRemove` handlers and shape tests, profile-switch/plugin preprocessing, then close the direct-send crash window and add polling upgrade/EIO3/browser workflows before switching the page. |
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Named `/storage` and `/alarm` EIO4/SIO5 slices implemented.** Polling and direct WebSocket can connect either namespace independently. `/storage` locks subject access-token authorization, official default collection order, unknown-name filtering, duplicate response behavior, per-room read checks, the Settings-admin exception, persisted rooms and API3-only create/update/delete events. `/alarm` locks native-access-token priority, web secret/JWT/anonymous branches, exact subscription responses, accumulated ACK authority, all five event classifications, broadcast to every current namespace connection, live-only tenant isolation, persisted snooze/all-clear behavior and eviction/Hibernation repair. Socket ACK and v1/v2 HTTP ACK now commit through the same SQLite transaction and broken-recipient containment path. Its trusted publisher accepts precomputed notifications; it does not run the upstream notification engine. | Add EIO3/SIO4 if retained, credentialed remote delivery/ACK evidence and the upstream notification/plugin producer. Preserve live-only/no-disconnected-replay behavior and bounded broken-recipient isolation. |
-| Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Partial: API3 storage channel implemented.** Each implemented document mutation persists `document_changes` atomically with its current document. Separately, successful HTTP API3 mutations enqueue bounded `/storage` frames for current authorized subscribers inside that transaction; eviction, tenant/room isolation, hibernated delivery and broken-subscriber containment are tested. V1 Entries ordered batches still commit successful prefixes and do not broadcast on `/storage`. The homepage/root database-update path remains REST polling. | Implement locked main-namespace database updates and browser workflows. Define retention/pruning for the unbounded `document_changes` journal separately; it is not the live transport queue and upstream `/storage` provides no disconnected replay. |
+| Real-time database updates | `lib/server/bootevent.js:271-330`, `lib/data/calcdelta.js`, websocket and API3 storage socket | **Partial: API3 storage plus server-originated root deltas implemented.** Each implemented document mutation persists `document_changes` atomically with its current document. Successful HTTP API3 mutations enqueue bounded `/storage` frames and a root delta in the transaction; implemented legacy writes advance/publish the root baseline in a follow-up DO transaction, including an Entries ordered-prefix result. Schema v11 survives reconstruction, unauthorized sessions remain silent and locked treatment/SGV/profile/device shapes are covered. V1 writes correctly do not emit `/storage`. The homepage still uses REST polling. | Implement locked client root write events, profile-switch status/plugin preprocessing and pushed browser workflows. Define retention/pruning for the unbounded `document_changes` journal separately; it is not the live transport queue and upstream `/storage` provides no disconnected replay. |
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single Cloudflare alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. A stale already-due platform alarm is replaced with a short prompt so queued delivery cannot erase the only SQL wakeup; a still-future earlier prompt is retained to avoid starvation. `/alarm` snooze rows are durable state but do not schedule plugin work. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one Cloudflare alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Expanded request-scoped property foundation; general registry/background execution missing.** Pure ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `times`, `units` and `levels` compute/support v2 properties without rewriting formulas. A deterministic dispatcher preserves locked order and enable gates, but the complete sandbox/registry, extended-settings surface, remaining properties, notifications and periodic execution are absent. | Run the remaining official modules through a deterministic tenant platform context; adapt `sandbox.test.js` and subsequent plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/api/notifications-api.js`, `lib/adminnotifies.js`, push modules | **Partial ACK/outlet persistence only.** `/api/v1` and inherited `/api/v2` notification ACK plus Socket.IO ACK share bounded group/level snoozes, exact all-clear broadcasts and tenant-local current-connection delivery across eviction. The upstream `notifications-api.test.js` contract is now tracked as adapted. Notification calculation, activity/summary state, admin notices, plugin bus integration and push-provider processing are missing. | Make the upstream engine consume the persisted snooze state, add calculation/persistence/retry/eviction tests and keep external delivery disabled in simulated scope unless separately authorized. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current credential-free browser pass rendered the homepage/chart region and loaded Admin Tools, Food Editor, Profile Editor and `clock-color`; the locked app/clock scripts were present. Profile reached `Values loaded.` and Food reached `Database loaded`; no protected write was submitted. The public tenant has no Entries, so `---` is expected. Mutations/report generation, current console/network assertions and pushed live updates are not complete. | Re-run authenticated Profile Save/Food mutation when a credential is explicitly supplied, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
-| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; 40 adapted files.** All 111 files are tracked with strict status/reason and heuristic route candidates: all 16 API3 files, `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js` and 15 v1 client/API files are adapted, 69 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current credential-free browser pass rendered the homepage/chart region and loaded Admin Tools, Food Editor, Profile Editor and `clock-color`. Without a credential, Food/Profile correctly remained `Not loaded`; no protected read or write was claimed. The public tenant has no Entries, so `---` is expected. Mutations/report generation, pushed live updates and full network assertions are not complete. | Re-run authenticated Profile Save/Food mutation only when a credential is explicitly available, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
+| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; 41 adapted files.** All 111 files are tracked with strict status/reason and heuristic route candidates: all 16 API3 files, `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js` and 15 v1 client/API files are adapted, 68 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
 
@@ -292,17 +294,17 @@ controls, not upstream claims.
 ## Current deployed integration evidence
 
 Code candidate and Git HEAD used by Wrangler
-`df676c7afe8cf81beb949e832788b545f4cbd224` passes 321/321 tests in 33
-Workers-runtime files plus 20/20 audit tests. It adds complete named
-`times`, `units`, `levels`, `rawbg` and `upbat` mappings while retaining the
+`f5aaa5d94c44db9d5af3741743cb74744cc182c2` passes 331/331 tests in 34
+Workers-runtime files plus 20/20 audit tests. It adds the complete named
+`data.calcdelta` mapping and schema-v11 persisted root baseline while retaining the
 prior ddata/summary slice, strict v1/v2 Status, Entries/Treatments,
 authorization, direct Hibernatable EIO4 WebSocket, all 16 locked API3 mappings,
 `/storage`, `/alarm` and inherited notification ACK slices. Cloudflare version
-`ea1a004c-eb45-48d4-a9d7-70224f753d9a` is 100% active; deployment
-`0280373b-f50b-4b64-920a-a7933ed28d1b` was created at
-`2026-07-19T21:16:23.945257Z` and reported a 27 ms startup. Wrangler processed
+`eaf8b72b-939d-43c6-827f-05014fa3bf9b` is 100% active; deployment
+`c79cda69-5d96-4ac3-aef4-3b4596e2eca9` was created at
+`2026-07-19T21:53:25.858703Z` and reported a 25 ms startup. Wrangler processed
 248 unchanged official asset entries; deployment and final dry run both
-reported 961.70 KiB raw / 175.27 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
+reported 971.63 KiB raw / 177.25 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
 in the dry run. This deployment had no explicit version annotation; none is
 invented.
 
@@ -363,8 +365,8 @@ homepage REST shim. Their current bounds and named differences are:
 - tenant-local anonymous/API-secret-digest/access-token/JWT reads, with ACKs
   always fixed to `{read:true, write:false, write_treatment:false}`;
 - invalid authorization disconnects only `/`; unknown namespaces still return
-  `CONNECT_ERROR`, while root `subscribe` and every root write event remain
-  unhandled;
+  `CONNECT_ERROR`, while root `subscribe` and every client-originated root write
+  event remain unhandled;
 - `/storage` connects independently, authorizes a subject access token into
   collection rooms, persists those rooms across eviction and sends bounded
   create/update/delete frames only for successful HTTP API3 changes;
@@ -378,6 +380,11 @@ homepage REST shim. Their current bounds and named differences are:
   uses raw normalized statuses from the same one-day SQL window; initial
   filtering keeps the most recent 10 rows per device/type without a blind
   100-row limit;
+- subsequent implemented v1/v2/API3 mutations compare the full current
+  snapshot with schema-v11 persisted baseline state and enqueue only non-empty
+  locked `dataUpdate` output for connected, authorized, read-allowed live
+  sessions. API3 queues root and `/storage` frames transactionally; legacy
+  root publication is a follow-up DO transaction;
 - initial/retro SQL cursors are bounded before large arrays are materialized by
   a shared 900,000-byte, 8,000-node, 2,000-document budget and a 24-level
   stored-document depth cap; this may deterministically truncate the older
@@ -389,26 +396,28 @@ homepage REST shim. Their current bounds and named differences are:
   safety/resource tightening.
 
 
-Final credential-free remote checks returned HTTP 200 for selected/pretty v2
-properties, v2 summary, API3 version, v1 Status and an EIO4 polling open packet;
+Final credential-free remote checks returned HTTP 200 for health, a bounded v1
+Entries read, selected v2 properties, v2 summary, API3 version and an EIO4 polling open packet;
 missing-token API3 Entries returned its expected 401.
 The summary returned the persisted current profile and explicitly empty
 IOB/COB/BWP state; the public tenant had no recent SGVs, so properties used
 empty `bgnow` and the official `upbat` `?%` state. No deployed credential was
 read or sent.
 
-This increment did not change the realtime server, but the public EIO4 polling
-open handshake was re-smoked. Local contracts keep authorized rooms, alarm authorization/ACK/snooze, shared
-HTTP/Socket clear delivery and hibernated WebSocket delivery green. The prior
+This increment changed server-originated root delivery; the public EIO4 polling
+open handshake was re-smoked without a credentialed mutation. Local contracts
+prove v1 SGV and API3 Treatment root delivery, authorization silence and
+persisted baseline reconstruction while keeping authorized storage rooms,
+alarm authorization/ACK/snooze, shared HTTP/Socket clear delivery and
+hibernated WebSocket delivery green. The prior
 credentialed `/alarm` smoke remains historical evidence, not a claim of
 a current credentialed delivery or homepage switch.
 
 A real browser reloaded the current deployment, rendered the official homepage
 and chart region, then loaded Admin Tools, Food Editor, Profile Editor and
-`clock-color`; the locked app and clock scripts were present. Profile reached `Values loaded.` and
-Food reached `Database loaded`; the public tenant has no Entries, so the
-homepage's `---` value is expected. The connection indicator cleared and the
-page console contained no errors or warnings. No authenticated Save or
+`clock-color`. Without a credential, Profile and Food correctly remained `Not
+loaded`; the public tenant has no Entries, so the homepage's `---` value is
+expected. The page console contained no errors or warnings. No authenticated Save or
 protected mutation was attempted, and the browser was returned to the homepage.
 
 An earlier deployed version completed an authenticated Profile Editor save and

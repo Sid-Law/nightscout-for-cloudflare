@@ -12,25 +12,24 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `df676c7afe8cf81beb949e832788b545f4cbd224`
-- Git HEAD used by Wrangler: `df676c7afe8cf81beb949e832788b545f4cbd224`
-- Cloudflare Version ID: `ea1a004c-eb45-48d4-a9d7-70224f753d9a`
-- Cloudflare ordinal version number: not printed by Wrangler; the Version ID is
-  authoritative
+- Deployed code candidate: `f5aaa5d94c44db9d5af3741743cb74744cc182c2`
+- Git HEAD used by Wrangler: `f5aaa5d94c44db9d5af3741743cb74744cc182c2`
+- Cloudflare Version ID: `eaf8b72b-939d-43c6-827f-05014fa3bf9b`
+- Cloudflare ordinal version number: `45`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-19T21:16:18.310Z`
-- Activation: deployment `0280373b-f50b-4b64-920a-a7933ed28d1b` created
-  `2026-07-19T21:16:23.945257Z`; Wrangler reports
+- Version creation time: `2026-07-19T21:53:24.698844Z`
+- Activation: deployment `c79cda69-5d96-4ac3-aef4-3b4596e2eca9` created
+  `2026-07-19T21:53:25.858703Z`; Wrangler reports
   this version at 100%
-- Worker startup: 27 ms
-- Deployment ID: `0280373b-f50b-4b64-920a-a7933ed28d1b`
+- Worker startup: 25 ms
+- Deployment ID: `c79cda69-5d96-4ac3-aef4-3b4596e2eca9`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
-  silence tables
+  silence tables and the v11 root-delta baseline
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 961.70 KiB raw / 175.27 KiB gzip
+- Upload: 971.63 KiB raw / 177.25 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -59,7 +58,25 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 ## Release content
 
 The current deployed build contains the prior adapted slices plus this
-increment's v2 property/plugin additions:
+increment's main-namespace delta work:
+
+- complete named Workers-runtime mapping for locked
+  `data.calcdelta.test.js`: SGV/MBG/calibration/device-status replacement,
+  treatment add/update/remove classification, `mgdl` suppression, profile
+  replacement and `lastUpdated` behavior;
+- schema-v11 `realtime_root_state`, with a full tenant comparison baseline that
+  survives service/DO reconstruction instead of relying on Node process memory;
+- root `dataUpdate` queueing for connected, authorized, read-allowed live
+  sessions after implemented v1/v2 and HTTP API3 mutations. API3 root and
+  `/storage` frames share the mutation transaction; legacy root publication is
+  a follow-up DO transaction, including the committed prefix after an ordered
+  Entries failure;
+- reuse of the bounded persisted polling/direct-Hibernatable-WebSocket queue
+  and flush path. Client root write events, profile-switch status injection and
+  plugin processing before the comparison remain unimplemented.
+
+The immediately preceding v2 property/plugin increment remains deployed and
+includes:
 
 - complete named Workers-runtime mappings for locked `times.test.js`,
   `units.test.js`, `levels.test.js`, `rawbg.test.js` and `upbat.test.js`;
@@ -226,10 +243,10 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`df676c7afe8cf81beb949e832788b545f4cbd224`. It adds the complete named
-`times`, `units`, `levels`, `rawbg` and `upbat` mappings plus the production
-rolling-DO-RPC fallback while retaining all prior `bgnow`/`direction`, v1,
-API3, authorization, realtime, notification ACK and official-page work.
+`f5aaa5d94c44db9d5af3741743cb74744cc182c2`. It adds the complete named
+`data.calcdelta` mapping and schema-v11 root baseline while retaining all prior
+property, v1, API3, authorization, realtime, notification ACK and official-page
+work.
 The table below records the exact local gate completed before deployment.
 
 | Check | Result |
@@ -241,35 +258,33 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 33 files, 321/321 passed |
-| Worker dry run | 961.70 KiB raw / 175.27 KiB gzip |
+| Workers integration tests | 34 files, 331/331 passed |
+| Worker dry run | 971.63 KiB raw / 177.25 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | existing configuration was preserved; no credential was read or supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 321 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 331 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
-`units.test.js`, `upbat.test.js` and 15 v1 client/API files are classified as
-fully `adapted`, 69 remain unresolved and two bridge files are
+`units.test.js`, `upbat.test.js`, `data.calcdelta.test.js` and 15 v1 client/API
+files are classified as fully `adapted`, 68 remain unresolved and two bridge files are
 fixed-scope exclusions.
 Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `ea1a004c-eb45-48d4-a9d7-70224f753d9a` at 100%.
+Wrangler reports version `eaf8b72b-939d-43c6-827f-05014fa3bf9b` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
 | Check | Result |
 | --- | --- |
-| GET `/api/v2/properties/upbat,bgnow,direction` | HTTP 200 on the same pre-existing DO that had lacked the new RPC; empty `bgnow`, official `upbat` `?%` state, unavailable direction omitted |
-| GET `/api/v2/properties/upbat?pretty=1` | HTTP 200 with two-space JSON and only the selected `upbat` property |
+| GET `/api/v2/properties/upbat,bgnow,direction` | HTTP 200; empty `bgnow`, official `upbat` `?%` state, unavailable direction omitted |
 | GET `/api/v2/summary/?hours=1` | HTTP 200 with SGV/treatment/profile/state envelope; current profile preserved and unavailable plugin state explicit as null/absent |
 | GET `/api/v3/version` | HTTP 200 with Nightscout `15.0.7`, API3 `3.0.3-alpha` and SQLite Durable Object marker |
 | GET `/api/v3/entries?limit=1` without JWT | Expected HTTP 401 `Missing or bad access token or JWT` |
-| GET `/api/v1/status.json` | HTTP 200; `Nightscout` `15.0.7`, readable defaults and official settings envelope |
 | GET `/healthz` and `/api/v1/entries.json?count=1` | HTTP 200; healthy SQLite DO marker and empty simulated-data Entries array |
 
 No deployed credential was read or sent and no credentialed write was
@@ -278,7 +293,7 @@ full local suite covers authenticated search, ordering, skip, projections,
 limits, srvModified filters and error shapes in addition to inherited mutation
 and transport contracts.
 
-The first attempted deployment of this increment was version
+An earlier property-plugin increment first attempted version
 `e24bfdec-233c-4dab-a462-142337b14118` (deployment
 `917e2c7e-c0c6-4d79-9cc4-ac24569f00bf`). Remote smoke caught HTTP 500 on
 `/api/v2/properties`; a temporary Worker tail showed that a still-live old DO
@@ -289,19 +304,23 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release does not change the real-time server. Its inherited local
-contracts all remained green, and the current version repeated a fresh
-credential-free EIO4 polling-open check. The `/alarm` checks below remain from
-the immediately preceding public release and are not current credentialed
-delivery evidence.
+This release adds server-originated root `dataUpdate` deltas and retains the
+existing transport. The current version repeated a fresh credential-free EIO4
+polling-open check. No credentialed remote mutation was attempted, so the new
+change delivery is proved by local integration contracts rather than claimed
+from the public tenant. The `/alarm` checks below remain historical evidence.
 
 | Check | Result |
 | --- | --- |
 | Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
+| Local v1 SGV root update | an authorized live polling session receives the locked root `dataUpdate`; an unauthorized session remains silent |
+| Local API3 Treatment root update | root and `/storage` delivery share the successful API3 mutation path |
+| Local reconstruction | schema-v11 baseline survives a new service instance and classifies a Treatment change as `action:update` |
 | Prior `/alarm` CONNECT | independent SIO5 namespace connection returned a namespace SID |
 | Prior `/alarm` anonymous web subscribe | ACK exactly `{success:true,message:"Subscribed for alarms",read:true,ack:false}` |
 
-Local tests additionally prove collection filtering/default order, the
+Local tests additionally prove the exact locked `data.calcdelta` cases,
+non-empty-only root queueing, connection/read/live filtering, collection filtering/default order, the
 Settings-admin exception, persisted subscriptions across eviction, API3
 create/deduplicated update/PUT/PATCH/soft/permanent delete events, v1 exclusion,
 tenant/room isolation, hibernated-WebSocket delivery, broken-subscriber
@@ -313,7 +332,8 @@ Urgent-to-Warning snooze, eviction/Hibernation persistence, broken-recipient
 containment and idempotent v10 schema repair. HTTP v1/v2 and Socket ACK now
 share that tested durable transaction. The remote pass did not use a credential,
 publish a trusted notification or perform an alarm ACK. Neither layer proves
-polling upgrade, EIO3, root write handlers or the server-side plugin/notification
+polling upgrade, EIO3, client root write handlers, profile-switch/plugin
+preprocessing or the server-side plugin/notification
 generation pipeline.
 
 ## Real-browser evidence
@@ -323,18 +343,17 @@ credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
   `bundle.app.js`; the
-  public tenant has no Entries, so `---` is expected; its connecting indicator
-  cleared after the live data path initialized;
+  public tenant has no Entries, so `---` is expected;
 - Admin Tools, Food Editor, Profile Editor and `clock-color` loaded from the
-  official bundle with their expected headings/forms/scripts. Profile reached
-  `Values loaded.` and Food reached `Database loaded` without entering a
-  credential; the clock loaded locked `status.js` and `bundle.clock.js`;
+  official bundle with their expected headings/forms. Without a credential,
+  Profile and Food correctly remained `Not loaded`; no protected read was
+  claimed;
 - the browser was restored to the homepage and retained there for the user.
 - console inspection across the exercised pages found no errors or warnings.
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace. This browser run reloaded Cloudflare version
-`ea1a004c-eb45-48d4-a9d7-70224f753d9a` after deployment. Wrangler reported no
+`eaf8b72b-939d-43c6-827f-05014fa3bf9b` after deployment. Wrangler reported no
 changed asset upload for the same 248 official browser assets.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -375,8 +394,11 @@ mutation, report generation or every other protected page workflow.
 - Cloudflare can strip `Content-Length` from some dynamic Status/finalhandler
   responses. This release's Entries GET/HEAD smoke retained its exact length;
   the remaining transport difference stays scoped and non-blocking.
-- Polling-to-WebSocket upgrade, EIO3 HTTP, root writes and the main namespace's
-  database-update broadcasts remain missing. `/storage` and `/alarm` currently
+- Polling-to-WebSocket upgrade, EIO3 HTTP and client-originated root writes
+  remain missing. The main namespace now emits server-originated deltas for
+  implemented v1/v2/API3 changes from a schema-v11 persisted baseline, but
+  profile-switch status injection, server-plugin preprocessing and a pushed
+  official-page workflow remain incomplete. `/storage` and `/alarm` currently
   support EIO4/SIO5 polling and direct WebSocket only. Direct WebSocket retains
   a named at-most-once crash window between durable dequeue and `send()`.
   `/alarm` is only a live transport/auth/ACK outlet: inherited v1/v2 HTTP ACK
@@ -408,13 +430,12 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 
 ## Rollback
 
-The immediately preceding Cloudflare version is
-`e24bfdec-233c-4dab-a462-142337b14118`, but it must **not** be used as the
-rollback target because its new Worker can reach an older DO without the new
-property RPC and return 500. The most recent known-good rollback version is
-`c7237a55-e657-4648-b8de-78d434606f1b`; it contains the prior official
-`bgnow`/`direction` property release but not this increment's
-raw-BG/uploader-battery foundation.
+The immediately preceding and current known-good rollback version is
+`ea1a004c-eb45-48d4-a9d7-70224f753d9a`. It contains the complete prior
+property foundation and rolling-RPC fallback, but not schema-v11 root delta
+publication. The older failed property rollout
+`e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not
+be selected as a rollback target.
 
 Wrangler version rollback can restore Worker code and assets. Neither rollback
 nor redeployment clears or rolls back SQLite Durable Object data, and rollback
