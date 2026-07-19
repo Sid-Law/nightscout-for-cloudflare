@@ -133,6 +133,42 @@ describe("locked v1/v2 Treatments preBolus contract", () => {
     expect(await listed(name)).toHaveLength(3);
   });
 
+  it("creates the locked empty-carb child when preBolus is present without carbs", async () => {
+    const name = tenant("treatments-prebolus-empty-carbs");
+    const createdAt = new Date(Date.now() - 10 * 60_000).toISOString();
+    const input = {
+      eventType: "Meal Bolus",
+      created_at: createdAt,
+      insulin: 1,
+      preBolus: "5",
+    };
+
+    const createdResponse = await write(name, "/api/v1/treatments/", input);
+    expect(createdResponse.status).toBe(200);
+    const created = await createdResponse.json<JsonObject[]>();
+    expect(created).toHaveLength(2);
+    expect(created[0]).toMatchObject({
+      eventType: "Meal Bolus",
+      created_at: createdAt,
+      insulin: 1,
+      preBolus: 5,
+    });
+    expect(created[0]).not.toHaveProperty("carbs");
+    expect(created[1]).toMatchObject({
+      eventType: "Meal Bolus",
+      created_at: new Date(Date.parse(createdAt) + 5 * 60_000).toISOString(),
+      carbs: "",
+    });
+
+    const replayResponse = await write(name, "/api/v2/treatments/", input);
+    expect(replayResponse.status).toBe(200);
+    const replay = await replayResponse.json<JsonObject[]>();
+    expect(replay.map((document) => document._id)).toEqual(
+      created.map((document) => document._id),
+    );
+    expect(await listed(name)).toHaveLength(2);
+  });
+
   it("rolls back the primary record when the shifted timestamp cannot be represented", async () => {
     const name = tenant("treatments-prebolus-atomic");
     const response = await write(name, "/api/v1/treatments/", {

@@ -387,7 +387,7 @@ function utcOffsetMinutes(value: JsonValue | undefined): number {
 
 interface PreparedLegacyTreatment {
   document: JsonDocument;
-  preBolusCarbs: number | null;
+  preBolusCarbs: number | "" | null;
 }
 
 /**
@@ -432,8 +432,13 @@ function prepareLegacyTreatment(document: JsonDocument): PreparedLegacyTreatment
   ] as const;
   for (const field of numericFields) normalized[field] = Number(normalized[field]);
 
-  let preBolusCarbs: number | null = null;
-  if (normalized.preBolus && normalized.preBolus !== 0 && normalized.carbs) {
+  // Locked finishUpsert() creates the shifted record for every truthy
+  // normalized preBolus, even when carbs are missing/zero. prepareData()
+  // initializes that child value to an empty string and only replaces it when
+  // the normalized carbs value is truthy.
+  const hasPreBolus = Boolean(normalized.preBolus && normalized.preBolus !== 0);
+  let preBolusCarbs: number | "" | null = hasPreBolus ? "" : null;
+  if (preBolusCarbs !== null && normalized.carbs) {
     preBolusCarbs = Number(normalized.carbs);
     delete normalized.carbs;
   }
