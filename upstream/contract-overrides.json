@@ -486,6 +486,14 @@
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime UPDATE contract in test/api3-treatments.test.ts plus PUT event coverage in test/api3-storage-socket.test.ts: authentication and conditional create permission, upsert and replacement metadata, If-Unmodified-Since success/failure, all locked immutable-field rules, ignored body identifier, durationInMilliseconds-to-endmills normalization, and deleted-document rejection."
     },
+    "vendor/nightscout/tests/identity-matrix.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete twelve-case Workers-runtime client identity matrix in test/api-v1-treatment-identity-matrix.test.ts: Loop UUID and explicit-identifier overrides, Loop syncIdentifier isolation, AAPS null/ObjectId identifiers and pump metadata, xDrip uuid plus ObjectId, generated/provided/UUID v1 IDs, repeated-identifier upsert and distinct identifiers."
+    },
+    "vendor/nightscout/tests/issue-6923-legacy-uuid.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete three-case Workers-runtime regression in test/api-v1-treatment-identity-matrix.test.ts. A raw pre-fix Treatment with UUID directly in _id and no identifier is inserted through the main-namespace raw storage path, then found, updated in place without duplication, and deleted through the v1 API with the MongoDB 5 acknowledged/deletedCount response."
+    },
     "vendor/nightscout/tests/notifications-api.test.js": {
       "status": "adapted",
       "reason": "Represented by Workers-runtime contracts in test/api3-alarm-socket.test.ts: authenticated v1/v2 inherited ACK routes, exact 200/OK response and clear_alarm payload, durable repeated-snooze suppression, Urgent-to-Warning cascade, Hibernation delivery, bounded malformed input, and broken-recipient isolation."
@@ -525,6 +533,10 @@
     "vendor/nightscout/tests/upbat.test.js": {
       "status": "adapted",
       "reason": "Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts and the live DO route contract in test/api-v2-data-contract.test.ts: exact 20% urgent/minimum analysis, pill classes, missing/-1 hiding, both assistant intents and responses, official enable gating, and /api/v2/properties output from bounded recent device status."
+    },
+    "vendor/nightscout/tests/uuid-handling.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all fifteen UUID-OFF, UUID-ON and UUID-EDGE Workers-runtime cases in test/api-v1-treatment-identity-matrix.test.ts: locked true-by-default/on/off/invalid parsing, write promotion versus stripping, identifier and legacy-_id GET/DELETE selection, ObjectId preservation, invalid-length/non-hyphen/empty/case-sensitive lookup edges and repeated-identifier upsert. A versioned UUID-aware DO RPC fails closed for explicit false during a rolling old-isolate boundary instead of silently applying true semantics."
     },
     "vendor/nightscout/tests/websocket.shape-handling.test.js": {
       "status": "adapted",

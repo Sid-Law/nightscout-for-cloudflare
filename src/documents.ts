@@ -67,6 +67,15 @@ export function parseLegacyPredictionsMaxSize(value: unknown): number | null {
   return parsed === 0 ? null : parsed;
 }
 
+/** Mirrors locked env.js readENVTruthy("UUID_HANDLING", true). */
+export function parseLegacyUuidHandling(value: unknown): boolean {
+  if (typeof value !== "string") return true;
+  const normalized = value.toLowerCase();
+  if (normalized === "on" || normalized === "true") return true;
+  if (normalized === "off" || normalized === "false") return false;
+  return true;
+}
+
 /** Mirrors locked devicestatus.truncatePredictions() without mutating its caller. */
 export function truncateLegacyDeviceStatusPredictions(
   input: JsonDocument,
@@ -381,6 +390,7 @@ function assertTreatmentQueryBindings(query: DocumentQuery): void {
       && filter.operator === "eq"
       && typeof filter.value === "string"
       && UUID.test(filter.value)
+      && query.legacyUuidHandling !== false
     ) {
       bindings += 2;
       continue;
@@ -418,7 +428,11 @@ function assertTreatmentQueryBindings(query: DocumentQuery): void {
 }
 
 /** Translate the currently supported v1 treatments query surface before LIMIT. */
-export function parseTreatmentQuery(url: URL, defaultCount: number): DocumentQuery {
+export function parseTreatmentQuery(
+  url: URL,
+  defaultCount: number,
+  uuidHandling = true,
+): DocumentQuery {
   const rawCount = url.searchParams.get("count") ?? String(defaultCount);
   const count = Number(rawCount);
   if (!Number.isInteger(count) || count < 1 || count > 10000) {
@@ -503,7 +517,12 @@ export function parseTreatmentQuery(url: URL, defaultCount: number): DocumentQue
     });
   }
 
-  const query: DocumentQuery = { filters, limit: count, includeDeleted: true };
+  const query: DocumentQuery = {
+    filters,
+    limit: count,
+    includeDeleted: true,
+    legacyUuidHandling: uuidHandling,
+  };
   if (sort !== undefined) query.sort = sort;
   assertTreatmentQueryBindings(query);
   return query;

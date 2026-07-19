@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 45, excluded-fixed-scope: 2, unresolved: 64
-- Input fingerprint: `ab21a04865ffb2044c833688f501cac634ecdee94e06f7e6663f0547cf20fd28`
+- Statuses: pass: 0, adapted: 48, excluded-fixed-scope: 2, unresolved: 61
+- Input fingerprint: `a7cf891e9f76de620d0a154adda58b8e055d704e5c92acbd6cd2e9620ad29631`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -19,8 +19,8 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
-| 1-storage-foundation | none | 15 | 11 | 0 |
-| 2-authorization | 1-storage-foundation | 6 | 6 | 0 |
+| 1-storage-foundation | none | 15 | 9 | 0 |
+| 2-authorization | 1-storage-foundation | 6 | 5 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 31 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
@@ -52,7 +52,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/api.partial-failures.test.js` | adapted | 6 | Represented by the complete 14-case Workers-runtime contract in test/api-v1-partial-failures.test.ts: non-unique Trio id batches, response and Loop syncIdentifier ordering, replay positions, ObjectId/Trio/AAPS identity separation, per-item response IDs, large DeviceStatus predictions, configured/default/disabled IOB/COB/UAM/ZT truncation for suggested and enacted branches, the locked non-validating string-sgv fixture, and the 50-entry recovery batch. The adapter retains the 100-document and 512-KiB Workers bounds. |
 | `vendor/nightscout/tests/cache-objectid-compat.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/concurrent-writes.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/issue-6923-legacy-uuid.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/issue-6923-legacy-uuid.test.js` | adapted | 8 | Represented by the complete three-case Workers-runtime regression in test/api-v1-treatment-identity-matrix.test.ts. A raw pre-fix Treatment with UUID directly in _id and no identifier is inserted through the main-namespace raw storage path, then found, updated in place without duplication, and deleted through the v1 API with the MongoDB 5 acknowledged/deletedCount response. |
 | `vendor/nightscout/tests/mongo-pool-config.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/mongo-storage.retry.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/mongo-storage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
@@ -60,7 +60,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/query.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/reportstorage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/storage.shape-handling.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/uuid-handling.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/uuid-handling.test.js` | adapted | 6 | Represented by all fifteen UUID-OFF, UUID-ON and UUID-EDGE Workers-runtime cases in test/api-v1-treatment-identity-matrix.test.ts: locked true-by-default/on/off/invalid parsing, write promotion versus stripping, identifier and legacy-_id GET/DELETE selection, ObjectId preservation, invalid-length/non-hyphen/empty/case-sensitive lookup edges and repeated-identifier upsert. A versioned UUID-aware DO RPC fails closed for explicit false during a rolling old-isolate boundary instead of silently applying true semantics. |
 
 ### 2-authorization
 
@@ -69,7 +69,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/api.security.test.js` | unresolved | 7 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api.verifyauth.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/hashauth.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/identity-matrix.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/identity-matrix.test.js` | adapted | 2 | Represented by the complete twelve-case Workers-runtime client identity matrix in test/api-v1-treatment-identity-matrix.test.ts: Loop UUID and explicit-identifier overrides, Loop syncIdentifier isolation, AAPS null/ObjectId identifiers and pump metadata, xDrip uuid plus ObjectId, generated/provided/UUID v1 IDs, repeated-identifier upsert and distinct identifiers. |
 | `vendor/nightscout/tests/security.test.js` | unresolved | 4 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/verifyauth.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 

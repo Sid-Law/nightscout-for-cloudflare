@@ -243,7 +243,7 @@ describe("complete locked v1 Treatments upload and identity contract", () => {
       headers: { "api-secret": await secretDigest() },
     });
     expect(deleted.status).toBe(200);
-    expect(await deleted.json()).toEqual({ n: 1, ok: 1 });
+    expect(await deleted.json()).toEqual({ acknowledged: true, deletedCount: 1 });
     expect(await (await SELF.fetch(endpoint(
       "/api/v1/treatments/?find[carbs]=99",
       name,
@@ -311,7 +311,7 @@ describe("complete locked v1 Treatments upload and identity contract", () => {
       headers: { "api-secret": await secretDigest() },
     });
     expect(deleted.status).toBe(200);
-    expect(await deleted.json()).toEqual({ n: 1, ok: 1 });
+    expect(await deleted.json()).toEqual({ acknowledged: true, deletedCount: 1 });
     expect(await listed(name)).toEqual([]);
   });
 

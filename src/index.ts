@@ -1,7 +1,11 @@
 import { EntryStore } from "./entry-store";
 import mime from "mime";
 import qs from "qs";
-import type { DocumentCollection, JsonDocument } from "./entry-store";
+import type {
+  DocumentCollection,
+  JsonDocument,
+  LegacyTreatmentCreateResult,
+} from "./entry-store";
 import {
   apiSecretDigestMatches,
   authorizationDefaultRoleNames,
@@ -21,6 +25,7 @@ import {
   normalizeTreatmentNumbers,
   parseDocumentPayload,
   parseTreatmentQuery,
+  parseLegacyUuidHandling,
   sanitizeLegacyTreatmentDocument,
 } from "./documents";
 import {
@@ -122,7 +127,33 @@ type AppEnv = Env & {
   API3_MAX_LIMIT?: string;
   AUTH_DEFAULT_ROLES?: string;
   AUTH_FAIL_DELAY?: string;
+  UUID_HANDLING?: string;
 };
+
+function isMissingDurableObjectRpcMethod(error: unknown, method: string): boolean {
+  return error instanceof Error
+    && error.message.includes("RPC receiver does not implement the method")
+    && error.message.includes(`"${method}"`);
+}
+
+async function callUuidAwareRpc<T>(
+  uuidHandling: boolean,
+  method: string,
+  current: () => Promise<T>,
+  defaultCompatibleFallback: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await current();
+  } catch (error) {
+    if (!isMissingDurableObjectRpcMethod(error, method)) throw error;
+    if (uuidHandling) return defaultCompatibleFallback();
+    throw new ApiError(
+      503,
+      "rolling_upgrade_in_progress",
+      "UUID_HANDLING=false is temporarily unavailable while a previous Durable Object isolate drains",
+    );
+  }
+}
 
 function json(data: unknown, init: ResponseInit = {}, space?: number): Response {
   const headers = new Headers(init.headers);
@@ -2020,12 +2051,25 @@ async function handleCollectionApi(
   if (route === null) return null;
   const { collection, segment } = route;
   const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+  const uuidHandling = parseLegacyUuidHandling(env.UUID_HANDLING);
 
   if (request.method === "GET") {
     await requirePermission(request, env, url, `api:${collection}:read`);
     const all = collection === "treatments"
-      ? normalizeTreatmentNumbers(parseDocuments(await store.queryLegacyTreatments(
-        JSON.stringify(parseTreatmentQuery(url, defaultDocumentCount(collection, url))),
+      ? normalizeTreatmentNumbers(parseDocuments(await callUuidAwareRpc(
+        uuidHandling,
+        "queryLegacyTreatmentsWithUuidHandling",
+        () => store.queryLegacyTreatmentsWithUuidHandling(
+          JSON.stringify(parseTreatmentQuery(
+            url,
+            defaultDocumentCount(collection, url),
+            uuidHandling,
+          )),
+          uuidHandling,
+        ),
+        () => store.queryLegacyTreatments(
+          JSON.stringify(parseTreatmentQuery(url, defaultDocumentCount(collection, url), true)),
+        ),
       )))
       : parseDocuments(await store.listDocuments(collection));
     if (collection === "profile" && segment === "current") return json(all[0] ?? null);
@@ -2074,7 +2118,15 @@ async function handleCollectionApi(
     const parsed = parseDocumentPayload(payload, collection, false);
     if (collection === "treatments") {
       const sanitized = parsed.documents.map(sanitizeLegacyTreatmentDocument);
-      const created = await store.createLegacyTreatments(JSON.stringify(sanitized));
+      const created = await callUuidAwareRpc<LegacyTreatmentCreateResult>(
+        uuidHandling,
+        "createLegacyTreatmentsWithUuidHandling",
+        () => store.createLegacyTreatmentsWithUuidHandling(
+          JSON.stringify(sanitized),
+          uuidHandling,
+        ),
+        () => store.createLegacyTreatments(JSON.stringify(sanitized)),
+      );
       if (!created.ok) throw new ApiError(500, "mongo_error", "Mongo Error");
       return json(parseDocuments(created.value));
     }
@@ -2099,7 +2151,15 @@ async function handleCollectionApi(
     const parsed = parseDocumentPayload(payload, collection, false);
     if (collection === "treatments") {
       const saved = parseDocuments(
-        await store.saveDocuments(collection, JSON.stringify(parsed.documents)),
+        await callUuidAwareRpc(
+          uuidHandling,
+          "saveLegacyTreatmentsWithUuidHandling",
+          () => store.saveLegacyTreatmentsWithUuidHandling(
+            JSON.stringify(parsed.documents),
+            uuidHandling,
+          ),
+          () => store.saveDocuments(collection, JSON.stringify(parsed.documents)),
+        ),
       );
       return json(parsed.inputWasArray ? saved : saved[0]);
     }
@@ -2128,8 +2188,13 @@ async function handleCollectionApi(
     let selected: JsonDocument[];
     if (segment !== undefined && segment !== "*") {
       if (collection === "treatments" && (OBJECT_ID.test(segment) || UUID.test(segment))) {
-        const deleted = await store.deleteLegacyTreatment(segment);
-        return json({ n: deleted ? 1 : 0, ok: 1 });
+        const deleted = await callUuidAwareRpc(
+          uuidHandling,
+          "deleteLegacyTreatmentWithUuidHandling",
+          () => store.deleteLegacyTreatmentWithUuidHandling(segment, uuidHandling),
+          () => store.deleteLegacyTreatment(segment),
+        );
+        return json({ acknowledged: true, deletedCount: deleted ? 1 : 0 });
       }
       if (!isValidLegacyObjectId(segment)) return legacyDocumentIdError(segment, false);
       selected = [{ _id: segment }];
@@ -2148,6 +2213,9 @@ async function handleCollectionApi(
     const deleted = await store.deleteDocuments(collection, ids);
     if (collection === "activity" || collection === "food" || collection === "profile") {
       return json({});
+    }
+    if (collection === "treatments") {
+      return json({ acknowledged: true, deletedCount: deleted });
     }
     return json({ n: deleted, ok: 1 });
   }

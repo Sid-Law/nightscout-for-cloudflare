@@ -142,6 +142,7 @@ type EntryStoreEnv = Env & NightscoutStatusEnvironment & {
   API_SECRET?: string;
   AUTH_DEFAULT_ROLES?: string;
   PREDICTIONS_MAX_SIZE?: string;
+  UUID_HANDLING?: string;
 };
 
 const REALTIME_WEBSOCKET_TAG = "eio4-websocket";
@@ -2226,6 +2227,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   async createLegacyTreatments(
     documentsJson: string,
   ): Promise<LegacyTreatmentCreateResult> {
+    return this.createLegacyTreatmentsWithUuidHandling(documentsJson, true);
+  }
+
+  async createLegacyTreatmentsWithUuidHandling(
+    documentsJson: string,
+    uuidHandling: boolean,
+  ): Promise<LegacyTreatmentCreateResult> {
     let result: LegacyTreatmentCreateResult;
     try {
       const documents = JSON.parse(documentsJson) as JsonDocument[];
@@ -2234,7 +2242,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         value: JSON.stringify(
           documents.flatMap((document) =>
             this.documentRepository()
-              .createLegacyTreatmentBundle(document)
+              .createLegacyTreatmentBundle(document, uuidHandling)
               .map((mutation) => mutation.document)),
         ),
       };
@@ -2254,11 +2262,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): Promise<string> {
     let documents = JSON.parse(documentsJson) as JsonDocument[];
     if (collection === "treatments") {
-      const result = JSON.stringify(
-        documents.map((document) => this.documentRepository().upsertTreatment(document).document),
-      );
-      await this.publishRootDataUpdate();
-      return result;
+      return this.saveLegacyTreatmentsWithUuidHandling(documentsJson, true);
     }
     if (collection === "profile" || collection === "food") {
       const result = JSON.stringify(
@@ -2359,6 +2363,19 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     }
     if (collection === "activity") await this.publishRootDataUpdate();
     return JSON.stringify(documents);
+  }
+
+  async saveLegacyTreatmentsWithUuidHandling(
+    documentsJson: string,
+    uuidHandling: boolean,
+  ): Promise<string> {
+    const documents = JSON.parse(documentsJson) as JsonDocument[];
+    const result = JSON.stringify(
+      documents.map((document) =>
+        this.documentRepository().upsertTreatment(document, uuidHandling).document),
+    );
+    await this.publishRootDataUpdate();
+    return result;
   }
 
   async deleteDocuments(collection: DocumentCollection, ids: string[]): Promise<number> {
@@ -2621,7 +2638,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async queryLegacyTreatments(queryJson = "{}"): Promise<string> {
+    return this.queryLegacyTreatmentsWithUuidHandling(queryJson, true);
+  }
+
+  async queryLegacyTreatmentsWithUuidHandling(
+    queryJson: string,
+    uuidHandling: boolean,
+  ): Promise<string> {
     const query = JSON.parse(queryJson) as DocumentQuery;
+    query.legacyUuidHandling = uuidHandling;
     return JSON.stringify(this.documentRepository().queryLegacyTreatments(query));
   }
 
@@ -2697,7 +2722,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async deleteLegacyTreatment(identity: string): Promise<boolean> {
-    const deleted = this.documentRepository().deleteLegacyTreatment(identity);
+    return this.deleteLegacyTreatmentWithUuidHandling(identity, true);
+  }
+
+  async deleteLegacyTreatmentWithUuidHandling(
+    identity: string,
+    uuidHandling: boolean,
+  ): Promise<boolean> {
+    const deleted = this.documentRepository().deleteLegacyTreatment(identity, uuidHandling);
     await this.publishRootDataUpdate();
     return deleted;
   }

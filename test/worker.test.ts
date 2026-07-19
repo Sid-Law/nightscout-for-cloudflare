@@ -389,7 +389,7 @@ describe("Nightscout compatibility API", () => {
     expect(live.devicestatus).toMatchObject([{ device: "simulator" }]);
 
     const removed = await writeApi(name, "DELETE", `/api/v1/treatments/${treatment?._id}`);
-    expect(await removed.json()).toMatchObject({ n: 1, ok: 1 });
+    expect(await removed.json()).toEqual({ acknowledged: true, deletedCount: 1 });
   });
 
   it("keeps v1 and ddata treatment bodies legacy-shaped and permits legacy read-only writes", async () => {
@@ -458,7 +458,7 @@ describe("Nightscout compatibility API", () => {
 
     const removed = await writeApi(name, "DELETE", `/api/v1/treatments/${created?._id}`);
     expect(removed.status).toBe(200);
-    expect(await removed.json()).toEqual({ n: 1, ok: 1 });
+    expect(await removed.json()).toEqual({ acknowledged: true, deletedCount: 1 });
   });
 
   it("accepts an empty v1 treatments batch with the locked 200 [] shape", async () => {
@@ -699,7 +699,7 @@ describe("Nightscout compatibility API", () => {
 
     const removed = await writeApi(name, "DELETE", `/api/v1/treatments/${uuid}`);
     expect(removed.status).toBe(200);
-    expect(await removed.json()).toEqual({ n: 1, ok: 1 });
+    expect(await removed.json()).toEqual({ acknowledged: true, deletedCount: 1 });
   });
 
   it("normalizes v1 numeric predicates and orders treatments by created_at", async () => {

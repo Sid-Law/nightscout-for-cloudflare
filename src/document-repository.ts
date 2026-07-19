@@ -121,6 +121,8 @@ export interface DocumentQuery {
   skip?: number;
   fields?: string[];
   includeDeleted?: boolean;
+  /** Legacy v1/v2 only; API3 identity behavior is unaffected. */
+  legacyUuidHandling?: boolean;
 }
 
 export interface DocumentHistoryQuery {
@@ -381,10 +383,15 @@ function assertApi3Identifier(document: JsonDocument): void {
   }
 }
 
-function normalizeTreatmentIdentity(document: JsonDocument): JsonDocument {
+function normalizeTreatmentIdentity(
+  document: JsonDocument,
+  uuidHandling = true,
+): JsonDocument {
   const normalized = { ...document };
   if (typeof normalized._id === "string" && !OBJECT_ID.test(normalized._id)) {
-    if (requestedIdentifier(normalized) === null) normalized.identifier = normalized._id;
+    if (uuidHandling && requestedIdentifier(normalized) === null) {
+      normalized.identifier = normalized._id;
+    }
     delete normalized._id;
   } else if (typeof normalized._id === "string") {
     normalized._id = normalized._id.toLowerCase();
@@ -1074,6 +1081,7 @@ function appendFilter(
   filter: DocumentFilter,
   policy: MaterializationPolicy,
   collection: Api3CollectionName,
+  legacyUuidHandling = true,
 ): void {
   if (
     policy === "legacy"
@@ -1081,6 +1089,7 @@ function appendFilter(
     && filter.operator === "eq"
     && typeof filter.value === "string"
     && UUID.test(filter.value)
+    && legacyUuidHandling
   ) {
     clauses.push("(identifier = ? OR id = ?)");
     bindings.push(filter.value, filter.value);
@@ -1916,10 +1925,14 @@ export class SqliteDocumentRepository {
     };
   }
 
-  private findTreatmentUpsertCandidate(document: JsonDocument): DbDocumentV4 | undefined {
+  private findTreatmentUpsertCandidate(
+    document: JsonDocument,
+    uuidHandling = true,
+  ): DbDocumentV4 | undefined {
     const identifier = requestedIdentifier(document);
     if (identifier !== null) {
-      return this.findByIdentifierRow(identifier) ?? this.findByIdRow(identifier);
+      return this.findByIdentifierRow(identifier)
+        ?? (uuidHandling ? this.findByIdRow(identifier) : undefined);
     }
     const id = requestedId(document);
     if (id !== null) return this.findByIdRow(id);
@@ -2286,7 +2299,14 @@ export class SqliteDocumentRepository {
     const bindings: SqlStorageValue[] = collection === ENTRIES ? [] : [collection];
     if (policy === "api3" && query.includeDeleted !== true) clauses.push("is_valid != 0");
     for (const filter of query.filters ?? []) {
-      appendFilter(clauses, bindings, filter, policy, collection);
+      appendFilter(
+        clauses,
+        bindings,
+        filter,
+        policy,
+        collection,
+        query.legacyUuidHandling !== false,
+      );
     }
 
     let order = policy === "legacy"
@@ -2801,8 +2821,11 @@ export class SqliteDocumentRepository {
     return storageId === null ? false : this.deleteDocumentById(collection, storageId);
   }
 
-  private upsertPreparedLegacyTreatment(document: JsonDocument): DocumentMutationResult {
-    const existing = this.findTreatmentUpsertCandidate(document);
+  private upsertPreparedLegacyTreatment(
+    document: JsonDocument,
+    uuidHandling = true,
+  ): DocumentMutationResult {
+    const existing = this.findTreatmentUpsertCandidate(document, uuidHandling);
     if (requestedIdentifier(document) !== null) delete document._id;
     const id = existing?.id ?? requestedId(document) ?? randomObjectId();
     return this.writeSnapshot(
@@ -2815,10 +2838,10 @@ export class SqliteDocumentRepository {
   }
 
   /** Locked treatments.save(): normalize and upsert one document, without POST fan-out. */
-  upsertTreatment(input: JsonDocument): DocumentMutationResult {
+  upsertTreatment(input: JsonDocument, uuidHandling = true): DocumentMutationResult {
     return this.storage.transactionSync(() => {
-      const prepared = prepareLegacyTreatment(normalizeTreatmentIdentity(input));
-      return this.upsertPreparedLegacyTreatment(prepared.document);
+      const prepared = prepareLegacyTreatment(normalizeTreatmentIdentity(input, uuidHandling));
+      return this.upsertPreparedLegacyTreatment(prepared.document, uuidHandling);
     });
   }
 
@@ -2827,10 +2850,13 @@ export class SqliteDocumentRepository {
    * Cloudflare tightens the two writes into one synchronous SQLite transaction
    * so a failed shifted timestamp cannot leave a half-created meal treatment.
    */
-  createLegacyTreatmentBundle(input: JsonDocument): DocumentMutationResult[] {
+  createLegacyTreatmentBundle(
+    input: JsonDocument,
+    uuidHandling = true,
+  ): DocumentMutationResult[] {
     return this.storage.transactionSync(() => {
-      const prepared = prepareLegacyTreatment(normalizeTreatmentIdentity(input));
-      const primary = this.upsertPreparedLegacyTreatment(prepared.document);
+      const prepared = prepareLegacyTreatment(normalizeTreatmentIdentity(input, uuidHandling));
+      const primary = this.upsertPreparedLegacyTreatment(prepared.document, uuidHandling);
       if (prepared.preBolusCarbs === null) return [primary];
 
       const preBolus = Number(prepared.document.preBolus);
@@ -2844,7 +2870,7 @@ export class SqliteDocumentRepository {
         shifted.eventType = prepared.document.eventType;
       }
       if (prepared.document.notes) shifted.notes = prepared.document.notes;
-      const carbRecord = this.upsertPreparedLegacyTreatment(shifted);
+      const carbRecord = this.upsertPreparedLegacyTreatment(shifted, uuidHandling);
       return [primary, carbRecord];
     });
   }
@@ -3208,12 +3234,14 @@ export class SqliteDocumentRepository {
     return this.deleteDocumentById(TREATMENTS, id);
   }
 
-  deleteLegacyTreatment(identity: string): boolean {
+  deleteLegacyTreatment(identity: string, uuidHandling = true): boolean {
     return this.storage.transactionSync(() => {
       const existing = OBJECT_ID.test(identity)
         ? this.findByIdRow(identity.toLowerCase())
         : UUID.test(identity)
-          ? this.findByIdentifierRow(identity) ?? this.findByIdRow(identity)
+          ? uuidHandling
+            ? this.findByIdentifierRow(identity) ?? this.findByIdRow(identity)
+            : this.findByIdRow(identity)
           : undefined;
       if (existing === undefined) return false;
       this.sql.exec(
