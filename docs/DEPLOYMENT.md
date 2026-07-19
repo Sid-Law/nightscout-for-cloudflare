@@ -12,15 +12,15 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `e44eda8b7fc155d1d8cc28d58a419bfa950f6bae`
-- Git HEAD used by Wrangler: `e44eda8b7fc155d1d8cc28d58a419bfa950f6bae`
-- Cloudflare Version ID: `13697f3c-407d-4464-9297-c18657eacaf4`
-- Version tag/message: `git-e44eda8b7fc1` /
-  `git e44eda8b7fc1 api3 search head cors`
-- Version creation time: `2026-07-19T17:35:48.507Z`
+- Deployed code candidate: `cda832688bb9a85c0feb93c0618d8932baa3e5a5`
+- Git HEAD used by Wrangler: `cda832688bb9a85c0feb93c0618d8932baa3e5a5`
+- Cloudflare Version ID: `04c8e103-4f0a-434a-87f0-7ed0e9900c33`
+- Version tag/message: `git-cda832688bb9` /
+  `git cda832688bb9 api3 workflow read renderer security`
+- Version creation time: `2026-07-19T18:01:10.388448Z`
 - Activation: direct `wrangler deploy` reported this as the Current Version;
   no separate activation timestamp was printed
-- Worker startup: 28 ms
+- Worker startup: 25 ms
 - Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
@@ -28,7 +28,7 @@ is not counted as API, plugin or real-time compatibility.
   silence tables
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 914.58 KiB raw / 164.19 KiB gzip
+- Upload: 914.88 KiB raw / 164.21 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -57,6 +57,16 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 This increment deploys:
 
+- complete named Workers-runtime adaptations for four more locked upstream
+  files: `api3.generic.workflow.test.js`, `api3.read.test.js`,
+  `api3.renderer.test.js` and `api3.security.test.js`. They cover initial
+  status/lastModified clocks, missing and complete CRUD/history lifecycle,
+  read-only mutations, v1-created reads, projection/conditional reads,
+  missing/invalid/denied/allowed JWT branches, and extension-versus-Accept
+  JSON/CSV/XML behavior;
+- a typed API3 DELETE Durable Object RPC error result. Known read-only
+  validation now returns the locked 422 response without an uncaught exception
+  escaping the DO boundary; unknown errors remain a generic storage 500;
 - complete named Workers-runtime adaptations for the locked
   `api3.basic.test.js` and `api3.search.test.js` contracts: API-wide OPTIONS
   returns the upstream `OK` boundary with
@@ -165,8 +175,9 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`e44eda8b7fc155d1d8cc28d58a419bfa950f6bae`. It adds API3 search, implicit
-HEAD and complete API CORS adaptations while retaining the locked v1/v2
+`cda832688bb9a85c0feb93c0618d8932baa3e5a5`. It adds complete API3 generic
+workflow, read, renderer and security adaptations plus typed DELETE error
+containment while retaining search, implicit HEAD, complete API CORS and v1/v2
 Treatments POST `preBolus` fan-out, notification ACK, the
 stale-past DO alarm scheduling repair, persisted API v3 `/alarm`, prior
 `/storage`, six-collection API3, Entries, Profile, transport and official-page
@@ -182,24 +193,24 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 24 files, 261/261 passed |
+| Workers integration tests | 24 files, 265/265 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 914.58 KiB raw / 164.19 KiB gzip |
+| Worker dry run | 914.88 KiB raw / 164.21 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 261 Workers
-tests cover the implemented adapter subset; `api3.basic.test.js`,
-`api3.search.test.js` and `notifications-api.test.js` are classified as fully
-`adapted`, 106 remain unresolved and two bridge files are fixed-scope
+audit finds 883 active `it(...)` cases plus one skipped case. The 265 Workers
+tests cover the implemented adapter subset; six API3 files plus
+`notifications-api.test.js` are classified as fully `adapted`, 102 remain
+unresolved and two bridge files are fixed-scope
 exclusions. The named Treatments contracts do not
 make the whole `api.treatments.test.js` adapted. Neither count proves complete
 compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `13697f3c-407d-4464-9297-c18657eacaf4` as the Current
+Wrangler reports version `04c8e103-4f0a-434a-87f0-7ed0e9900c33` as the Current
 Version. These credential-free checks verified response content and protocol
 markers, not only Wrangler command success.
 
@@ -259,8 +270,10 @@ credential storage or submitting protected mutations:
   `Values loaded.`;
 - the browser was restored to the homepage and retained there for the user.
 
-This browser run reloaded Cloudflare version
-`13697f3c-407d-4464-9297-c18657eacaf4` after deployment. Wrangler reported no
+The browser console recorded zero errors. Secondary non-chart pages emitted
+only the locked bundle's known `Unable to find element for #chartContainer`
+warning. This browser run reloaded Cloudflare version
+`04c8e103-4f0a-434a-87f0-7ed0e9900c33` after deployment. Wrangler reported no
 changed asset upload for the same 248 official browser assets.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -278,10 +291,9 @@ mutation, report generation or every other protected page workflow.
   uploader, pump or closed-loop client.
 - API v1 and v2 remain subsets. Their inherited notification ACK is adapted,
   but summary, v2 notification-loop and other routes remain incomplete. API v3
-  now routes all six official generic collections and adapts the complete
-  `api3.basic.test.js` and `api3.search.test.js` contracts, but 13 `api3.*`
-  files, broad large-response resource handling and Mongo mixed-type/nested
-  semantics remain incomplete.
+  now routes all six official generic collections and adapts six complete
+  upstream API3 files, but 10 `api3.*` files, broad large-response resource
+  handling and Mongo mixed-type/nested semantics remain incomplete.
 - Entries `times/echo`, `times` and `slice` remain missing. Echo supports
   Entries storage only; count rejects client-supplied aggregation pipelines;
   exact DOMPurify output, wider Mongo query/mixed-type behavior and the locked

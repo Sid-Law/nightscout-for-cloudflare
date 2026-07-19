@@ -18,27 +18,28 @@ storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
 Deployed integration commit and Git HEAD used by Wrangler
-`e44eda8b7fc155d1d8cc28d58a419bfa950f6bae` pass 261/261 tests across 24
+`cda832688bb9a85c0feb93c0618d8932baa3e5a5` pass 265/265 tests across 24
 Workers-runtime files plus 20/20 audit tests. The suite includes focused
 EIO4 polling/direct-Hibernatable-WebSocket protocol, persisted session,
 HTTP-boundary, eviction, authorization, tenant-isolation and resource-cap
 contracts, plus API3 `/storage` namespace/room/change-event, `/alarm`
 subscription/ACK/snooze/live-notification-outlet and inherited v1/v2 HTTP
 notification-ACK contracts, in
-addition to strict v1/v2 Status, API v3 basic/search/HEAD/CORS,
+addition to strict v1/v2 Status, API v3
+basic/generic-workflow/read/renderer/search/security/HEAD/CORS,
 entries/treatments/device-status/profile/food/settings, storage and
 official-page tests, plus the locked v1/v2 Treatments `preBolus` create split,
 retransmission and atomic-failure contracts. This is not full-port evidence.
 The code is deployed as
 Cloudflare version
-`13697f3c-407d-4464-9297-c18657eacaf4`; exact release evidence is recorded in
+`04c8e103-4f0a-434a-87f0-7ed0e9900c33`; exact release evidence is recorded in
 `DEPLOYMENT.md`. The locked upstream has 111 `*.test.js` files; a static
 declaration audit finds 883 active
 `it(...)` cases plus one skipped case. Those sets are not directly comparable,
 and the local suite does not prove full compatibility.
 
-The final Wrangler dry-run reports 248 official assets, 914.58 KiB raw /
-164.19 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The final Wrangler dry-run reports 248 official assets, 914.88 KiB raw /
+164.21 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
@@ -78,11 +79,11 @@ byte-for-byte freshness of both generated outputs. A mount chain is not a full
 runtime provenance or call-graph proof: it does not prove reachability,
 middleware order, handler execution, or test coverage, and API v3 dynamic
 chains intentionally stop at the locked `genericSetup` call. The
-default test-file status is `unresolved`. At this audit point, 106 files are
+default test-file status is `unresolved`. At this audit point, 102 files are
 `unresolved`, two real-CGM bridge files are `excluded-fixed-scope`,
-`api3.basic.test.js`, `api3.search.test.js` and
-`notifications-api.test.js` are `adapted`, and zero files are claimed as
-unchanged `pass`.
+six API3 files (`basic`, `generic.workflow`, `read`, `renderer`, `search` and
+`security`) plus `notifications-api.test.js` are `adapted`, and zero files are
+claimed as unchanged `pass`.
 
 Route/test associations remain dispatch heuristics. Direct literal HTTP calls
 are filtered by their path-local method when that method can be statically
@@ -141,8 +142,8 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v1/v2 Status | `lib/api/status.js`, v1/v2 router mounting and final error chain | **Strict named surface deployed, with one transport P2.** Locked extension/Accept negotiation, txt/json/js/png/svg paths, redirects, uppercase/trailing-path bugs, GET/HEAD representation lengths, method finalhandler behavior, query-only `authorized` derivation and production 406/404 bodies are contract-tested. Remote text/Accept forms returned 200 and an unknown extension returned 404. Cloudflare strips `Content-Length` from dynamic responses, including HEAD; status code, `Content-Type`, `Vary` and empty-body semantics are correct. | Preserve this P2 as an explicit platform difference and expand public smoke to every locked representation; do not infer other v1/v2 route compatibility. |
 | API v2 authorization | `lib/authorization/**`, `lib/api/verifyauth.js` | **Core adapted with named differences/hardening.** Role/subject CRUD, per-tenant signing keys, eight-hour HS256 issuance/refresh, derived access tokens and prefix matching, body/query/header precedence, signature/expiry verification, live role lookup, persisted per-IP failure delay, Shiro 0.4.10 and `verifyauth` are implemented. Enforced delay is capped at 60 seconds, a failed attempt does not yet emit the upstream admin notification, and repeated/bracket `secret` arrays are safely resolved or rejected instead of reproducing the locked unhandled rejection. | Add admin-notify emission/cleanup contracts; preserve the 60-second platform cap and array hardening as explicit differences and repeat remote auth smoke. |
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/api2/notifications-v2.js` | **Partial inherited ACK only.** API v2 inherits the adapted v1 `/notifications/ack` route. The v2-only `/notifications/loop` external APNs delivery and summary processors are missing. | Reuse upstream processors without adding medical logic; keep external delivery disabled while adapting internal mapping/persistence contracts. |
-| API v3 version/status | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.basic.test.js` | **Adapted whole-file contract.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. API OPTIONS and implicit HEAD preserve the upstream HTTP boundary. | Named Workers-runtime coverage adapts the complete locked `api3.basic.test.js`; current-version remote GET/HEAD/OPTIONS and missing/bad-token smoke confirm the public boundary. Do not infer the remaining API3 modules from this file. |
-| API v3 generic collections/lastModified/history | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js`, `tests/api3.search.test.js` | **Partial six-collection vertical; search file adapted.** All eight generic routes are wired for entries, treatments, device status, profile, food and settings, and all six participate independently in `/lastModified`. JWT auth, conditional headers, transactional permission selection, collection-specific dedupe, soft/permanent delete, ordered sort, both history cursors and locked JSON/CSV/XML are wired. Profile covers AAPS create/retry/new-version; Food shares v1 identity/history and `created_at` fallback; Settings has no fallback and retains admin-only search/history versus read-protected resource GET. Search/history now share the configured lower `API3_MAX_LIMIT` under a hard 1,000-row Workers ceiling. | The complete locked `api3.search.test.js` is adapted. Implement large-result CPU/memory adaptation, broader mixed-type/nested/regex parity and the remaining 13 upstream `api3.*` files before calling API v3 complete. |
+| API v3 version/status/security | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.{basic,security}.test.js` | **Two adapted whole-file contracts.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. Missing and invalid Bearer errors, denied/allowed permissions, API OPTIONS and implicit HEAD are locked. | Named Workers-runtime coverage adapts the complete locked `api3.basic.test.js` and `api3.security.test.js`; the security fixture uses its exact empty default-role setting. Current-version remote GET/HEAD/OPTIONS and missing-token smoke confirm the public boundary. |
+| API v3 generic collections/lastModified/history/rendering | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js`, `tests/api3.{generic.workflow,read,renderer,search}.test.js` | **Partial six-collection vertical; four whole files adapted.** All eight generic routes are wired for entries, treatments, device status, profile, food and settings, and all six participate independently in `/lastModified`. JWT auth, conditional/projection reads, transactional permission selection, collection-specific dedupe, complete CRUD/history/read-only/tombstone/permanent-delete workflow, v1-created reads, ordered search and locked JSON/CSV/XML negotiation are wired. Profile covers AAPS create/retry/new-version; Food shares v1 identity/history and `created_at` fallback; Settings has no fallback and retains admin-only search/history versus read-protected resource GET. Search/history share the configured lower `API3_MAX_LIMIT` under a hard 1,000-row Workers ceiling. Known read-only DELETE errors return through a typed DO RPC result. | `api3.generic.workflow.test.js`, `api3.read.test.js`, `api3.renderer.test.js` and `api3.search.test.js` are adapted. Ten `api3.*` files remain: create/update/patch/delete/shape/AAPS/storage/socket plus the patch-operation unit. Complete their whole-file evidence, large-result CPU/memory controls and broader mixed-type/nested/regex parity before calling API v3 complete. |
 | Main Socket.IO namespace | `lib/server/websocket.js` | **Partial read-only EIO4 polling + direct WebSocket slice.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted sessions/queues, heartbeat, SIO5 root CONNECT, `clients`, read-only authorize/dataUpdate/ACK and loadRetro are tested across polling, direct Hibernatable WebSocket, eviction and tenant boundaries. A SQL-derived alarm persists ping/pong/session/poll/POST/closure deadlines. The official page still loads the REST shim; polling upgrade is not implemented, root write/database-update behavior is missing, and a crash between durable dequeue and direct `send()` can lose one frame. | Switch the page only after safe tenant propagation and notification integration; close the at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP if retained, root writes and browser workflows. |
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Named `/storage` and `/alarm` EIO4/SIO5 slices implemented.** Polling and direct WebSocket can connect either namespace independently. `/storage` locks subject access-token authorization, official default collection order, unknown-name filtering, duplicate response behavior, per-room read checks, the Settings-admin exception, persisted rooms and API3-only create/update/delete events. `/alarm` locks native-access-token priority, web secret/JWT/anonymous branches, exact subscription responses, accumulated ACK authority, all five event classifications, broadcast to every current namespace connection, live-only tenant isolation, persisted snooze/all-clear behavior and eviction/Hibernation repair. Socket ACK and v1/v2 HTTP ACK now commit through the same SQLite transaction and broken-recipient containment path. Its trusted publisher accepts precomputed notifications; it does not run the upstream notification engine. | Add EIO3/SIO4 if retained, credentialed remote delivery/ACK evidence and the upstream notification/plugin producer. Preserve live-only/no-disconnected-replay behavior and bounded broken-recipient isolation. |
 | Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Partial: API3 storage channel implemented.** Each implemented document mutation persists `document_changes` atomically with its current document. Separately, successful HTTP API3 mutations enqueue bounded `/storage` frames for current authorized subscribers inside that transaction; eviction, tenant/room isolation, hibernated delivery and broken-subscriber containment are tested. V1 Entries ordered batches still commit successful prefixes and do not broadcast on `/storage`. The homepage/root database-update path remains REST polling. | Implement locked main-namespace database updates and browser workflows. Define retention/pruning for the unbounded `document_changes` journal separately; it is not the live transport queue and upstream `/storage` provides no disconnected replay. |
@@ -150,7 +151,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/api/notifications-api.js`, `lib/adminnotifies.js`, push modules | **Partial ACK/outlet persistence only.** `/api/v1` and inherited `/api/v2` notification ACK plus Socket.IO ACK share bounded group/level snoozes, exact all-clear broadcasts and tenant-local current-connection delivery across eviction. The upstream `notifications-api.test.js` contract is now tracked as adapted. Notification calculation, activity/summary state, admin notices, plugin bus integration and push-provider processing are missing. | Make the upstream engine consume the persisted snooze state, add calculation/persistence/retry/eviction tests and keep external delivery disabled in simulated scope unless separately authorized. |
 | Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current browser pass reloaded the current version, rendered the homepage/chart region, loaded Admin Tools, Food Editor, Profile Editor and `clock-color`, and observed no console errors. Food reached `Database loaded`, Profile reached `Values loaded.`, and no protected write was submitted. The public tenant has no Entries, so `---` is expected. Mutations/report generation and pushed live updates are not complete. | Re-run authenticated Profile Save/Food mutation when a credential is explicitly supplied, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
-| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; three adapted files.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations: `api3.basic.test.js`, `api3.search.test.js` and `notifications-api.test.js` are adapted by named Workers-runtime contracts, 106 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
+| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; seven adapted files.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations: six API3 files plus `notifications-api.test.js` are adapted by named Workers-runtime contracts, 102 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
 
@@ -297,23 +298,24 @@ controls, not upstream claims.
 ## Current deployed integration evidence
 
 Code candidate and Git HEAD used by Wrangler
-`e44eda8b7fc155d1d8cc28d58a419bfa950f6bae` pass 261/261 tests in 24
+`cda832688bb9a85c0feb93c0618d8932baa3e5a5` pass 265/265 tests in 24
 Workers-runtime files plus 20/20 audit tests. They combine the adapted v1/v2
 Entries count/echo and uploader/query/read-protocol slices with strict Status,
 authorization, direct Hibernatable EIO4 WebSocket and API v3
 entries/treatments/device-status/profile/food/settings plus `/storage` and
 `/alarm` slices, inherited notification ACK, the stale-past DO alarm repair and
 the locked v1/v2 Treatments `preBolus` fan-out. This increment additionally
-adapts `api3.basic.test.js` and `api3.search.test.js`, including HEAD, complete
-API CORS preflight and configured lower paging limits. Cloudflare version
-`13697f3c-407d-4464-9297-c18657eacaf4` was reported as the Current Version by
-the direct Wrangler deployment, created at `2026-07-19T17:35:48.507Z`, which
-reported a 28 ms startup. Wrangler
+adapts the API3 generic-workflow, read, renderer and security files and contains
+known read-only DELETE rejection inside the typed DO RPC contract. Cloudflare
+version `04c8e103-4f0a-434a-87f0-7ed0e9900c33` was reported as the Current
+Version by the direct Wrangler deployment, created at
+`2026-07-19T18:01:10.388448Z`, which reported a 25 ms startup. Wrangler
 processed 248 unchanged official asset entries; deployment and the final dry
-run both reported 914.58 KiB raw / 164.19 KiB gzip, with only `ENTRY_STORE` and
+run both reported 914.88 KiB raw / 164.21 KiB gzip, with only `ENTRY_STORE` and
 `ASSETS` in the dry run.
 Deployment used `--keep-vars`, tag
-`git-e44eda8b7fc1` and message `git e44eda8b7fc1 api3 search head cors`.
+`git-cda832688bb9` and message
+`git cda832688bb9 api3 workflow read renderer security`.
 Wrangler did not print a separate activation timestamp or Deployment ID, so
 none is inferred here.
 

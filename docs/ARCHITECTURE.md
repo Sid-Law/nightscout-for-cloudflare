@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`e44eda8b7fc155d1d8cc28d58a419bfa950f6bae`. It produced Cloudflare version
-`13697f3c-407d-4464-9297-c18657eacaf4`, reported as the Current Version by
-direct deploy. Its 24-file Workers-runtime suite passes 261/261
+`cda832688bb9a85c0feb93c0618d8932baa3e5a5`. It produced Cloudflare version
+`04c8e103-4f0a-434a-87f0-7ed0e9900c33`, reported as the Current Version by
+direct deploy. Its 24-file Workers-runtime suite passes 265/265
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries; deployment and the final dry run both reported 914.58 KiB raw /
-164.19 KiB gzip, with the dry run declaring only the `ENTRY_STORE` Durable
-Object and `ASSETS` product bindings. Cloudflare reported a 28 ms startup.
+entries; deployment and the final dry run both reported 914.88 KiB raw /
+164.21 KiB gzip, with the dry run declaring only the `ENTRY_STORE` Durable
+Object and `ASSETS` product bindings. Cloudflare reported a 25 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -339,7 +339,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`e44eda8b7fc155d1d8cc28d58a419bfa950f6bae` implements all six official generic
+`cda832688bb9a85c0feb93c0618d8932baa3e5a5` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -545,6 +545,13 @@ Soft delete stores `modifiedBy`; permanent delete removes current and change
 rows. Mutation and change-row failure rolls back the document, history and
 monotonic clock together.
 
+Durable Object RPC methods return application failures as typed results. POST,
+PUT and PATCH already used `Api3MutationDecision`; DELETE now follows the same
+boundary for known validation/storage failures. In particular, attempting to
+delete a read-only document returns the locked HTTP 422 envelope without an
+uncaught exception escaping the DO RPC. Unknown failures remain a generic
+storage 500 and do not expose internal messages.
+
 The read boundary uses the same locked renderer dependencies as Nightscout:
 `accepts@1.3.8`/`negotiator@0.6.3` select JSON, CSV or XML in Express order;
 `csv-stringify@5.6.5` and `easyxml@2.0.1` produce the response bytes. JSON keeps
@@ -589,8 +596,9 @@ The locked history projection quirk is retained: when `fields` excludes
 from the always-projected collection `created_at` fallback. Legacy documents
 can be read with virtual srv fields but do not match raw srv filters or HISTORY.
 These are six generic collection vertical slices, not completion of API v3.
-The locked `api3.basic.test.js` and `api3.search.test.js` files are adapted by
-named Workers-runtime contracts; 13 other `api3.*` files remain unresolved.
+The locked API3 `basic`, `generic.workflow`, `read`, `renderer`, `search` and
+`security` files are adapted by named Workers-runtime contracts; 10 other
+`api3.*` files remain unresolved.
 CSV/XML currently serialize an entire bounded result in memory; large-result
 CPU and 128 MB memory adaptation remains open even though byte-level
 small/medium contracts are green.
@@ -716,7 +724,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`13697f3c-407d-4464-9297-c18657eacaf4`. Credential-free remote smoke returned
+`04c8e103-4f0a-434a-87f0-7ed0e9900c33`. Credential-free remote smoke returned
 200 for health and the v15.0.7 API3 version envelope. API3 GET/HEAD/OPTIONS,
 anonymous collection GET/HEAD and unknown-route HEAD matched the new boundary
 contracts. Protected realtime event/ACK behavior remains covered locally
