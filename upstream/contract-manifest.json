@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "84f026dc39940ef611e79a268e4aa7afc284fc4f362b45cb5ca58e217169ce34",
+  "inputs_sha256": "0f20c3545c5440d4ea82f1a39e18d555278e847c4ecef84c0dc9e4e90daa0f85",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 24,
+      "adapted": 32,
       "excluded-fixed-scope": 2,
-      "unresolved": 85
+      "unresolved": 77
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7156,8 +7156,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.aaps-client.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime AndroidAPS v1 contract in test/api-v1-core-contract.test.ts: SGV device/app metadata, dateString-derived utcOffset, SMB/meal/temp-basal numeric and boolean fields, pumpId/pumpType/pumpSerial preservation, single-array and multi-document batches, ordered ObjectId responses and stored-field reads.",
       "workstream": "3-api-v1-v2",
       "depends_on": [
         "1-storage-foundation",
@@ -7194,8 +7194,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.alexa.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime Alexa REST contract in test/api-v1-core-contract.test.ts: the locked en-US LaunchRequest response and reprompt, LaunchRequest intent fallback, SessionEndedRequest response, anonymous readable-role authorization and official Speechlet response envelope. This is local protocol compatibility and does not call an external Alexa service.",
       "workstream": "3-api-v1-v2",
       "depends_on": [
         "1-storage-foundation",
@@ -7243,8 +7243,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.entries.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented across test/api-v1-entries-contract.test.ts, test/api-v1-entries-utilities-contract.test.ts and test/api-v1-core-contract.test.ts: explicit/default count and date ordering, echo query shape, literal and numeric-brace multi-prefix slice, times/echo and modal times/minutes expansion, current/ID/model reads, preview and mutation authorization, single/multi/empty uploads, dateString normalization/utcOffset, and exact-date plus open dateString-range deletion. Pattern routes use documented Workers bounds and a fixture-complete linear regex subset.",
       "workstream": "3-api-v1-v2",
       "depends_on": [
         "1-storage-foundation",
@@ -7378,8 +7378,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.root.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime root contract in test/api-v1-core-contract.test.ts: public GET /api/versions returns the three locked API versions and URLs, every item has exactly the version/url keys, versions are valid semantic-version shapes, and each URL begins with /api.",
       "workstream": "3-api-v1-v2",
       "depends_on": [
         "1-storage-foundation",
@@ -7436,8 +7436,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.status.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime status contract in test/api-v1-core-contract.test.ts and the exhaustive representation boundary in test/status-surface.test.ts: locked custom careportal/rawbg enable state, JSON fields, HTML, text, JavaScript, PNG/SVG redirects, MIME types and inherited v1/v2 mounts.",
       "workstream": "3-api-v1-v2",
       "depends_on": [
         "1-storage-foundation",
@@ -7451,8 +7451,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.treatments.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime v1 Treatments contracts in test/api-v1-treatments-contract.test.ts and the Loop batch contract in test/api-v1-core-contract.test.ts: preBolus fan-out and dedupe, locked XSS fixture sanitization, zoned-time/utcOffset and numeric normalization, object/array upload, query/delete, UUID-as-identifier POST/PUT/delete, explicit AAPS identifier upsert and ordered identifier batches. The Cloudflare sanitizer is deliberately stricter than DOMPurify for safe HTML attributes outside this locked file.",
       "workstream": "3-api-v1-v2",
       "depends_on": [
         "1-storage-foundation",
@@ -7474,8 +7474,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.unauthorized.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime authenticated Entries contract in test/api-v1-core-contract.test.ts plus uploader coverage in test/api-v1-entries-contract.test.ts: exact anonymous POST error, authorized preview with all 30 rows, authorized create, literal dateString slice read, anonymous exact/ranged delete rejection without data loss, and authorized exact/ranged deletion. The locked test ignores its stale preview 201 Supertest error; the exercised upstream res.json path and NSCF both return 200.",
       "workstream": "3-api-v1-v2",
       "depends_on": [
         "1-storage-foundation",
@@ -7495,8 +7495,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.v1-batch-operations.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime Loop/Trio contract in test/api-v1-core-contract.test.ts plus the 100-item boundary in test/api-v1-entries-contract.test.ts: treatment and glucose arrays create separate ordered documents, single/empty/100-item batches, per-position ObjectIds, Loop carb/dose fields, Trio id/enteredBy/device preservation, and mixed isValid data behavior.",
       "workstream": "3-api-v1-v2",
       "depends_on": [
         "1-storage-foundation",

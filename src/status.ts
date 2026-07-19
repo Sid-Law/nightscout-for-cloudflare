@@ -37,6 +37,8 @@ export interface NightscoutStatusEnvironment {
 export interface NightscoutStatusSettingsOverrides {
   units?: NightscoutDisplayUnits;
   authFailDelay?: number;
+  /** Test/platform-context override matching a resolved upstream settings.enable array. */
+  enable?: string[];
   thresholds?: {
     bgHigh: number;
     bgTargetTop: number;
@@ -245,7 +247,9 @@ function nightscoutSettings(
     authenticationPromptOnLoad: false,
     DEFAULT_FEATURES: [...DEFAULT_FEATURES],
     alarmTypes: [simpleAlarms ? "simple" : "predict"],
-    enable: [...DEFAULT_FEATURES, simpleAlarms ? "simplealarms" : "ar2"],
+    enable: overrides.enable === undefined
+      ? [...DEFAULT_FEATURES, simpleAlarms ? "simplealarms" : "ar2"]
+      : [...overrides.enable],
   };
 }
 

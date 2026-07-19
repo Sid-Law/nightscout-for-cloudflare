@@ -177,21 +177,29 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.equal(first.tests.length, 111);
   assert.equal(serializeManifest(first), serializeManifest(second));
   assert.equal(first.tests.filter((item) => item.status === "pass").length, 0);
-  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 24);
+  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 32);
   assert.deepEqual(first.statistics.tests_by_status, {
     pass: 0,
-    adapted: 24,
+    adapted: 32,
     "excluded-fixed-scope": 2,
-    unresolved: 85,
+    unresolved: 77,
   });
   for (const file of [
+    "vendor/nightscout/tests/api.aaps-client.test.js",
+    "vendor/nightscout/tests/api.alexa.test.js",
     "vendor/nightscout/tests/api.activity.test.js",
     "vendor/nightscout/tests/api.devicestatus.test.js",
+    "vendor/nightscout/tests/api.entries.test.js",
     "vendor/nightscout/tests/api.food.test.js",
     "vendor/nightscout/tests/api.id-validation.test.js",
     "vendor/nightscout/tests/api.objectid-validation.test.js",
     "vendor/nightscout/tests/api.profiles.test.js",
+    "vendor/nightscout/tests/api.root.test.js",
     "vendor/nightscout/tests/api.shape-handling.test.js",
+    "vendor/nightscout/tests/api.status.test.js",
+    "vendor/nightscout/tests/api.treatments.test.js",
+    "vendor/nightscout/tests/api.unauthorized.test.js",
+    "vendor/nightscout/tests/api.v1-batch-operations.test.js",
     "vendor/nightscout/tests/api3.aaps-patterns.test.js",
     "vendor/nightscout/tests/api3.basic.test.js",
     "vendor/nightscout/tests/api3.create.test.js",

@@ -21,6 +21,7 @@ import {
   normalizeTreatmentNumbers,
   parseDocumentPayload,
   parseTreatmentQuery,
+  sanitizeLegacyTreatmentDocument,
 } from "./documents";
 import {
   ApiError,
@@ -132,6 +133,35 @@ function legacyOk(): Response {
   headers.set("Content-Length", String(body.byteLength));
   headers.set("Cache-Control", "no-store");
   return new Response(body, { status: 200, headers });
+}
+
+function legacyAlexaSpeechletResponse(
+  title: string,
+  output: string,
+  repromptText: string,
+  shouldEndSession: boolean,
+): Record<string, unknown> {
+  return {
+    version: "1.0",
+    response: {
+      outputSpeech: {
+        type: "PlainText",
+        text: output,
+      },
+      card: {
+        type: "Simple",
+        title,
+        content: output,
+      },
+      reprompt: {
+        outputSpeech: {
+          type: "PlainText",
+          text: repromptText,
+        },
+      },
+      shouldEndSession,
+    },
+  };
 }
 
 function legacyDocumentIdError(id: unknown, create: boolean): Response {
@@ -1131,10 +1161,54 @@ function entryDeleteBoundary(url: URL, name: string): number | null {
   return Math.trunc(parsed);
 }
 
+function entryDeleteDateString(url: URL): string | null {
+  const values = url.searchParams.getAll("find[dateString]");
+  if (values.length > 1) {
+    throw new ApiError(400, "invalid_query", "find[dateString] must not be repeated");
+  }
+  const value = values[0];
+  if (value === undefined) return null;
+  if (value.length === 0 || value.length > 4096 || !Number.isFinite(Date.parse(value))) {
+    throw new ApiError(400, "invalid_query", "find[dateString] must be an ISO timestamp");
+  }
+  return value;
+}
+
+function entryDeleteDateStringBoundary(url: URL, name: string): string | null {
+  const values = url.searchParams.getAll(name);
+  if (values.length > 1) {
+    throw new ApiError(400, "invalid_query", `${name} must not be repeated`);
+  }
+  const value = values[0];
+  if (value === undefined) return null;
+  if (value.length === 0 || value.length > 4096) {
+    throw new ApiError(400, "invalid_query", `${name} has an invalid format`);
+  }
+  return value;
+}
+
+function entryDeleteExactDate(url: URL): number | null {
+  const values = url.searchParams.getAll("find[date]");
+  if (values.length > 1) {
+    throw new ApiError(400, "invalid_query", "find[date] must not be repeated");
+  }
+  const value = values[0];
+  if (value === undefined) return null;
+  const parsed = Number.parseInt(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new ApiError(400, "invalid_query", "find[date] must begin with an integer");
+  }
+  return parsed;
+}
+
 function assertSupportedEntryDeleteFilters(url: URL): void {
   const supported = new Set([
     "find[date][$gte]",
     "find[date][$lte]",
+    "find[date]",
+    "find[dateString]",
+    "find[dateString][$gte]",
+    "find[dateString][$lte]",
     "find[type]",
     "find[type][$eq]",
   ]);
@@ -1356,6 +1430,149 @@ function legacyEchoHistoryQuery(
   return parseHistoryCountQuery(normalized);
 }
 
+const MAX_LEGACY_PATTERN_PREFIXES = 8;
+const MAX_LEGACY_PATTERN_EXPANSIONS = 256;
+const MAX_LEGACY_PATTERN_CANDIDATES = 10_000;
+
+function expandLegacyNumericBraces(input: string, limit = MAX_LEGACY_PATTERN_EXPANSIONS): string[] {
+  const match = /\{(-?\d+)\.\.(-?\d+)\}/.exec(input);
+  if (match === null) return [input];
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) {
+    throw new ApiError(400, "invalid_query", "pattern range must contain safe integers");
+  }
+  const size = Math.abs(end - start) + 1;
+  if (size > limit) {
+    throw new ApiError(400, "invalid_query", "pattern expansion exceeds the 256-item limit");
+  }
+  const width = Math.max(
+    match[1]!.replace(/^-/, "").length,
+    match[2]!.replace(/^-/, "").length,
+  );
+  const step = start <= end ? 1 : -1;
+  const output: string[] = [];
+  for (let value = start; ; value += step) {
+    const absolute = Math.abs(value).toString().padStart(width, "0");
+    const replacement = value < 0 ? `-${absolute}` : absolute;
+    const expanded = `${input.slice(0, match.index)}${replacement}${input.slice(
+      match.index + match[0].length,
+    )}`;
+    const nested = expandLegacyNumericBraces(expanded, limit - output.length);
+    output.push(...nested);
+    if (output.length > limit) {
+      throw new ApiError(400, "invalid_query", "pattern expansion exceeds the 256-item limit");
+    }
+    if (value === end) break;
+  }
+  return output;
+}
+
+interface LegacyPatternPlan {
+  prefixes: string[];
+  patterns: string[];
+}
+
+function legacyPatternPlan(rawPrefix: string | undefined, rawRegex: string | undefined): LegacyPatternPlan {
+  const prefix = rawPrefix ?? ".*";
+  if (prefix.length > 256 || (rawRegex?.length ?? 0) > 256) {
+    throw new ApiError(400, "invalid_query", "pattern path segments must not exceed 256 characters");
+  }
+  const prefixes = Array.from(new Set(expandLegacyNumericBraces(prefix)));
+  if (prefixes.length > MAX_LEGACY_PATTERN_PREFIXES) {
+    throw new ApiError(
+      400,
+      "invalid_query",
+      `prefix expansion exceeds the ${MAX_LEGACY_PATTERN_PREFIXES}-item Workers limit`,
+    );
+  }
+  let patternSource = prefixes.length > 1 ? `^${prefix}` : "";
+  if (rawRegex !== undefined) patternSource += `.*${rawRegex}`;
+  const patterns = patternSource === ""
+    ? [""]
+    : Array.from(new Set(expandLegacyNumericBraces(patternSource)));
+  for (const pattern of patterns) {
+    // The locked routes expose arbitrary RegExp construction. Workers accepts
+    // only the fixture-required linear subset before compiling JavaScript.
+    if (!/^[A-Za-z0-9.*^$:_-]*$/.test(pattern)) {
+      throw new ApiError(400, "unsupported_pattern", "pattern contains unsupported regex syntax");
+    }
+  }
+  return { prefixes, patterns };
+}
+
+function legacyPatternMatches(value: string, plan: LegacyPatternPlan): boolean {
+  if (!plan.prefixes.some((prefix) => prefix === ".*" || value.startsWith(prefix))) return false;
+  if (plan.patterns.length === 1 && plan.patterns[0] === "") return true;
+  return plan.patterns.some((pattern) => new RegExp(pattern).test(value));
+}
+
+async function queryLegacyPatternEntries(
+  request: Request,
+  env: AppEnv,
+  url: URL,
+  type: string | undefined,
+  plan: LegacyPatternPlan,
+): Promise<PublicEntry[]> {
+  if (Array.from(url.searchParams.keys()).some((name) => name.startsWith("sort["))) {
+    throw new ApiError(400, "unsupported_query_sort", "pattern routes currently use locked date ordering only");
+  }
+  const countProbe = new URL(url);
+  countProbe.searchParams.delete("find[dateString]");
+  countProbe.searchParams.delete("find[dateString][$gte]");
+  countProbe.searchParams.delete("find[dateString][$lt]");
+  if (type !== undefined) countProbe.searchParams.set("find[type]", type);
+  countProbe.searchParams.set("find[dateString][$gte]", "0000");
+  const requestedCount = parseHistoryQuery(countProbe).count;
+  const candidateCount = plan.patterns.length === 1 && plan.patterns[0] === ""
+    ? requestedCount
+    : MAX_LEGACY_PATTERN_CANDIDATES;
+  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+  const merged = new Map<string, PublicEntry>();
+  for (const prefix of plan.prefixes) {
+    if (prefix === ".*") {
+      throw new ApiError(
+        400,
+        "unsupported_pattern",
+        "a literal dateString prefix is required on the Workers adapter",
+      );
+    }
+    const queryUrl = new URL(url);
+    queryUrl.searchParams.delete("find[dateString]");
+    queryUrl.searchParams.delete("find[dateString][$gte]");
+    queryUrl.searchParams.delete("find[dateString][$lt]");
+    queryUrl.searchParams.set("find[dateString][$gte]", prefix);
+    queryUrl.searchParams.set("find[dateString][$lt]", `${prefix}\uffff`);
+    queryUrl.searchParams.set("count", String(candidateCount));
+    if (type !== undefined) queryUrl.searchParams.set("find[type]", type);
+    const query = parseHistoryQuery(queryUrl);
+    const decision = JSON.parse(await store.getEntriesJson(query)) as
+      | { ok: true; result: PublicEntry[] }
+      | { ok: false; status?: number; message: string };
+    if (!decision.ok) {
+      if (decision.status === 400 || decision.status === 413) {
+        throw new ApiError(
+          decision.status,
+          decision.status === 413 ? "entry_query_limit" : "invalid_query",
+          decision.message,
+        );
+      }
+      throw new Error(decision.message);
+    }
+    for (const entry of decision.result) {
+      const dateString = entry.dateString;
+      if (typeof dateString !== "string" || !legacyPatternMatches(dateString, plan)) continue;
+      merged.set(entry._id, entry);
+    }
+  }
+  return Array.from(merged.values())
+    .sort((left, right) => {
+      const delta = Number(right.date) - Number(left.date);
+      return delta === 0 ? left._id.localeCompare(right._id) : delta;
+    })
+    .slice(0, requestedCount);
+}
+
 function requestValidatorsAreFresh(request: Request, headers: Headers): boolean {
   if (/(?:^|,)\s*?no-cache\s*?(?:,|$)/i.test(request.headers.get("Cache-Control") ?? "")) {
     return false;
@@ -1518,6 +1735,111 @@ async function handleEntriesApi(
     return withoutBodyForHead(request, response);
   }
 
+  const timesEchoMatch = /^\/api\/v[12]\/times\/echo(?:\/([^/]+))?(?:\/([^/]+))?\/?$/.exec(
+    splitPath.pathname,
+  );
+  if (readMethod && timesEchoMatch !== null) {
+    await requirePermission(request, env, url, "api:entries:read");
+    let prefix: string | undefined;
+    let regex: string | undefined;
+    try {
+      prefix = timesEchoMatch[1] === undefined ? undefined : decodeURIComponent(timesEchoMatch[1]);
+      regex = timesEchoMatch[2] === undefined ? undefined : decodeURIComponent(timesEchoMatch[2]);
+    } catch {
+      throw new ApiError(400, "invalid_query", "times path contains invalid encoding");
+    }
+    const plan = legacyPatternPlan(prefix, regex);
+    const input = legacyEchoInput(url, undefined, undefined);
+    const rawFind = input.find;
+    const find = typeof rawFind === "object" && rawFind !== null && !Array.isArray(rawFind)
+      ? { ...(rawFind as Record<string, unknown>) }
+      : {};
+    find.dateString = {
+      $in: [...plan.patterns],
+      ...(plan.prefixes.length === 1 && plan.prefixes[0] !== ".*"
+        ? { $regex: `^${plan.prefixes[0]}` }
+        : {}),
+    };
+    input.find = find;
+    const params: Record<string, string> = {};
+    if (prefix !== undefined) params.prefix = prefix;
+    if (regex !== undefined) params.regex = regex;
+    const response = await legacyEntryJson({
+      req: { params, query: input },
+      pattern: plan.patterns,
+    });
+    return withoutBodyForHead(request, response);
+  }
+
+  const timesMatch = /^\/api\/v[12]\/times(?:\/([^/]+))?(?:\/([^/]+))?\/?$/.exec(
+    splitPath.pathname,
+  );
+  if (readMethod && timesMatch !== null) {
+    await requirePermission(request, env, url, "api:entries:read");
+    let prefix: string | undefined;
+    let regex: string | undefined;
+    try {
+      prefix = timesMatch[1] === undefined ? undefined : decodeURIComponent(timesMatch[1]);
+      regex = timesMatch[2] === undefined ? undefined : decodeURIComponent(timesMatch[2]);
+    } catch {
+      throw new ApiError(400, "invalid_query", "times path contains invalid encoding");
+    }
+    const plan = legacyPatternPlan(prefix, regex);
+    return renderLegacyEntries(
+      request,
+      await queryLegacyPatternEntries(request, env, url, undefined, plan),
+      splitPath.extension,
+    );
+  }
+
+  const sliceMatch = /^\/api\/v[12]\/slice\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?\/?$/.exec(
+    splitPath.pathname,
+  );
+  if (readMethod && sliceMatch !== null) {
+    await requirePermission(request, env, url, "api:entries:read");
+    let storage: string;
+    let field: string;
+    let type: string | undefined;
+    let prefix: string | undefined;
+    let regex: string | undefined;
+    try {
+      storage = decodeURIComponent(sliceMatch[1]!);
+      field = decodeURIComponent(sliceMatch[2]!);
+      type = sliceMatch[3] === undefined ? undefined : decodeURIComponent(sliceMatch[3]);
+      prefix = sliceMatch[4] === undefined ? undefined : decodeURIComponent(sliceMatch[4]);
+      regex = sliceMatch[5] === undefined ? undefined : decodeURIComponent(sliceMatch[5]);
+    } catch {
+      throw new ApiError(400, "invalid_query", "slice path contains invalid encoding");
+    }
+    if (storage !== "entries") {
+      throw new ApiError(
+        400,
+        "unsupported_slice_storage",
+        "the current slice adapter supports entries storage only",
+      );
+    }
+    if (field !== "dateString") {
+      throw new ApiError(
+        400,
+        "unsupported_slice_field",
+        "the current pattern slice adapter supports dateString only",
+      );
+    }
+    if (prefix === undefined || prefix.length === 0) {
+      throw new ApiError(400, "invalid_query", "slice requires a dateString prefix");
+    }
+    if (type !== undefined && !/^[A-Za-z0-9_-]{1,32}$/.test(type)) {
+      throw new ApiError(400, "invalid_entry", "entry model has an invalid format");
+    }
+    const plan = legacyPatternPlan(prefix, regex);
+    return renderLegacyEntries(
+      request,
+      await queryLegacyPatternEntries(request, env, url, type, plan),
+      splitPath.extension,
+      type,
+    );
+  }
+
   if (
     readMethod &&
     /^\/api\/v[12]\/entries\/current\/?$/.test(splitPath.pathname)
@@ -1651,8 +1973,28 @@ async function handleEntriesApi(
     if (!id) assertSupportedEntryDeleteFilters(url);
     const lte = id ? null : entryDeleteBoundary(url, "find[date][$lte]");
     const gte = id ? null : entryDeleteBoundary(url, "find[date][$gte]");
-    if (!id && lte === null && gte === null) {
-      throw new ApiError(400, "invalid_query", "a bounded date query is required for bulk entry deletion");
+    const dateString = id ? null : entryDeleteDateString(url);
+    const date = id ? null : entryDeleteExactDate(url);
+    const dateStringLte = id
+      ? null
+      : entryDeleteDateStringBoundary(url, "find[dateString][$lte]");
+    const dateStringGte = id
+      ? null
+      : entryDeleteDateStringBoundary(url, "find[dateString][$gte]");
+    if (
+      !id
+      && lte === null
+      && gte === null
+      && dateString === null
+      && date === null
+      && dateStringLte === null
+      && dateStringGte === null
+    ) {
+      throw new ApiError(
+        400,
+        "invalid_query",
+        "a date or dateString selector is required for bulk entry deletion",
+      );
     }
     const type = id || spec === "*"
       ? null
@@ -1662,6 +2004,10 @@ async function handleEntriesApi(
       lte,
       gte,
       type,
+      dateString,
+      date,
+      dateStringLte,
+      dateStringGte,
     );
     if (deleted < 0) {
       throw new ApiError(
@@ -1765,7 +2111,8 @@ async function handleCollectionApi(
     }
     const parsed = parseDocumentPayload(payload, collection, false);
     if (collection === "treatments") {
-      const created = await store.createLegacyTreatments(JSON.stringify(parsed.documents));
+      const sanitized = parsed.documents.map(sanitizeLegacyTreatmentDocument);
+      const created = await store.createLegacyTreatments(JSON.stringify(sanitized));
       if (!created.ok) throw new ApiError(500, "mongo_error", "Mongo Error");
       return json(parseDocuments(created.value));
     }
@@ -2313,6 +2660,43 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
 
   if (isApi3) {
     return withoutBodyForHead(request, api3Error(404, "Bad operation or collection"));
+  }
+
+  if (
+    request.method === "POST"
+    && /^\/api\/v[12]\/alexa\/?$/.test(url.pathname)
+  ) {
+    const payload = await readBoundedBody(request);
+    await requirePermission(request, env, url, "api:*:read", payload);
+    const alexaRequest = typeof payload === "object"
+        && payload !== null
+        && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>).request
+      : undefined;
+    const requestRecord = typeof alexaRequest === "object"
+        && alexaRequest !== null
+        && !Array.isArray(alexaRequest)
+      ? alexaRequest as Record<string, unknown>
+      : {};
+
+    if (requestRecord.type === "SessionEndedRequest") return json("");
+
+    if (requestRecord.type === "LaunchRequest" && requestRecord.intent === undefined) {
+      const launch = "What would you like to check on Nightscout?";
+      return json(legacyAlexaSpeechletResponse(
+        "Welcome to Nightscout",
+        launch,
+        launch,
+        false,
+      ));
+    }
+
+    return json(legacyAlexaSpeechletResponse(
+      "Unknown Intent",
+      "I'm sorry, I don't know what you're asking for.",
+      "",
+      true,
+    ));
   }
 
   const ddataRoute = /^\/api\/v2\/ddata\/at(?:\/([^/]+))?\/?$/.exec(url.pathname);

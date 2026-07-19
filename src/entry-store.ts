@@ -1871,8 +1871,21 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     lte: number | null = null,
     gte: number | null = null,
     type: string | null = null,
+    dateString: string | null = null,
+    date: number | null = null,
+    dateStringLte: string | null = null,
+    dateStringGte: string | null = null,
   ): Promise<number> {
-    return this.documentRepository().deleteLegacyEntries(ids, lte, gte, type);
+    return this.documentRepository().deleteLegacyEntries(
+      ids,
+      lte,
+      gte,
+      type,
+      dateString,
+      date,
+      dateStringLte,
+      dateStringGte,
+    );
   }
 
   async listDocuments(collection: DocumentCollection, limit = 5000): Promise<string> {

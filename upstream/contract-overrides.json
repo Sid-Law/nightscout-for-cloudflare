@@ -350,6 +350,14 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/api.aaps-client.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime AndroidAPS v1 contract in test/api-v1-core-contract.test.ts: SGV device/app metadata, dateString-derived utcOffset, SMB/meal/temp-basal numeric and boolean fields, pumpId/pumpType/pumpSerial preservation, single-array and multi-document batches, ordered ObjectId responses and stored-field reads."
+    },
+    "vendor/nightscout/tests/api.alexa.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime Alexa REST contract in test/api-v1-core-contract.test.ts: the locked en-US LaunchRequest response and reprompt, LaunchRequest intent fallback, SessionEndedRequest response, anonymous readable-role authorization and official Speechlet response envelope. This is local protocol compatibility and does not call an external Alexa service."
+    },
     "vendor/nightscout/tests/api.activity.test.js": {
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime Activity contract in test/api-v1-collections-contract.test.ts: PUT and POST create/query/delete lifecycles, single-object and multi-object POST response arrays, empty-array success, ID allocation, existing and missing-ID PUT behavior, Last-Modified reads, exact legacy ObjectId errors, and empty final state."
@@ -357,6 +365,10 @@
     "vendor/nightscout/tests/api.devicestatus.test.js": {
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime DeviceStatus contract in test/api-v1-collections-contract.test.ts: zoned created_at/utcOffset normalization, nested Loop payloads, single and ten-item batches, empty object/array, valid/generated/invalid IDs, preflight validation without partial writes, filtered wildcard deletion, and exact legacy ID errors."
+    },
+    "vendor/nightscout/tests/api.entries.test.js": {
+      "status": "adapted",
+      "reason": "Represented across test/api-v1-entries-contract.test.ts, test/api-v1-entries-utilities-contract.test.ts and test/api-v1-core-contract.test.ts: explicit/default count and date ordering, echo query shape, literal and numeric-brace multi-prefix slice, times/echo and modal times/minutes expansion, current/ID/model reads, preview and mutation authorization, single/multi/empty uploads, dateString normalization/utcOffset, and exact-date plus open dateString-range deletion. Pattern routes use documented Workers bounds and a fixture-complete linear regex subset."
     },
     "vendor/nightscout/tests/api.food.test.js": {
       "status": "adapted",
@@ -370,6 +382,10 @@
       "status": "adapted",
       "reason": "Represented by the pure Workers-runtime helper contract in test/api-v1-collections-contract.test.ts: undefined/null acceptance, 24-hex acceptance, UUID/number rejection, first-invalid batch reporting and all-valid null result."
     },
+    "vendor/nightscout/tests/api.root.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime root contract in test/api-v1-core-contract.test.ts: public GET /api/versions returns the three locked API versions and URLs, every item has exactly the version/url keys, versions are valid semantic-version shapes, and each URL begins with /api."
+    },
     "vendor/nightscout/tests/api.profiles.test.js": {
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime Profile contract in test/api-v1-collections-contract.test.ts: POST/PUT/query/delete workflows, single and multi-profile Loop/NightscoutKit shapes, empty-array success, valid/generated/invalid IDs, existing and missing-ID replacement, atomic mixed-ID rejection and exact legacy error envelopes."
@@ -377,6 +393,22 @@
     "vendor/nightscout/tests/api.shape-handling.test.js": {
       "status": "adapted",
       "reason": "Represented across test/api-v1-collections-contract.test.ts, test/api-v1-entries-contract.test.ts, test/api-v1-treatments-contract.test.ts and test/worker.test.ts: every locked Entries, Treatments, DeviceStatus and Profile single/array/ten-item/empty response shape, mixed SGV/MBG and treatment types, nested Loop fixtures, syncIdentifier preservation, and legacy Food/Activity PUT-by-ID behavior."
+    },
+    "vendor/nightscout/tests/api.status.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime status contract in test/api-v1-core-contract.test.ts and the exhaustive representation boundary in test/status-surface.test.ts: locked custom careportal/rawbg enable state, JSON fields, HTML, text, JavaScript, PNG/SVG redirects, MIME types and inherited v1/v2 mounts."
+    },
+    "vendor/nightscout/tests/api.treatments.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime v1 Treatments contracts in test/api-v1-treatments-contract.test.ts and the Loop batch contract in test/api-v1-core-contract.test.ts: preBolus fan-out and dedupe, locked XSS fixture sanitization, zoned-time/utcOffset and numeric normalization, object/array upload, query/delete, UUID-as-identifier POST/PUT/delete, explicit AAPS identifier upsert and ordered identifier batches. The Cloudflare sanitizer is deliberately stricter than DOMPurify for safe HTML attributes outside this locked file."
+    },
+    "vendor/nightscout/tests/api.unauthorized.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime authenticated Entries contract in test/api-v1-core-contract.test.ts plus uploader coverage in test/api-v1-entries-contract.test.ts: exact anonymous POST error, authorized preview with all 30 rows, authorized create, literal dateString slice read, anonymous exact/ranged delete rejection without data loss, and authorized exact/ranged deletion. The locked test ignores its stale preview 201 Supertest error; the exercised upstream res.json path and NSCF both return 200."
+    },
+    "vendor/nightscout/tests/api.v1-batch-operations.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime Loop/Trio contract in test/api-v1-core-contract.test.ts plus the 100-item boundary in test/api-v1-entries-contract.test.ts: treatment and glucose arrays create separate ordered documents, single/empty/100-item batches, per-position ObjectIds, Loop carb/dose fields, Trio id/enteredBy/device preservation, and mixed isValid data behavior."
     },
     "vendor/nightscout/tests/api3.aaps-patterns.test.js": {
       "status": "adapted",

@@ -2418,9 +2418,21 @@ export class SqliteDocumentRepository {
     lte: number | null,
     gte: number | null,
     type: string | null = null,
+    dateString: string | null = null,
+    date: number | null = null,
+    dateStringLte: string | null = null,
+    dateStringGte: string | null = null,
   ): number {
     return this.storage.transactionSync(() => {
-      if (ids.length === 0 && lte === null && gte === null) return 0;
+      if (
+        ids.length === 0
+        && lte === null
+        && gte === null
+        && dateString === null
+        && date === null
+        && dateStringLte === null
+        && dateStringGte === null
+      ) return 0;
       const clauses = ["collection = 'entries'"];
       const bindings: SqlStorageValue[] = [];
       if (ids.length > 0) {
@@ -2434,6 +2446,22 @@ export class SqliteDocumentRepository {
         if (gte !== null) {
           clauses.push("sort_time >= ?");
           bindings.push(gte);
+        }
+        if (dateString !== null) {
+          clauses.push("json_extract(body, '$.dateString') = ?");
+          bindings.push(dateString);
+        }
+        if (date !== null) {
+          clauses.push("sort_time = ?");
+          bindings.push(date);
+        }
+        if (dateStringLte !== null) {
+          clauses.push("json_extract(body, '$.dateString') <= ?");
+          bindings.push(dateStringLte);
+        }
+        if (dateStringGte !== null) {
+          clauses.push("json_extract(body, '$.dateString') >= ?");
+          bindings.push(dateStringGte);
         }
       }
       if (type !== null) {
