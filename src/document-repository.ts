@@ -3,12 +3,20 @@ import { LEGACY_ENTRY_DEFAULT_WINDOW_MS } from "./model";
 import type { HistoryQuery, ValidatedEntry } from "./model";
 import { compileMongoRegexToSqlGlob } from "./safe-regex";
 
-export type Api3CollectionName = "devicestatus" | "entries" | "profile" | "treatments";
+export type Api3CollectionName =
+  | "devicestatus"
+  | "entries"
+  | "food"
+  | "profile"
+  | "settings"
+  | "treatments";
 
 const TREATMENTS: Api3CollectionName = "treatments";
 const DEVICESTATUS: Api3CollectionName = "devicestatus";
 const ENTRIES: Api3CollectionName = "entries";
+const FOOD: Api3CollectionName = "food";
 const PROFILE: Api3CollectionName = "profile";
+const SETTINGS: Api3CollectionName = "settings";
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FIELD_NAME = /^[A-Za-z0-9_,.-]+$/;
@@ -258,13 +266,15 @@ function fallbackKey(
 ): string | null {
   // Locked v15.0.7 lib/api3/generic/setup.js configures the API3 legacy
   // fallback as date+type for entries, created_at+device for devicestatus,
-  // created_at alone for profile, and created_at+eventType for treatments.
+  // created_at alone for food/profile, and created_at+eventType for
+  // treatments. Settings deliberately has no fallback identity.
   // This is deliberately separate from v1's sysTime+type upsert selector in
   // lib/server/entries.js. Settings must not inherit the created_at fallback.
+  if (collection === SETTINGS) return null;
   const dateValue = collection === ENTRIES
     ? document.date
     : canonicalCreatedAt(document.created_at);
-  if (collection === PROFILE) {
+  if (collection === FOOD || collection === PROFILE) {
     return typeof dateValue === "string" || typeof dateValue === "number"
       ? JSON.stringify([dateValue])
       : null;
@@ -503,10 +513,13 @@ function materializeApi3WithStorageProjection(
   }
 
   // Locked API3 resolves fallback dates only after the storage query. Entries
-  // use date; the other implemented collections use created_at. This remains
-  // virtual, so legacy rows do not start matching raw srv* filters/history.
+  // use date; device status, food, profile and treatments use created_at;
+  // settings has no fallback date. This remains virtual, so legacy rows do not
+  // start matching raw srv* filters/history.
   if (!document.srvModified) {
-    const fallback = timestamp(collection === ENTRIES ? document.date : document.created_at);
+    const fallback = collection === SETTINGS
+      ? null
+      : timestamp(collection === ENTRIES ? document.date : document.created_at);
     if (fallback !== null) document.srvModified = fallback;
   }
   if (document.srvModified && !document.srvCreated) {
@@ -1186,6 +1199,8 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
            AND json_type(body, '$.type') IS NOT NULL)
        OR (collection = 'profile' AND fallback_key IS NULL
            AND json_type(body, '$.created_at') IS NOT NULL)
+       OR (collection = 'food' AND fallback_key IS NULL
+           AND json_type(body, '$.created_at') IS NOT NULL)
        OR NOT EXISTS (
          SELECT 1 FROM document_changes
          WHERE document_changes.collection = documents.collection
@@ -1213,6 +1228,7 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     const documentFallback = collection === TREATMENTS
       || collection === DEVICESTATUS
       || collection === ENTRIES
+      || collection === FOOD
       || collection === PROFILE
       ? fallbackKey(document, collection as Api3CollectionName)
       : row.fallback_key;
@@ -2780,6 +2796,19 @@ export class SqliteDocumentRepository {
   }
 
   treatmentsLastModified(collection: Api3CollectionName = TREATMENTS): number | null {
+    if (collection === SETTINGS) {
+      return this.sql.exec<MaxModifiedRow>(
+        `SELECT MAX(CASE
+                      WHEN json_type(body, '$.srvModified') IN ('integer', 'real')
+                        THEN CAST(json_extract(body, '$.srvModified') AS INTEGER)
+                      ELSE NULL
+                    END) AS srv_modified,
+                NULL AS created_at_number
+         FROM documents
+         WHERE collection = ?`,
+        collection,
+      ).one().srv_modified;
+    }
     const fallbackPath = collection === ENTRIES ? "$.date" : "$.created_at";
     const row = this.sql.exec<MaxModifiedRow>(
       `SELECT MAX(CASE

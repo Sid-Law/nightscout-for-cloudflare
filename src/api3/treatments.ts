@@ -131,6 +131,20 @@ export function matchApi3ProfileRoute(
   return matchApi3CollectionRoute(method, pathname, "profile");
 }
 
+export function matchApi3FoodRoute(
+  method: string,
+  pathname: string,
+): Api3CollectionRoute | null {
+  return matchApi3CollectionRoute(method, pathname, "food");
+}
+
+export function matchApi3SettingsRoute(
+  method: string,
+  pathname: string,
+): Api3CollectionRoute | null {
+  return matchApi3CollectionRoute(method, pathname, "settings");
+}
+
 function allowed(
   authorization: Api3Authorization,
   collection: Api3CollectionName,
@@ -493,7 +507,8 @@ async function searchTreatments(
   extension: string | undefined,
   collection: Api3CollectionName,
 ): Promise<Response> {
-  if (!allowed(authorization, collection, "read")) return forbidden(collection, "read");
+  const action = collection === "settings" ? "admin" : "read";
+  if (!allowed(authorization, collection, action)) return forbidden(collection, action);
   const input = parseApi3Search(url);
   const query: DocumentQuery = {
     filters: input.filters,
@@ -526,7 +541,8 @@ async function historyTreatments(
   route: Extract<Api3TreatmentRoute, { kind: "history" }>,
   collection: Api3CollectionName,
 ): Promise<Response> {
-  if (!allowed(authorization, collection, "read")) return forbidden(collection, "read");
+  const action = collection === "settings" ? "admin" : "read";
+  if (!allowed(authorization, collection, action)) return forbidden(collection, action);
   const input = parseApi3History(
     url,
     route.lastModified,
@@ -689,12 +705,39 @@ export async function handleApi3Profile(
   return handleApi3Collection(request, url, store, authorization, route, "profile");
 }
 
-export async function handleApi3TreatmentsLastModified(
+export async function handleApi3Food(
+  request: Request,
+  url: URL,
+  store: DurableObjectStub<EntryStore>,
+  authorization: Api3Authorization,
+  route: Api3CollectionRoute,
+): Promise<Response> {
+  return handleApi3Collection(request, url, store, authorization, route, "food");
+}
+
+export async function handleApi3Settings(
+  request: Request,
+  url: URL,
+  store: DurableObjectStub<EntryStore>,
+  authorization: Api3Authorization,
+  route: Api3CollectionRoute,
+): Promise<Response> {
+  return handleApi3Collection(request, url, store, authorization, route, "settings");
+}
+
+export async function handleApi3LastModified(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
 ): Promise<Response> {
   const collections: Record<string, number> = {};
-  for (const collection of ["devicestatus", "entries", "profile", "treatments"] as const) {
+  for (const collection of [
+    "devicestatus",
+    "entries",
+    "food",
+    "profile",
+    "settings",
+    "treatments",
+  ] as const) {
     if (!allowed(authorization, collection, "read")) continue;
     const modified = await store.api3CollectionLastModified(collection);
     if (modified !== null) collections[collection] = modified;

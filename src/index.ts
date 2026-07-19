@@ -35,12 +35,16 @@ import { normalizePlatformAuthFailDelay } from "./status";
 import {
   handleApi3DeviceStatus,
   handleApi3Entries,
+  handleApi3Food,
+  handleApi3LastModified,
   handleApi3Profile,
+  handleApi3Settings,
   handleApi3Treatments,
-  handleApi3TreatmentsLastModified,
   matchApi3DeviceStatusRoute,
   matchApi3EntriesRoute,
+  matchApi3FoodRoute,
   matchApi3ProfileRoute,
+  matchApi3SettingsRoute,
   matchApi3TreatmentRoute,
   api3BodyParserFailure,
   splitApi3Extension,
@@ -2181,20 +2185,26 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   if (request.method === "GET" && api3Pathname === "/api/v3/lastModified") {
     const authentication = await authenticateApi3(request, env, url);
     return authentication.ok
-      ? handleApi3TreatmentsLastModified(authentication.store, authentication.authorized)
+      ? handleApi3LastModified(authentication.store, authentication.authorized)
       : authentication.response;
   }
 
   const matchedTreatmentRoute = matchApi3TreatmentRoute(request.method, api3Pathname);
   const matchedDeviceStatusRoute = matchApi3DeviceStatusRoute(request.method, api3Pathname);
   const matchedEntriesRoute = matchApi3EntriesRoute(request.method, api3Pathname);
+  const matchedFoodRoute = matchApi3FoodRoute(request.method, api3Pathname);
   const matchedProfileRoute = matchApi3ProfileRoute(request.method, api3Pathname);
+  const matchedSettingsRoute = matchApi3SettingsRoute(request.method, api3Pathname);
   const matchedApi3Route = matchedTreatmentRoute === null
     ? matchedDeviceStatusRoute === null
       ? matchedEntriesRoute === null
-        ? matchedProfileRoute === null
-          ? null
-          : { route: matchedProfileRoute, collection: "profile" as const }
+        ? matchedFoodRoute === null
+          ? matchedProfileRoute === null
+            ? matchedSettingsRoute === null
+              ? null
+              : { route: matchedSettingsRoute, collection: "settings" as const }
+            : { route: matchedProfileRoute, collection: "profile" as const }
+          : { route: matchedFoodRoute, collection: "food" as const }
         : { route: matchedEntriesRoute, collection: "entries" as const }
       : { route: matchedDeviceStatusRoute, collection: "devicestatus" as const }
     : { route: matchedTreatmentRoute, collection: "treatments" as const };
@@ -2229,13 +2239,29 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
             authentication.authorized,
             api3CollectionRoute,
           )
-          : handleApi3Profile(
-            request,
-            url,
-            authentication.store,
-            authentication.authorized,
-            api3CollectionRoute,
-          );
+          : matchedApi3Route.collection === "food"
+            ? handleApi3Food(
+              request,
+              url,
+              authentication.store,
+              authentication.authorized,
+              api3CollectionRoute,
+            )
+            : matchedApi3Route.collection === "profile"
+              ? handleApi3Profile(
+                request,
+                url,
+                authentication.store,
+                authentication.authorized,
+                api3CollectionRoute,
+              )
+              : handleApi3Settings(
+                request,
+                url,
+                authentication.store,
+                authentication.authorized,
+                api3CollectionRoute,
+              );
   }
 
   if (isApi3) return api3Error(404, "Bad operation or collection");

@@ -1761,14 +1761,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         documents.map((document) => this.documentRepository().upsertTreatment(document).document),
       );
     }
-    if (collection === "profile") {
+    if (collection === "profile" || collection === "food") {
       return JSON.stringify(
         documents.map((document) =>
           this.documentRepository().createLegacyDocument(
             collection,
-            document.created_at
-              ? document
-              : { ...document, created_at: new Date().toISOString() },
+            collection === "food"
+              ? { ...document, created_at: new Date().toISOString() }
+              : document.created_at
+                ? document
+                : { ...document, created_at: new Date().toISOString() },
           ).document),
       );
     }
@@ -1857,7 +1859,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         documents.map((document) => this.documentRepository().upsertTreatment(document).document),
       );
     }
-    if (collection === "profile") {
+    if (collection === "profile" || collection === "food") {
       return JSON.stringify(
         documents.map((document) =>
           this.documentRepository().saveLegacyDocument(
@@ -1957,6 +1959,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     if (
       collection === "treatments"
       || collection === "devicestatus"
+      || collection === "food"
       || collection === "profile"
     ) {
       let deleted = 0;
