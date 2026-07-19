@@ -56,6 +56,11 @@ import {
 import { nightscoutCorsHeaders as corsHeaders } from "./api3/response";
 import { normalizeApi3MaxLimit } from "./api3/input";
 import { buildNightscoutSummary } from "./api2/summary";
+import {
+  calculateBgnowProperties,
+  type NightscoutGlucoseUnits,
+} from "./plugins/bgnow";
+import { calculateDirectionProperty } from "./plugins/direction";
 
 export { EntryStore };
 
@@ -758,38 +763,31 @@ function runtimeSgv(entry: PublicEntry): number | null {
   return entry.mbg ? null : runtimeMeasurement(entry.sgv);
 }
 
-function toClockProperties(entries: PublicEntry[]): Record<string, unknown> {
+function toClockProperties(
+  entries: PublicEntry[],
+  units: NightscoutGlucoseUnits,
+  now: number,
+): Record<string, unknown> {
   const sgvs = entries.flatMap((entry) => {
     const sgv = runtimeSgv(entry);
-    return sgv === null ? [] : [{ ...entry, sgv, type: "sgv" }];
-  });
-  const current = sgvs[0];
-  if (current === undefined) {
-    return { bgnow: { sgvs: [] }, delta: null };
-  }
-
-  const sgv = {
-    _id: current._id,
-    mgdl: current.sgv,
-    scaled: current.sgv,
-    mills: current.date,
-    direction: current.direction,
-    device: current.device,
-    type: current.type,
-  };
-  const previous = sgvs[1];
-  const deltaValue = previous === undefined ? null : current.sgv - previous.sgv;
-  return {
-    bgnow: { sgvs: [sgv] },
-    delta:
-      deltaValue === null
-        ? null
-        : {
-            mgdl: deltaValue,
-            scaled: deltaValue,
-            display: `${deltaValue >= 0 ? "+" : ""}${deltaValue}`,
-          },
-  };
+    const raw = entry as PublicEntry & Record<string, unknown>;
+    return sgv === null ? [] : [{
+      _id: entry._id,
+      mgdl: sgv,
+      mills: entry.date,
+      device: entry.device,
+      direction: entry.direction,
+      filtered: raw.filtered,
+      unfiltered: raw.unfiltered,
+      noise: raw.noise,
+      rssi: raw.rssi,
+      type: "sgv",
+    }];
+  }).sort((left, right) => Number(left.mills) - Number(right.mills));
+  const properties = calculateBgnowProperties(sgvs, now, units);
+  const latest = [...sgvs].reverse().find((entry) => Number(entry.mills) <= now);
+  const direction = calculateDirectionProperty(latest, now);
+  return direction === undefined ? properties : { ...properties, direction };
 }
 
 function statusQueryCredential(url: URL, name: "token" | "secret"): PresentedToken | null {
@@ -2741,8 +2739,18 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     const tenant = resolveTenant(request, url);
     // The upstream sandbox properties are derived from the runtime SGV bucket,
     // whose mbg-first/truthy-sgv classification is not equivalent to type=sgv.
-    const entries = await env.ENTRY_STORE.getByName(tenant).getSgvEntries(4);
-    const properties = toClockProperties(entries);
+    const store = env.ENTRY_STORE.getByName(tenant);
+    const now = Date.now();
+    const [entries, status] = await Promise.all([
+      store.getSgvEntries(64),
+      store.nightscoutHttpStatus(now).then((value) => JSON.parse(value) as {
+        settings?: { units?: unknown };
+      }),
+    ]);
+    const units: NightscoutGlucoseUnits = status.settings?.units === "mmol"
+      ? "mmol"
+      : "mg/dl";
+    const properties = toClockProperties(entries, units, now);
     let result = properties;
     const rawSelection = url.pathname
       .slice("/api/v2/properties".length)

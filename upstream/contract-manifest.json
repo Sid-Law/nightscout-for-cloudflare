@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "c4dd389461651478ccfcdc7aa3bd00554e9cdbaf0b723bbd7094997cbbcefeb7",
+  "inputs_sha256": "868a2b91303f2f24caf5ca800f906835ce823de89e4b767c9f93514c3ec19e1d",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 33,
+      "adapted": 35,
       "excluded-fixed-scope": 2,
-      "unresolved": 76
+      "unresolved": 74
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7850,8 +7850,8 @@
     },
     {
       "file": "vendor/nightscout/tests/bgnow.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: exact 5-minute buckets, ordinary and eleven-minute interpolated deltas, mg/dl and mmol scaling/rounding, bucket placement, and locked visualization info payloads.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -8044,8 +8044,8 @@
     },
     {
       "file": "vendor/nightscout/tests/direction.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: current Flat/DoubleUp offers, every locked direction character/entity mapping, and the exact direct-HTML pill label.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

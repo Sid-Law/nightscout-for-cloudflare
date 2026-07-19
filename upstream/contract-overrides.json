@@ -482,6 +482,14 @@
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime contract in test/api-v2-data-contract.test.ts: creation and deep clone of every locked data bucket, created_at-to-mills normalization, durationInMilliseconds-to-rounded-duration and exact endmills derivation, source immutability, and prefer-new identifier collision merging. The production snapshot adapter additionally covers recent device-status windows and public-profile filtering."
     },
+    "vendor/nightscout/tests/bgnow.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: exact 5-minute buckets, ordinary and eleven-minute interpolated deltas, mg/dl and mmol scaling/rounding, bucket placement, and locked visualization info payloads."
+    },
+    "vendor/nightscout/tests/direction.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: current Flat/DoubleUp offers, every locked direction character/entity mapping, and the exact direct-HTML pill label."
+    },
     "vendor/nightscout/tests/bridge.test.js": {
       "status": "excluded-fixed-scope",
       "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope permits only simulated data."

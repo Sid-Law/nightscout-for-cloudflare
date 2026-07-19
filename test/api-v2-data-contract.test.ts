@@ -80,8 +80,13 @@ describe("locked Nightscout v15.0.7 v2 data contracts", () => {
 
     const selected = await SELF.fetch(endpoint("/api/v2/properties/bgnow,missing", name));
     expect(selected.status).toBe(200);
-    expect(await selected.json()).toEqual({
+    const selectedBody = await selected.json() as Record<string, unknown>;
+    expect(Object.keys(selectedBody)).toEqual(["bgnow"]);
+    expect(selectedBody).toMatchObject({
       bgnow: {
+        mean: 123,
+        last: 123,
+        mills: now,
         sgvs: [expect.objectContaining({ mgdl: 123, direction: "SingleUp" })],
       },
     });
