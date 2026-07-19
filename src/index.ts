@@ -1,5 +1,6 @@
 import { EntryStore } from "./entry-store";
 import mime from "mime";
+import qs from "qs";
 import type { DocumentCollection, JsonDocument } from "./entry-store";
 import {
   apiSecretDigestMatches,
@@ -625,22 +626,31 @@ async function requirePermission(
   return requirePermissions(request, env, url, [permission], body);
 }
 
-function formBody(text: string): JsonDocument {
-  const document: JsonDocument = {};
-  for (const [rawName, value] of new URLSearchParams(text)) {
-    const name = rawName.endsWith("[]") ? rawName.slice(0, -2) : rawName;
-    const previous = document[name];
-    if (rawName.endsWith("[]") || previous !== undefined) {
-      document[name] = Array.isArray(previous)
-        ? [...previous, value]
-        : previous === undefined
-          ? [value]
-          : [previous, value];
-    } else {
-      document[name] = value;
+function formBody(text: string): unknown {
+  const parameterLimit = 50_000;
+  let separators = 0;
+  for (let index = text.indexOf("&"); index !== -1; index = text.indexOf("&", index + 1)) {
+    separators += 1;
+    if (separators >= parameterLimit) {
+      throw new ApiError(413, "body_too_large", "form body has too many parameters");
     }
   }
-  return document;
+  try {
+    // Locked middleware uses body-parser urlencoded({ extended: true,
+    // parameterLimit: 50000 }); these are body-parser 1.20.4's qs options.
+    return qs.parse(text, {
+      allowPrototypes: true,
+      arrayLimit: Math.max(100, separators),
+      depth: 32,
+      strictDepth: true,
+      parameterLimit,
+    });
+  } catch (error) {
+    if (error instanceof RangeError) {
+      throw new ApiError(400, "invalid_form", "form body exceeds the supported nesting depth");
+    }
+    throw error;
+  }
 }
 
 async function readBoundedBody(request: Request): Promise<unknown> {
@@ -1265,12 +1275,17 @@ async function renderLegacyEntries(
   entries: PublicEntry[],
   extension: LegacyEntryExtension | undefined,
   assumedType?: string,
+  fallbackLastModified?: number,
 ): Promise<Response> {
   const prepared = prepareLegacyEntries(entries, assumedType);
   const firstTime = prepared.length === 0 ? null : legacyEntryTime(prepared[0]!);
   const lastModified = firstTime !== null && Number.isFinite(firstTime) && firstTime !== 0
     ? firstTime
-    : null;
+    : fallbackLastModified !== undefined
+        && Number.isFinite(fallbackLastModified)
+        && fallbackLastModified !== 0
+      ? fallbackLastModified
+      : null;
   const ifModifiedSince = request.headers.get("If-Modified-Since");
   if (
     lastModified !== null
@@ -1383,12 +1398,36 @@ async function handleEntriesApi(
     }
     const query = parseHistoryQuery(url);
     if (spec !== undefined) query.type = spec;
+    let contextLastModified: number | undefined;
+    if (spec === undefined) {
+      // Locked exact `/entries` runs ifModifiedSinceCTX against the latest
+      // runtime SGV before executing its Mongo query. The DO's bounded SGV
+      // bucket is the Cloudflare equivalent of ctx.ddata.sgvs.
+      const latestSgv = (await store.getSgvEntries(1))[0];
+      if (latestSgv !== undefined) {
+        const latestTime = legacyEntryTime(latestSgv);
+        if (Number.isFinite(latestTime) && latestTime !== 0) {
+          contextLastModified = latestTime;
+          const ifModifiedSince = request.headers.get("If-Modified-Since");
+          if (
+            ifModifiedSince !== null
+            && latestTime <= Date.parse(ifModifiedSince)
+          ) {
+            return legacyEntryNotModified(latestTime);
+          }
+        }
+      }
+    }
     const decision = JSON.parse(await store.getEntriesJson(query)) as
       | { ok: true; result: PublicEntry[] }
       | { ok: false; status?: number; message: string };
     if (!decision.ok) {
-      if (decision.status === 413) {
-        throw new ApiError(413, "entry_query_limit", decision.message);
+      if (decision.status === 400 || decision.status === 413) {
+        throw new ApiError(
+          decision.status,
+          decision.status === 413 ? "entry_query_limit" : "invalid_query",
+          decision.message,
+        );
       }
       throw new Error(decision.message);
     }
@@ -1397,6 +1436,7 @@ async function handleEntriesApi(
       decision.result,
       splitPath.extension,
       spec ?? query.type ?? undefined,
+      contextLastModified,
     );
   }
 

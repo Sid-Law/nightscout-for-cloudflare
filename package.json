@@ -33,6 +33,7 @@
     "@cloudflare/vitest-pool-workers": "latest",
     "@cloudflare/workers-types": "latest",
     "@types/node": "^24.0.0",
+    "@types/qs": "6.14.0",
     "ejs": "^3.1.10",
     "typescript": "~5.9.3",
     "vitest": "^4.1.0",
@@ -43,6 +44,7 @@
     "csv-stringify": "5.6.5",
     "easyxml": "2.0.1",
     "mime": "2.6.0",
+    "qs": "6.15.3",
     "shiro-trie": "0.4.10"
   }
 }

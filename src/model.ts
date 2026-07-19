@@ -1,7 +1,6 @@
 const MAX_BATCH_SIZE = 100;
 export const LEGACY_ENTRY_DEFAULT_WINDOW_MS = 4 * 24 * 60 * 60 * 1_000;
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
-const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export class ApiError extends Error {
   constructor(
@@ -159,13 +158,18 @@ function parseIdentity(entry: Record<string, unknown>): {
     }
     if (OBJECT_ID.test(entry._id)) {
       requestedId = entry._id.toLowerCase();
-    } else if (UUID.test(entry._id)) {
-      identifier ??= entry._id;
+    } else if (!identifier) {
+      // Locked v15.0.7 calls this UUID handling, but its actual predicate is
+      // every non-ObjectId string. Preserve uploader-owned sync IDs exactly,
+      // including the upstream replacement of a null/empty identifier.
+      if (entry._id.length > 4096) {
+        throw new ApiError(400, "invalid_entry", "_id has an invalid format");
+      }
+      identifier = entry._id;
       identifierPresent = true;
     }
-    // Locked normalizeEntryId() removes every other string `_id` so Mongo can
-    // allocate the server identity. UUID strings are the only invalid IDs
-    // copied to `identifier` when UUID_HANDLING is enabled.
+    // Locked normalizeEntryId() removes every non-ObjectId string `_id` so
+    // Mongo can allocate the server-owned primary identity.
   }
 
   return { requestedId, identifier, identifierPresent };
@@ -238,7 +242,9 @@ export function parseEntryPayload(value: unknown): ValidatedEntry[] {
 
 function escapeLegacyHtml(value: string): string {
   return value
-    .replaceAll("&", "&amp;")
+    // Preserve existing named/numeric entities so a read-then-reupload cycle
+    // is idempotent instead of growing `&amp;` into `&amp;amp;` each time.
+    .replace(/&(?!(?:#[0-9]+|#x[0-9a-f]+|[a-z][a-z0-9]+);)/gi, "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
@@ -253,8 +259,9 @@ function sanitizeLegacyValue(value: unknown): unknown {
     );
   }
   // Locked purifier applies DOMPurify only to nonnumeric leaves. Workers has
-  // no JSDOM document; entity-encoding every nonnumeric string is a bounded,
-  // fail-closed adaptation that cannot persist active markup or HTML entities.
+  // no JSDOM document; idempotent entity-encoding of markup-like nonnumeric
+  // strings is a bounded, fail-closed adaptation that cannot persist active
+  // markup while preserving entities already returned to an uploader.
   if (
     typeof value === "string"
     && Number.isNaN(Number(value))

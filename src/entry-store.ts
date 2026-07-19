@@ -1664,12 +1664,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     try {
       return JSON.stringify({ ok: true, result: await this.getEntries(query) });
     } catch (error) {
+      const queryStatus = error instanceof DocumentQueryError
+        ? error.code === "QUERY_SCAN_LIMIT" ? 413 : 400
+        : undefined;
       return JSON.stringify({
         ok: false,
         message: error instanceof Error ? error.message : String(error),
-        ...(error instanceof DocumentQueryError && error.code === "QUERY_SCAN_LIMIT"
-          ? { status: 413 }
-          : {}),
+        ...(queryStatus === undefined ? {} : { status: queryStatus }),
       });
     }
   }

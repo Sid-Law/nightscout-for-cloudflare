@@ -354,8 +354,24 @@ describe("API v1/v2 Entries uploader and read contract", () => {
     expect(preview.headers.get("Content-Type")).toBe("application/json; charset=utf-8");
     expect(preview.headers.get("Content-Length")).not.toBeNull();
     expect(preview.headers.get("ETag")).toMatch(/^W\//);
-    expect(await preview.json()).toMatchObject([{
+    const previewRows = await preview.json<JsonObject[]>();
+    expect(previewRows).toMatchObject([{
       identifier: "preview-dangerous",
+      notes: "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;",
+      nested: {
+        label: "Tom &amp; Jerry &lt;script&gt;alert(1)&lt;/script&gt;",
+      },
+    }]);
+    const replayPreview = await post(
+      previewName,
+      {
+        ...previewRows[0],
+        date: date + 1,
+        dateString: new Date(date + 1).toISOString(),
+      },
+      "/api/v1/entries/preview",
+    );
+    expect(await replayPreview.json()).toMatchObject([{
       notes: "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;",
       nested: {
         label: "Tom &amp; Jerry &lt;script&gt;alert(1)&lt;/script&gt;",
@@ -401,6 +417,30 @@ describe("API v1/v2 Entries uploader and read contract", () => {
       device: "form-uploader",
       type: "sgv",
     }]);
+
+    const nestedFormDate = date + 180_000;
+    const nestedForm = await SELF.fetch(withTenant("/api/v1/entries", writeName), {
+      method: "POST",
+      headers: {
+        "api-secret": await secretDigest(),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: [
+        `date=${nestedFormDate}`,
+        "sgv=118",
+        "direction=Flat",
+        "device=form-uploader",
+        "meta[source]=nested-form",
+        "tags[]=one",
+        "tags[]=two",
+      ].join("&"),
+    });
+    expect(nestedForm.status).toBe(200);
+    expect(await nestedForm.json()).toMatchObject([{
+      date: nestedFormDate,
+      meta: { source: "nested-form" },
+      tags: ["one", "two"],
+    }]);
   });
 
   it("preserves 100-item order and per-position IDs while bounding the Free-plan batch", async () => {
@@ -435,14 +475,82 @@ describe("API v1/v2 Entries uploader and read contract", () => {
     expect(await final.json()).toMatchObject([{ identifier: "replay-second", sgv: 142 }]);
 
     const invalidIdName = tenant("v1-invalid-id");
+    const invalidIdPayload = entry("discarded-helper-identifier", replayDate + 60_000);
+    delete invalidIdPayload.identifier;
     const invalidId = await post(invalidIdName, {
       _id: "uploader-owned-id",
-      ...entry("invalid-id-is-stripped", replayDate + 60_000),
+      ...invalidIdPayload,
     });
     expect(invalidId.status).toBe(200);
     expect(await invalidId.json()).toMatchObject([{
       _id: expect.stringMatching(/^[0-9a-f]{24}$/),
-      identifier: "invalid-id-is-stripped",
+      identifier: "uploader-owned-id",
     }]);
+
+    const emptyIdentifier = await post(invalidIdName, {
+      _id: "550e8400-e29b-41d4-a716-446655440000",
+      ...entry("discarded-empty-identifier", replayDate + 120_000, { identifier: "" }),
+    });
+    expect(emptyIdentifier.status).toBe(200);
+    expect(await emptyIdentifier.json()).toMatchObject([{
+      _id: expect.stringMatching(/^[0-9a-f]{24}$/),
+      identifier: "550e8400-e29b-41d4-a716-446655440000",
+    }]);
+  });
+
+  it("returns a controlled client error when a legal filter shape exceeds SQLite bindings", async () => {
+    const name = tenant("v1-query-binding-limit");
+    const url = new URL(withTenant("/api/v1/entries.json?count=1", name));
+    const fields = [
+      "sgv",
+      "filtered",
+      "unfiltered",
+      "rssi",
+      "noise",
+      "mbg",
+      "device",
+      "direction",
+      "identifier",
+      "sysTime",
+    ];
+    const operators = ["eq", "ne", "gt", "gte", "lt", "lte"];
+    for (const field of fields) {
+      for (const operator of operators) {
+        url.searchParams.set(`find[${field}][$${operator}]`, "1");
+      }
+    }
+    const response = await SELF.fetch(url);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: "invalid_query",
+        message: expect.stringContaining("bound-parameter limit"),
+      },
+    });
+  });
+
+  it("uses the latest runtime SGV for exact /entries If-Modified-Since and empty results", async () => {
+    const name = tenant("v1-context-ims");
+    const latest = Math.floor((Date.now() - 60_000) / 1_000) * 1_000;
+    expect((await post(name, entry("context-latest", latest, { sgv: 123 }))).status).toBe(200);
+
+    const futureFilter = latest + 60_000;
+    const ordinary = await SELF.fetch(withTenant(
+      `/api/v1/entries.json?find[date][$gt]=${futureFilter}`,
+      name,
+    ));
+    expect(ordinary.status).toBe(200);
+    expect(ordinary.headers.get("Last-Modified")).toBe(new Date(latest).toUTCString());
+    expect(await ordinary.json()).toEqual([]);
+
+    const conditional = await SELF.fetch(withTenant(
+      `/api/v2/entries.json?find[date][$gt]=${futureFilter}`,
+      name,
+    ), {
+      headers: { "If-Modified-Since": new Date(latest).toUTCString() },
+    });
+    expect(conditional.status).toBe(304);
+    expect(conditional.headers.get("Last-Modified")).toBe(new Date(latest).toUTCString());
+    expect(await conditional.text()).toBe("");
   });
 });
