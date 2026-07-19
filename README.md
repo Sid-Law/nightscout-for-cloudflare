@@ -98,7 +98,10 @@ for diagnosis, dosing, or medical decisions.
   every official data bucket, deep cloning, runtime time/duration derivation
   and prefer-new `_id`/`identifier` merging are represented. The v2
   `/properties` route now supports upstream comma-selection and truthy
-  `pretty` formatting. `/api/v2/summary/` ports the locked SGV, treatment,
+  `pretty` formatting. Its `bgnow`, four five-minute `buckets`, interpolated
+  `delta`, mmol rounding and current `direction` values are direct stateless
+  ports of the locked official property plugins, with complete named coverage
+  for `bgnow.test.js` and `direction.test.js`. `/api/v2/summary/` ports the locked SGV, treatment,
   temporary-target, temp-basal and current-profile mapping without inventing
   plugin values; until the official server plugin engine is present, its
   IOB/COB/BWP state serializes as `null` and age/battery fields are absent.
@@ -367,20 +370,23 @@ locked upstream has 111 JavaScript test files; a static declaration audit finds
 883 active `it(...)` cases plus one skipped case. Those declarations are not
 directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
-`ddata.test.js` and 15 v1 client/API files are classified as fully `adapted`.
+`ddata.test.js`, `bgnow.test.js`, `direction.test.js` and 15 v1 client/API files
+are classified as fully `adapted`.
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 76 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 74 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`79ddf4985bd93510a07444e40bf61972120aa9b6`. After rebuilding the locked
-official UI, its 31-file Workers-runtime suite passes 303/303 tests and both
+`094bdd9a206431e70f2c1ca1ff55ee768d11f4ac`. After rebuilding the locked
+official UI, its 32-file Workers-runtime suite passes 308/308 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 942.98 KiB raw / 170.71 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adapts locked `ddata.test.js`, v2 property
-selection/pretty serialization and the core summary mapper while retaining the
+reports 948.79 KiB raw / 172.37 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adapts locked `bgnow.test.js` and
+`direction.test.js`, replacing the earlier simplified current-value difference
+with official buckets, interpolation, unit rounding and trend-arrow semantics
+while retaining the
 prior v1/API3/authorization/realtime slices. This does not make the whole
 Nightscout port or the complete v1/v2 API compatible.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
@@ -416,18 +422,21 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `be2ed773-9148-43df-bbfb-d438bb24fe6f` was made current by
-deployment `6d9e7df3-439c-44a4-a206-123a2ded391c` at
-`2026-07-19T20:16:32.660015Z`, with a reported 31 ms startup. No asset bytes
+Cloudflare version `c7237a55-e657-4648-b8de-78d434606f1b` was made current by
+deployment `254b8589-22cb-4ecc-b3c3-3383ed9815ad` at
+`2026-07-19T20:38:27.40458Z`, with a reported 38 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for selected/pretty v2
-properties, v2 summary, v2 ddata, API3 version and v1 Status. No deployed
-credential was read or sent.
+properties, v2 summary, API3 version, v1 Status and EIO4 polling. The public
+tenant had no recent SGV rows, so the deployed property response correctly used
+its empty `bgnow`/`delta` shape; non-empty official calculations are covered by
+the local contracts. No deployed credential was read or sent.
 
 A real browser run reloaded the current deployment and rendered the official
-homepage with its chart region and no console errors. The official Admin Tools,
-Food Editor, Profile Editor and `clock-color` page also loaded with their
-official controls and zero console errors. Profile reached `Values loaded.` and
+homepage with its chart region and locked `bundle.app.js`. The official Admin
+Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
+official controls; the clock used locked `status.js` and `bundle.clock.js`.
+Profile reached `Values loaded.` and
 Food reached `Database loaded`; no credential was entered and no protected
 write was submitted. The
 browser was returned to the homepage. The public tenant currently has no
