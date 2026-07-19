@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 7, excluded-fixed-scope: 2, unresolved: 102
-- Input fingerprint: `1dd492db2995343bf8011168a4bdbbef6cbb05d330e42ffff749e11a501c1b14`
+- Statuses: pass: 0, adapted: 17, excluded-fixed-scope: 2, unresolved: 92
+- Input fingerprint: `d53af80929bc456c518ea1303b524adab257e7bde9467ce83debfc90ba8e47bb`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -23,8 +23,8 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 2-authorization | 1-storage-foundation | 6 | 6 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 14 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 40 | 0 |
-| 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 9 | 0 |
-| 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 2 | 0 |
+| 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
+| 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 1 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
 | 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 8 | 0 |
 
@@ -141,27 +141,27 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 
 | Test file | Status | Candidate routes (heuristic) | Reason |
 | --- | --- | ---: | --- |
-| `vendor/nightscout/tests/api3.aaps-patterns.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api3.aaps-patterns.test.js` | adapted | 2 | Represented by the named Workers-runtime AndroidAPS contracts in test/api3-aaps-patterns.test.ts using the locked upstream fixture: treatment identity and pump metadata, repeated/different pumpId/date/eventType behavior, monotonic rapid deduplication, full payloads, sequential SMBs, meal events, rapid SGVs, and profile retry/new-LocalProfileLastChange behavior. |
 | `vendor/nightscout/tests/api3.basic.test.js` | adapted | 1 | Represented by the named Workers-runtime version-envelope contract in test/worker.test.ts: public GET /api/v3/version returns the locked Nightscout 15.0.7 version, API3 3.0.3-alpha version, a numeric server timestamp, and the platform storage metadata extension. |
-| `vendor/nightscout/tests/api3.create.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api3.delete.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api3.create.test.js` | adapted | 6 | Represented by the named Workers-runtime CREATE contract in test/api3-treatments.test.ts plus mutation-event coverage in test/api3-storage-socket.test.ts: authentication and permission order, empty input, full common-field validation, date/offset normalization, headers and server metadata, identifier and legacy-fallback deduplication, deleted-document overwrite, locked UUIDv5 generation, ObjectId/UUID preservation, and create/update realtime payloads. |
+| `vendor/nightscout/tests/api3.delete.test.js` | adapted | 8 | Represented by the named Workers-runtime delete contract in test/api3-treatments.test.ts: an unauthenticated identifier DELETE returns the locked 401 envelope and an authenticated DELETE against an unknown collection returns the locked 404 bad-operation envelope. |
 | `vendor/nightscout/tests/api3.generic.workflow.test.js` | adapted | 14 | Represented by the named complete Workers-runtime workflow in test/api3-treatments.test.ts plus mutation-event contracts in test/api3-storage-socket.test.ts: initial lastModified/status clocks, missing read/search/delete, create/read/search/history, replace/patch and successive history/read state, soft/permanent deletion, tombstone/history removal, all four read-only mutation rejections, actor fields, and create/update/delete event payloads. |
-| `vendor/nightscout/tests/api3.patch.operation.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api3.patch.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api3.patch.operation.test.js` | adapted | 6 | Represented by the Workers-runtime PATCH normalization contract in test/api3-treatments.test.ts and the storage Socket.IO mutation contract in test/api3-storage-socket.test.ts: the emitted update event contains the merged persisted document, including durationInMilliseconds-to-endmills normalization, without a post-update read dependency. |
+| `vendor/nightscout/tests/api3.patch.test.js` | adapted | 6 | Represented by the named Workers-runtime PATCH contract in test/api3-treatments.test.ts: missing authentication, unknown collection/document, every locked immutable-field rejection, valid actor-preserving updates, modifiedBy attribution, and durationInMilliseconds-to-endmills normalization. |
 | `vendor/nightscout/tests/api3.read.test.js` | adapted | 6 | Represented by the named Workers-runtime read contract in test/api3-devicestatus.test.ts plus storage event coverage: authentication, unknown collection/document, created-document metadata, selected/_all projection, If-Modified-Since 304/200, soft-delete 410, permanent-delete 404, and a v1-created device-status document read and deleted through API3. |
 | `vendor/nightscout/tests/api3.renderer.test.js` | adapted | 0 | Represented by the named Workers-runtime renderer contract in test/api3-treatments.test.ts: two documents, unsupported extension and Accept negotiation for READ/SEARCH/HISTORY, byte-identical extension-versus-Accept XML/CSV outputs for all three operations, payload presence, and permanent cleanup. |
 | `vendor/nightscout/tests/api3.search.test.js` | adapted | 7 | Represented by named Workers-runtime contracts in test/api3-entries.test.ts and test/api3-input.test.ts: JWT requirement, unknown collection, twelve-document search and srvModified filtering, exact paging errors, valid/default/configured hard limits including string configuration, ascending/descending ordered sort, skip, selected/all projection, plus the Workers Free 1,000-document ceiling. |
 | `vendor/nightscout/tests/api3.security.test.js` | adapted | 1 | Represented by the named Workers-runtime security contract in test/api3-devicestatus.test.ts using the locked fixture's empty AUTH_DEFAULT_ROLES setting: missing versus invalid Bearer envelopes, a valid subject without read permission, and a valid subject with api:entries:read on the production collection route. |
-| `vendor/nightscout/tests/api3.shape-handling.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api3.storage.find.test.js` | unresolved | 12 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api3.storage.modify.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api3.update.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api3.shape-handling.test.js` | adapted | 6 | Represented by the named Workers-runtime request-shape contract in test/api3-shape-handling.test.ts: treatments, entries, and devicestatus accept one object, reject arrays, reject empty treatment shapes, return an object envelope, persist/read created documents, and deduplicate a repeated treatment POST. |
+| `vendor/nightscout/tests/api3.storage.find.test.js` | adapted | 12 | Represented by the named SQLite Durable Object storage-find contract in test/api3-storage-adapter.test.ts: string and float-like paging normalization before storage, deterministic limited/skipped results, legacy ObjectId materialization as identifier without _id, and raw legacy identity preservation for fallback deduplication. |
+| `vendor/nightscout/tests/api3.storage.modify.test.js` | adapted | 0 | Represented by the named SQLite Durable Object storage-modify contract in test/api3-storage-adapter.test.ts plus HTTP mutation/socket workflows: insert materialization, replacement upsert, patch, soft/permanent delete, monotonic lastModified, and the intentional storage metadata substitution from MongoDB to sqlite-durable-object. Callback-versus-Promise mechanics are an upstream Mongo runtime concern and are replaced by synchronous DO SQLite transactions. |
+| `vendor/nightscout/tests/api3.update.test.js` | adapted | 6 | Represented by the named Workers-runtime UPDATE contract in test/api3-treatments.test.ts plus PUT event coverage in test/api3-storage-socket.test.ts: authentication and conditional create permission, upsert and replacement metadata, If-Unmodified-Since success/failure, all locked immutable-field rules, ignored body identifier, durationInMilliseconds-to-endmills normalization, and deleted-document rejection. |
 
 ### 6-realtime
 
 | Test file | Status | Candidate routes (heuristic) | Reason |
 | --- | --- | ---: | --- |
-| `vendor/nightscout/tests/api3.socket.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api3.socket.test.js` | adapted | 0 | Represented by the Workers-runtime /storage Socket.IO contracts in test/api3-storage-socket.test.ts: missing/invalid accessToken failures, no-authorized-collection failure, filtered and default subscriptions, and complete create/update/patch/delete event payloads over Engine.IO polling, with additional hibernatable WebSocket and Durable Object eviction coverage. |
 | `vendor/nightscout/tests/websocket.shape-handling.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 
 ### 7-background-and-integrations

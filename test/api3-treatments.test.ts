@@ -549,6 +549,887 @@ describe("API v3 treatments vertical slice", () => {
     expect(await gonePatch.json()).toEqual({ status: 410 });
   });
 
+  it("represents every locked api3.patch contract on the Workers runtime", async () => {
+    const name = tenant("api3-patch-file");
+    const creator = await issueSubject(name, "Patch creator", [
+      "api:treatments:create",
+      "api:treatments:read",
+    ]);
+    const updater = await issueSubject(name, "Patch updater", [
+      "api:treatments:update",
+      "api:treatments:read",
+    ]);
+    const date = Date.now() - 60_000;
+    const valid = treatment(
+      "patch-file-treatment",
+      new Date(date).toISOString(),
+      {
+        utcOffset: -180,
+        eventType: "Correction Bolus",
+        insulin: 0.3,
+      },
+    );
+    const resource = "/api/v3/treatments/patch-file-treatment";
+
+    const missingAuth = await api3Fetch(
+      name,
+      null,
+      "/api/v3/treatments/FAKE_IDENTIFIER",
+      { method: "PATCH" },
+    );
+    expect(missingAuth.status).toBe(401);
+    expect(await missingAuth.json()).toEqual({
+      status: 401,
+      message: "Missing or bad access token or JWT",
+    });
+
+    const missingCollection = await api3Fetch(
+      name,
+      updater,
+      "/api/v3/NOT_EXIST",
+      jsonMutation("PATCH", valid),
+    );
+    expect(missingCollection.status).toBe(404);
+    expect(await missingCollection.json()).toEqual({
+      status: 404,
+      message: "Bad operation or collection",
+    });
+
+    const missingDocument = await api3Fetch(
+      name,
+      updater,
+      resource,
+      jsonMutation("PATCH", valid),
+    );
+    expect(missingDocument.status).toBe(404);
+    expect(await missingDocument.json()).toEqual({ status: 404 });
+
+    expect((await api3Fetch(
+      name,
+      creator,
+      "/api/v3/treatments",
+      jsonMutation("POST", valid),
+    )).status).toBe(201);
+
+    const immutableAlterations: Array<[string, unknown]> = [
+      ["identifier", "MODIFIED"],
+      ["date", date + 10_000],
+      ["utcOffset", -300],
+      ["eventType", "MODIFIED"],
+      ["device", "MODIFIED"],
+      ["app", "MODIFIED"],
+      ["srvCreated", date - 10_000],
+      ["subject", "MODIFIED"],
+      ["srvModified", date - 100_000],
+      ["modifiedBy", "MODIFIED"],
+      ["isValid", false],
+    ];
+    for (const [field, value] of immutableAlterations) {
+      const rejected = await api3Fetch(
+        name,
+        updater,
+        resource,
+        jsonMutation("PATCH", { [field]: value }),
+      );
+      expect(rejected.status, field).toBe(400);
+      expect(await rejected.json(), field).toEqual({
+        status: 400,
+        message: `Field ${field} cannot be modified by the client`,
+      });
+    }
+
+    const patched = await api3Fetch(
+      name,
+      updater,
+      resource,
+      jsonMutation("PATCH", { ...valid, carbs: 10 }),
+    );
+    expect(patched.status).toBe(200);
+    expect(await patched.json()).toEqual({ status: 200 });
+    expect(await result<JsonObject>(await api3Fetch(name, updater, resource)))
+      .toMatchObject({
+        identifier: "patch-file-treatment",
+        carbs: 10,
+        insulin: 0.3,
+        subject: "Patch creator",
+        modifiedBy: "Patch updater",
+      });
+
+    const basalDate = date + 1;
+    const basal = treatment(
+      "patch-file-temp-basal",
+      new Date(basalDate).toISOString(),
+      {
+        utcOffset: -180,
+        eventType: "Temp Basal",
+        absolute: 1.2,
+        duration: 30,
+      },
+    );
+    expect((await api3Fetch(
+      name,
+      creator,
+      "/api/v3/treatments",
+      jsonMutation("POST", basal),
+    )).status).toBe(201);
+    const basalPatch = await api3Fetch(
+      name,
+      updater,
+      "/api/v3/treatments/patch-file-temp-basal",
+      jsonMutation("PATCH", {
+        absolute: 0.7,
+        duration: 0,
+        durationInMilliseconds: 26_584,
+      }),
+    );
+    expect(basalPatch.status).toBe(200);
+    const basalActual = await result<JsonObject>(await api3Fetch(
+      name,
+      updater,
+      "/api/v3/treatments/patch-file-temp-basal",
+    ));
+    expect(basalActual).toMatchObject({
+      identifier: "patch-file-temp-basal",
+      absolute: 0.7,
+      duration: 0,
+      durationInMilliseconds: 26_584,
+      endmills: basalDate + 26_584,
+      subject: "Patch creator",
+      modifiedBy: "Patch updater",
+    });
+  });
+
+  it("represents every locked api3.delete contract on the Workers runtime", async () => {
+    const name = tenant("api3-delete-file");
+    const deleter = await issueSubject(name, "Delete file", [
+      "api:treatments:delete",
+    ]);
+
+    const missingAuth = await api3Fetch(
+      name,
+      null,
+      "/api/v3/treatments/FAKE_IDENTIFIER",
+      { method: "DELETE" },
+    );
+    expect(missingAuth.status).toBe(401);
+    expect(await missingAuth.json()).toEqual({
+      status: 401,
+      message: "Missing or bad access token or JWT",
+    });
+
+    const missingCollection = await api3Fetch(
+      name,
+      deleter,
+      "/api/v3/NOT_EXIST",
+      { method: "DELETE" },
+    );
+    expect(missingCollection.status).toBe(404);
+    expect(await missingCollection.json()).toEqual({
+      status: 404,
+      message: "Bad operation or collection",
+    });
+  });
+
+  it("represents every locked api3.update contract on the Workers runtime", async () => {
+    const name = tenant("api3-update-file");
+    const updateOnly = await issueSubject(name, "PUT updater", [
+      "api:treatments:update",
+      "api:treatments:read",
+    ]);
+    const owner = await issueSubject(name, "PUT owner", [
+      "api:treatments:create",
+      "api:treatments:update",
+      "api:treatments:read",
+      "api:treatments:delete",
+    ]);
+    const date = Date.now() - 120_000;
+    const identifier = "update-file-treatment";
+    const resource = `/api/v3/treatments/${identifier}`;
+    const original = treatment(identifier, new Date(date).toISOString(), {
+      utcOffset: -180,
+      eventType: "Correction Bolus",
+      insulin: 0.3,
+    });
+
+    const missingAuth = await api3Fetch(
+      name,
+      null,
+      "/api/v3/treatments/FAKE_IDENTIFIER",
+      { method: "PUT" },
+    );
+    expect(missingAuth.status).toBe(401);
+    expect(await missingAuth.json()).toEqual({
+      status: 401,
+      message: "Missing or bad access token or JWT",
+    });
+
+    const missingCollection = await api3Fetch(
+      name,
+      updateOnly,
+      "/api/v3/NOT_EXIST",
+      jsonMutation("PUT", original),
+    );
+    expect(missingCollection.status).toBe(404);
+    expect(await missingCollection.json()).toEqual({
+      status: 404,
+      message: "Bad operation or collection",
+    });
+
+    const deniedUpsert = await api3Fetch(
+      name,
+      updateOnly,
+      resource,
+      jsonMutation("PUT", original),
+    );
+    expect(deniedUpsert.status).toBe(403);
+    expect(await deniedUpsert.json()).toEqual({
+      status: 403,
+      message: "Missing permission api:treatments:create",
+    });
+
+    const created = await api3Fetch(
+      name,
+      owner,
+      resource,
+      jsonMutation("PUT", original),
+    );
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({
+      status: 201,
+      identifier,
+      lastModified: expect.any(Number),
+    });
+    expect(created.headers.get("Last-Modified")).not.toBeNull();
+    expect(await result<JsonObject>(await api3Fetch(name, owner, resource)))
+      .toMatchObject({
+        ...original,
+        subject: "PUT owner",
+        srvCreated: expect.any(Number),
+        srvModified: expect.any(Number),
+      });
+
+    const replacement: JsonObject = { ...original, carbs: 10 };
+    delete replacement.insulin;
+    const updated = await api3Fetch(
+      name,
+      updateOnly,
+      resource,
+      jsonMutation("PUT", replacement),
+    );
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({ status: 200, lastModified: expect.any(Number) });
+    const replaced = await result<JsonObject>(await api3Fetch(name, updateOnly, resource));
+    expect(replaced).toMatchObject({
+      ...replacement,
+      subject: "PUT updater",
+      srvCreated: expect.any(Number),
+      srvModified: expect.any(Number),
+    });
+    expect(replaced).not.toHaveProperty("insulin");
+    expect(replaced).not.toHaveProperty("modifiedBy");
+
+    const future = new Date(Date.now() + 60_000).toUTCString();
+    const acceptedConditional = await api3Fetch(
+      name,
+      updateOnly,
+      resource,
+      jsonMutation("PUT", { ...replacement, carbs: 11 }, {
+        "If-Unmodified-Since": future,
+      }),
+    );
+    expect(acceptedConditional.status).toBe(200);
+    const beforeStale = await result<JsonObject>(await api3Fetch(name, updateOnly, resource));
+    const stale = await api3Fetch(
+      name,
+      updateOnly,
+      resource,
+      jsonMutation("PUT", { ...replacement, carbs: 12 }, {
+        "If-Unmodified-Since": "Sat, 01 Jan 2000 00:00:00 GMT",
+      }),
+    );
+    expect(stale.status).toBe(412);
+    expect(await stale.json()).toEqual({ status: 412 });
+    expect(await result<JsonObject>(await api3Fetch(name, updateOnly, resource))).toEqual(beforeStale);
+
+    const immutableAlterations: Array<[string, unknown]> = [
+      ["date", date + 10_000],
+      ["utcOffset", -300],
+      ["eventType", "MODIFIED"],
+      ["device", "MODIFIED"],
+      ["app", "MODIFIED"],
+      ["srvCreated", date - 10_000],
+      ["subject", "MODIFIED"],
+      ["srvModified", date - 100_000],
+      ["modifiedBy", "MODIFIED"],
+      ["isValid", false],
+    ];
+    for (const [field, value] of immutableAlterations) {
+      const rejected = await api3Fetch(
+        name,
+        updateOnly,
+        resource,
+        jsonMutation("PUT", { ...replacement, carbs: 11, [field]: value }),
+      );
+      expect(rejected.status, field).toBe(400);
+      expect(await rejected.json(), field).toEqual({
+        status: 400,
+        message: `Field ${field} cannot be modified by the client`,
+      });
+    }
+
+    const ignoredIdentifier = await api3Fetch(
+      name,
+      updateOnly,
+      resource,
+      jsonMutation("PUT", { ...replacement, identifier: "MODIFIED", carbs: 13 }),
+    );
+    expect(ignoredIdentifier.status).toBe(200);
+    expect(await result<JsonObject>(await api3Fetch(name, updateOnly, resource)))
+      .toMatchObject({ identifier, carbs: 13 });
+
+    const basalDate = date + 1;
+    const basalIdentifier = "update-file-temp-basal";
+    const basalResource = `/api/v3/treatments/${basalIdentifier}`;
+    const basal = treatment(basalIdentifier, new Date(basalDate).toISOString(), {
+      utcOffset: -180,
+      eventType: "Temp Basal",
+      absolute: 1.2,
+      duration: 30,
+    });
+    expect((await api3Fetch(
+      name,
+      owner,
+      basalResource,
+      jsonMutation("PUT", basal),
+    )).status).toBe(201);
+    const replacedBasal = await api3Fetch(
+      name,
+      updateOnly,
+      basalResource,
+      jsonMutation("PUT", {
+        ...basal,
+        absolute: 0.7,
+        duration: 0,
+        durationInMilliseconds: 26_584,
+      }),
+    );
+    expect(replacedBasal.status).toBe(200);
+    expect(await result<JsonObject>(await api3Fetch(name, updateOnly, basalResource)))
+      .toMatchObject({
+        identifier: basalIdentifier,
+        absolute: 0.7,
+        duration: 0,
+        durationInMilliseconds: 26_584,
+        endmills: basalDate + 26_584,
+        subject: "PUT updater",
+      });
+
+    expect((await api3Fetch(name, owner, resource, { method: "DELETE" })).status).toBe(200);
+    const gone = await api3Fetch(
+      name,
+      updateOnly,
+      resource,
+      jsonMutation("PUT", replacement),
+    );
+    expect(gone.status).toBe(410);
+    expect(await gone.json()).toEqual({ status: 410 });
+  });
+
+  it("represents every locked api3.create contract on the Workers runtime", async () => {
+    const name = tenant("api3-create-file");
+    const reader = await issueSubject(name, "CREATE reader", []);
+    const createOnly = await issueSubject(name, "CREATE creator", [
+      "api:treatments:create",
+      "api:treatments:read",
+    ]);
+    const updateOnly = await issueSubject(name, "CREATE updater", [
+      "api:treatments:update",
+      "api:treatments:read",
+    ]);
+    const owner = await issueSubject(name, "CREATE owner", [
+      "api:treatments:create",
+      "api:treatments:update",
+      "api:treatments:read",
+      "api:treatments:delete",
+    ]);
+    const baseDate = Date.now() - 10 * 60_000;
+    const valid: JsonObject = {
+      identifier: "create-valid-document",
+      date: baseDate,
+      utcOffset: 0,
+      app: "api3-create-test",
+      device: "API3 CREATE",
+      eventType: "Correction Bolus",
+      insulin: 0.3,
+    };
+
+    const missingAuth = await api3Fetch(
+      name,
+      null,
+      "/api/v3/treatments",
+      jsonMutation("POST", valid),
+    );
+    expect(missingAuth.status).toBe(401);
+    expect(await missingAuth.json()).toEqual({
+      status: 401,
+      message: "Missing or bad access token or JWT",
+    });
+
+    const missingCollection = await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/NOT_EXIST",
+      jsonMutation("POST", valid),
+    );
+    expect(missingCollection.status).toBe(404);
+    expect(await missingCollection.json()).toEqual({
+      status: 404,
+      message: "Bad operation or collection",
+    });
+
+    const denied = await api3Fetch(
+      name,
+      reader,
+      "/api/v3/treatments",
+      jsonMutation("POST", valid),
+    );
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({
+      status: 403,
+      message: "Missing permission api:treatments:create",
+    });
+
+    const empty = await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments",
+      jsonMutation("POST", {}),
+    );
+    expect(empty.status).toBe(400);
+    expect(await empty.json()).toEqual({
+      status: 400,
+      message: "Bad or missing request body",
+    });
+
+    const created = await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments",
+      jsonMutation("POST", valid),
+    );
+    expect(created.status).toBe(201);
+    const createdBody = await created.json<JsonObject>();
+    expect(createdBody).toMatchObject({
+      status: 201,
+      identifier: "create-valid-document",
+      lastModified: expect.any(Number),
+    });
+    expect(created.headers.get("Location")).toBe(
+      "/api/v3/treatments/create-valid-document",
+    );
+    const createdHeader = Date.parse(String(created.headers.get("Last-Modified")));
+    const createdActual = await result<JsonObject>(await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments/create-valid-document",
+    ));
+    expect(createdActual).toMatchObject({
+      ...valid,
+      subject: "CREATE creator",
+      srvCreated: expect.any(Number),
+      srvModified: createdBody.lastModified,
+    });
+    expect(Math.floor(Number(createdActual.srvModified) / 1_000) * 1_000).toBe(createdHeader);
+    expect(Math.floor(Number(createdActual.srvCreated) / 1_000) * 1_000).toBe(createdHeader);
+
+    const validationBase: JsonObject = {
+      identifier: "create-validation",
+      date: baseDate + 1,
+      utcOffset: 0,
+      app: "api3-create-test",
+      device: "API3 CREATE validation",
+      eventType: "Correction Bolus",
+    };
+    const invalidDates: unknown[] = [undefined, null, "ABC", -1, 1, "2019-20-60T50:90:90"];
+    for (const invalidDate of invalidDates) {
+      const document = { ...validationBase };
+      if (invalidDate === undefined) delete document.date;
+      else document.date = invalidDate;
+      const response = await api3Fetch(
+        name,
+        createOnly,
+        "/api/v3/treatments",
+        jsonMutation("POST", document),
+      );
+      expect(response.status, String(invalidDate)).toBe(400);
+      expect(await response.json(), String(invalidDate)).toEqual({
+        status: 400,
+        message: "Bad or missing date field",
+      });
+    }
+    for (const invalidOffset of [-5_000, "ABC", null]) {
+      const response = await api3Fetch(
+        name,
+        createOnly,
+        "/api/v3/treatments",
+        jsonMutation("POST", { ...validationBase, utcOffset: invalidOffset }),
+      );
+      expect(response.status, String(invalidOffset)).toBe(400);
+      expect(await response.json(), String(invalidOffset)).toEqual({
+        status: 400,
+        message: "Bad or missing utcOffset field",
+      });
+    }
+    for (const invalidApp of [undefined, null, ""]) {
+      const document = { ...validationBase };
+      if (invalidApp === undefined) delete document.app;
+      else document.app = invalidApp;
+      const response = await api3Fetch(
+        name,
+        createOnly,
+        "/api/v3/treatments",
+        jsonMutation("POST", document),
+      );
+      expect(response.status, String(invalidApp)).toBe(400);
+      expect(await response.json(), String(invalidApp)).toEqual({
+        status: 400,
+        message: "Bad or missing app field",
+      });
+    }
+
+    const validOffset = await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments",
+      jsonMutation("POST", {
+        ...validationBase,
+        identifier: "create-valid-offset",
+        utcOffset: 120,
+      }),
+    );
+    expect(validOffset.status).toBe(201);
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments/create-valid-offset",
+    ))).toMatchObject({ utcOffset: 120 });
+
+    const normalized = await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments",
+      jsonMutation("POST", {
+        ...validationBase,
+        identifier: "create-normalized-date",
+        date: "2019-06-10T08:07:08,576+02:00",
+        utcOffset: undefined,
+      }),
+    );
+    expect(normalized.status).toBe(201);
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments/create-normalized-date",
+    ))).toMatchObject({
+      date: 1_560_146_828_576,
+      utcOffset: 120,
+      created_at: "2019-06-10T06:07:08.576Z",
+    });
+
+    const permissionDocument = {
+      ...valid,
+      identifier: "create-dedup-permission",
+      date: baseDate + 10_000,
+    };
+    expect((await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments",
+      jsonMutation("POST", permissionDocument),
+    )).status).toBe(201);
+    const deniedDedup = await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments",
+      jsonMutation("POST", permissionDocument),
+    );
+    expect(deniedDedup.status).toBe(403);
+    expect(await deniedDedup.json()).toEqual({
+      status: 403,
+      message: "Missing permission api:treatments:update",
+    });
+
+    const upsertDocument = {
+      ...valid,
+      identifier: "create-upsert-identifier",
+      date: baseDate + 20_000,
+    };
+    expect((await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", upsertDocument),
+    )).status).toBe(201);
+    const upserted = await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", { ...upsertDocument, insulin: 0.5 }),
+    );
+    expect(upserted.status).toBe(200);
+    expect(await upserted.json()).toMatchObject({
+      status: 200,
+      identifier: "create-upsert-identifier",
+      isDeduplication: true,
+    });
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments/create-upsert-identifier",
+    ))).toMatchObject({ insulin: 0.5 });
+
+    const fallbackCreatedAt = new Date(baseDate + 30_000).toISOString();
+    const legacyFallback = await adminWrite(name, "/api/v1/treatments", {
+      date: Date.parse(fallbackCreatedAt),
+      utcOffset: 0,
+      app: "api3-create-test",
+      device: "API3 CREATE fallback",
+      eventType: "Correction Bolus",
+      created_at: fallbackCreatedAt,
+      insulin: 0.3,
+    });
+    expect(legacyFallback.status).toBe(200);
+    const [legacyFallbackDocument] = await legacyFallback.json<JsonObject[]>();
+    const legacyFallbackId = String(legacyFallbackDocument?._id);
+    const fallbackIdentifier = "create-modern-fallback";
+    const fallbackDedup = await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", {
+        date: Date.parse(fallbackCreatedAt),
+        utcOffset: 0,
+        app: "api3-create-test",
+        device: "API3 CREATE fallback",
+        eventType: "Correction Bolus",
+        created_at: fallbackCreatedAt,
+        insulin: 0.4,
+        identifier: fallbackIdentifier,
+      }),
+    );
+    expect(fallbackDedup.status).toBe(200);
+    expect(await fallbackDedup.json()).toMatchObject({
+      status: 200,
+      identifier: fallbackIdentifier,
+      deduplicatedIdentifier: legacyFallbackId,
+      isDeduplication: true,
+    });
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      owner,
+      `/api/v3/treatments/${fallbackIdentifier}`,
+    ))).toMatchObject({ identifier: fallbackIdentifier, insulin: 0.4 });
+
+    const onlyCreatedAt = new Date(baseDate + 40_000).toISOString();
+    const legacyOnlyDate = await adminWrite(name, "/api/v1/treatments", {
+      date: Date.parse(onlyCreatedAt),
+      utcOffset: 0,
+      app: "api3-create-test",
+      device: "API3 CREATE no fallback",
+      eventType: "Note",
+      created_at: onlyCreatedAt,
+      notes: "legacy note",
+    });
+    expect(legacyOnlyDate.status).toBe(200);
+    const [legacyOnlyDateDocument] = await legacyOnlyDate.json<JsonObject[]>();
+    const legacyOnlyDateId = String(legacyOnlyDateDocument?._id);
+    const distinct = await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", {
+        date: Date.parse(onlyCreatedAt),
+        utcOffset: 0,
+        app: "api3-create-test",
+        device: "API3 CREATE no fallback",
+        eventType: "Meal Bolus",
+        created_at: onlyCreatedAt,
+        insulin: 0.4,
+        identifier: "create-distinct-event-type",
+      }),
+    );
+    expect(distinct.status).toBe(201);
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      owner,
+      `/api/v3/treatments/${legacyOnlyDateId}`,
+    ))).toMatchObject({ eventType: "Note" });
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments/create-distinct-event-type",
+    ))).toMatchObject({ eventType: "Meal Bolus" });
+
+    const deletedIdentifier = "create-overwrite-deleted";
+    const deletedFirst = {
+      ...valid,
+      identifier: deletedIdentifier,
+      date: baseDate + 50_000,
+    };
+    expect((await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", deletedFirst),
+    )).status).toBe(201);
+    expect((await api3Fetch(
+      name,
+      owner,
+      `/api/v3/treatments/${deletedIdentifier}`,
+      { method: "DELETE" },
+    )).status).toBe(200);
+    const deletedReplacement = { ...deletedFirst, date: baseDate + 60_000 };
+    const deniedDeletedReplacement = await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments",
+      jsonMutation("POST", deletedReplacement),
+    );
+    expect(deniedDeletedReplacement.status).toBe(403);
+    expect(await deniedDeletedReplacement.json()).toEqual({
+      status: 403,
+      message: "Missing permission api:treatments:update",
+    });
+    const replacedDeleted = await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", deletedReplacement),
+    );
+    expect(replacedDeleted.status).toBe(200);
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      owner,
+      `/api/v3/treatments/${deletedIdentifier}`,
+    ))).toMatchObject({
+      identifier: deletedIdentifier,
+      date: baseDate + 60_000,
+    });
+
+    const calculatedDocument: JsonObject = {
+      date: 1_780_790_400_000,
+      utcOffset: 0,
+      app: "api3-create-test",
+      device: "API3 CREATE identifier",
+      eventType: "Correction Bolus",
+      insulin: 0.3,
+    };
+    const expectedCalculatedIdentifier = "77639ea8-cbde-529d-ab42-c0bab2b49f9e";
+    const calculated = await api3Fetch(
+      name,
+      createOnly,
+      "/api/v3/treatments",
+      jsonMutation("POST", calculatedDocument),
+    );
+    expect(calculated.status).toBe(201);
+    expect(await calculated.json()).toMatchObject({
+      status: 201,
+      identifier: expectedCalculatedIdentifier,
+    });
+    expect(calculated.headers.get("Location")).toBe(
+      `/api/v3/treatments/${expectedCalculatedIdentifier}`,
+    );
+    const calculatedDedup = await api3Fetch(
+      name,
+      updateOnly,
+      "/api/v3/treatments",
+      jsonMutation("POST", calculatedDocument),
+    );
+    expect(calculatedDedup.status).toBe(200);
+    expect(await calculatedDedup.json()).toMatchObject({
+      status: 200,
+      identifier: expectedCalculatedIdentifier,
+      isDeduplication: true,
+    });
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      updateOnly,
+      `/api/v3/treatments?date%24eq=${calculatedDocument.date}`,
+    ))).toHaveLength(1);
+
+    const generated = await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", {
+        date: baseDate + 70_000,
+        utcOffset: 0,
+        app: "api3-create-test",
+        device: "API3 CREATE generated",
+        eventType: "Note",
+        notes: "missing identifier",
+      }),
+    );
+    expect(generated.status).toBe(201);
+    const generatedIdentifier = String((await generated.json<JsonObject>()).identifier);
+    expect(generatedIdentifier.length).toBeGreaterThan(0);
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      owner,
+      `/api/v3/treatments/${generatedIdentifier}`,
+    ))).toMatchObject({ identifier: generatedIdentifier, notes: "missing identifier" });
+
+    const objectIdIdentifier = "507f1f77bcf86cd799439011";
+    expect((await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", {
+        ...valid,
+        identifier: objectIdIdentifier,
+        date: baseDate + 80_000,
+        notes: "ObjectId identifier",
+      }),
+    )).status).toBe(201);
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      owner,
+      `/api/v3/treatments/${objectIdIdentifier}`,
+    ))).toMatchObject({ identifier: objectIdIdentifier, notes: "ObjectId identifier" });
+
+    const uuidIdentifier = "E1F2A3B4-C5D6-7890-ABCD-EF1234567890";
+    const uuidDocument = {
+      ...valid,
+      identifier: uuidIdentifier,
+      date: baseDate + 90_000,
+      eventType: "Temporary Override",
+      reason: "UUID identifier",
+    };
+    expect((await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", uuidDocument),
+    )).status).toBe(201);
+    const uuidDedup = await api3Fetch(
+      name,
+      owner,
+      "/api/v3/treatments",
+      jsonMutation("POST", { ...uuidDocument, reason: "Updated reason" }),
+    );
+    expect(uuidDedup.status).toBe(200);
+    expect(await uuidDedup.json()).toMatchObject({
+      status: 200,
+      identifier: uuidIdentifier,
+      isDeduplication: true,
+    });
+    expect(await result<JsonObject>(await api3Fetch(
+      name,
+      owner,
+      `/api/v3/treatments/${uuidIdentifier}`,
+    ))).toMatchObject({ identifier: uuidIdentifier, reason: "Updated reason" });
+  });
+
   it("runs the create, dedupe, read, replace, patch, history, and delete workflow", async () => {
     const name = tenant("api3-workflow");
     const permissions = [

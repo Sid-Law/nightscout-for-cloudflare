@@ -177,20 +177,30 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.equal(first.tests.length, 111);
   assert.equal(serializeManifest(first), serializeManifest(second));
   assert.equal(first.tests.filter((item) => item.status === "pass").length, 0);
-  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 7);
+  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 17);
   assert.deepEqual(first.statistics.tests_by_status, {
     pass: 0,
-    adapted: 7,
+    adapted: 17,
     "excluded-fixed-scope": 2,
-    unresolved: 102,
+    unresolved: 92,
   });
   for (const file of [
+    "vendor/nightscout/tests/api3.aaps-patterns.test.js",
     "vendor/nightscout/tests/api3.basic.test.js",
+    "vendor/nightscout/tests/api3.create.test.js",
+    "vendor/nightscout/tests/api3.delete.test.js",
     "vendor/nightscout/tests/api3.generic.workflow.test.js",
+    "vendor/nightscout/tests/api3.patch.operation.test.js",
+    "vendor/nightscout/tests/api3.patch.test.js",
     "vendor/nightscout/tests/api3.read.test.js",
     "vendor/nightscout/tests/api3.renderer.test.js",
     "vendor/nightscout/tests/api3.search.test.js",
     "vendor/nightscout/tests/api3.security.test.js",
+    "vendor/nightscout/tests/api3.shape-handling.test.js",
+    "vendor/nightscout/tests/api3.socket.test.js",
+    "vendor/nightscout/tests/api3.storage.find.test.js",
+    "vendor/nightscout/tests/api3.storage.modify.test.js",
+    "vendor/nightscout/tests/api3.update.test.js",
     "vendor/nightscout/tests/notifications-api.test.js",
   ]) {
     assert.equal(first.tests.find((item) => item.file === file)?.status, "adapted", file);

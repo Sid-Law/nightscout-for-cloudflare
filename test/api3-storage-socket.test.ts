@@ -349,7 +349,12 @@ describe("API3 /storage Socket.IO namespace", () => {
 
     await evictDurableObject(store(name));
     const identifier = `storage-treatment-${crypto.randomUUID()}`;
-    const original = api3Document(identifier, { notes: "created" });
+    const original = api3Document(identifier, {
+      notes: "created",
+      eventType: "Temp Basal",
+      absolute: 1.2,
+      duration: 30,
+    });
     expect((await api3Mutation(
       name,
       subject.jwt,
@@ -401,12 +406,27 @@ describe("API3 /storage Socket.IO namespace", () => {
       subject.jwt,
       "PATCH",
       `/api/v3/treatments/${encodeURIComponent(identifier)}`,
-      { notes: "patched" },
+      {
+        notes: "patched",
+        absolute: 0.7,
+        duration: 0,
+        durationInMilliseconds: 26_584,
+      },
     )).status).toBe(200);
     expect((await socket.poll())[0]).toMatchObject({
       type: "event",
       namespace: "/storage",
-      data: ["update", { colName: "treatments", doc: { identifier, notes: "patched" } }],
+      data: ["update", {
+        colName: "treatments",
+        doc: {
+          identifier,
+          notes: "patched",
+          absolute: 0.7,
+          duration: 0,
+          durationInMilliseconds: 26_584,
+          endmills: Date.parse("2026-07-19T06:00:00.000Z") + 26_584,
+        },
+      }],
     });
 
     expect((await api3Mutation(
