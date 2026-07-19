@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`. It produced Cloudflare version
-`d997c600-edaf-40e4-ad53-78e8d2788a00`, reported as 100% active by direct
-deploy. Its 35-file Workers-runtime suite passes 339/339 plus 20/20 audit
+`4fcc81f17d866588fd41f85fa0607e5d908dfcda`. It produced Cloudflare version
+`4add590a-c3d0-4c76-be75-2056e06b670b`, reported as 100% active by direct
+deploy. Its 38-file Workers-runtime suite passes 371/371 plus 20/20 audit
 tests. Wrangler processed 248 unchanged official asset entries; deployment and
-the final dry run both reported 988.17 KiB raw / 180.00 KiB gzip, with the dry
+the final dry run both reported 989.89 KiB raw / 180.41 KiB gzip, with the dry
 run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
-bindings. Cloudflare reported a 24 ms startup.
+bindings. Cloudflare reported a 26 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -414,7 +414,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`4bbc75e24fc7f2eed76697afcab67cca1b7d5f90` implements all six official generic
+`4fcc81f17d866588fd41f85fa0607e5d908dfcda` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -455,11 +455,20 @@ Food, Profile, DeviceStatus and Treatments accept an empty POST array as a
 successful empty result; Food also accepts an empty PUT array and creates on a
 missing-ID PUT. DeviceStatus converts offset-bearing `created_at` to UTC ISO,
 stores `utcOffset`, and combines wildcard deletion with any other supplied
-filters. Its upstream module has no generic PUT route, so the adapter no longer
-exposes one. Activity, Food and Profile deletes return the locked empty object
+filters. On v1/v2 create, its document adapter clones the request and truncates
+only IOB/COB/UAM/ZT arrays beneath `openaps.suggested.predBGs` and
+`openaps.enacted.predBGs`: 288 values by default, a configured positive
+`PREDICTIONS_MAX_SIZE`, or no prediction trimming when the value is `0`.
+Existing body/document size caps still apply. Its upstream module has no
+generic PUT route, so the adapter no longer exposes one. Activity, Food and
+Profile deletes return the locked empty object
 instead of a storage-engine mutation count. Named Workers-runtime contracts
 cover the complete locked Activity, DeviceStatus, Food, Profile, ID-validation,
-ObjectId-validation and cross-collection shape test files.
+ObjectId-validation, cross-collection shape, deduplication, Entries UUID and
+partial-failure test files. Entries uniqueness remains `sysTime` plus `type`;
+Treatments use `identifier`/`_id` first and then `created_at` plus `eventType`.
+The adapter does not turn descriptive fixture fields such as `pump`, `sync` or
+generic `id` into unique indexes that upstream never created.
 
 Settings deliberately has no legacy fallback identity and does not synthesize a
 virtual `created_at` for generic reads. Its collection search and both history
@@ -819,14 +828,14 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`d997c600-edaf-40e4-ad53-78e8d2788a00`. Current credential-free remote smoke
-returned 200 for health, a bounded v1 Entries read, selected v2 properties, v2
-summary, API3 version and an EIO4 polling open packet; API3 Entries without a token returned
-the expected 401. A fresh anonymous-readable root session returned
-`read:true`, `write:false`, `write_treatment:false`; its Food `dbAdd` was
-rejected with `Not permitted` and a follow-up read stayed empty. Successful
-protected realtime mutation behavior remains covered locally rather than by a
-credentialed remote mutation. The at-most-once dequeue/send
+`4add590a-c3d0-4c76-be75-2056e06b670b`. Current credential-free remote smoke
+returned 200 for health, bounded v1 Entries and DeviceStatus reads, API3 version
+and an EIO4 polling open packet; API3 Entries without a token returned the
+expected 401. The current public Worker has no `API_SECRET` Secret binding, so
+a simulated DeviceStatus POST returned the expected 503
+`api_secret_not_configured` and a follow-up read remained empty. Successful
+protected uploader and realtime mutation behavior remains covered locally
+rather than by a credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
 intentionally still uses the REST polling shim. The inherited local transport
 contracts and the prior public EIO4 smoke prove only the separate server slice,

@@ -12,17 +12,17 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`
-- Git HEAD used by Wrangler: `4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`
-- Cloudflare Version ID: `d997c600-edaf-40e4-ad53-78e8d2788a00`
-- Cloudflare ordinal version number: `46`
+- Deployed code candidate: `4fcc81f17d866588fd41f85fa0607e5d908dfcda`
+- Git HEAD used by Wrangler: `4fcc81f17d866588fd41f85fa0607e5d908dfcda`
+- Cloudflare Version ID: `4add590a-c3d0-4c76-be75-2056e06b670b`
+- Cloudflare ordinal version number: `47`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-19T22:40:11.311165Z`
-- Activation: deployment `6eee8448-8796-434f-8cd0-81db74334ed4` created
-  `2026-07-19T22:40:12.221625Z`; Wrangler reports
+- Version creation time: `2026-07-19T23:18:20.572365Z`
+- Activation: deployment `8f992d4e-2d72-44ff-9279-3001e847c386` created
+  `2026-07-19T23:18:21.329743Z`; Wrangler reports
   this version at 100%
-- Worker startup: 24 ms
-- Deployment ID: `6eee8448-8796-434f-8cd0-81db74334ed4`
+- Worker startup: 26 ms
+- Deployment ID: `8f992d4e-2d72-44ff-9279-3001e847c386`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -30,19 +30,17 @@ is not counted as API, plugin or real-time compatibility.
   authority columns
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 988.17 KiB raw / 180.00 KiB gzip
+- Upload: 989.89 KiB raw / 180.41 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
-  only; the preserved `API_SECRET` application credential is not another
-  storage/product binding
+  only
 
-The ordinary Wrangler deployment preserved the existing configuration; no
-credential was read or supplied to a local or remote smoke request. A prior
-metadata inspection demonstrated why
-`API_SECRET` must be a Worker **Secret**, not a plaintext variable: Wrangler can
-render plaintext variable values. The value is intentionally absent from this
-repository and document. The current lab credential should be rotated and
-replaced with an encrypted Secret before non-lab use. Post-deployment
-documentation changes are not part of the already active Worker version.
+No credential was read or supplied to a local or remote smoke request. Current
+Secret inventory is empty and no local deployment credential is available, so
+the public lab's API-secret write paths fail closed with 503. Before writable
+acceptance testing, an operator must explicitly configure `API_SECRET` as an
+encrypted Worker Secret. The port must not generate or silently replace a
+family credential. Post-deployment documentation changes are not part of the
+already active Worker version.
 
 ## Cloudflare footprint
 
@@ -59,23 +57,27 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 ## Release content
 
 The current deployed build contains the prior adapted slices plus this
-increment's main-namespace client-write work:
+increment's legacy uploader edge work:
 
 - complete named Workers-runtime mapping for locked
-  `websocket.shape-handling.test.js`: `dbAdd`, `dbUpdate`, `dbUpdateUnset` and
-  `dbRemove` for treatments, entries, device status, profile, food and activity;
-- exact collection/authorization/missing-ID error order and ACK shapes, with
-  successful ACKs queued before any resulting root `dataUpdate`;
-- upstream treatment exact and plus-or-minus-two-second fuzzy dedupe,
-  device-status dedupe, AAPS Profile same-start-date/`NSCLIENT_ID` replacement,
-  custom string `_id` preservation and raw dotted set/unset/remove;
-- schema-v12 persisted write/treatment-write authority across DO reconstruction
-  and Hibernatable WebSocket eviction. Pre-v12 session rows retain their data
-  and safely default the new flags to false until re-authorization;
-- prototype-pollution-safe own-property updates, a 100-document event cap and
-  existing document depth/size bounds as explicit Workers Free controls.
-  Broader Mongo/BSON numeric, object-ID and mixed-type semantics remain outside
-  this named contract.
+  `api.deduplication.test.js`, `api.entries.uuid.test.js` and
+  `api.partial-failures.test.js`, adding 32 passing contracts;
+- collection-specific upstream selectors: Entries `sysTime` plus `type`;
+  Treatments `identifier`/`_id` first, then `created_at` plus `eventType`.
+  Descriptive fixture fields such as `pump`, `sync` and generic `id` are not
+  invented as unique indexes;
+- legacy v1/v2 DeviceStatus prediction trimming that clones the upload and
+  truncates only IOB/COB/UAM/ZT arrays under suggested/enacted `predBGs`, using
+  the upstream default 288, a positive `PREDICTIONS_MAX_SIZE` override, or `0`
+  to disable this trim. Existing 512 KiB body and document/array bounds remain
+  separate Workers Free controls.
+
+The immediately preceding main-namespace increment remains deployed and
+includes the complete named `websocket.shape-handling.test.js` mapping,
+schema-v12 persisted write/treatment-write authority, `dbAdd`, `dbUpdate`,
+`dbUpdateUnset` and `dbRemove` for all six locked collection names, and exact
+ACK-before-`dataUpdate` behavior through polling and direct Hibernatable
+WebSocket.
 
 The immediately preceding root-delta increment remains deployed and includes
 the complete named `data.calcdelta.test.js` mapping, schema-v11
@@ -254,10 +256,11 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`. It adds the complete named
-`websocket.shape-handling` mapping and schema-v12 persisted write authority on
-top of the schema-v11 delta baseline while retaining all prior property, v1,
-API3, authorization, realtime, notification ACK and official-page work.
+`4fcc81f17d866588fd41f85fa0607e5d908dfcda`. It adds the complete named
+deduplication, Entries UUID and partial-failure mappings plus legacy
+DeviceStatus prediction trimming while retaining schema-v12 root-write
+authority and all prior property, v1, API3, authorization, realtime,
+notification ACK and official-page work.
 The table below records the exact local gate completed before deployment.
 
 | Check | Result |
@@ -269,41 +272,43 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 35 files, 339/339 passed |
-| Worker dry run | 988.17 KiB raw / 180.00 KiB gzip |
+| Workers integration tests | 38 files, 371/371 passed |
+| Worker dry run | 989.89 KiB raw / 180.41 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
-| Deployment variables | existing configuration was preserved; no credential was read or supplied to tests or smoke requests |
+| Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 339 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 371 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
-`websocket.shape-handling.test.js` and 15 v1 client/API files are classified as
-fully `adapted`, 67 remain unresolved and two bridge files are
+`websocket.shape-handling.test.js` and 18 v1 client/API files are classified as
+fully `adapted`, 64 remain unresolved and two bridge files are
 fixed-scope exclusions.
 Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `d997c600-edaf-40e4-ad53-78e8d2788a00` at 100%.
+Wrangler reports version `4add590a-c3d0-4c76-be75-2056e06b670b` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
 | Check | Result |
 | --- | --- |
-| GET `/api/v2/properties/upbat,bgnow,direction` | HTTP 200; empty `bgnow`, official `upbat` `?%` state, unavailable direction omitted |
-| GET `/api/v2/summary/?hours=1` | HTTP 200 with SGV/treatment/profile/state envelope; current profile preserved and unavailable plugin state explicit as null/absent |
 | GET `/api/v3/version` | HTTP 200 with Nightscout `15.0.7`, API3 `3.0.3-alpha` and SQLite Durable Object marker |
 | GET `/api/v3/entries?limit=1` without JWT | Expected HTTP 401 `Missing or bad access token or JWT` |
 | GET `/healthz` and `/api/v1/entries.json?count=1` | HTTP 200; healthy SQLite DO marker and empty simulated-data Entries array |
+| GET `/api/v1/devicestatus.json?count=1` | HTTP 200 with an empty simulated-data DeviceStatus array |
+| POST simulated DeviceStatus without a configured secret | Expected HTTP 503 `api_secret_not_configured`; follow-up GET remained empty |
 
-No deployed credential was read or sent and no credentialed write was
-attempted. Every checked API response carried the complete CORS policy. The
+No deployed credential was read or sent. The failed write was deliberately
+credential-free and could not mutate storage. Every checked API response
+carried the complete CORS policy. The
 full local suite covers authenticated search, ordering, skip, projections,
 limits, srvModified filters and error shapes in addition to inherited mutation
-and transport contracts.
+and transport contracts. Credentialed remote mutation requires an operator to
+configure the missing encrypted `API_SECRET` first.
 
 An earlier property-plugin increment first attempted version
 `e24bfdec-233c-4dab-a462-142337b14118` (deployment
@@ -316,19 +321,20 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds locked client-originated root mutations and retains the
-existing server-originated `dataUpdate` transport. The current version repeated
-a fresh credential-free EIO4 polling-open check and exercised the read-only
-authorization boundary. No credentialed remote mutation was attempted, so
-successful write/change delivery is proved by local integration contracts
-rather than claimed from the public tenant. The `/alarm` checks below remain
-historical evidence.
+This release changes legacy uploader edge behavior and retains the existing
+client/server root transports. The current version repeated a fresh
+credential-free EIO4 polling-open check. Because the Worker has no
+`API_SECRET`, no credentialed remote mutation could be attempted; successful
+write/change delivery is proved by local integration contracts rather than
+claimed from the public tenant. The read-only root and `/alarm` checks below
+remain evidence from the immediately preceding compatible version.
 
 | Check | Result |
 | --- | --- |
 | Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
-| Current anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
-| Current read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
+| Prior-version anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
+| Prior-version read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
+| Local uploader edge contract | locked DeviceStatus prediction trimming plus Entries/Treatments UUID, dedupe and ordered partial-failure behavior |
 | Local root write contract | six collections and all four events preserve locked validation/permission/ACK order, dedupe and ACK-before-delta behavior |
 | Local v1 SGV root update | an authorized live polling session receives the locked root `dataUpdate`; an unauthorized session remains silent |
 | Local API3 Treatment root update | root and `/storage` delivery share the successful API3 mutation path |
@@ -365,12 +371,13 @@ credential storage or submitting protected mutations:
   official bundle with their expected headings/forms. Food reached `Database
   loaded` and Profile reached `Values loaded.` in the unauthorized read-only
   state; no protected Save was attempted;
-- the browser was restored to the homepage and retained there for the user.
+- the agent-created verification tab was closed without disturbing the user's
+  existing tabs;
 - console inspection across the exercised pages found no errors or warnings.
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace. This browser run reloaded Cloudflare version
-`d997c600-edaf-40e4-ad53-78e8d2788a00` after deployment. Wrangler reported no
+`4add590a-c3d0-4c76-be75-2056e06b670b` after deployment. Wrangler reported no
 changed asset upload for the same 248 official browser assets.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -450,9 +457,9 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`eaf8b72b-939d-43c6-827f-05014fa3bf9b`. It contains the schema-v11
-server-originated root-delta slice and all earlier work, but not the current
-client root write handlers or schema-v12 authority persistence. The older
+`d997c600-edaf-40e4-ad53-78e8d2788a00`. It contains the schema-v12
+client/server root mutation slice and all earlier work, but not the current
+legacy uploader edge contracts or DeviceStatus prediction trimming. The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not
 be selected as a rollback target.

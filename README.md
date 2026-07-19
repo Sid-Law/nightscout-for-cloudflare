@@ -33,6 +33,14 @@ for diagnosis, dosing, or medical decisions.
   are recursively and idempotently entity-encoded before preview or
   persistence; this safe Workers adaptation is stricter than the locked
   JSDOM/DOMPurify output.
+- Complete named Workers-runtime mappings for the locked legacy uploader edge
+  files `api.deduplication.test.js`, `api.entries.uuid.test.js` and
+  `api.partial-failures.test.js`. The SQLite uniqueness selectors match the
+  upstream collection rules rather than inventing broad `pump`/`sync`/`id`
+  indexes. Legacy v1/v2 DeviceStatus uploads also preserve the official
+  prediction trimming contract: only IOB/COB/UAM/ZT prediction arrays under
+  `suggested` or `enacted` are limited to 288 values by default; a positive
+  `PREDICTIONS_MAX_SIZE` changes the limit and `0` disables this trimming.
 - Tenant-local, SQLite-persisted HS256 JWT signing, the upstream eight-hour
   authorization-token lifetime, derived subject access tokens and prefix
   matching, body/query/header credential precedence, persisted per-IP failure
@@ -144,11 +152,11 @@ the complete v1/v2 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
 failed-auth admin notifications, Mongo query/collection parity beyond the
 tested safe subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
-the direct-WebSocket at-most-once crash window, root write handlers,
-main-namespace real-time database-update broadcasts, the general
-background-task scheduler, server plugin execution, notification generation,
-plugin-derived v2 summary state/persistence, and end-to-end verification of every official page
-workflow. The polling shim only keeps the official browser bundle supplied
+the direct-WebSocket at-most-once crash window, profile-switch/plugin
+preprocessing on root updates, the general background-task scheduler, server
+plugin execution, notification generation, plugin-derived v2 summary
+state/persistence, and end-to-end verification of every official page workflow.
+The polling shim only keeps the official browser bundle supplied
 with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
 homepage to the official Socket.IO client is a later slice that also requires
 safe non-default tenant propagation and integration with the still-missing
@@ -385,24 +393,24 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
 `data.calcdelta.test.js`, `websocket.shape-handling.test.js` and 15 v1
-client/API files are classified as fully `adapted`.
+client/API files, plus `api.deduplication.test.js`,
+`api.entries.uuid.test.js` and `api.partial-failures.test.js`, are classified as
+fully `adapted`.
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 67 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 64 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`. After rebuilding the locked
-official UI, its 35-file Workers-runtime suite passes 339/339 tests and both
+`4fcc81f17d866588fd41f85fa0607e5d908dfcda`. After rebuilding the locked
+official UI, its 38-file Workers-runtime suite passes 371/371 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 988.17 KiB raw / 180.00 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds the complete named
-`websocket.shape-handling.test.js` contract and schema-v12 persisted root-write
-authority on top of the schema-v11 delta baseline. Authorized client root
-writes now mutate the shared six-collection repository and enqueue the locked
-subsequent `dataUpdate` through polling or direct Hibernatable WebSocket. It
-retains the prior property, API, authorization, `/storage` and `/alarm` slices.
+reports 989.89 KiB raw / 180.41 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds the three complete legacy uploader edge
+contracts above and the official bounded DeviceStatus prediction trimming
+adapter. It retains schema-v12 root-write authority, server-originated deltas,
+the prior property, API, authorization, `/storage` and `/alarm` slices.
 This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
@@ -439,20 +447,19 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `d997c600-edaf-40e4-ad53-78e8d2788a00` was made current by
-deployment `6eee8448-8796-434f-8cd0-81db74334ed4` at
-`2026-07-19T22:40:12.221625Z`, with a reported 24 ms startup. No asset bytes
+Cloudflare version `4add590a-c3d0-4c76-be75-2056e06b670b` was made current by
+deployment `8f992d4e-2d72-44ff-9279-3001e847c386` at
+`2026-07-19T23:18:21.329743Z`, with a reported 26 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
-Credential-free remote smoke returned HTTP 200 for health, a bounded v1 Entries
-read, selected v2 properties, v2 summary, API3 version and EIO4 polling. The public
-tenant had no recent SGV rows, so the deployed property response correctly used
-its empty `bgnow` shape and the official `upbat` `?%` empty state; non-empty
-official calculations are covered by the local contracts. Missing-token API3
-Entries returned the expected 401. No deployed credential was read or sent.
-An anonymous/readable root session authorized as `read:true`, `write:false` and
-`write_treatment:false`; its attempted Food `dbAdd` received the exact
-`Not permitted` ACK and a follow-up read confirmed that no row was written.
-Successful credentialed root mutation remains local contract evidence only.
+Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
+and DeviceStatus reads, API3 version and EIO4 polling; missing-token API3 Entries
+returned the expected 401. A deliberately unauthenticated simulated
+DeviceStatus POST returned the expected 503 `api_secret_not_configured`, and a
+follow-up read confirmed no mutation. The current public lab has no
+`API_SECRET` Secret binding, so all API-secret write paths are disabled until an
+operator configures one; no secret value was read, generated or printed.
+Successful uploader mutation and prediction trimming are therefore current
+local contract evidence, not a claim about a credentialed remote write.
 
 The first attempted plugin deployment exposed Cloudflare rolling-upgrade
 behavior: an already-live Durable Object temporarily lacked the newly added
@@ -467,8 +474,8 @@ Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
 Editor reached `Values loaded.` in their unauthorized read-only state; no
 protected Save was attempted. Browser console inspection found no errors or
-warnings. The
-browser was returned to the homepage. The public tenant currently has no
+warnings. The agent-created verification tab was closed after the pass. The
+public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
 
