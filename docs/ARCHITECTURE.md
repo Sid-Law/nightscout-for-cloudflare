@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`e1c380a29450a06621b15f7df7c904f81e1b1147`. It produced Cloudflare version
-`f2801520-9c21-495a-acb2-337a157f82ec`, reported as the Current Version by
-direct deploy. Its 27-file Workers-runtime suite passes 276/276
+`b2518d725433ea120132c59ce9b249d4224533d4`. It produced Cloudflare version
+`481d5d25-4e4e-4bb9-966a-144bcab19194`, reported as the Current Version by
+direct deploy. Its 28-file Workers-runtime suite passes 282/282
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries; deployment and the final dry run both reported 914.88 KiB raw /
-164.21 KiB gzip, with the dry run declaring only the `ENTRY_STORE` Durable
-Object and `ASSETS` product bindings. Cloudflare reported a 24 ms startup.
+entries; deployment and the final dry run both reported 917.18 KiB raw /
+164.85 KiB gzip, with the dry run declaring only the `ENTRY_STORE` Durable
+Object and `ASSETS` product bindings. Cloudflare reported a 45 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -339,7 +339,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`e1c380a29450a06621b15f7df7c904f81e1b1147` implements all six official generic
+`b2518d725433ea120132c59ce9b249d4224533d4` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -371,6 +371,20 @@ and API v3 observe the same `_id`, metadata and change history. Activation
 repairs older Food metadata, fallback keys and missing migration snapshots once
 without rewriting preserved JSON bodies, and repeated activation/DO eviction is
 idempotent.
+
+The v1 collection boundary deliberately translates legacy Mongo/Express
+contracts rather than leaking SQLite internals. The shared ID helper accepts
+missing, `null` and 24-hex ObjectId values, rejects UUID and numeric values, and
+reports the first invalid item with the locked 400 JSON envelope. Activity,
+Food, Profile, DeviceStatus and Treatments accept an empty POST array as a
+successful empty result; Food also accepts an empty PUT array and creates on a
+missing-ID PUT. DeviceStatus converts offset-bearing `created_at` to UTC ISO,
+stores `utcOffset`, and combines wildcard deletion with any other supplied
+filters. Its upstream module has no generic PUT route, so the adapter no longer
+exposes one. Activity, Food and Profile deletes return the locked empty object
+instead of a storage-engine mutation count. Named Workers-runtime contracts
+cover the complete locked Activity, DeviceStatus, Food, Profile, ID-validation,
+ObjectId-validation and cross-collection shape test files.
 
 Settings deliberately has no legacy fallback identity and does not synthesize a
 virtual `created_at` for generic reads. Its collection search and both history
@@ -727,7 +741,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`f2801520-9c21-495a-acb2-337a157f82ec`. Credential-free remote smoke returned
+`481d5d25-4e4e-4bb9-966a-144bcab19194`. Credential-free remote smoke returned
 200 for health and the v15.0.7 API3 version envelope. API3 GET/HEAD/OPTIONS,
 anonymous collection GET/HEAD and unknown-route HEAD matched the new boundary
 contracts. Protected realtime event/ACK behavior remains covered locally

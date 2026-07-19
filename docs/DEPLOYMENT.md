@@ -12,15 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `e1c380a29450a06621b15f7df7c904f81e1b1147`
-- Git HEAD used by Wrangler: `e1c380a29450a06621b15f7df7c904f81e1b1147`
-- Cloudflare Version ID: `f2801520-9c21-495a-acb2-337a157f82ec`
-- Version tag/message: `git-e1c380a29450` /
-  `git e1c380a29450 complete api3 upstream contracts`
-- Version creation time: `2026-07-19T18:34:44.097129Z`
+- Deployed code candidate: `b2518d725433ea120132c59ce9b249d4224533d4`
+- Git HEAD used by Wrangler: `b2518d725433ea120132c59ce9b249d4224533d4`
+- Cloudflare Version ID: `481d5d25-4e4e-4bb9-966a-144bcab19194`
+- Cloudflare version number: 39
+- Version tag/message: `git-b2518d725433` /
+  `git b2518d725433 adapt legacy collection upload contracts`
+- Version creation time: `2026-07-19T19:01:12.326131Z`
 - Activation: direct `wrangler deploy` reported this as the Current Version;
   no separate activation timestamp was printed
-- Worker startup: 24 ms
+- Worker startup: 45 ms
 - Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
@@ -28,7 +29,7 @@ is not counted as API, plugin or real-time compatibility.
   silence tables
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 914.88 KiB raw / 164.21 KiB gzip
+- Upload: 917.18 KiB raw / 164.85 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -175,12 +176,14 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`e1c380a29450a06621b15f7df7c904f81e1b1147`. It completes named
-Workers-runtime contract coverage for all 16 locked API3 test files. The final
-ten are create, update, patch, patch-operation, delete, shape handling, AAPS
-patterns, storage socket, storage find and storage modify. This extends the
-prior basic/generic-workflow/read/renderer/search/security coverage while
-retaining implicit HEAD, complete API CORS, v1/v2 Treatments POST `preBolus`
+`b2518d725433ea120132c59ce9b249d4224533d4`. It adds complete named
+Workers-runtime contract coverage for the locked Activity, DeviceStatus, Food,
+Profile, ID-validation, ObjectId-validation and cross-collection shape test
+files while retaining all 16 already-adapted API3 files. The v1 increment locks
+empty-array operations, exact ID errors, Food save-without-ID creation,
+DeviceStatus timezone normalization and filtered wildcard deletion, official
+mutation response shapes and absence of an unintended DeviceStatus PUT. It
+retains implicit HEAD, complete API CORS, v1/v2 Treatments POST `preBolus`
 fan-out, notification ACK, the
 stale-past DO alarm scheduling repair, persisted API v3 `/alarm`, prior
 `/storage`, six-collection API3, Entries, Profile, transport and official-page
@@ -196,24 +199,24 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 27 files, 276/276 passed |
+| Workers integration tests | 28 files, 282/282 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 914.88 KiB raw / 164.21 KiB gzip |
+| Worker dry run | 917.18 KiB raw / 164.85 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 276 Workers
-tests cover the implemented adapter subset; all 16 API3 files plus
-`notifications-api.test.js` are classified as fully `adapted`, 92 remain
-unresolved and two bridge files are fixed-scope
+audit finds 883 active `it(...)` cases plus one skipped case. The 282 Workers
+tests cover the implemented adapter subset; all 16 API3 files,
+`notifications-api.test.js` and seven v1 collection/identity files are
+classified as fully `adapted`, 85 remain unresolved and two bridge files are fixed-scope
 exclusions. The named Treatments contracts do not
 make the whole `api.treatments.test.js` adapted. Neither count proves complete
 compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `f2801520-9c21-495a-acb2-337a157f82ec` as the Current
+Wrangler reports version `481d5d25-4e4e-4bb9-966a-144bcab19194` as the Current
 Version. These credential-free checks verified response content and protocol
 markers, not only Wrangler command success.
 
@@ -226,6 +229,7 @@ markers, not only Wrangler command success.
 | anonymous GET `/api/v3/entries` | HTTP 401 with the locked missing/bad-token JSON envelope |
 | anonymous HEAD `/api/v3/entries` | HTTP 401 with an empty body |
 | HEAD `/api/v3/NOT_EXIST` | HTTP 404 with an empty body |
+| public GET `/api/v1/food`, `/api/v1/profile`, `/api/v1/devicestatus` | HTTP 200; response bodies deliberately suppressed from the smoke record |
 
 No deployed credential was read or sent and no credentialed write was
 attempted. Every checked API response carried the complete CORS policy. The
@@ -276,7 +280,7 @@ credential storage or submitting protected mutations:
 The browser console recorded zero errors. Secondary non-chart pages emitted
 only the locked bundle's known `Unable to find element for #chartContainer`
 warning. This browser run reloaded Cloudflare version
-`f2801520-9c21-495a-acb2-337a157f82ec` after deployment. Wrangler reported no
+`481d5d25-4e4e-4bb9-966a-144bcab19194` after deployment. Wrangler reported no
 changed asset upload for the same 248 official browser assets.
 
 Authenticated Profile Save remains historical evidence from an earlier

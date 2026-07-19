@@ -325,8 +325,12 @@ API-secret failure modes, derived/body credentials and persisted failure delay,
 the implemented Entries uploader/query/read representations and document CRUD
 subset, including ordered partial batch failure, recursive upload sanitization,
 preview, numeric filter coercion, sort-before-limit, conditional GET/HEAD and
-v2 inheritance, plus activity conditional
-requests, JWT issue/verify/expiry/tamper/cross-tenant behavior, Shiro permission
+v2 inheritance. The v1 collection contracts now also cover Activity, Food,
+Profile and DeviceStatus batch/empty-array handling, locked ObjectId validation
+and error envelopes, Food missing-ID save creation, DeviceStatus timezone
+normalization, wildcard-delete filtering and locked mutation response shapes,
+plus cross-collection scalar/array handling and NightscoutKit-compatible writes.
+The suite also covers JWT issue/verify/expiry/tamper/cross-tenant behavior, Shiro permission
 matching, `verifyauth`, and the API v3 version/status envelopes. It also covers
 fresh-only Entries schema repair, v1/API3 identity and time separation across
 entries, treatments, device status, profile, food and settings; UUID/ObjectId
@@ -352,24 +356,24 @@ broken-recipient isolation. The
 locked upstream has 111 JavaScript test files; a static declaration audit finds
 883 active `it(...)` cases plus one skipped case. Those declarations are not
 directly comparable with the adapter suite and do not prove complete Nightscout
-compatibility. All 16 locked `api3.*` files plus
-`notifications-api.test.js` are classified as fully `adapted`; 92 files remain
+compatibility. All 16 locked `api3.*` files, `notifications-api.test.js` and the
+seven v1 collection/identity files `api.activity.test.js`,
+`api.devicestatus.test.js`, `api.food.test.js`, `api.id-validation.test.js`,
+`api.objectid-validation.test.js`, `api.profiles.test.js` and
+`api.shape-handling.test.js` are classified as fully `adapted`; 85 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`e1c380a29450a06621b15f7df7c904f81e1b1147`. After rebuilding the locked
-official UI, its 27-file Workers-runtime suite passes 276/276 tests and both
+`b2518d725433ea120132c59ce9b249d4224533d4`. After rebuilding the locked
+official UI, its 28-file Workers-runtime suite passes 282/282 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 914.88 KiB raw / 164.21 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment completes named Workers-runtime contract
-coverage for the ten remaining locked API3 files: create, update, patch,
-patch-operation, delete, shape handling, AAPS patterns, storage socket,
-storage find and storage modify. Together with the six prior files, all 16
-locked `api3.*` test files are now classified as adapted. The new contracts
-cover validation/auth ordering, UUID/ObjectId/fallback identity, dedupe and
-resurrection, single-object shapes, AAPS retry patterns, storage paging and
-mutation metadata, and `/storage` change normalization. This does not make the
-whole Nightscout port or any complete v1/v2 API compatible; controlled
+reports 917.18 KiB raw / 164.85 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds complete named Workers-runtime contract
+coverage for the seven locked v1 collection/identity files listed above. It
+preserves the previous complete 16-file API3 mapping while locking legacy
+empty-array, identifier, date, delete and response-shape behavior across
+Activity, DeviceStatus, Food and Profile. This does not make the whole
+Nightscout port or the complete v1/v2 API compatible; controlled
 Workers Free large-result behavior and broader Mongo mixed-type/nested/array
 parity remain explicit API3 differences. `times/echo`, `times`, `slice`, EIO3, root writes,
 polling-to-WebSocket upgrade and the server-side notification/plugin engine
@@ -403,18 +407,19 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `f2801520-9c21-495a-acb2-337a157f82ec` was made current by
+Cloudflare version `481d5d25-4e4e-4bb9-966a-144bcab19194` was made current by
 the direct Wrangler deployment and was created at
-`2026-07-19T18:34:44.097129Z`, with a reported 24 ms startup. Version tag
-`git-e1c380a29450` and message
-`git e1c380a29450 complete api3 upstream contracts` record
+`2026-07-19T19:01:12.326131Z`, with a reported 45 ms startup. Version tag
+`git-b2518d725433` and message
+`git b2518d725433 adapt legacy collection upload contracts` record
 the Git mapping. No asset bytes needed uploading because all 248 official
 asset entries were unchanged. Credential-free remote smoke returned HTTP 200
 for health and the v15.0.7 API v3 version envelope; GET and HEAD version
 contracts passed, API OPTIONS returned the complete method/header policy,
 anonymous GET/HEAD collection access returned the locked 401 behavior, and an
-unknown HEAD route returned 404 with an empty body. No deployed credential was
-read or sent.
+unknown HEAD route returned 404 with an empty body. Public Food, Profile and
+DeviceStatus reads also returned HTTP 200 without exposing their bodies in the
+smoke log. No deployed credential was read or sent.
 
 A real browser run reloaded the current deployment and rendered the official
 homepage with its chart region and no console errors. The official Admin Tools,

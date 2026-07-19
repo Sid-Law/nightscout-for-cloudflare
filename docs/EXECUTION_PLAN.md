@@ -48,7 +48,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
 | 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current homepage and Food Editor load successfully; Food reached `Database loaded` anonymously. The locked chart module logs its known missing-`#chartContainer` warning on the non-chart Food page, but no console error occurred. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. `/storage` now atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
-| 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD. Bounded Entries echo plus direct SQLite count for entries/treatments/device status are deployed; Activity CRUD, authenticated GET `/notifications/ack`, and Treatments POST `preBolus` fan-out are implemented. Complete times/echo, times, slice, non-Entries echo, bounded aggregation-pipeline parity, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
+| 4. API v1 | In progress; seven more locked files adapted | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD. Bounded Entries echo plus direct SQLite count for entries/treatments/device status are deployed. Activity, DeviceStatus, Food, Profile, legacy ID/ObjectId validation and cross-collection shape handling now have complete named mappings for their locked upstream test files; authenticated `/notifications/ack` and Treatments POST `preBolus` fan-out remain implemented partial slices. Complete times/echo, times, slice, non-Entries echo, bounded aggregation-pipeline parity, exact DOMPurify output, the wider Mongo query/document surface and the remaining v1 routes/test files. |
 | 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK and inherited Treatments `preBolus` create behavior are implemented; complete summary, the v2-only `/notifications/loop` external integration contract and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
@@ -56,7 +56,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 9. Real-time storage updates | API3 `/storage` named slice implemented | Successful HTTP API3 mutations atomically enqueue official create/update/delete frames for authorized collection rooms; subscription/queue state survives DO eviction, v1 changes do not broadcast, and overflow/failure drops only the broken subscriber. Add main-namespace database updates and browser/credentialed remote workflows; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Realtime/auth plus notification-ACK foundation | The DO's single Cloudflare alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Stale already-due platform alarms are replaced so a queued delivery cannot erase the only SQL wakeup. Socket.IO and inherited v1/v2 HTTP ACK share the same durable group/level transaction. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share the scheduler. |
 | 11. Server plugins/notifications | ACK/outlet only | `/alarm` can publish trusted, already-computed notification objects; Socket and HTTP ACK persist the same snooze state and exact all-clear broadcast. Build the official registry and tenant platform context, then port upstream plugin/data/notification calculation and persistence tests without rewriting formulas. |
-| 12. Upstream regression suite | Tracked; 17 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files plus `notifications-api.test.js` are adapted, 92 files remain unresolved and two are fixed-scope exclusions. |
+| 12. Upstream regression suite | Tracked; 24 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, `notifications-api.test.js` and seven v1 collection/identity files are adapted, 85 files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -94,25 +94,37 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`e1c380a29450a06621b15f7df7c904f81e1b1147` completes named Workers-runtime
-contract coverage for all 16 locked API3 test files. The final ten cover
-create, update, patch, patch-operation, delete, shape handling, AAPS patterns,
-storage socket, storage find and storage modify on top of the prior
-basic/generic-workflow/read/renderer/search/security contracts. Cloudflare
-Worker version `f2801520-9c21-495a-acb2-337a157f82ec` was reported as the
-Current Version, created at `2026-07-19T18:34:44.097129Z`, with a 24 ms startup.
-Wrangler processed
-248 official asset entries with no asset-byte uploads; deployment and the final
-dry run reported 914.88 KiB raw / 164.21 KiB gzip, and the dry run exposed only
-`ENTRY_STORE` plus `ASSETS`. Deployment used `--keep-vars`, version tag
-`git-e1c380a29450` and a matching Git message; no deployed credential was
-supplied to remote smoke requests. The 27-file Workers-runtime suite passed 276/276,
+`b2518d725433ea120132c59ce9b249d4224533d4` adds complete named
+Workers-runtime mappings for `api.activity.test.js`,
+`api.devicestatus.test.js`, `api.food.test.js`, `api.id-validation.test.js`,
+`api.objectid-validation.test.js`, `api.profiles.test.js` and
+`api.shape-handling.test.js`. The prior complete mapping for all 16 locked API3
+test files remains green. Cloudflare Worker version
+`481d5d25-4e4e-4bb9-966a-144bcab19194` was reported as the Current Version,
+created at `2026-07-19T19:01:12.326131Z`, with a 45 ms startup. Wrangler
+processed 248 official asset entries with no asset-byte uploads; deployment
+and the final dry run reported 917.18 KiB raw / 164.85 KiB gzip, and the dry run
+exposed only `ENTRY_STORE` plus `ASSETS`. Deployment used `--keep-vars`, version
+tag `git-b2518d725433` and the matching message
+`git b2518d725433 adapt legacy collection upload contracts`; no deployed
+credential was supplied to remote smoke requests. The 28-file Workers-runtime suite passed 282/282,
 both audit suites passed 20/20, the dependency audit reported zero known
 vulnerabilities, and TypeScript plus the official UI build completed before
 deployment. A plaintext API credential can be rendered by metadata tooling;
 the lab credential must be rotated and converted to a Worker Secret before
 non-lab use. Its value is absent from repository documentation. These remain
 subset facts, not a full-port claim.
+
+The new v1 contracts preserve the locked acceptance of missing, `null` and
+24-hex IDs while rejecting UUID/numeric IDs with the first invalid batch item
+in the exact legacy 400 envelope. They also lock empty-array POST behavior for
+Activity, Food, Profile, DeviceStatus and Treatments; empty Food PUT; Food PUT
+creation when `_id` is absent; DeviceStatus offset-bearing `created_at`
+normalization to UTC plus `utcOffset`; DeviceStatus wildcard delete combined
+with other filters; and the official `{}` mutation responses for Activity,
+Food and Profile. The unintended generic DeviceStatus PUT route is no longer
+exposed. These are adapter contracts over SQLite, not evidence that unrestricted
+MongoDB query semantics have been reproduced.
 
 This increment reproduces the official Treatments create split: every truthy
 nonzero normalized `preBolus` creates the time-shifted carb record. Truthy
