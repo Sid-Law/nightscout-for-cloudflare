@@ -18,6 +18,7 @@ import type {
 } from "../document-repository";
 import {
   REALTIME_CLEANUP_BATCH,
+  REALTIME_MAX_ALARM_GROUP_CHARACTERS,
   REALTIME_MAX_PAYLOAD_BYTES,
   REALTIME_PING_INTERVAL_MS,
   REALTIME_PING_TIMEOUT_MS,
@@ -42,6 +43,10 @@ export interface RealtimeAuthorization {
   write_treatment: boolean;
 }
 
+export type RealtimeAlarmAuthorization =
+  | { mode: "accessToken" }
+  | { mode: "web"; read: boolean; ack: boolean };
+
 export interface RealtimeSnapshot {
   devicestatus: unknown[];
   sgvs: unknown[];
@@ -65,6 +70,10 @@ export interface RealtimeServiceOptions {
     | readonly Api3CollectionName[]
     | null
     | Promise<readonly Api3CollectionName[] | null>;
+  authorizeAlarm?: (message: Record<string, unknown>) =>
+    | RealtimeAlarmAuthorization
+    | null
+    | Promise<RealtimeAlarmAuthorization | null>;
   snapshot?: (now: number) => RealtimeSnapshot | null;
   retroDeviceStatus?: (now: number) => unknown[] | null;
   status?: (now: number) => Record<string, unknown>;
@@ -125,6 +134,36 @@ function defaultStorageAuthorization(
   return null;
 }
 
+function defaultAlarmAuthorization(
+  message: Record<string, unknown>,
+): RealtimeAlarmAuthorization | null {
+  if (message.accessToken) return null;
+  const credential = message.secret ?? message.jwtToken;
+  return credential === undefined || credential === null || credential === ""
+    ? { mode: "web", read: true, ack: false }
+    : null;
+}
+
+function alarmLevelDisplay(level: number): string {
+  switch (level) {
+    case 2: return "Urgent";
+    case 1: return "Warning";
+    case 0: return "Info";
+    case -1: return "Low";
+    case -2: return "Lowest";
+    case -3: return "None";
+    default: return "Unknown";
+  }
+}
+
+function alarmEventName(notification: Record<string, unknown>): string {
+  if (notification.clear) return "clear_alarm";
+  if (notification.level === 1) return "alarm";
+  if (notification.level === 2) return "urgent_alarm";
+  if (notification.isAnnouncement) return "announcement";
+  return "notification";
+}
+
 function randomLeaseToken(): string {
   return crypto.randomUUID();
 }
@@ -146,6 +185,7 @@ export class RealtimeSessionService {
   private readonly pollWaitMs: number;
   private readonly authorize: NonNullable<RealtimeServiceOptions["authorize"]>;
   private readonly authorizeStorage: NonNullable<RealtimeServiceOptions["authorizeStorage"]>;
+  private readonly authorizeAlarm: NonNullable<RealtimeServiceOptions["authorizeAlarm"]>;
   private readonly snapshot: NonNullable<RealtimeServiceOptions["snapshot"]>;
   private readonly retroDeviceStatus: NonNullable<RealtimeServiceOptions["retroDeviceStatus"]>;
   private readonly status: RealtimeServiceOptions["status"];
@@ -161,6 +201,7 @@ export class RealtimeSessionService {
     this.pollWaitMs = options.pollWaitMs ?? REALTIME_PING_INTERVAL_MS;
     this.authorize = options.authorize ?? defaultAuthorization;
     this.authorizeStorage = options.authorizeStorage ?? defaultStorageAuthorization;
+    this.authorizeAlarm = options.authorizeAlarm ?? defaultAlarmAuthorization;
     this.snapshot = options.snapshot ?? defaultSnapshot;
     this.retroDeviceStatus = options.retroDeviceStatus ?? ((now) =>
       this.snapshot(now)?.devicestatus ?? null
@@ -306,6 +347,7 @@ export class RealtimeSessionService {
     const session = cloneSession(initial);
     const outbound: EngineIoV4Packet[] = [];
     const broadcasts: EngineIoV4Packet[] = [];
+    const alarmBroadcasts: EngineIoV4Packet[] = [];
     let closed = false;
     try {
       for (const packet of packets) {
@@ -325,7 +367,13 @@ export class RealtimeSessionService {
         }
         this.refreshInboundLiveness(session, this.now());
         const socketPacket = unwrapSocketIoV5Packet(packet);
-        await this.processSocketPacket(session, socketPacket, outbound, broadcasts);
+        await this.processSocketPacket(
+          session,
+          socketPacket,
+          outbound,
+          broadcasts,
+          alarmBroadcasts,
+        );
       }
     } catch (error) {
       this.closeForBadPacket(sid);
@@ -346,6 +394,7 @@ export class RealtimeSessionService {
       session,
       outbound,
       broadcasts,
+      alarmBroadcasts,
       now,
       (current) =>
         current.transport !== REALTIME_TRANSPORT
@@ -387,6 +436,7 @@ export class RealtimeSessionService {
     const session = cloneSession(initial);
     const outbound: EngineIoV4Packet[] = [];
     const broadcasts: EngineIoV4Packet[] = [];
+    const alarmBroadcasts: EngineIoV4Packet[] = [];
     try {
       if (packet.type === "pong") {
         this.acceptPong(session, packet);
@@ -397,6 +447,7 @@ export class RealtimeSessionService {
           unwrapSocketIoV5Packet(packet),
           outbound,
           broadcasts,
+          alarmBroadcasts,
         );
       } else {
         throw new RealtimeSessionError(
@@ -416,6 +467,7 @@ export class RealtimeSessionService {
       session,
       outbound,
       broadcasts,
+      alarmBroadcasts,
       now,
       (current) =>
         current.transport === REALTIME_WEBSOCKET_TRANSPORT
@@ -645,11 +697,65 @@ export class RealtimeSessionService {
     }
   }
 
+  /**
+   * Trusted server-side notification outlet used by the future plugin/bus
+   * adapter. Like upstream namespace.emit(), this broadcasts to every current
+   * `/alarm` connection (subscription only controls ACK authority) and does not
+   * create an offline replay log.
+   */
+  publishAlarmNotification(notification: Record<string, unknown>): number {
+    let frame: string;
+    try {
+      frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+        type: "event",
+        namespace: "/alarm",
+        data: [alarmEventName(notification), notification],
+      }));
+    } catch {
+      return 0;
+    }
+    const now = this.now();
+    const result = this.storage.transactionSync(() => {
+      const wakeTargets = new Set<string>();
+      const delivered = this.enqueueAlarmFrameInTransaction(frame, now, wakeTargets);
+      return { delivered, wakeTargets: [...wakeTargets] };
+    });
+    for (const sid of result.wakeTargets) this.wake(sid);
+    return result.delivered;
+  }
+
   flushApplicationWakes(): number {
     const sids = [...this.pendingApplicationWakeSids];
     this.pendingApplicationWakeSids.clear();
     for (const sid of sids) this.wake(sid);
     return sids.length;
+  }
+
+  private enqueueAlarmFrameInTransaction(
+    frame: string,
+    now: number,
+    wakeTargets: Set<string>,
+  ): number {
+    let delivered = 0;
+    let droppedConnectedRoot = false;
+    for (const sid of this.repository.listAlarmConnectionSessionIds(now)) {
+      try {
+        this.repository.enqueueFrames(sid, [frame], now);
+        wakeTargets.add(sid);
+        delivered += 1;
+      } catch {
+        const session = this.repository.getSession(sid);
+        if (session?.socketConnected === true) droppedConnectedRoot = true;
+        this.repository.deleteSessionInTransaction(sid);
+        wakeTargets.add(sid);
+      }
+    }
+    if (droppedConnectedRoot) {
+      for (const sid of this.enqueueClientsForConnectedSessions(now)) {
+        wakeTargets.add(sid);
+      }
+    }
+    return delivered;
   }
 
   private commitProcessedSession(
@@ -658,6 +764,7 @@ export class RealtimeSessionService {
     session: RealtimeSession,
     outbound: readonly EngineIoV4Packet[],
     broadcasts: readonly EngineIoV4Packet[],
+    alarmBroadcasts: readonly EngineIoV4Packet[],
     now: number,
     validateCurrent: (current: RealtimeSession) => RealtimeSessionError | null,
   ): { error: RealtimeSessionError | null; wakeTargets: string[] } {
@@ -746,6 +853,13 @@ export class RealtimeSessionService {
           }
         }
       }
+      for (const broadcast of alarmBroadcasts) {
+        this.enqueueAlarmFrameInTransaction(
+          encodeEngineIoV4Packet(broadcast),
+          now,
+          wakeTargets,
+        );
+      }
       return { error: null, wakeTargets: [...wakeTargets] };
     });
   }
@@ -755,6 +869,7 @@ export class RealtimeSessionService {
     packet: SocketIoV5Packet,
     outbound: EngineIoV4Packet[],
     broadcasts: EngineIoV4Packet[],
+    alarmBroadcasts: EngineIoV4Packet[],
   ): Promise<void> {
     if (packet.type === "connect") {
       if (packet.namespace === "/storage") {
@@ -767,6 +882,19 @@ export class RealtimeSessionService {
         }
         outbound.push(wrapSocketIoV5Packet(
           createSocketIoV5ServerConnectPacket("/storage", socketSid),
+        ));
+        return;
+      }
+      if (packet.namespace === "/alarm") {
+        const socketSid = this.repository.connectAlarmNamespace(session.sid, this.now());
+        if (socketSid === null) {
+          throw new RealtimeSessionError(
+            "bad_packet",
+            "alarm namespace is already connected",
+          );
+        }
+        outbound.push(wrapSocketIoV5Packet(
+          createSocketIoV5ServerConnectPacket("/alarm", socketSid),
         ));
         return;
       }
@@ -803,6 +931,10 @@ export class RealtimeSessionService {
         this.repository.disconnectStorageNamespace(session.sid);
         return;
       }
+      if (packet.namespace === "/alarm") {
+        this.repository.disconnectAlarmNamespace(session.sid);
+        return;
+      }
       if (packet.namespace === "/") {
         session.socketConnected = false;
         session.authorized = false;
@@ -820,6 +952,16 @@ export class RealtimeSessionService {
     }
 
     if (packet.type === "ack" || packet.type === "error") return;
+    if (packet.namespace === "/alarm") {
+      if (!this.repository.alarmNamespaceConnected(session.sid)) {
+        throw new RealtimeSessionError(
+          "bad_packet",
+          "alarm event requires the connected alarm namespace",
+        );
+      }
+      await this.processAlarmEvent(session, packet, outbound, alarmBroadcasts);
+      return;
+    }
     if (packet.namespace === "/storage") {
       if (!this.repository.storageNamespaceConnected(session.sid)) {
         throw new RealtimeSessionError(
@@ -834,6 +976,96 @@ export class RealtimeSessionService {
       throw new RealtimeSessionError("bad_packet", "event requires the connected root namespace");
     }
     await this.processRootEvent(session, packet, outbound, broadcasts);
+  }
+
+  private async processAlarmEvent(
+    session: RealtimeSession,
+    packet: SocketIoV5EventPacket,
+    outbound: EngineIoV4Packet[],
+    alarmBroadcasts: EngineIoV4Packet[],
+  ): Promise<void> {
+    const eventName = packet.data[0];
+    if (eventName === "subscribe") {
+      const rawMessage = packet.data.length === 2 ? packet.data[1] : undefined;
+      const message = typeof rawMessage === "object"
+          && rawMessage !== null
+          && !Array.isArray(rawMessage)
+        ? rawMessage as Record<string, unknown>
+        : {};
+      const authorization = await this.authorizeAlarm(message);
+      let result: Record<string, unknown>;
+      if (authorization === null) {
+        result = { success: false, message: "Missing or bad accessToken" };
+      } else if (authorization.mode === "accessToken") {
+        this.repository.setAlarmSubscription(
+          session.sid,
+          "accessToken",
+          false,
+          true,
+          this.now(),
+        );
+        result = { success: true, message: "Subscribed for alarms" };
+      } else {
+        this.repository.setAlarmSubscription(
+          session.sid,
+          "web",
+          authorization.read,
+          authorization.ack,
+          this.now(),
+        );
+        result = {
+          success: true,
+          message: "Subscribed for alarms",
+          read: authorization.read,
+          ack: authorization.ack,
+        };
+      }
+      if (packet.id !== undefined) {
+        outbound.push(wrapSocketIoV5Packet({
+          type: "ack",
+          namespace: "/alarm",
+          id: packet.id,
+          data: [result],
+        }));
+      }
+      return;
+    }
+
+    if (eventName !== "ack" || !this.repository.alarmAckAllowed(session.sid)) return;
+    const level = packet.data[1];
+    const group = packet.data[2];
+    const rawSilenceTime = packet.data[3];
+    if (
+      typeof level !== "number"
+      || !Number.isSafeInteger(level)
+      || level < -3
+      || level > 2
+      || typeof group !== "string"
+      || group.length === 0
+      || group.length > REALTIME_MAX_ALARM_GROUP_CHARACTERS
+    ) {
+      // Upstream has no protocol ACK or error for malformed alarm ACK events.
+      // Ignore them without allocating tenant state or closing the transport.
+      return;
+    }
+    let silenceTime = 30 * 60 * 1_000;
+    if (rawSilenceTime) {
+      if (typeof rawSilenceTime !== "number" || !Number.isSafeInteger(rawSilenceTime)) return;
+      silenceTime = rawSilenceTime;
+    }
+    const now = this.now();
+    if (!this.repository.ackAlarm(level, group, silenceTime, now)) return;
+    const clear = {
+      clear: true,
+      title: "All Clear",
+      message: `${group} - ${alarmLevelDisplay(level)} was ack'd`,
+      group,
+    };
+    alarmBroadcasts.push(wrapSocketIoV5Packet({
+      type: "event",
+      namespace: "/alarm",
+      data: ["clear_alarm", clear],
+    }));
   }
 
   private async processStorageEvent(

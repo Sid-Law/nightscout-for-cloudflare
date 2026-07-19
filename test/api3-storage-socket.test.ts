@@ -265,10 +265,10 @@ describe("API3 /storage Socket.IO namespace", () => {
       data: [{ success: false, message: "Missing or bad accessToken" }],
     });
 
-    expect((await socket.send({ type: "connect", namespace: "/alarm" })).status).toBe(200);
+    expect((await socket.send({ type: "connect", namespace: "/admin" })).status).toBe(200);
     expect(await socket.poll()).toEqual([{
       type: "error",
-      namespace: "/alarm",
+      namespace: "/admin",
       data: { message: "Invalid namespace" },
     }]);
   });

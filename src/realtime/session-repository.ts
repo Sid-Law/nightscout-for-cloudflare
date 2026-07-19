@@ -6,6 +6,7 @@ import {
 import {
   REALTIME_CLEANUP_BATCH,
   REALTIME_ENGINE_PROTOCOL,
+  REALTIME_MAX_ALARM_GROUPS,
   REALTIME_MAX_PAYLOAD_BYTES,
   REALTIME_MAX_QUEUE_BYTES,
   REALTIME_MAX_QUEUE_PACKETS,
@@ -88,6 +89,12 @@ interface DeadlineRow {
 interface SidRow {
   [key: string]: SqlStorageValue;
   sid: string;
+}
+
+interface AlarmSilenceRow {
+  [key: string]: SqlStorageValue;
+  last_ack_at: number;
+  silence_time: number;
 }
 
 export interface RealtimeSession {
@@ -207,8 +214,9 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
     );
   `);
   // Keep the public bootstrap sufficient for repository users and tests; the
-  // independent v9 marker below still records deployment provenance.
+  // independent v9/v10 markers below still record deployment provenance.
   migrateRealtimeStorageNamespaceV9(storage);
+  migrateRealtimeAlarmNamespaceV10(storage);
 }
 
 interface SchemaRow {
@@ -341,6 +349,35 @@ export function migrateRealtimeStorageNamespaceV9(storage: DurableObjectStorage)
   `);
 }
 
+/**
+ * API v3's `/alarm` namespace keeps connection/subscription authority and the
+ * notification engine's ACK/silence state durable across isolate eviction.
+ * Socket.IO notification delivery itself remains live-only in the bounded
+ * per-session queue; this table is not an offline replay journal.
+ */
+export function migrateRealtimeAlarmNamespaceV10(storage: DurableObjectStorage): void {
+  storage.sql.exec(`
+    CREATE TABLE IF NOT EXISTS realtime_alarm_connections (
+      sid TEXT PRIMARY KEY,
+      socket_sid TEXT NOT NULL UNIQUE,
+      connected_at INTEGER NOT NULL,
+      subscribed_at INTEGER,
+      subscribe_mode TEXT CHECK (subscribe_mode IN ('accessToken', 'web')),
+      read_allowed INTEGER CHECK (read_allowed IN (0, 1)),
+      ack_allowed INTEGER CHECK (ack_allowed IN (0, 1))
+    );
+    CREATE INDEX IF NOT EXISTS realtime_alarm_connections_order
+      ON realtime_alarm_connections(connected_at, sid);
+    CREATE TABLE IF NOT EXISTS realtime_alarm_silences (
+      level INTEGER NOT NULL,
+      alarm_group TEXT NOT NULL,
+      last_ack_at INTEGER NOT NULL,
+      silence_time INTEGER NOT NULL,
+      PRIMARY KEY (level, alarm_group)
+    );
+  `);
+}
+
 export class SqliteRealtimeSessionRepository {
   constructor(private readonly storage: DurableObjectStorage) {}
 
@@ -420,6 +457,7 @@ export class SqliteRealtimeSessionRepository {
     );
     this.storage.sql.exec("DELETE FROM realtime_storage_subscriptions WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_storage_connections WHERE sid = ?", sid);
+    this.storage.sql.exec("DELETE FROM realtime_alarm_connections WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_outbound_packets WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_sessions WHERE sid = ?", sid);
   }
@@ -501,6 +539,152 @@ export class SqliteRealtimeSessionRepository {
       )
       .toArray()
       .map((row) => row.sid);
+  }
+
+  connectAlarmNamespace(sid: string, now: number): string | null {
+    this.requireSession(sid);
+    const existing = this.storage.sql
+      .exec<SidRow>(
+        "SELECT socket_sid AS sid FROM realtime_alarm_connections WHERE sid = ? LIMIT 1",
+        sid,
+      )
+      .toArray()[0];
+    if (existing !== undefined) return null;
+    const socketSid = randomSessionId();
+    this.storage.sql.exec(
+      `INSERT INTO realtime_alarm_connections (sid, socket_sid, connected_at)
+       VALUES (?, ?, ?)`,
+      sid,
+      socketSid,
+      now,
+    );
+    return socketSid;
+  }
+
+  alarmNamespaceConnected(sid: string): boolean {
+    return this.storage.sql
+      .exec<CountRow>(
+        `SELECT EXISTS(
+           SELECT 1 FROM realtime_alarm_connections WHERE sid = ?
+         ) AS count`,
+        sid,
+      )
+      .one().count === 1;
+  }
+
+  disconnectAlarmNamespace(sid: string): void {
+    this.storage.sql.exec("DELETE FROM realtime_alarm_connections WHERE sid = ?", sid);
+  }
+
+  setAlarmSubscription(
+    sid: string,
+    mode: "accessToken" | "web",
+    readAllowed: boolean,
+    ackAllowed: boolean,
+    now: number,
+  ): void {
+    const written = this.storage.sql.exec(
+      `UPDATE realtime_alarm_connections
+       SET subscribed_at = ?, subscribe_mode = ?, read_allowed = ?,
+           ack_allowed = MAX(COALESCE(ack_allowed, 0), ?)
+       WHERE sid = ?`,
+      now,
+      mode,
+      readAllowed ? 1 : 0,
+      ackAllowed ? 1 : 0,
+      sid,
+    ).rowsWritten;
+    if (written !== 1) {
+      throw new RealtimeRepositoryError("unknown_sid", "alarm namespace is not connected");
+    }
+  }
+
+  alarmAckAllowed(sid: string): boolean {
+    return this.storage.sql
+      .exec<CountRow>(
+        `SELECT EXISTS(
+           SELECT 1 FROM realtime_alarm_connections
+           WHERE sid = ? AND subscribed_at IS NOT NULL AND ack_allowed = 1
+         ) AS count`,
+        sid,
+      )
+      .one().count === 1;
+  }
+
+  listAlarmConnectionSessionIds(now: number): string[] {
+    return this.storage.sql
+      .exec<SidRow>(
+        `SELECT session.sid AS sid
+         FROM realtime_alarm_connections AS connection
+         INNER JOIN realtime_sessions AS session ON session.sid = connection.sid
+         WHERE session.expires_at > ?
+           AND (session.pong_deadline IS NULL OR session.pong_deadline > ?)
+         ORDER BY connection.connected_at, session.created_at, session.sid
+         LIMIT ?`,
+        now,
+        now,
+        REALTIME_MAX_SESSIONS_PER_TENANT,
+      )
+      .toArray()
+      .map((row) => row.sid);
+  }
+
+  ackAlarm(level: number, group: string, silenceTime: number, now: number): boolean {
+    const accepted = this.ackAlarmLevel(level, group, silenceTime, now);
+    if (!accepted) return false;
+    // Locked notifications.ack() also silences Warning when Urgent is ACKed,
+    // but sends one clear notification for the original Urgent level only.
+    if (level === 2) this.ackAlarmLevel(1, group, silenceTime, now);
+    return true;
+  }
+
+  private ackAlarmLevel(
+    level: number,
+    group: string,
+    silenceTime: number,
+    now: number,
+  ): boolean {
+    const current = this.storage.sql
+      .exec<AlarmSilenceRow>(
+        `SELECT last_ack_at, silence_time
+         FROM realtime_alarm_silences
+         WHERE level = ? AND alarm_group = ? LIMIT 1`,
+        level,
+        group,
+      )
+      .toArray()[0];
+    if (current !== undefined && now < current.last_ack_at + current.silence_time) {
+      return false;
+    }
+    if (current === undefined) {
+      const groupExists = this.storage.sql.exec<CountRow>(
+        `SELECT EXISTS(
+           SELECT 1 FROM realtime_alarm_silences WHERE alarm_group = ?
+         ) AS count`,
+        group,
+      ).one().count === 1;
+      if (!groupExists) {
+        const groupCount = this.storage.sql
+          .exec<CountRow>(
+            "SELECT COUNT(DISTINCT alarm_group) AS count FROM realtime_alarm_silences",
+          )
+          .one().count;
+        if (groupCount >= REALTIME_MAX_ALARM_GROUPS) return false;
+      }
+    }
+    this.storage.sql.exec(
+      `INSERT INTO realtime_alarm_silences
+         (level, alarm_group, last_ack_at, silence_time)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(level, alarm_group) DO UPDATE SET
+         last_ack_at = excluded.last_ack_at,
+         silence_time = excluded.silence_time`,
+      level,
+      group,
+      now,
+      silenceTime,
+    );
+    return true;
   }
 
   cleanupOpportunity(

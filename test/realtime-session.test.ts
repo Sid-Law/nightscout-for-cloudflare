@@ -581,21 +581,21 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     });
   });
 
-  it("returns CONNECT_ERROR for /alarm without killing the connected root", async () => {
-    const stub = store("realtime-alarm-namespace");
+  it("returns CONNECT_ERROR for an unknown namespace without killing the connected root", async () => {
+    const stub = store("realtime-unknown-namespace");
     await runInDurableObject(stub, async (_instance, state) => {
       migrateRealtimeSessions(state.storage);
       const service = new RealtimeSessionService(state.storage);
       const { sid } = service.createHandshake();
       await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
       await service.poll(sid);
-      await post(service, sid, clientPayload({ type: "connect", namespace: "/alarm" }));
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/admin" }));
       expect(
         decodeEngineIoV4PollingPayload(await service.poll(sid))
           .map((packet) => unwrapSocketIoV5Packet(packet)),
       ).toEqual([{
         type: "error",
-        namespace: "/alarm",
+        namespace: "/admin",
         data: { message: "Invalid namespace" },
       }]);
       expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid).socketConnected)

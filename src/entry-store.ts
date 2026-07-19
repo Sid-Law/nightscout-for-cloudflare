@@ -30,6 +30,7 @@ import {
 } from "./document-repository";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
 import {
+  migrateRealtimeAlarmNamespaceV10,
   migrateRealtimeClosuresV8,
   migrateRealtimeSessions,
   migrateRealtimeStorageNamespaceV9,
@@ -38,6 +39,7 @@ import {
 import {
   RealtimeSessionError,
   RealtimeSessionService,
+  type RealtimeAlarmAuthorization,
   type RealtimeAuthorization,
   type RealtimeSnapshot,
 } from "./realtime/session-service";
@@ -51,6 +53,7 @@ import {
 } from "./realtime/ddata-snapshot";
 import {
   REALTIME_DEVICE_STATUS_WINDOW_MS,
+  REALTIME_MAX_PAYLOAD_BYTES,
   REALTIME_MAX_SESSIONS_PER_TENANT,
   REALTIME_SNAPSHOT_MAX_BYTES,
   REALTIME_SNAPSHOT_MAX_DOCUMENT_DEPTH,
@@ -407,6 +410,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       ),
       authorize: (message) => this.realtimeAuthorize(message),
       authorizeStorage: (message) => this.realtimeStorageAuthorize(message),
+      authorizeAlarm: (message) => this.realtimeAlarmAuthorize(message),
     });
     ctx.blockConcurrencyWhile(async () => {
       this.migrate();
@@ -516,6 +520,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       migrateRealtimeStorageNamespaceV9(this.ctx.storage);
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (9)",
+      );
+
+      migrateRealtimeAlarmNamespaceV10(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (10)",
       );
 
       // This named, idempotent auth state is intentionally independent of the
@@ -1455,24 +1464,23 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     };
   }
 
-  private async realtimeAuthorize(
-    message: Record<string, unknown>,
-  ): Promise<RealtimeAuthorization | null> {
-    const rawSecret = message.secret === "null" ? null : message.secret;
-    const rawToken = message.token;
+  private async realtimeCredentialPermissionGroups(
+    presentedSecret: unknown,
+    presentedToken: unknown,
+  ): Promise<string[][] | null> {
+    const rawSecret = presentedSecret === "null" ? null : presentedSecret;
+    const rawToken = presentedToken;
     if (
       (rawSecret === undefined || rawSecret === null || rawSecret === "") &&
       (rawToken === undefined || rawToken === null || rawToken === "")
     ) {
-      return this.realtimeAuthorizationFromGroups(
-        await this.realtimePermissionGroups([]),
-      );
+      return this.realtimePermissionGroups([]);
     }
 
     const configured = this.configuredApiSecret();
     if (typeof rawSecret === "string" && rawSecret.length <= 4096) {
       if (await apiSecretDigestMatches(rawSecret, configured)) {
-        return this.realtimeAuthorizationFromGroups([["*"]]);
+        return [["*"]];
       }
       if (configured !== null) {
         const subjectJson = await this.resolveAuthorizationSubject(
@@ -1480,9 +1488,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         );
         if (subjectJson !== null) {
           const subject = JSON.parse(subjectJson) as JsonDocument;
-          return this.realtimeAuthorizationFromGroups(
-            await this.realtimePermissionGroups(subject.roles),
-          );
+          return this.realtimePermissionGroups(subject.roles);
         }
       }
     }
@@ -1495,13 +1501,55 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         );
         if (subjectJson !== null) {
           const subject = JSON.parse(subjectJson) as JsonDocument;
-          return this.realtimeAuthorizationFromGroups(
-            await this.realtimePermissionGroups(subject.roles),
-          );
+          return this.realtimePermissionGroups(subject.roles);
         }
       }
     }
     return null;
+  }
+
+  private async realtimeAuthorize(
+    message: Record<string, unknown>,
+  ): Promise<RealtimeAuthorization | null> {
+    const groups = await this.realtimeCredentialPermissionGroups(
+      message.secret,
+      message.token,
+    );
+    return groups === null ? null : this.realtimeAuthorizationFromGroups(groups);
+  }
+
+  private async realtimeAlarmAuthorize(
+    message: Record<string, unknown>,
+  ): Promise<RealtimeAlarmAuthorization | null> {
+    // Locked AlarmSocket gives the accessToken branch priority over all web
+    // credentials and requires only that the subject exists. A successful
+    // native subscription may ACK alarms regardless of the subject's roles.
+    if (message.accessToken) {
+      if (
+        typeof message.accessToken !== "string"
+        || message.accessToken.length > 4096
+      ) {
+        return null;
+      }
+      const subjectJson = await this.resolveAuthorizationSubject(
+        JSON.stringify([message.accessToken]),
+      );
+      return subjectJson === null ? null : { mode: "accessToken" };
+    }
+
+    // The currently ported settings surface locks
+    // authenticationPromptOnLoad=false, so missing web credentials resolve the
+    // tenant's default roles exactly like the upstream web-client branch.
+    const groups = await this.realtimeCredentialPermissionGroups(
+      message.secret,
+      message.jwtToken,
+    );
+    if (groups === null) return null;
+    return {
+      mode: "web",
+      read: permissionGroupsAllow(groups, "api:*:read"),
+      ack: permissionGroupsAllow(groups, "notifications:*:ack"),
+    };
   }
 
   private async realtimeStorageAuthorize(
@@ -1539,6 +1587,23 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       if (permissionGroupsAllow(groups, permission)) granted.push(collection);
     }
     return granted;
+  }
+
+  async publishAlarmNotification(notificationJson: string): Promise<number> {
+    if (notificationJson.length > REALTIME_MAX_PAYLOAD_BYTES) return 0;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(notificationJson) as unknown;
+    } catch {
+      return 0;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return 0;
+    const delivered = this.realtime.publishAlarmNotification(
+      parsed as Record<string, unknown>,
+    );
+    this.flushRealtimeWebSockets();
+    await this.synchronizeRealtimeAlarm();
+    return delivered;
   }
 
   private async flushApi3RealtimeMutation(): Promise<void> {
