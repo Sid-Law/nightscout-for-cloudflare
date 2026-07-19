@@ -2340,16 +2340,27 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     permanent: boolean,
     actor: string | null,
   ): Promise<DocumentDeleteResult> {
+    let result: DocumentDeleteResult;
     try {
-      return this.documentRepository().deleteDocumentForApi3(
+      result = this.documentRepository().deleteDocumentForApi3(
         collection,
         identity,
         permanent,
         actor,
       );
-    } finally {
-      await this.flushApi3RealtimeMutation();
+    } catch (error) {
+      // Keep application-level validation failures inside the typed DO RPC
+      // contract. Letting a known read-only rejection escape the Durable
+      // Object produces an uncaught RPC exception even when the outer Worker
+      // can translate it to an HTTP response.
+      result = {
+        deleted: false,
+        permanent,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
+    await this.flushApi3RealtimeMutation();
+    return result;
   }
 
   async api3CollectionLastModified(

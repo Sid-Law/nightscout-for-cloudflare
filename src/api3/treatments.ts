@@ -465,6 +465,9 @@ async function deleteTreatment(
     permanent,
     authorization.sub || null,
   );
+  if (result.error !== undefined) {
+    return operationError(new Error(result.error)) ?? api3Status(500, STORAGE_ERROR);
+  }
   if (result.tooLarge === true) {
     return api3Status(
       413,

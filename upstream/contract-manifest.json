@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "7b1b586a73518623a3ad2f4f6e73faee2b3a0a35914be1e63d7b8ab8a64e6853",
+  "inputs_sha256": "1dd492db2995343bf8011168a4bdbbef6cbb05d330e42ffff749e11a501c1b14",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 3,
+      "adapted": 7,
       "excluded-fixed-scope": 2,
-      "unresolved": 106
+      "unresolved": 102
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7599,8 +7599,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api3.generic.workflow.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named complete Workers-runtime workflow in test/api3-treatments.test.ts plus mutation-event contracts in test/api3-storage-socket.test.ts: initial lastModified/status clocks, missing read/search/delete, create/read/search/history, replace/patch and successive history/read state, soft/permanent deletion, tombstone/history removal, all four read-only mutation rejections, actor fields, and create/update/delete event payloads.",
       "workstream": "5-api-v3",
       "depends_on": [
         "1-storage-foundation",
@@ -7667,8 +7667,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api3.read.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime read contract in test/api3-devicestatus.test.ts plus storage event coverage: authentication, unknown collection/document, created-document metadata, selected/_all projection, If-Modified-Since 304/200, soft-delete 410, permanent-delete 404, and a v1-created device-status document read and deleted through API3.",
       "workstream": "5-api-v3",
       "depends_on": [
         "1-storage-foundation",
@@ -7687,8 +7687,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api3.renderer.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime renderer contract in test/api3-treatments.test.ts: two documents, unsupported extension and Accept negotiation for READ/SEARCH/HISTORY, byte-identical extension-versus-Accept XML/CSV outputs for all three operations, payload presence, and permanent cleanup.",
       "workstream": "5-api-v3",
       "depends_on": [
         "1-storage-foundation",
@@ -7721,8 +7721,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api3.security.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime security contract in test/api3-devicestatus.test.ts using the locked fixture's empty AUTH_DEFAULT_ROLES setting: missing versus invalid Bearer envelopes, a valid subject without read permission, and a valid subject with api:entries:read on the production collection route.",
       "workstream": "5-api-v3",
       "depends_on": [
         "1-storage-foundation",

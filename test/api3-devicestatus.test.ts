@@ -3,6 +3,7 @@ import { SELF, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { migrateDocumentsV4 } from "../src/document-repository";
 import type { EntryStore } from "../src/entry-store";
+import worker from "../src/index";
 
 const TEST_API_SECRET = "nscf-test-secret-20260717";
 
@@ -84,6 +85,27 @@ function api3Fetch(
   const headers = new Headers(init.headers);
   if (jwt !== null) headers.set("Authorization", `Bearer ${jwt}`);
   return SELF.fetch(withTenant(path, tenantName), { ...init, headers });
+}
+
+function api3FetchWithDefaultRoles(
+  tenantName: string,
+  jwt: string | null,
+  path: string,
+  authDefaultRoles: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (jwt !== null) headers.set("Authorization", `Bearer ${jwt}`);
+  return worker.fetch(
+    new Request(withTenant(path, tenantName), { ...init, headers }),
+    {
+      ASSETS: env.ASSETS,
+      ENTRY_STORE: env.ENTRY_STORE,
+      API_SECRET: TEST_API_SECRET,
+      AUTH_DEFAULT_ROLES: authDefaultRoles,
+      AUTH_FAIL_DELAY: "0",
+    } as unknown as Parameters<typeof worker.fetch>[1],
+  );
 }
 
 function jsonMutation(
@@ -198,6 +220,217 @@ describe("API v3 devicestatus vertical slice", () => {
       name,
       reader,
       "/api/v3/devicestatus/auth-device-status",
+    )).status).toBe(200);
+  });
+
+  it("represents every locked api3.security contract on production collection routes", async () => {
+    const name = tenant("api3-security-file");
+    const denied = await issueSubject(name, "Denied API3 reader", ["denied"]);
+    const reader = await issueSubject(name, "Allowed API3 reader", [
+      "api:entries:read",
+    ]);
+
+    // The locked api3.security fixture explicitly sets authDefaultRoles to an
+    // empty string. Use the same environment instead of the public lab's
+    // intentionally readable anonymous default.
+    const strictFetch = (
+      jwt: string | null,
+      path: string,
+    ): Promise<Response> => api3FetchWithDefaultRoles(name, jwt, path, "");
+
+    const missing = await strictFetch(null, "/api/v3/entries");
+    expect(missing.status).toBe(401);
+    expect(await missing.json()).toEqual({
+      status: 401,
+      message: "Missing or bad access token or JWT",
+    });
+
+    const invalid = await strictFetch("invalid_token", "/api/v3/entries");
+    expect(invalid.status).toBe(401);
+    expect(await invalid.json()).toEqual({
+      status: 401,
+      message: "Bad access token or JWT",
+    });
+
+    const forbidden = await strictFetch(denied, "/api/v3/entries");
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toEqual({
+      status: 403,
+      message: "Missing permission api:entries:read",
+    });
+
+    const allowed = await strictFetch(reader, "/api/v3/entries");
+    expect(allowed.status).toBe(200);
+    expect(await allowed.json()).toEqual({ status: 200, result: [] });
+  });
+
+  it("represents every locked api3.read contract on the Workers runtime", async () => {
+    const name = tenant("api3-read-file");
+    const jwt = await issueSubject(name, "API3 read file", [
+      "api:devicestatus:create",
+      "api:devicestatus:read",
+      "api:devicestatus:delete",
+    ]);
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const document = deviceStatus("read-file-device-status", createdAt, {
+      uploaderBattery: 58,
+    });
+
+    const missingAuth = await api3Fetch(
+      name,
+      null,
+      "/api/v3/devicestatus/FAKE_IDENTIFIER",
+    );
+    expect(missingAuth.status).toBe(401);
+    expect(await missingAuth.json()).toEqual({
+      status: 401,
+      message: "Missing or bad access token or JWT",
+    });
+
+    const missingCollection = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/NOT_EXIST/NOT_EXIST",
+    );
+    expect(missingCollection.status).toBe(404);
+    expect(await missingCollection.json()).toEqual({
+      status: 404,
+      message: "Bad operation or collection",
+    });
+
+    const missingDocument = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status",
+    );
+    expect(missingDocument.status).toBe(404);
+    expect(await missingDocument.json()).toEqual({ status: 404 });
+
+    const created = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus",
+      jsonMutation("POST", document),
+    );
+    expect(created.status).toBe(201);
+
+    const read = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status",
+    );
+    const readBody = await result<JsonObject>(read);
+    expect(readBody).toMatchObject({
+      ...document,
+      subject: "API3 read file",
+      srvCreated: expect.any(Number),
+      srvModified: expect.any(Number),
+    });
+
+    const selected = await result<JsonObject>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status?fields=date%2Cdevice%2Csubject",
+    ));
+    expect(selected).toEqual({
+      date: document.date,
+      device: document.device,
+      subject: "API3 read file",
+    });
+
+    const all = await result<JsonObject>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status?fields=_all",
+    ));
+    for (const field of [
+      "app",
+      "date",
+      "device",
+      "identifier",
+      "srvModified",
+      "uploaderBattery",
+      "subject",
+    ]) {
+      expect(all).toHaveProperty(field);
+    }
+
+    const unmodified = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status",
+      { headers: { "If-Modified-Since": new Date(Date.now() + 60_000).toUTCString() } },
+    );
+    expect(unmodified.status).toBe(304);
+    expect(await unmodified.text()).toBe("");
+
+    const modified = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status",
+      { headers: { "If-Modified-Since": new Date(Number(document.date) - 1_000).toUTCString() } },
+    );
+    expect(modified.status).toBe(200);
+    expect(await result<JsonObject>(modified)).toMatchObject(document);
+
+    const softDelete = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status",
+      { method: "DELETE" },
+    );
+    expect(softDelete.status).toBe(200);
+    expect(await softDelete.json()).toEqual({ status: 200 });
+    const gone = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status",
+    );
+    expect(gone.status).toBe(410);
+    expect(await gone.json()).toEqual({ status: 410 });
+
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status?permanent=true",
+      { method: "DELETE" },
+    )).status).toBe(200);
+    const removed = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/devicestatus/read-file-device-status",
+    );
+    expect(removed.status).toBe(404);
+    expect(await removed.json()).toEqual({ status: 404 });
+
+    const legacyDate = Date.now() - 30_000;
+    const legacyCreatedAt = new Date(legacyDate).toISOString();
+    const legacyCreate = await adminWrite(name, "/api/v1/devicestatus", {
+      date: legacyDate,
+      app: "legacy-api3-read",
+      device: "loop://legacy-read",
+      uploaderBattery: 57,
+      created_at: legacyCreatedAt,
+    });
+    expect(legacyCreate.status).toBe(200);
+    const [legacy] = await legacyCreate.json<JsonObject[]>();
+    const legacyId = String(legacy?._id);
+    const legacyRead = await result<JsonObject>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/devicestatus/${legacyId}`,
+    ));
+    expect(legacyRead).toMatchObject({
+      app: "legacy-api3-read",
+      device: "loop://legacy-read",
+      uploaderBattery: 57,
+      identifier: legacyId,
+    });
+    expect((await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/devicestatus/${legacyId}?permanent=true`,
+      { method: "DELETE" },
     )).status).toBe(200);
   });
 

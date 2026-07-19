@@ -139,6 +139,7 @@ export type Api3RealtimeMutationEvent =
 export interface DocumentDeleteResult {
   deleted: boolean;
   permanent: boolean;
+  error?: string;
   tooLarge?: boolean;
   revision?: number;
   srvModified?: number;

@@ -354,9 +354,25 @@
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime version-envelope contract in test/worker.test.ts: public GET /api/v3/version returns the locked Nightscout 15.0.7 version, API3 3.0.3-alpha version, a numeric server timestamp, and the platform storage metadata extension."
     },
+    "vendor/nightscout/tests/api3.generic.workflow.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named complete Workers-runtime workflow in test/api3-treatments.test.ts plus mutation-event contracts in test/api3-storage-socket.test.ts: initial lastModified/status clocks, missing read/search/delete, create/read/search/history, replace/patch and successive history/read state, soft/permanent deletion, tombstone/history removal, all four read-only mutation rejections, actor fields, and create/update/delete event payloads."
+    },
+    "vendor/nightscout/tests/api3.read.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime read contract in test/api3-devicestatus.test.ts plus storage event coverage: authentication, unknown collection/document, created-document metadata, selected/_all projection, If-Modified-Since 304/200, soft-delete 410, permanent-delete 404, and a v1-created device-status document read and deleted through API3."
+    },
+    "vendor/nightscout/tests/api3.renderer.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime renderer contract in test/api3-treatments.test.ts: two documents, unsupported extension and Accept negotiation for READ/SEARCH/HISTORY, byte-identical extension-versus-Accept XML/CSV outputs for all three operations, payload presence, and permanent cleanup."
+    },
     "vendor/nightscout/tests/api3.search.test.js": {
       "status": "adapted",
       "reason": "Represented by named Workers-runtime contracts in test/api3-entries.test.ts and test/api3-input.test.ts: JWT requirement, unknown collection, twelve-document search and srvModified filtering, exact paging errors, valid/default/configured hard limits including string configuration, ascending/descending ordered sort, skip, selected/all projection, plus the Workers Free 1,000-document ceiling."
+    },
+    "vendor/nightscout/tests/api3.security.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime security contract in test/api3-devicestatus.test.ts using the locked fixture's empty AUTH_DEFAULT_ROLES setting: missing versus invalid Bearer envelopes, a valid subject without read permission, and a valid subject with api:entries:read on the production collection route."
     },
     "vendor/nightscout/tests/notifications-api.test.js": {
       "status": "adapted",

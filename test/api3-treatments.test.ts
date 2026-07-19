@@ -746,6 +746,259 @@ describe("API v3 treatments vertical slice", () => {
     ))).toEqual([]);
   });
 
+  it("represents every locked api3.generic.workflow contract on the Workers runtime", async () => {
+    const name = tenant("api3-generic-workflow-file");
+    const permissions = [
+      "api:treatments:create",
+      "api:treatments:read",
+      "api:treatments:update",
+      "api:treatments:delete",
+    ];
+    const alice = await issueSubject(name, "Generic Alice", permissions);
+    const bob = await issueSubject(name, "Generic Bob", permissions);
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const original = treatment("generic-workflow-file", createdAt, {
+      eventType: "Correction Bolus",
+      insulin: 1,
+    });
+    const resource = "/api/v3/treatments/generic-workflow-file";
+
+    const initialModified = await result<JsonObject>(await api3Fetch(
+      name,
+      alice,
+      "/api/v3/lastModified",
+    ));
+    expect(Number(initialModified.srvDate)).toBeGreaterThanOrEqual(1_546_300_800_000);
+    const initialCollections = initialModified.collections as JsonObject;
+    let historyTimestamp = Number(
+      initialCollections.treatments
+      ?? Number(initialModified.srvDate) - 10 * 60 * 1_000,
+    );
+
+    const status = await result<JsonObject>(await api3Fetch(
+      name,
+      alice,
+      "/api/v3/status",
+    ));
+    expect(Number(status.srvDate)).toBeGreaterThanOrEqual(1_546_300_800_000);
+    historyTimestamp = Number(status.srvDate);
+
+    expect((await api3Fetch(name, alice, resource)).status).toBe(404);
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      alice,
+      "/api/v3/treatments?identifier_eq=generic-workflow-file",
+    ))).toEqual([]);
+    expect((await api3Fetch(
+      name,
+      alice,
+      resource,
+      { method: "DELETE" },
+    )).status).toBe(404);
+
+    const created = await api3Fetch(
+      name,
+      alice,
+      "/api/v3/treatments",
+      jsonMutation("POST", original),
+    );
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({
+      status: 201,
+      identifier: "generic-workflow-file",
+      lastModified: expect.any(Number),
+    });
+
+    let actual = await result<JsonObject>(await api3Fetch(name, alice, resource));
+    expect(actual).toMatchObject({
+      ...original,
+      subject: "Generic Alice",
+      srvCreated: expect.any(Number),
+      srvModified: expect.any(Number),
+    });
+    if (historyTimestamp >= Number(actual.srvModified)) {
+      historyTimestamp = Number(actual.srvModified) - 1;
+    }
+
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      alice,
+      "/api/v3/treatments?identifier%24eq=generic-workflow-file",
+    ))).toEqual([
+      expect.objectContaining({ identifier: "generic-workflow-file" }),
+    ]);
+
+    let history = await result<JsonObject[]>(await api3Fetch(
+      name,
+      alice,
+      `/api/v3/treatments/history/${historyTimestamp}`,
+    ));
+    expect(history).toEqual([
+      expect.objectContaining({ identifier: "generic-workflow-file" }),
+    ]);
+    historyTimestamp = Number(history[0]?.srvModified);
+
+    actual.insulin = 0.5;
+    const updated = await api3Fetch(
+      name,
+      bob,
+      resource,
+      jsonMutation("PUT", actual),
+    );
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({
+      status: 200,
+      lastModified: expect.any(Number),
+    });
+
+    history = await result<JsonObject[]>(await api3Fetch(
+      name,
+      alice,
+      `/api/v3/treatments/history/${historyTimestamp}`,
+    ));
+    expect(history).toEqual([
+      expect.objectContaining({
+        identifier: "generic-workflow-file",
+        insulin: 0.5,
+        subject: "Generic Bob",
+      }),
+    ]);
+    historyTimestamp = Number(history[0]?.srvModified);
+    actual = await result<JsonObject>(await api3Fetch(name, alice, resource));
+    expect(actual).toMatchObject({
+      identifier: "generic-workflow-file",
+      insulin: 0.5,
+      subject: "Generic Bob",
+    });
+
+    const patched = await api3Fetch(
+      name,
+      alice,
+      resource,
+      jsonMutation("PATCH", { carbs: 5, insulin: 0.4 }),
+    );
+    expect(patched.status).toBe(200);
+    expect(await patched.json()).toEqual({ status: 200 });
+    history = await result<JsonObject[]>(await api3Fetch(
+      name,
+      alice,
+      `/api/v3/treatments/history/${historyTimestamp}`,
+    ));
+    expect(history).toEqual([
+      expect.objectContaining({
+        identifier: "generic-workflow-file",
+        carbs: 5,
+        insulin: 0.4,
+        modifiedBy: "Generic Alice",
+      }),
+    ]);
+    historyTimestamp = Number(history[0]?.srvModified);
+    actual = await result<JsonObject>(await api3Fetch(name, alice, resource));
+    expect(actual).toMatchObject({
+      identifier: "generic-workflow-file",
+      carbs: 5,
+      insulin: 0.4,
+      subject: "Generic Bob",
+      modifiedBy: "Generic Alice",
+    });
+
+    const softDeleted = await api3Fetch(
+      name,
+      bob,
+      resource,
+      { method: "DELETE" },
+    );
+    expect(softDeleted.status).toBe(200);
+    expect(await softDeleted.json()).toEqual({ status: 200 });
+    expect((await api3Fetch(name, alice, resource)).status).toBe(410);
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      alice,
+      "/api/v3/treatments?identifier_eq=generic-workflow-file",
+    ))).toEqual([]);
+    history = await result<JsonObject[]>(await api3Fetch(
+      name,
+      alice,
+      `/api/v3/treatments/history/${historyTimestamp}`,
+    ));
+    expect(history).toEqual([
+      expect.objectContaining({
+        identifier: "generic-workflow-file",
+        isValid: false,
+        modifiedBy: "Generic Bob",
+      }),
+    ]);
+    historyTimestamp = Number(history[0]?.srvModified);
+
+    const permanentlyDeleted = await api3Fetch(
+      name,
+      bob,
+      `${resource}?permanent=true`,
+      { method: "DELETE" },
+    );
+    expect(permanentlyDeleted.status).toBe(200);
+    expect(await permanentlyDeleted.json()).toEqual({ status: 200 });
+    expect((await api3Fetch(name, alice, resource)).status).toBe(404);
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      alice,
+      `/api/v3/treatments/history/${historyTimestamp}`,
+    ))).toEqual([]);
+
+    const readOnlyDocument = { ...original, isReadOnly: true };
+    expect((await api3Fetch(
+      name,
+      alice,
+      "/api/v3/treatments",
+      jsonMutation("POST", readOnlyDocument),
+    )).status).toBe(201);
+    const readOnlyActual = await result<JsonObject>(await api3Fetch(
+      name,
+      alice,
+      resource,
+    ));
+    expect(readOnlyActual).toMatchObject(readOnlyDocument);
+
+    const readOnlyMessage = {
+      status: 422,
+      message: "Trying to modify read-only document",
+    };
+    const readOnlyPost = await api3Fetch(
+      name,
+      bob,
+      "/api/v3/treatments",
+      jsonMutation("POST", { ...readOnlyActual, insulin: 0.41 }),
+    );
+    expect(readOnlyPost.status).toBe(422);
+    expect(await readOnlyPost.json()).toEqual(readOnlyMessage);
+    const readOnlyPut = await api3Fetch(
+      name,
+      bob,
+      resource,
+      jsonMutation("PUT", { ...readOnlyActual, insulin: 0.42 }),
+    );
+    expect(readOnlyPut.status).toBe(422);
+    expect(await readOnlyPut.json()).toEqual(readOnlyMessage);
+    const readOnlyPatch = await api3Fetch(
+      name,
+      bob,
+      resource,
+      jsonMutation("PATCH", { insulin: 0.43 }),
+    );
+    expect(readOnlyPatch.status).toBe(422);
+    expect(await readOnlyPatch.json()).toEqual(readOnlyMessage);
+    const readOnlyDelete = await api3Fetch(
+      name,
+      bob,
+      `${resource}?permanent=true`,
+      { method: "DELETE" },
+    );
+    expect(readOnlyDelete.status).toBe(422);
+    expect(await readOnlyDelete.json()).toEqual(readOnlyMessage);
+    expect(await result<JsonObject>(await api3Fetch(name, alice, resource)))
+      .toMatchObject(readOnlyDocument);
+  });
+
   it("renders READ, SEARCH, and HISTORY through the locked CSV/XML libraries", async () => {
     const name = tenant("api3-renderers");
     const jwt = await issueSubject(name, "Renderer user", [
@@ -839,6 +1092,151 @@ describe("API v3 treatments vertical slice", () => {
       "/api/v3/treatments/invalid-xml-attribute?permanent=true",
       { method: "DELETE" },
     )).status).toBe(200);
+  });
+
+  it("represents every locked api3.renderer contract on the Workers runtime", async () => {
+    const name = tenant("api3-renderer-file");
+    const jwt = await issueSubject(name, "Renderer file", [
+      "api:treatments:create",
+      "api:treatments:read",
+      "api:treatments:delete",
+    ]);
+    const now = Date.now();
+    const firstDate = now - 5 * 60 * 1_000;
+    const secondDate = now - 60 * 1_000;
+    const historyFrom = now - 10 * 60 * 1_000;
+    const first = treatment(
+      "renderer-file-one",
+      new Date(firstDate).toISOString(),
+      { notes: "first,renderer" },
+    );
+    const second = treatment(
+      "renderer-file-two",
+      new Date(secondDate).toISOString(),
+      { notes: "second renderer" },
+    );
+    for (const document of [first, second]) {
+      const created = await api3Fetch(
+        name,
+        jwt,
+        "/api/v3/treatments",
+        jsonMutation("POST", document),
+      );
+      expect(created.status).toBe(201);
+      expect(await result<JsonObject>(await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/treatments/${String(document.identifier)}`,
+      ))).toMatchObject(document);
+    }
+
+    for (const [path, headers] of [
+      ["/api/v3/treatments/renderer-file-one.ttf?fields=_all", undefined],
+      ["/api/v3/treatments/renderer-file-one?fields=_all", { Accept: "font/ttf" }],
+      ["/api/v3/treatments.ttf?fields=_all", undefined],
+      ["/api/v3/treatments?fields=_all", { Accept: "font/ttf" }],
+      [`/api/v3/treatments/history/${historyFrom}.ttf`, undefined],
+      [`/api/v3/treatments/history/${historyFrom}`, { Accept: "font/ttf" }],
+    ] as const) {
+      const unsupported = await api3Fetch(
+        name,
+        jwt,
+        path,
+        headers === undefined ? {} : { headers },
+      );
+      expect(unsupported.status, path).toBe(406);
+      expect(await unsupported.json(), path).toEqual({
+        status: 406,
+        message: "Unsupported output format requested",
+      });
+    }
+
+    const readXmlByExtension = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/renderer-file-one.xml?fields=_all",
+    );
+    const readXmlByAccept = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/renderer-file-one?fields=_all",
+      { headers: { Accept: "application/xml" } },
+    );
+    expect(readXmlByExtension.status).toBe(200);
+    expect(readXmlByExtension.headers.get("Content-Type"))
+      .toBe("application/xml; charset=utf-8");
+    const readXml = await readXmlByExtension.text();
+    expect(readXml).toBe(await readXmlByAccept.text());
+    expect(readXml).toContain("<?xml version='1.0' encoding='utf-8'?>");
+    expect(readXml).toContain("<identifier>renderer-file-one</identifier>");
+
+    const readCsvByExtension = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/renderer-file-one.csv?fields=_all",
+    );
+    const readCsvByAccept = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments/renderer-file-one?fields=_all",
+      { headers: { Accept: "text/csv" } },
+    );
+    expect(readCsvByExtension.status).toBe(200);
+    expect(readCsvByExtension.headers.get("Content-Type"))
+      .toBe("text/csv; charset=utf-8");
+    const readCsv = await readCsvByExtension.text();
+    expect(readCsv).toBe(await readCsvByAccept.text());
+    expect(readCsv).toContain("renderer-file-one");
+    expect(readCsv).toContain('"first,renderer"');
+
+    for (const [format, accept, contentType] of [
+      ["xml", "application/xml", "application/xml; charset=utf-8"],
+      ["csv", "text/csv", "text/csv; charset=utf-8"],
+    ] as const) {
+      const searchPath = `/api/v3/treatments.${format}?date%24gte=${firstDate}`;
+      const searchByExtension = await api3Fetch(name, jwt, searchPath);
+      const searchByAccept = await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/treatments?date%24gte=${firstDate}`,
+        { headers: { Accept: accept } },
+      );
+      expect(searchByExtension.status, format).toBe(200);
+      expect(searchByExtension.headers.get("Content-Type"), format).toBe(contentType);
+      const extensionBody = await searchByExtension.text();
+      expect(extensionBody, format).toBe(await searchByAccept.text());
+      expect(extensionBody, format).toContain("renderer-file-one");
+      expect(extensionBody, format).toContain("renderer-file-two");
+
+      const historyByExtension = await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/treatments/history/${historyFrom}.${format}`,
+      );
+      const historyByAccept = await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/treatments/history/${historyFrom}`,
+        { headers: { Accept: accept } },
+      );
+      expect(historyByExtension.status, format).toBe(200);
+      expect(historyByExtension.headers.get("Content-Type"), format).toBe(contentType);
+      const historyBody = await historyByExtension.text();
+      expect(historyBody, format).toBe(await historyByAccept.text());
+      expect(historyBody, format).toContain("renderer-file-one");
+      expect(historyBody, format).toContain("renderer-file-two");
+    }
+
+    for (const identifier of ["renderer-file-one", "renderer-file-two"]) {
+      const deleted = await api3Fetch(
+        name,
+        jwt,
+        `/api/v3/treatments/${identifier}?permanent=true`,
+        { method: "DELETE" },
+      );
+      expect(deleted.status, identifier).toBe(200);
+      expect(await deleted.json(), identifier).toEqual({ status: 200 });
+    }
   });
 
   it("uses the locked single public sort and complete ordered tie-break chain", async () => {
