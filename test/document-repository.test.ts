@@ -680,7 +680,8 @@ describe("SQLite collection contract v4", () => {
       carbs: "20",
       preBolus: "15",
     });
-    expect(preBolus.document).toMatchObject({ carbs: 20, preBolus: 15 });
+    expect(preBolus.document).toMatchObject({ preBolus: 15 });
+    expect(preBolus.document).not.toHaveProperty("carbs");
   });
 
   it("resolves legacy dates before API3 replace and patch validation only", async () => {

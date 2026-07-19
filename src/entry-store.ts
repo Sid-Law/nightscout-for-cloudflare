@@ -126,6 +126,10 @@ export type AuthorizationMutationResult =
   | { ok: true; value: string }
   | { ok: false; error: string };
 
+export type LegacyTreatmentCreateResult =
+  | { ok: true; value: string }
+  | { ok: false; error: string };
+
 type EntryStoreEnv = Env & NightscoutStatusEnvironment & {
   API_SECRET?: string;
   AUTH_DEFAULT_ROLES?: string;
@@ -1900,9 +1904,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): Promise<string> {
     let documents = JSON.parse(documentsJson) as JsonDocument[];
     if (collection === "treatments") {
-      return JSON.stringify(
-        documents.map((document) => this.documentRepository().upsertTreatment(document).document),
-      );
+      const result = await this.createLegacyTreatments(documentsJson);
+      if (!result.ok) throw new Error(result.error);
+      return result.value;
     }
     if (collection === "profile" || collection === "food") {
       return JSON.stringify(
@@ -1990,6 +1994,28 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       stored.push(normalized);
     }
     return JSON.stringify(stored);
+  }
+
+  async createLegacyTreatments(
+    documentsJson: string,
+  ): Promise<LegacyTreatmentCreateResult> {
+    try {
+      const documents = JSON.parse(documentsJson) as JsonDocument[];
+      return {
+        ok: true,
+        value: JSON.stringify(
+          documents.flatMap((document) =>
+            this.documentRepository()
+              .createLegacyTreatmentBundle(document)
+              .map((mutation) => mutation.document)),
+        ),
+      };
+    } catch {
+      // Keep expected storage/normalization failures inside the RPC boundary;
+      // the HTTP adapter emits the public legacy error without an unhandled DO
+      // rejection or leaking internal SQLite details.
+      return { ok: false, error: "Treatment storage failure" };
+    }
   }
 
   async saveDocuments(

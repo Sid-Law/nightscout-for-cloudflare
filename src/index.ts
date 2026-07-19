@@ -1756,6 +1756,11 @@ async function handleCollectionApi(
       return json([]);
     }
     const parsed = parseDocumentPayload(payload, collection, false);
+    if (collection === "treatments") {
+      const created = await store.createLegacyTreatments(JSON.stringify(parsed.documents));
+      if (!created.ok) throw new ApiError(500, "mongo_error", "Mongo Error");
+      return json(parseDocuments(created.value));
+    }
     return json(parseDocuments(await store.createDocuments(collection, JSON.stringify(parsed.documents))));
   }
 
@@ -1773,6 +1778,12 @@ async function handleCollectionApi(
       collection,
       collection !== "activity" && collection !== "profile" && collection !== "treatments",
     );
+    if (collection === "treatments") {
+      const saved = parseDocuments(
+        await store.saveDocuments(collection, JSON.stringify(parsed.documents)),
+      );
+      return json(parsed.inputWasArray ? saved : saved[0]);
+    }
     const existing = parsed.documents.filter((document) => typeof document._id === "string");
     const fresh = parsed.documents.filter((document) => typeof document._id !== "string");
     const saved = [

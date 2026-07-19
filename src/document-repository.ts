@@ -385,14 +385,20 @@ function utcOffsetMinutes(value: JsonValue | undefined): number {
   return match[1] === "-" ? -minutes : minutes;
 }
 
+interface PreparedLegacyTreatment {
+  document: JsonDocument;
+  preBolusCarbs: number | null;
+}
+
 /**
- * The single-document part of locked v15.0.7 treatments.prepareData(). It
- * intentionally runs before the v1 upsert selector: created_at is UTC,
- * eventTime overrides it, numeric fields are normalized, and utcOffset still
- * comes from the original created_at value. The preBolus fan-out is documented
- * separately below.
+ * Locked v15.0.7 treatments.prepareData(). It intentionally runs before the
+ * v1 upsert selector: created_at is UTC, eventTime overrides it, numeric fields
+ * are normalized, and utcOffset still comes from the original created_at
+ * value. A truthy preBolus plus carbs moves those carbs into the returned
+ * fan-out value; the caller decides whether it is the POST/create path (which
+ * creates the shifted record) or the PUT/save path (which does not).
  */
-function normalizeLegacyTreatment(document: JsonDocument): JsonDocument {
+function prepareLegacyTreatment(document: JsonDocument): PreparedLegacyTreatment {
   const normalized = { ...document };
   const originalCreatedAt = normalized.created_at;
   const parsed = typeof originalCreatedAt === "number"
@@ -426,9 +432,12 @@ function normalizeLegacyTreatment(document: JsonDocument): JsonDocument {
   ] as const;
   for (const field of numericFields) normalized[field] = Number(normalized[field]);
 
-  // The locked implementation moves carbs to a second, shifted treatment for
-  // preBolus. That fan-out is outside this vertical slice, so keep carbs on the
-  // original record rather than silently losing them.
+  let preBolusCarbs: number | null = null;
+  if (normalized.preBolus && normalized.preBolus !== 0 && normalized.carbs) {
+    preBolusCarbs = Number(normalized.carbs);
+    delete normalized.carbs;
+  }
+
   if (normalized.eventType === "Announcement") normalized.isAnnouncement = true;
   delete normalized.eventTime;
 
@@ -452,7 +461,7 @@ function normalizeLegacyTreatment(document: JsonDocument): JsonDocument {
     delete normalized.glucoseType;
     delete normalized.units;
   }
-  return normalized;
+  return { document: normalized, preBolusCarbs };
 }
 
 function durationMills(value: JsonValue | undefined): number | null {
@@ -2457,19 +2466,51 @@ export class SqliteDocumentRepository {
     });
   }
 
+  private upsertPreparedLegacyTreatment(document: JsonDocument): DocumentMutationResult {
+    const existing = this.findTreatmentUpsertCandidate(document);
+    if (requestedIdentifier(document) !== null) delete document._id;
+    const id = existing?.id ?? requestedId(document) ?? randomObjectId();
+    return this.writeSnapshot(
+      id,
+      document,
+      existing,
+      existing === undefined ? "create" : "replace",
+      "legacy",
+    );
+  }
+
+  /** Locked treatments.save(): normalize and upsert one document, without POST fan-out. */
   upsertTreatment(input: JsonDocument): DocumentMutationResult {
     return this.storage.transactionSync(() => {
-      const document = normalizeLegacyTreatment(normalizeTreatmentIdentity(input));
-      const existing = this.findTreatmentUpsertCandidate(document);
-      if (requestedIdentifier(document) !== null) delete document._id;
-      const id = existing?.id ?? requestedId(document) ?? randomObjectId();
-      return this.writeSnapshot(
-        id,
-        document,
-        existing,
-        existing === undefined ? "create" : "replace",
-        "legacy",
-      );
+      const prepared = prepareLegacyTreatment(normalizeTreatmentIdentity(input));
+      return this.upsertPreparedLegacyTreatment(prepared.document);
+    });
+  }
+
+  /**
+   * Locked treatments.create()/upsert() including the preBolus carb record.
+   * Cloudflare tightens the two writes into one synchronous SQLite transaction
+   * so a failed shifted timestamp cannot leave a half-created meal treatment.
+   */
+  createLegacyTreatmentBundle(input: JsonDocument): DocumentMutationResult[] {
+    return this.storage.transactionSync(() => {
+      const prepared = prepareLegacyTreatment(normalizeTreatmentIdentity(input));
+      const primary = this.upsertPreparedLegacyTreatment(prepared.document);
+      if (prepared.preBolusCarbs === null) return [primary];
+
+      const preBolus = Number(prepared.document.preBolus);
+      const primaryCreatedAt = Date.parse(String(prepared.document.created_at));
+      const shiftedCreatedAt = new Date(primaryCreatedAt + preBolus * 60_000).toISOString();
+      const shifted: JsonDocument = {
+        created_at: shiftedCreatedAt,
+        carbs: prepared.preBolusCarbs,
+      };
+      if (prepared.document.eventType !== undefined) {
+        shifted.eventType = prepared.document.eventType;
+      }
+      if (prepared.document.notes) shifted.notes = prepared.document.notes;
+      const carbRecord = this.upsertPreparedLegacyTreatment(shifted);
+      return [primary, carbRecord];
     });
   }
 
