@@ -12,25 +12,25 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `094bdd9a206431e70f2c1ca1ff55ee768d11f4ac`
-- Git HEAD used by Wrangler: `094bdd9a206431e70f2c1ca1ff55ee768d11f4ac`
-- Cloudflare Version ID: `c7237a55-e657-4648-b8de-78d434606f1b`
+- Deployed code candidate: `df676c7afe8cf81beb949e832788b545f4cbd224`
+- Git HEAD used by Wrangler: `df676c7afe8cf81beb949e832788b545f4cbd224`
+- Cloudflare Version ID: `ea1a004c-eb45-48d4-a9d7-70224f753d9a`
 - Cloudflare ordinal version number: not printed by Wrangler; the Version ID is
   authoritative
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: not separately printed; none is inferred
-- Activation: deployment `254b8589-22cb-4ecc-b3c3-3383ed9815ad` created
-  `2026-07-19T20:38:27.40458Z`; Wrangler reports
+- Version creation time: `2026-07-19T21:16:18.310Z`
+- Activation: deployment `0280373b-f50b-4b64-920a-a7933ed28d1b` created
+  `2026-07-19T21:16:23.945257Z`; Wrangler reports
   this version at 100%
-- Worker startup: 38 ms
-- Deployment ID: `254b8589-22cb-4ecc-b3c3-3383ed9815ad`
+- Worker startup: 27 ms
+- Deployment ID: `0280373b-f50b-4b64-920a-a7933ed28d1b`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
   silence tables
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 948.79 KiB raw / 172.37 KiB gzip
+- Upload: 961.70 KiB raw / 175.27 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -59,15 +59,18 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 ## Release content
 
 The current deployed build contains the prior adapted slices plus this
-increment's following v2 property additions:
+increment's v2 property/plugin additions:
 
-- complete named Workers-runtime mappings for locked `bgnow.test.js` and
-  `direction.test.js`;
-- official four five-minute buckets around the last non-future SGV, per-bucket
-  mean/last/error fields, ordinary and over-nine-minute interpolated deltas,
-  mg/dl/mmol scaling and all locked direction characters/entities;
-- `/api/v2/properties` now exposes those values through the already adapted
-  wildcard/comma selection and truthy `pretty` formatting.
+- complete named Workers-runtime mappings for locked `times.test.js`,
+  `units.test.js`, `levels.test.js`, `rawbg.test.js` and `upbat.test.js`;
+- official raw-calibration/noise/assistant behavior and recent per-device
+  uploader-battery minima, severity, pill hiding/classes and assistant intents;
+- an enabled-plugin dispatcher in official server order: `upbat` is live by
+  default and `rawbg` remains opt-in through `ENABLE`;
+- a bounded DO property projection of at most 64 SGVs, the latest calibration
+  and recent device status, avoiding unrelated food/treatment/profile reads;
+- rolling-deployment compatibility: only Cloudflare's exact missing-new-RPC
+  error falls back to the existing snapshot RPC while an old DO isolate drains.
 
 The immediately preceding v2 increment remains deployed and includes:
 
@@ -75,10 +78,13 @@ The immediately preceding v2 increment remains deployed and includes:
   official empty buckets/deep clone, runtime mills/duration/endmills
   normalization and prefer-new `_id`/`identifier` merging;
 - `/api/v2/properties` wildcard/comma selection and truthy `pretty` formatting;
+- official `bgnow`, `delta`, `buckets` and `direction` calculations from the
+  immediately preceding release remain deployed;
 - `/api/v2/summary/` with locked hour filtering, SGV/noise, carb/insulin,
   temporary-target, temp-basal schedule and current-profile mapping. It does
   not fabricate server-plugin values: IOB/COB/BWP are `null`, and the
-  age/battery properties are absent until those official plugins run;
+  summary age/battery properties are absent until those official plugins feed
+  the summary mapper;
 
 The immediately preceding v1 increment remains deployed and includes:
 
@@ -220,11 +226,10 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`094bdd9a206431e70f2c1ca1ff55ee768d11f4ac`. It adds the complete named
-`bgnow.test.js` and `direction.test.js` mappings and replaces the earlier
-simplified delta with the official bucket/interpolation/unit/direction logic
-while retaining all prior v1, API3, authorization, realtime, notification ACK
-and official-page work.
+`df676c7afe8cf81beb949e832788b545f4cbd224`. It adds the complete named
+`times`, `units`, `levels`, `rawbg` and `upbat` mappings plus the production
+rolling-DO-RPC fallback while retaining all prior `bgnow`/`direction`, v1,
+API3, authorization, realtime, notification ACK and official-page work.
 The table below records the exact local gate completed before deployment.
 
 | Check | Result |
@@ -236,38 +241,51 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 32 files, 308/308 passed |
-| Worker dry run | 948.79 KiB raw / 172.37 KiB gzip |
+| Workers integration tests | 33 files, 321/321 passed |
+| Worker dry run | 961.70 KiB raw / 175.27 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | existing configuration was preserved; no credential was read or supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 308 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 321 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
-`direction.test.js` and 15 v1 client/API files are classified as fully
-`adapted`, 74 remain unresolved and two bridge files are
+`direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
+`units.test.js`, `upbat.test.js` and 15 v1 client/API files are classified as
+fully `adapted`, 69 remain unresolved and two bridge files are
 fixed-scope exclusions.
 Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `c7237a55-e657-4648-b8de-78d434606f1b` at 100%.
+Wrangler reports version `ea1a004c-eb45-48d4-a9d7-70224f753d9a` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
 | Check | Result |
 | --- | --- |
-| GET `/api/v2/properties/bgnow,delta,direction,buckets?pretty=1` | HTTP 200 and two-space JSON; the public tenant had no recent SGVs, so the response contained the expected empty `bgnow` and `delta:null` shape and omitted unavailable properties |
-| GET `/api/v2/summary/?hours=6` | HTTP 200 with SGV/treatment/profile/state envelope; current profile preserved and unavailable plugin state explicit as null/absent |
+| GET `/api/v2/properties/upbat,bgnow,direction` | HTTP 200 on the same pre-existing DO that had lacked the new RPC; empty `bgnow`, official `upbat` `?%` state, unavailable direction omitted |
+| GET `/api/v2/properties/upbat?pretty=1` | HTTP 200 with two-space JSON and only the selected `upbat` property |
+| GET `/api/v2/summary/?hours=1` | HTTP 200 with SGV/treatment/profile/state envelope; current profile preserved and unavailable plugin state explicit as null/absent |
 | GET `/api/v3/version` | HTTP 200 with Nightscout `15.0.7`, API3 `3.0.3-alpha` and SQLite Durable Object marker |
+| GET `/api/v3/entries?limit=1` without JWT | Expected HTTP 401 `Missing or bad access token or JWT` |
 | GET `/api/v1/status.json` | HTTP 200; `Nightscout` `15.0.7`, readable defaults and official settings envelope |
+| GET `/healthz` and `/api/v1/entries.json?count=1` | HTTP 200; healthy SQLite DO marker and empty simulated-data Entries array |
 
 No deployed credential was read or sent and no credentialed write was
 attempted. Every checked API response carried the complete CORS policy. The
 full local suite covers authenticated search, ordering, skip, projections,
 limits, srvModified filters and error shapes in addition to inherited mutation
 and transport contracts.
+
+The first attempted deployment of this increment was version
+`e24bfdec-233c-4dab-a462-142337b14118` (deployment
+`917e2c7e-c0c6-4d79-9cc4-ac24569f00bf`). Remote smoke caught HTTP 500 on
+`/api/v2/properties`; a temporary Worker tail showed that a still-live old DO
+did not implement the newly added RPC. No storage corruption occurred. The
+current version adds a narrowly matched rolling-upgrade fallback, and the same
+old DO returned HTTP 200 immediately after redeploy. This failed intermediate
+version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
@@ -305,16 +323,18 @@ credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
   `bundle.app.js`; the
-  public tenant has no Entries, so `---` is expected;
+  public tenant has no Entries, so `---` is expected; its connecting indicator
+  cleared after the live data path initialized;
 - Admin Tools, Food Editor, Profile Editor and `clock-color` loaded from the
   official bundle with their expected headings/forms/scripts. Profile reached
   `Values loaded.` and Food reached `Database loaded` without entering a
   credential; the clock loaded locked `status.js` and `bundle.clock.js`;
 - the browser was restored to the homepage and retained there for the user.
+- console inspection across the exercised pages found no errors or warnings.
 
-This pass asserted rendered DOM and official-script presence; it did not record
-a fresh console/network trace. This browser run reloaded Cloudflare version
-`c7237a55-e657-4648-b8de-78d434606f1b` after deployment. Wrangler reported no
+This pass asserted rendered DOM, status text, official-script presence and a
+fresh console trace. This browser run reloaded Cloudflare version
+`ea1a004c-eb45-48d4-a9d7-70224f753d9a` after deployment. Wrangler reported no
 changed asset upload for the same 248 official browser assets.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -331,8 +351,8 @@ mutation, report generation or every other protected page workflow.
 - This remains a simulated-data lab. It must not be connected to a real CGM
   uploader, pump or closed-loop client.
 - API v1 and v2 remain subsets. Their inherited notification ACK, ddata helper,
-  `bgnow`/`direction` properties and core summary mapper are adapted, but the
-  remaining plugin-derived properties and summary
+  `bgnow`/`direction`/`rawbg`/`upbat` properties and core summary mapper are
+  adapted, but the remaining plugin-derived properties and summary
   state/persistence, v2 notification-loop and other routes remain incomplete. API v3
   routes all six official generic collections and all 16 locked upstream API3
   test files have named Workers-runtime adaptations. Broad large-response
@@ -373,7 +393,7 @@ mutation, report generation or every other protected page workflow.
   handled safely instead of reproducing the locked upstream unhandled
   rejection.
 - Server plugin jobs, notification generation/processing, remaining
-  plugin-derived properties and summary state/persistence
+  plugin-derived properties, general sandbox/registry and summary state/persistence
   and the general alarm-driven background scheduler remain incomplete. Alarm
   ACK/silence state itself is persisted in schema v10 and must be consumed by
   that future notification engine. The existing realtime/auth alarm scheduler
@@ -388,11 +408,13 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 
 ## Rollback
 
-The immediate prior Cloudflare version is
-`be2ed773-9148-43df-bbfb-d438bb24fe6f` (deployed code commit
-`79ddf4985bd93510a07444e40bf61972120aa9b6`). It contains the ddata contract,
-property-selection/pretty behavior and v2 summary endpoint, but not this
-release's official `bgnow`/`direction` property-plugin adaptations.
+The immediately preceding Cloudflare version is
+`e24bfdec-233c-4dab-a462-142337b14118`, but it must **not** be used as the
+rollback target because its new Worker can reach an older DO without the new
+property RPC and return 500. The most recent known-good rollback version is
+`c7237a55-e657-4648-b8de-78d434606f1b`; it contains the prior official
+`bgnow`/`direction` property release but not this increment's
+raw-BG/uploader-battery foundation.
 
 Wrangler version rollback can restore Worker code and assets. Neither rollback
 nor redeployment clears or rolls back SQLite Durable Object data, and rollback

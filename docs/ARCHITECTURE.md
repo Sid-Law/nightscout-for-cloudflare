@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`094bdd9a206431e70f2c1ca1ff55ee768d11f4ac`. It produced Cloudflare version
-`c7237a55-e657-4648-b8de-78d434606f1b`, reported as 100% active by direct
-deploy. Its 32-file Workers-runtime suite passes 308/308 plus 20/20 audit
+`df676c7afe8cf81beb949e832788b545f4cbd224`. It produced Cloudflare version
+`ea1a004c-eb45-48d4-a9d7-70224f753d9a`, reported as 100% active by direct
+deploy. Its 33-file Workers-runtime suite passes 321/321 plus 20/20 audit
 tests. Wrangler processed 248 unchanged official asset entries; deployment and
-the final dry run both reported 948.79 KiB raw / 172.37 KiB gzip, with the dry
+the final dry run both reported 961.70 KiB raw / 175.27 KiB gzip, with the dry
 run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
-bindings. Cloudflare reported a 38 ms startup.
+bindings. Cloudflare reported a 27 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -94,22 +94,39 @@ The adapter dispatches the first `dataUpdate` before completing `authorize`, as
 the upstream `lib/server/websocket.js` path does, so profile-dependent plugins
 can initialize from the first payload.
 
-The same aggregate snapshot feeds the v2 REST adapters without introducing a
+The same aggregate snapshot feeds the wider v2 REST adapters without introducing a
 process-global `ctx.ddata`. `src/realtime/ddata-snapshot.ts` represents the
 locked ddata singleton's empty buckets, clone, runtime normalization and
 prefer-new merge operations as pure functions; tenant state remains inside the
-SQLite Durable Object. `src/plugins/bgnow.ts` and `src/plugins/direction.ts`
-are request-scoped ports of their locked property modules: they build the same
+SQLite Durable Object. `src/plugins/bgnow.ts`, `direction.ts`, `rawbg.ts` and
+`upbat.ts`, supported by request-safe `runtime/{times,units,levels}.ts`, are
+ports of their locked property modules. They build the same
 four five-minute buckets around the last non-future SGV, preserve the
-over-nine-minute interpolation rule and mmol rounding, and expose the official
-direction character/entity only for current data. `/api/v2/properties` applies
-those values plus the upstream comma picker and truthy `pretty` serialization.
+over-nine-minute interpolation rule and mmol rounding, expose the official
+direction character/entity only for current data, reproduce raw calibration
+and noise behavior, and analyze recent per-uploader battery minima/severity.
+`src/plugins/properties.ts` executes them in locked server-plugin order and
+respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
+opt-in. `/api/v2/properties` applies those values plus the upstream comma
+picker and truthy `pretty` serialization.
+
+Property polling uses `getPluginPropertyContextJson()`, a bounded DO projection
+of at most 64 SGVs, the newest calibration and recent device status. It avoids
+materializing unrelated food, treatment and profile collections. Cloudflare
+can route a newly deployed Worker to an older still-live DO isolate during a
+rolling release. The first plugin deployment exposed this when the old isolate
+did not implement the new RPC. `loadPluginPropertyContext()` catches only that
+precise missing-method error and temporarily uses the already-deployed
+`getDdataSnapshotJson()` RPC; all storage and parse failures still propagate.
+Once the DO isolate updates, requests automatically return to the small
+projection.
 `src/api2/summary.ts` is a direct stateless port
 of the locked SGV/treatment/profile and basal-data processors. It receives one
 bounded snapshot and a request clock, so it neither shares request state nor
-creates timers. Server-plugin properties are intentionally not synthesized:
-IOB/COB/BWP become JSON `null` and age/battery fields are omitted until the
-official plugin registry and tenant execution context are available.
+creates timers. Unadapted server-plugin properties are intentionally not
+synthesized: IOB/COB/BWP become JSON `null` and summary age/battery fields are
+omitted until the remaining official registry and tenant execution context are
+available.
 
 Separately, exact `/socket.io` and `/socket.io/` requests can now reach real
 tenant-local Engine.IO 4 polling and direct-WebSocket endpoints. Polling
@@ -364,7 +381,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`094bdd9a206431e70f2c1ca1ff55ee768d11f4ac` implements all six official generic
+`df676c7afe8cf81beb949e832788b545f4cbd224` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -766,9 +783,10 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`c7237a55-e657-4648-b8de-78d434606f1b`. Current credential-free remote smoke
+`ea1a004c-eb45-48d4-a9d7-70224f753d9a`. Current credential-free remote smoke
 returned 200 for selected/pretty v2 properties, v2 summary, API3 version, v1
-Status and an EIO4 polling open packet. Protected
+Status and an EIO4 polling open packet; API3 Entries without a token returned
+the expected 401. Protected
 realtime event/ACK behavior remains covered locally rather than by a
 credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
@@ -804,9 +822,10 @@ Live external bridge/push delivery remains disabled in the simulated-data
 scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
-The deployed summary basal processor and pure `bgnow`/`direction` adapters are
-the first reused server calculation/property slices, but they are request-scoped
-rather than a background plugin engine. They do not calculate insulin
+The deployed summary basal processor and pure
+`bgnow`/`direction`/`rawbg`/`upbat` adapters are reused server
+calculation/property slices, but they are request-scoped rather than a
+background plugin engine. They do not calculate insulin
 recommendations, IOB or COB. Future summary state
 must come from the locked plugin modules through the persisted scheduler above;
 platform code must not fill those fields with downstream formulas.

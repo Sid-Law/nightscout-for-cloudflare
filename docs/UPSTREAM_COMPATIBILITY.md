@@ -18,19 +18,20 @@ storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
 Deployed integration commit and Git HEAD used by Wrangler
-`094bdd9a206431e70f2c1ca1ff55ee768d11f4ac` passes 308/308 tests across 32
+`df676c7afe8cf81beb949e832788b545f4cbd224` passes 321/321 tests across 33
 Workers-runtime files plus 20/20 audit tests. The suite retains focused EIO4,
 API3 `/storage` and `/alarm`, authorization, v1/v2 Status, all 16 locked API3
 files and 15 locked v1 client/API files, and now completely maps locked
-`ddata.test.js`, `bgnow.test.js` and `direction.test.js`. This is not full-port
+`ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
+`rawbg.test.js`, `times.test.js`, `units.test.js` and `upbat.test.js`. This is not full-port
 evidence. The code is deployed as
-Cloudflare version `c7237a55-e657-4648-b8de-78d434606f1b`; exact release
+Cloudflare version `ea1a004c-eb45-48d4-a9d7-70224f753d9a`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
 
-The final Wrangler dry-run reports 248 official assets, 948.79 KiB raw /
-172.37 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The final Wrangler dry-run reports 248 official assets, 961.70 KiB raw /
+175.27 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
@@ -70,10 +71,11 @@ byte-for-byte freshness of both generated outputs. A mount chain is not a full
 runtime provenance or call-graph proof: it does not prove reachability,
 middleware order, handler execution, or test coverage, and API v3 dynamic
 chains intentionally stop at the locked `genericSetup` call. The
-default test-file status is `unresolved`. At this audit point, 76 files are
+default test-file status is `unresolved`. At this audit point, 69 files are
 `unresolved`, two real-CGM bridge files are `excluded-fixed-scope`,
-all 16 API3 files, `notifications-api.test.js`, `ddata.test.js` and 15 v1
-client/API files are `adapted`, and zero files are claimed as
+all 16 API3 files, `notifications-api.test.js`, `ddata.test.js`, the seven
+adapted property/foundation files and 15 v1 client/API files are `adapted`,
+and zero files are claimed as
 unchanged `pass`.
 
 Route/test associations remain dispatch heuristics. Direct literal HTTP calls
@@ -129,7 +131,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v1 document CRUD | food/profile/treatments/devicestatus modules | **Food/Profile/DeviceStatus/Treatments locked files adapted.** Food, Profile and DeviceStatus cover their complete named upstream files. Treatments now also maps its complete locked file: XSS fixture sanitization, zoned time/utcOffset and numeric normalization, object/array upload, query/delete, UUID-as-identifier lifecycle and explicit AAPS identifier upsert/batches. Its Worker sanitizer retains reviewed safe tags but strips all attributes, deliberately stricter than DOMPurify beyond the locked malicious fixture. `api.shape-handling.test.js` locks cross-collection scalar/array and NightscoutKit shapes. | Obtain credentialed remote mutation evidence only when a test credential is explicitly available; keep safe-attribute DOMPurify byte parity as a documented platform difference. |
 | API v1 activity | `lib/api/activity/index.js`, `lib/server/activity.js`, `tests/api.activity.test.js` | **Locked upstream file adapted.** Create/list/filter/conditional GET/update/delete, empty-array create, ID validation and the official `{}` delete response follow the complete named upstream file. | Add credentialed remote CRUD evidence when a test credential is explicitly supplied; retain the current bounded platform controls. |
 | Remaining API v1 | notifications, Alexa, Google Home and remaining utilities | **Partial.** Inherited GET `/notifications/ack` is adapted on v1 and v2 with durable repeat suppression, Urgent-to-Warning silence and live `clear_alarm` delivery. The locked Alexa test file is adapted as a local en-US REST/Speechlet envelope for LaunchRequest, unknown intent and SessionEndedRequest; it performs no Amazon call. `adminnotifies` remains a hard-coded empty response, and Pushover/Google Home/external Alexa connectivity remain disabled. | Port remaining scope-allowed routes from the generated inventory. Keep external integrations disabled in the simulated-data deployment, but retain mocked internal contracts. |
-| API v2 properties and ddata | `lib/api2/index.js`, `lib/data/endpoints.js`, `lib/api2/properties.js`, `lib/plugins/{bgnow,direction}.js`, `tests/{ddata,bgnow,direction}.test.js` | **Three named files adapted; wider plugin-property surface partial.** `/ddata/at` selects live versus explicit frames with a bounded two-day SGV window. Empty bucket creation, deep clone, created_at/sysTime duration/endmills normalization and prefer-new `_id`/`identifier` merge are pure Worker adapters with complete named test coverage. `/properties`, wildcard/comma selection and truthy `pretty` formatting are deployed. `bgnow`, four five-minute buckets, ordinary/interpolated delta, mg/dl/mmol rounding and current direction-character/entity behavior reproduce the complete locked assertions. | Add every remaining property produced by the official server plugin registry, then extend endpoint/error/retro differential fixtures beyond the three complete named files. |
+| API v2 properties and ddata | `lib/api2/index.js`, `lib/data/endpoints.js`, `lib/api2/properties.js`, `lib/{times,units,levels}.js`, `lib/plugins/{bgnow,direction,rawbg,upbat}.js` | **Eight named files adapted; wider plugin-property surface partial.** `/ddata/at` selects live versus explicit frames with a bounded two-day SGV window. The complete `ddata`, `bgnow`, `direction`, `times`, `units`, `levels`, `rawbg` and `upbat` named assertions are represented. `/properties`, wildcard/comma selection and truthy `pretty` are deployed; default-enabled uploader battery uses a bounded 64-SGV/latest-cal/recent-device projection, while raw BG preserves the official opt-in gate. The rolling-deploy adapter falls back only when an old live DO lacks the new RPC. | Add every remaining property produced by the official server plugin registry, then extend endpoint/error/retro and multi-device differential fixtures beyond the eight complete named files. |
 | API v1/v2 Status | `lib/api/status.js`, v1/v2 router mounting and final error chain | **Strict named surface deployed, with one transport P2.** Locked extension/Accept negotiation, txt/json/js/png/svg paths, redirects, uppercase/trailing-path bugs, GET/HEAD representation lengths, method finalhandler behavior, query-only `authorized` derivation and production 406/404 bodies are contract-tested. Remote text/Accept forms returned 200 and an unknown extension returned 404. Cloudflare strips `Content-Length` from dynamic responses, including HEAD; status code, `Content-Type`, `Vary` and empty-body semantics are correct. | Preserve this P2 as an explicit platform difference and expand public smoke to every locked representation; do not infer other v1/v2 route compatibility. |
 | API v2 authorization | `lib/authorization/**`, `lib/api/verifyauth.js` | **Core adapted with named differences/hardening.** Role/subject CRUD, per-tenant signing keys, eight-hour HS256 issuance/refresh, derived access tokens and prefix matching, body/query/header precedence, signature/expiry verification, live role lookup, persisted per-IP failure delay, Shiro 0.4.10 and `verifyauth` are implemented. Enforced delay is capped at 60 seconds, a failed attempt does not yet emit the upstream admin notification, and repeated/bracket `secret` arrays are safely resolved or rejected instead of reproducing the locked unhandled rejection. | Add admin-notify emission/cleanup contracts; preserve the 60-second platform cap and array hardening as explicit differences and repeat remote auth smoke. |
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/api2/notifications-v2.js` | **Core summary mapper plus inherited ACK deployed; plugin state partial.** `/summary/` ports the locked hour filter, SGV/noise mapping, carb/insulin events, temporary targets, temp-basal/profile schedule processor, current-profile selection and recursive `timeAsSeconds` removal. Without the server plugin engine, IOB/COB/BWP serialize as `null` and cage/sage/iage/bage/battery are absent. API v2 also inherits the adapted v1 `/notifications/ack`; `/notifications/loop` external APNs delivery is disabled. | Reuse official plugin modules to supply summary state and persistence without rewriting formulas; keep external delivery disabled while adapting internal notification contracts. |
@@ -139,10 +141,10 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Named `/storage` and `/alarm` EIO4/SIO5 slices implemented.** Polling and direct WebSocket can connect either namespace independently. `/storage` locks subject access-token authorization, official default collection order, unknown-name filtering, duplicate response behavior, per-room read checks, the Settings-admin exception, persisted rooms and API3-only create/update/delete events. `/alarm` locks native-access-token priority, web secret/JWT/anonymous branches, exact subscription responses, accumulated ACK authority, all five event classifications, broadcast to every current namespace connection, live-only tenant isolation, persisted snooze/all-clear behavior and eviction/Hibernation repair. Socket ACK and v1/v2 HTTP ACK now commit through the same SQLite transaction and broken-recipient containment path. Its trusted publisher accepts precomputed notifications; it does not run the upstream notification engine. | Add EIO3/SIO4 if retained, credentialed remote delivery/ACK evidence and the upstream notification/plugin producer. Preserve live-only/no-disconnected-replay behavior and bounded broken-recipient isolation. |
 | Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Partial: API3 storage channel implemented.** Each implemented document mutation persists `document_changes` atomically with its current document. Separately, successful HTTP API3 mutations enqueue bounded `/storage` frames for current authorized subscribers inside that transaction; eviction, tenant/room isolation, hibernated delivery and broken-subscriber containment are tested. V1 Entries ordered batches still commit successful prefixes and do not broadcast on `/storage`. The homepage/root database-update path remains REST polling. | Implement locked main-namespace database updates and browser workflows. Define retention/pruning for the unbounded `document_changes` journal separately; it is not the live transport queue and upstream `/storage` provides no disconnected replay. |
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single Cloudflare alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. A stale already-due platform alarm is replaced with a short prompt so queued delivery cannot erase the only SQL wakeup; a still-future earlier prompt is retained to avoid starvation. `/alarm` snooze rows are durable state but do not schedule plugin work. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one Cloudflare alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
-| Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Partial request-scoped property foundation; registry/background execution missing.** Pure ports of official `bgnow` and `direction` now compute v2 properties without rewriting their formulas. The dynamic server registry, tenant plugin context, remaining properties, notifications and periodic execution are not present. | Run the remaining official modules through a deterministic platform context; port upstream plugin/data tests without inventing algorithms. |
+| Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Expanded request-scoped property foundation; general registry/background execution missing.** Pure ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `times`, `units` and `levels` compute/support v2 properties without rewriting formulas. A deterministic dispatcher preserves locked order and enable gates, but the complete sandbox/registry, extended-settings surface, remaining properties, notifications and periodic execution are absent. | Run the remaining official modules through a deterministic tenant platform context; adapt `sandbox.test.js` and subsequent plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/api/notifications-api.js`, `lib/adminnotifies.js`, push modules | **Partial ACK/outlet persistence only.** `/api/v1` and inherited `/api/v2` notification ACK plus Socket.IO ACK share bounded group/level snoozes, exact all-clear broadcasts and tenant-local current-connection delivery across eviction. The upstream `notifications-api.test.js` contract is now tracked as adapted. Notification calculation, activity/summary state, admin notices, plugin bus integration and push-provider processing are missing. | Make the upstream engine consume the persisted snooze state, add calculation/persistence/retry/eviction tests and keep external delivery disabled in simulated scope unless separately authorized. |
 | Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current credential-free browser pass rendered the homepage/chart region and loaded Admin Tools, Food Editor, Profile Editor and `clock-color`; the locked app/clock scripts were present. Profile reached `Values loaded.` and Food reached `Database loaded`; no protected write was submitted. The public tenant has no Entries, so `---` is expected. Mutations/report generation, current console/network assertions and pushed live updates are not complete. | Re-run authenticated Profile Save/Food mutation when a credential is explicitly supplied, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
-| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; 35 adapted files.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations: all 16 API3 files, `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`, `direction.test.js` and 15 v1 client/API files are adapted by named Workers-runtime contracts, 74 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
+| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; 40 adapted files.** All 111 files are tracked with strict status/reason and heuristic route candidates: all 16 API3 files, `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js` and 15 v1 client/API files are adapted, 69 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
 
@@ -290,19 +292,27 @@ controls, not upstream claims.
 ## Current deployed integration evidence
 
 Code candidate and Git HEAD used by Wrangler
-`094bdd9a206431e70f2c1ca1ff55ee768d11f4ac` passes 308/308 tests in 32
-Workers-runtime files plus 20/20 audit tests. It adds the complete named
-`bgnow.test.js` and `direction.test.js` property mappings while retaining the
+`df676c7afe8cf81beb949e832788b545f4cbd224` passes 321/321 tests in 33
+Workers-runtime files plus 20/20 audit tests. It adds complete named
+`times`, `units`, `levels`, `rawbg` and `upbat` mappings while retaining the
 prior ddata/summary slice, strict v1/v2 Status, Entries/Treatments,
 authorization, direct Hibernatable EIO4 WebSocket, all 16 locked API3 mappings,
 `/storage`, `/alarm` and inherited notification ACK slices. Cloudflare version
-`c7237a55-e657-4648-b8de-78d434606f1b` is 100% active; deployment
-`254b8589-22cb-4ecc-b3c3-3383ed9815ad` was created at
-`2026-07-19T20:38:27.40458Z` and reported a 38 ms startup. Wrangler processed
+`ea1a004c-eb45-48d4-a9d7-70224f753d9a` is 100% active; deployment
+`0280373b-f50b-4b64-920a-a7933ed28d1b` was created at
+`2026-07-19T21:16:23.945257Z` and reported a 27 ms startup. Wrangler processed
 248 unchanged official asset entries; deployment and final dry run both
-reported 948.79 KiB raw / 172.37 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
+reported 961.70 KiB raw / 175.27 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
 in the dry run. This deployment had no explicit version annotation; none is
 invented.
+
+The first deployment of this increment (`e24bfdec-233c-4dab-a462-142337b14118`)
+showed a Cloudflare rolling-release boundary: the new Worker reached an old
+live DO isolate that did not yet implement `getPluginPropertyContextJson`, so
+`/api/v2/properties` returned 500. The current code catches only Cloudflare's
+exact missing-RPC-method error and temporarily derives the three plugin inputs
+from the old `getDdataSnapshotJson` RPC. The same old DO returned 200
+immediately after redeploy; all other RPC/storage/parser errors still fail.
 
 No deployed credential was supplied to remote API smoke or browser smoke, and
 no deployed credential value is stored in the repository or these documents.
@@ -380,10 +390,12 @@ homepage REST shim. Their current bounds and named differences are:
 
 
 Final credential-free remote checks returned HTTP 200 for selected/pretty v2
-properties, v2 summary, API3 version, v1 Status and an EIO4 polling open packet.
+properties, v2 summary, API3 version, v1 Status and an EIO4 polling open packet;
+missing-token API3 Entries returned its expected 401.
 The summary returned the persisted current profile and explicitly empty
-IOB/COB/BWP state; the public tenant had no recent SGVs, so properties used the
-expected empty shape. No deployed credential was read or sent.
+IOB/COB/BWP state; the public tenant had no recent SGVs, so properties used
+empty `bgnow` and the official `upbat` `?%` state. No deployed credential was
+read or sent.
 
 This increment did not change the realtime server, but the public EIO4 polling
 open handshake was re-smoked. Local contracts keep authorized rooms, alarm authorization/ACK/snooze, shared
@@ -395,8 +407,9 @@ A real browser reloaded the current deployment, rendered the official homepage
 and chart region, then loaded Admin Tools, Food Editor, Profile Editor and
 `clock-color`; the locked app and clock scripts were present. Profile reached `Values loaded.` and
 Food reached `Database loaded`; the public tenant has no Entries, so the
-homepage's `---` value is expected. No authenticated Save or protected mutation
-was attempted, and the browser was returned to the homepage.
+homepage's `---` value is expected. The connection indicator cleared and the
+page console contained no errors or warnings. No authenticated Save or
+protected mutation was attempted, and the browser was returned to the homepage.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing
