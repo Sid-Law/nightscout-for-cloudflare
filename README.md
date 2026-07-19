@@ -80,6 +80,11 @@ for diagnosis, dosing, or medical decisions.
   locked all-clear payload, including Urgent-to-Warning snooze behavior. This
   is the transport/auth/ACK slice only; server plugins do not yet generate the
   notifications that feed it.
+- The official GET `/api/v1/notifications/ack` route and its inherited v2
+  mount. Both require `notifications:*:ack`, return Express's exact `200 OK`
+  text body, and use the same SQLite ACK/clear transaction as Socket.IO.
+  Repeated ACKs remain suppressed across eviction; malformed authenticated
+  requests are bounded 200 no-ops rather than unbounded tenant state.
 - A tenant-local Durable Object alarm derived from persisted realtime
   deadlines and authorization-delay cleanup. It survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
@@ -331,23 +336,28 @@ containment and v8-to-v9 schema repair. `/alarm` coverage locks independent
 namespace connection, all native/web subscription branches, exact ACKs, all
 five event classifications, live-only tenant isolation, persisted snooze and
 Hibernatable-WebSocket eviction behavior, broken-recipient containment and
-idempotent v10 schema repair. The
+idempotent v10 schema repair. The inherited v1/v2 notification ACK coverage
+also locks HTTP authorization, exact response bytes, shared clear broadcasts,
+Urgent-to-Warning state, repeated suppression, malformed-input bounds and
+broken-recipient isolation. The
 locked upstream has 111 JavaScript test files; a static declaration audit finds
 883 active `it(...)` cases plus one skipped case. Those declarations are not
 directly comparable with the adapter suite and do not prove complete Nightscout
-compatibility.
+compatibility. `notifications-api.test.js` is the first file classified as
+fully `adapted`; 108 files remain unresolved and two real-CGM bridge files are
+fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`f872343a6851198f3d18d6cf80108cdf05c13ede`. After rebuilding the locked
-official UI, its 23-file Workers-runtime suite passes 251/251 tests and both
+`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`. After rebuilding the locked
+official UI, its 23-file Workers-runtime suite passes 254/254 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 907.72 KiB raw / 162.85 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds the persisted API v3 `/alarm`
-transport/auth/ACK/notification-outlet slice while retaining `/storage`, the
-six generic collection verticals, bounded Entries echo/count work and official
-UI. It does not add `times/echo`, `times`, `slice`, EIO3, root writes,
-polling-to-WebSocket upgrade or the server-side notification/plugin engine and
-is not closed-loop completion.
+reports 910.19 KiB raw / 163.26 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds inherited v1/v2 notification ACK and
+repairs a stale-past DO alarm wakeup race while retaining the API v3 `/alarm`
+and `/storage` slices, six generic collection verticals, bounded Entries
+echo/count work and official UI. It does not add `times/echo`, `times`,
+`slice`, EIO3, root writes, polling-to-WebSocket upgrade or the server-side
+notification/plugin engine and is not closed-loop completion.
 Deployment used `--keep-vars`; no deployed credential was supplied to remote
 smoke requests, and no credential value is stored or quoted in this repository.
 Entries migration remains intentionally
@@ -377,30 +387,27 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `9e4ce398-8035-4d57-be1d-ab85373d3782` was made current by
-the direct Wrangler deployment, with a reported 22 ms startup. Version tag
-`git-f872343` and its deployment message record the Git mapping. Wrangler did
+Cloudflare version `9278cd8f-80aa-40bd-bf4e-4eb40a846849` was made current by
+the direct Wrangler deployment, with a reported 24 ms startup. Version tag
+`git-56fb221` and its deployment message record the Git mapping. Wrangler did
 not print a separate creation/activation timestamp. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
-Final credential-free remote smoke returned HTTP 200 for health, v15.0.7
-version and the empty v1 Food collection. Missing JWTs on the new API v3 Food
-and Settings routes returned the locked HTTP 401 envelope. Their full
-CRUD/history/renderer/dedupe/permission contracts passed locally; no
-credentialed remote upload or protected mutation was attempted. A fresh EIO4
-polling session connected `/storage` independently and returned the locked
-`Missing or bad accessToken` ACK for an empty subscription. A separate fresh
-session connected `/alarm` independently: anonymous web subscription returned
-the exact successful `{read:true,ack:false}` response, and a truthy invalid
-`accessToken` returned the exact locked failure response. No credentialed
-remote alarm ACK or notification event was attempted.
+Final credential-free remote smoke returned HTTP 200 for health and v15.0.7
+Status. Both `/api/v1/notifications/ack` and inherited v2 returned the locked
+HTTP 401 envelope without a credential. A fresh EIO4 polling session connected
+`/alarm` independently and anonymous web subscription returned the exact
+successful `{read:true,ack:false}` response. Full credentialed ACK/broadcast
+contracts passed locally; no deployed credential was read or sent and no
+remote alarm was silenced.
 
 A real browser run rendered the official homepage and its empty chart state
-without warning/error logs. The public tenant currently has no Entries, so
-`---` is the expected empty-data display. The official Food Editor reached
-`Database loaded` and showed the expected anonymous read-only state without
-submitting a write. The current pass recorded no console warning or error on
-either page. These checks do not prove every protected mutation, report,
-plugin or realtime workflow.
+without console errors. The public tenant currently has no Entries, so `---`
+is the expected empty-data display. The official Food Editor reached `Database
+loaded` and showed the expected anonymous read-only state without submitting a
+write. The locked upstream bundle emitted its known `chart.js` warning when
+that chart code ran on the Food page, which intentionally has no
+`#chartContainer`; no downstream UI change masks it. These checks do not prove
+every protected mutation, report, plugin or realtime workflow.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

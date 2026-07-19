@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `f872343a6851198f3d18d6cf80108cdf05c13ede`
-- Git HEAD used by Wrangler: `f872343a6851198f3d18d6cf80108cdf05c13ede`
-- Cloudflare Version ID: `9e4ce398-8035-4d57-be1d-ab85373d3782`
-- Version tag/message: `git-f872343` /
-  `git f872343 api3 alarm socket`
+- Deployed code candidate: `56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`
+- Git HEAD used by Wrangler: `56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`
+- Cloudflare Version ID: `9278cd8f-80aa-40bd-bf4e-4eb40a846849`
+- Version tag/message: `git-56fb221` /
+  `git 56fb221 v1 v2 notification ack`
 - Version creation time: not printed by this Wrangler deployment; none is
   inferred
 - Activation: direct `wrangler deploy` reported this as the Current Version;
   no separate activation timestamp was printed
-- Worker startup: 22 ms
+- Worker startup: 24 ms
 - Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
@@ -29,7 +29,7 @@ is not counted as API, plugin or real-time compatibility.
   silence tables
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 907.72 KiB raw / 162.85 KiB gzip
+- Upload: 910.19 KiB raw / 163.26 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -103,6 +103,11 @@ This increment deploys:
   locked event names live to current namespace connections, with exact
   all-clear ACK payloads and Urgent-to-Warning snooze behavior. Server plugins
   and the notification engine do not yet produce those events;
+- the official v1 GET `/notifications/ack` route on both v1 and inherited v2
+  mounts. It requires `notifications:*:ack`, returns the exact Express `OK`
+  body, and commits through the same durable ACK/all-clear transaction as the
+  Socket.IO namespace. The release also repairs a stale-past DO alarm race so
+  queued delivery cannot erase the only remaining SQL wakeup;
 - the locked official v15.0.7 UI and the existing REST polling shim.
 
 The homepage still uses the REST shim; deploying the separate EIO4 server does
@@ -146,10 +151,10 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`f872343a6851198f3d18d6cf80108cdf05c13ede`. It adds the persisted API v3
-`/alarm` transport/auth/ACK/notification-outlet slice while retaining the
-prior `/storage`, six-collection API3, Entries, Profile, transport and
-official-page work.
+`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`. It adds inherited v1/v2
+notification ACK and the stale-past DO alarm scheduling repair while retaining
+the persisted API v3 `/alarm`, prior `/storage`, six-collection API3, Entries,
+Profile, transport and official-page work.
 The table below records the exact local gate completed before deployment.
 
 | Check | Result |
@@ -161,36 +166,35 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 23 files, 251/251 passed |
+| Workers integration tests | 23 files, 254/254 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 907.72 KiB raw / 162.85 KiB gzip |
+| Worker dry run | 910.19 KiB raw / 163.26 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 251 Workers
-tests cover the implemented adapter subset; no whole upstream test file is
-claimed green. Neither count proves complete compatibility.
+audit finds 883 active `it(...)` cases plus one skipped case. The 254 Workers
+tests cover the implemented adapter subset; `notifications-api.test.js` is the
+first file classified as fully `adapted`, 108 remain unresolved and two bridge
+files are fixed-scope exclusions. Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `9e4ce398-8035-4d57-be1d-ab85373d3782` as the Current
+Wrangler reports version `9278cd8f-80aa-40bd-bf4e-4eb40a846849` as the Current
 Version. These credential-free checks verified response content and protocol
 markers, not only Wrangler command success.
 
 | Check | Result |
 | --- | --- |
 | `/healthz` | HTTP 200 |
-| `/api/v3/version` | HTTP 200; locked Nightscout version `15.0.7` |
-| `/api/v3/food` without JWT | HTTP 401 with the locked missing/bad-token envelope |
-| `/api/v3/settings` without JWT | HTTP 401 with the locked missing/bad-token envelope |
-| `/api/v1/food/regular.json` | HTTP 200 `[]`; v1 Food read remains public under default permissions |
+| `/api/v1/status.json` | HTTP 200; locked Nightscout version `15.0.7` and `runtimeState:loaded` |
+| `/api/v1/notifications/ack?level=1` without credential | HTTP 401 with the locked `Invalid/Missing` envelope |
+| `/api/v2/notifications/ack?level=2` without credential | HTTP 401 with the same inherited envelope |
 
-No credentialed write was attempted. The full local suite keeps all eight
-generic routes for Food and Settings, their renderer/dedupe/permission behavior
-and the prior Entries/JWT contracts green. The new protected `/storage` event
-evidence is kept in the real-time section below rather than inferred from these
-public API responses.
+No deployed credential was read or sent, no alarm was silenced remotely and no
+credentialed write was attempted. The full local suite keeps the exact
+credentialed ACK, clear broadcast, repeated suppression and prior API contracts
+green.
 
 ## Post-deployment real-time evidence
 
@@ -200,12 +204,9 @@ boundary without reading or sending the deployed credential.
 
 | Check | Result |
 | --- | --- |
-| EIO4 polling open | `upgrades: []`, 25 s ping interval, 20 s timeout, 1,000,000-byte maximum |
-| `/storage` CONNECT | independent SIO5 namespace connection returned a namespace SID |
-| `/storage` missing subscription token | ACK exactly `{success:false,message:"Missing or bad accessToken"}` |
+| EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
 | `/alarm` CONNECT | independent SIO5 namespace connection returned a namespace SID |
 | `/alarm` anonymous web subscribe | ACK exactly `{success:true,message:"Subscribed for alarms",read:true,ack:false}` |
-| `/alarm` invalid truthy access token | ACK exactly `{success:false,message:"Missing or bad accessToken"}` |
 
 Local tests additionally prove collection filtering/default order, the
 Settings-admin exception, persisted subscriptions across eviction, API3
@@ -216,27 +217,28 @@ attempted. Separate `/alarm` contracts prove native/web authorization priority,
 all five event classifications, broadcast to current unsubscribed connections,
 tenant isolation, no disconnected replay, exact ACK/all-clear behavior,
 Urgent-to-Warning snooze, eviction/Hibernation persistence, broken-recipient
-containment and idempotent v10 schema repair. The remote pass did not use a
-credential, publish a trusted notification or perform an alarm ACK. Neither
-layer proves polling upgrade, EIO3, root write handlers or the server-side
-plugin/notification generation pipeline.
+containment and idempotent v10 schema repair. HTTP v1/v2 and Socket ACK now
+share that tested durable transaction. The remote pass did not use a credential,
+publish a trusted notification or perform an alarm ACK. Neither layer proves
+polling upgrade, EIO3, root write handlers or the server-side plugin/notification
+generation pipeline.
 
 ## Real-browser evidence
 
 A real browser session exercised the deployed official UI without reading
 credential storage or submitting protected mutations:
 
-- the homepage rendered the official empty chart state without warning/error
-  logs; the public tenant has
-  no Entries, so the displayed `---` is expected;
+- the homepage rendered the official empty chart state without console errors;
+  the public tenant has no Entries, so the displayed `---` is expected;
 - the official Food Editor reached `Database loaded`, populated its empty
   database controls and showed the expected anonymous
-  read-only authentication state. The current pass recorded no console warning
-  or error.
+  read-only authentication state. The locked upstream `chart.js` module logged
+  its known `Unable to find element for #chartContainer` warning when the
+  chart bundle ran on this non-chart page; no downstream UI change hides it and
+  no console error was recorded.
 
-Profile load/Save-control and its inherited chartless-page warning remain
-historical evidence from an earlier version; no authenticated Food/Profile
-write was attempted in this release.
+Profile load/Save-control remains historical evidence from an earlier version;
+no authenticated Food/Profile write was attempted in this release.
 
 This does not prove longer-running stability, Profile Save, Food/Admin
 mutation, report generation or every other protected page workflow.
@@ -247,9 +249,11 @@ mutation, report generation or every other protected page workflow.
   it in the new instance must not migrate to this release.
 - This remains a simulated-data lab. It must not be connected to a real CGM
   uploader, pump or closed-loop client.
-- API v1 and v2 remain subsets. API v3 now routes all six official generic
-  collections, but broad large-response resource handling, Mongo mixed-type/
-  nested semantics and whole upstream API v3 test execution remain incomplete.
+- API v1 and v2 remain subsets. Their inherited notification ACK is adapted,
+  but summary, v2 notification-loop and other routes remain incomplete. API v3
+  now routes all six official generic collections, but broad large-response
+  resource handling, Mongo mixed-type/nested semantics and whole upstream API
+  v3 test execution remain incomplete.
 - Entries `times/echo`, `times` and `slice` remain missing. Echo supports
   Entries storage only; count rejects client-supplied aggregation pipelines;
   exact DOMPurify output, wider Mongo query/mixed-type behavior and the locked
@@ -268,9 +272,10 @@ mutation, report generation or every other protected page workflow.
   database-update broadcasts remain missing. `/storage` and `/alarm` currently
   support EIO4/SIO5 polling and direct WebSocket only. Direct WebSocket retains
   a named at-most-once crash window between durable dequeue and `send()`.
-  `/alarm` is only a live transport/auth/ACK outlet: server-side plugins and
-  notification calculations do not yet feed it, and credentialed remote event
-  delivery has not been exercised.
+  `/alarm` is only a live transport/auth/ACK outlet: inherited v1/v2 HTTP ACK
+  now shares its durable state, but server-side plugins and notification
+  calculations do not yet feed it, and credentialed remote event delivery has
+  not been exercised.
 - `document_changes` is still an unbounded full-body journal. No transport
   consumes it; `/storage` instead atomically queues bounded frames only for
   currently subscribed live sessions. Journal retention and pruning are still
@@ -283,7 +288,9 @@ mutation, report generation or every other protected page workflow.
 - Server plugin jobs, notification generation/processing, summary persistence
   and the general alarm-driven background scheduler remain incomplete. Alarm
   ACK/silence state itself is persisted in schema v10 and must be consumed by
-  that future notification engine.
+  that future notification engine. The existing realtime/auth alarm scheduler
+  now repairs stale-past wakeups, but it is not yet the multi-kind plugin task
+  scheduler.
 - Official pages are present, but not every mutation, report, plugin and
   real-time workflow has an upstream-derived browser contract.
 - No medical algorithm or dosing advice was added.
@@ -294,9 +301,10 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediate prior Cloudflare version is
-`00ecdd3a-240c-4fc1-a984-ad6449bb0b84` (deployed code commit
-`121db7ca5a0b45784713a5ac909a5bcbb3c1f499`). It contains the persisted
-`/storage` namespace but not the `/alarm` namespace introduced by this release.
+`9e4ce398-8035-4d57-be1d-ab85373d3782` (deployed code commit
+`f872343a6851198f3d18d6cf80108cdf05c13ede`). It contains the persisted
+`/storage` and `/alarm` namespace slices, but not the inherited v1/v2 HTTP ACK
+route or stale-past DO alarm repair introduced by this release.
 
 Wrangler version rollback can restore Worker code and assets. Neither rollback
 nor redeployment clears or rolls back SQLite Durable Object data, and rollback

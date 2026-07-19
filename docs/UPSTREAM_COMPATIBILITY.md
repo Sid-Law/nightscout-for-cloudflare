@@ -18,24 +18,25 @@ storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
 Deployed integration commit and Git HEAD used by Wrangler
-`f872343a6851198f3d18d6cf80108cdf05c13ede` pass 251/251 tests across 23
+`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0` pass 254/254 tests across 23
 Workers-runtime files plus 20/20 audit tests. The suite includes focused
 EIO4 polling/direct-Hibernatable-WebSocket protocol, persisted session,
 HTTP-boundary, eviction, authorization, tenant-isolation and resource-cap
-contracts, plus API3 `/storage` namespace/room/change-event and `/alarm`
-subscription/ACK/snooze/live-notification-outlet contracts, in
+contracts, plus API3 `/storage` namespace/room/change-event, `/alarm`
+subscription/ACK/snooze/live-notification-outlet and inherited v1/v2 HTTP
+notification-ACK contracts, in
 addition to strict v1/v2 Status, API v3
 entries/treatments/device-status/profile/food/settings, storage and
 official-page tests. This is not full-port evidence. The code is deployed as
 Cloudflare version
-`9e4ce398-8035-4d57-be1d-ab85373d3782`; exact release evidence is recorded in
+`9278cd8f-80aa-40bd-bf4e-4eb40a846849`; exact release evidence is recorded in
 `DEPLOYMENT.md`. The locked upstream has 111 `*.test.js` files; a static
 declaration audit finds 883 active
 `it(...)` cases plus one skipped case. Those sets are not directly comparable,
 and the local suite does not prove full compatibility.
 
-The final Wrangler dry-run reports 248 official assets, 907.72 KiB raw /
-162.85 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The final Wrangler dry-run reports 248 official assets, 910.19 KiB raw /
+163.26 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
@@ -75,9 +76,10 @@ byte-for-byte freshness of both generated outputs. A mount chain is not a full
 runtime provenance or call-graph proof: it does not prove reachability,
 middleware order, handler execution, or test coverage, and API v3 dynamic
 chains intentionally stop at the locked `genericSetup` call. The
-default test-file status is `unresolved`. At this audit point, 109 files are
-`unresolved`, two real-CGM bridge files are `excluded-fixed-scope`, and
-zero files are claimed as `pass` or `adapted`.
+default test-file status is `unresolved`. At this audit point, 108 files are
+`unresolved`, two real-CGM bridge files are `excluded-fixed-scope`,
+`notifications-api.test.js` is `adapted`, and zero files are claimed as
+unchanged `pass`.
 
 Route/test associations remain dispatch heuristics. Direct literal HTTP calls
 are filtered by their path-local method when that method can be statically
@@ -144,7 +146,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single Cloudflare alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. A stale already-due platform alarm is replaced with a short prompt so queued delivery cannot erase the only SQL wakeup; a still-future earlier prompt is retained to avoid starvation. `/alarm` snooze rows are durable state but do not schedule plugin work. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one Cloudflare alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/api/notifications-api.js`, `lib/adminnotifies.js`, push modules | **Partial ACK/outlet persistence only.** `/api/v1` and inherited `/api/v2` notification ACK plus Socket.IO ACK share bounded group/level snoozes, exact all-clear broadcasts and tenant-local current-connection delivery across eviction. The upstream `notifications-api.test.js` contract is now tracked as adapted. Notification calculation, activity/summary state, admin notices, plugin bus integration and push-provider processing are missing. | Make the upstream engine consume the persisted snooze state, add calculation/persistence/retry/eviction tests and keep external delivery disabled in simulated scope unless separately authorized. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current browser pass rendered the homepage empty chart state and loaded the official Food Editor to `Database loaded` with the expected anonymous read-only state, with no console warning/error on either page. The public tenant has no Entries, so `---` is expected. Mutations/report generation and pushed live updates are not complete. | Re-run authenticated Profile Save/Food mutation when a credential is explicitly supplied, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current browser pass rendered the homepage empty chart state and loaded the official Food Editor to `Database loaded` with the expected anonymous read-only state. No console error occurred; locked upstream `chart.js` emitted its known missing-`#chartContainer` warning on that non-chart page. The public tenant has no Entries, so `---` is expected. Mutations/report generation and pushed live updates are not complete. | Re-run authenticated Profile Save/Food mutation when a credential is explicitly supplied, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
 | Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; one adapted file.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations: `notifications-api.test.js` is adapted by named Workers-runtime contracts, 108 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
@@ -285,18 +287,18 @@ controls, not upstream claims.
 ## Current deployed integration evidence
 
 Code candidate and Git HEAD used by Wrangler
-`f872343a6851198f3d18d6cf80108cdf05c13ede` pass 251/251 tests in 23
+`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0` pass 254/254 tests in 23
 Workers-runtime files plus 20/20 audit tests. They combine the adapted v1/v2
 Entries count/echo and uploader/query/read-protocol slices with strict Status,
 authorization, direct Hibernatable EIO4 WebSocket and API v3
 entries/treatments/device-status/profile/food/settings plus `/storage` and
-`/alarm` slices.
-Cloudflare version `9e4ce398-8035-4d57-be1d-ab85373d3782` was reported as the
-Current Version by the direct Wrangler deployment, which reported a 22 ms
+`/alarm` slices, inherited notification ACK and the stale-past DO alarm repair.
+Cloudflare version `9278cd8f-80aa-40bd-bf4e-4eb40a846849` was reported as the
+Current Version by the direct Wrangler deployment, which reported a 24 ms
 startup. Wrangler processed 248 unchanged official asset entries, reported
-907.72 KiB raw / 162.85 KiB gzip, and listed only `ENTRY_STORE` and `ASSETS`.
+910.19 KiB raw / 163.26 KiB gzip, and listed only `ENTRY_STORE` and `ASSETS`.
 Deployment used `--keep-vars`, tag
-`git-f872343` and a matching Git message. Wrangler did not print a separate
+`git-56fb221` and a matching Git message. Wrangler did not print a separate
 creation/activation timestamp or Deployment ID, so none is inferred here.
 
 No deployed credential was supplied to remote API smoke or browser smoke, and
@@ -374,27 +376,26 @@ homepage REST shim. Their current bounds and named differences are:
   safety/resource tightening.
 
 
-Final credential-free remote checks returned HTTP 200 for health, API v3
-version and empty v1 Food JSON. API v3 Food and Settings returned the locked
-HTTP 401 missing/bad-token envelope without a JWT. Protected generic CRUD/
-history/rendering behavior remains locally covered. No protected remote
-mutation or credentialed upload was attempted.
+Final credential-free remote checks returned HTTP 200 for health and v15.0.7
+Status. Both v1 and v2 notification ACK routes returned the locked HTTP 401
+`Invalid/Missing` envelope without a credential. Protected behavior remains
+locally covered; no protected remote mutation, credentialed upload or alarm
+silence was attempted.
 
-A fresh remote EIO4 polling session connected `/storage` independently and an
-empty subscription received the exact locked missing-accessToken ACK. A second
-fresh SID connected `/alarm` independently; anonymous web subscription returned
-the exact successful `{read:true,ack:false}` response and a truthy invalid
-access token returned the exact locked failure. Local contracts cover
-authorized rooms, alarm authorization/ACK/snooze and event delivery on polling
-and hibernated WebSocket; the remote pass does not claim credentialed event
-delivery, trusted alarm publication or a homepage switch.
+A fresh remote EIO4 polling SID connected `/alarm` independently; anonymous web
+subscription returned the exact successful `{read:true,ack:false}` response.
+Local contracts cover authorized rooms, alarm authorization/ACK/snooze, shared
+HTTP/Socket clear delivery and hibernated WebSocket delivery; the remote pass
+does not claim credentialed event delivery, trusted alarm publication or a
+homepage switch.
 
 A real browser run rendered the official homepage and empty chart state without
-warning/error. It then loaded the official Food Editor to `Database loaded`
-with the expected anonymous read-only state and no console warning/error. The
-public tenant has no
-Entries, so the homepage's `---` value is expected. No authenticated Save or
-protected mutation was attempted.
+console errors. It then loaded the official Food Editor to `Database loaded`
+with the expected anonymous read-only state. Locked upstream `chart.js` logged
+its known missing-`#chartContainer` warning on that non-chart page; no
+downstream UI change hides it. The public tenant has no Entries, so the
+homepage's `---` value is expected. No authenticated Save or protected mutation
+was attempted.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing

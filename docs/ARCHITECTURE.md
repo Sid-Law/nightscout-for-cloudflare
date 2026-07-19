@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`f872343a6851198f3d18d6cf80108cdf05c13ede`. It produced Cloudflare version
-`9e4ce398-8035-4d57-be1d-ab85373d3782`, reported as the Current Version by
-direct deploy. Its 23-file Workers-runtime suite passes 251/251
+`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`. It produced Cloudflare version
+`9278cd8f-80aa-40bd-bf4e-4eb40a846849`, reported as the Current Version by
+direct deploy. Its 23-file Workers-runtime suite passes 254/254
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries, reported 907.72 KiB raw / 162.85 KiB gzip, and the dry run declared
+entries, reported 910.19 KiB raw / 163.26 KiB gzip, and the dry run declared
 only the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Cloudflare
-reported a 22 ms startup. These are release facts for the named subset, not
+reported a 24 ms startup. These are release facts for the named subset, not
 evidence of a complete port.
 
 ## Current request and data flow
@@ -28,6 +28,7 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
   - API_SECRET, subject access-token and signed-JWT authorization
   - bounded parsing, upstream query subset and tenant routing
+  - inherited v1/v2 notification ACK authorization and HTTP adaptation
   - Socket.IO client-surface polling adapter
   - strict `/socket.io/` EIO4 polling and direct-WebSocket adapters
   - SIO5 root plus API3 `/storage` and `/alarm` namespace protocol adaptation
@@ -47,7 +48,7 @@ Embedded SQLite
   - tenant-local JWT signing material
   - persisted EIO4 sessions and bounded outbound packet queues
   - persisted `/storage` namespace connections and collection subscriptions
-  - persisted `/alarm` connections, subscription/ACK authority and snoozes
+  - persisted `/alarm` connections, shared HTTP/Socket ACK authority and snoozes
   - hibernatable WebSocket attachments backed by persisted session authority
   - persisted authorization-failure delays
   - one SQL-derived Durable Object alarm for realtime/auth deadlines
@@ -124,13 +125,18 @@ classifies it as `clear_alarm`, `alarm`, `urgent_alarm`, `announcement` or
 `notification`, and broadcasts it live to every current tenant-local `/alarm`
 connection; no disconnected replay is stored. Authorized `ack` events persist
 the group/level snooze, mirror Urgent to Warning and broadcast the exact
-all-clear object. The adapter bounds state to 256 distinct group names of at
-most 256 characters. It does not yet run `lib/notifications.js` or server
-plugins, so transport readiness is not notification-generation readiness.
+all-clear object. The official v1 `/notifications/ack` route and its inherited
+v2 mount use the same SQLite transaction and live broadcast path, require
+`notifications:*:ack`, and return Express's exact `200 OK` text body. The
+adapter bounds state to 256 distinct group names of at most 256 characters. It
+does not yet run `lib/notifications.js` or server plugins, so ACK compatibility
+is not notification-generation readiness.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
 deadlines, bounded WebSocket close retries and stale authorization-failure
 cleanup are multiplexed through the DO's single persistent alarm. The handler
-is transactional and idempotent under at-least-once delivery;
+is transactional and idempotent under at-least-once delivery. A still-future
+earlier prompt is retained, while a stale past platform alarm is replaced so
+queued delivery cannot clear the only remaining SQL wakeup;
 process-lifetime timers are not authoritative.
 
 The official v15.0.7 service worker uses a cache-first list that includes
@@ -332,7 +338,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`f872343a6851198f3d18d6cf80108cdf05c13ede` implements all six official generic
+`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -639,6 +645,11 @@ The current server boundary is explicit:
   do. Authorized ACKs persist one of at most 256 bounded alarm groups, default
   a falsy silence time to 30 minutes, mirror Urgent to Warning, and broadcast
   the exact live `clear_alarm` payload;
+- v1 and inherited v2 GET `/notifications/ack` require
+  `notifications:*:ack`, return the exact `OK` body, and enqueue the same
+  `clear_alarm` frame in the same SQLite transaction as the snooze. Repeated
+  ACKs remain no-ops across eviction; malformed authenticated input remains a
+  bounded 200 no-op;
 - trusted alarm publication broadcasts one of the five locked event names to
   all currently connected tenant-local `/alarm` sockets, subscribed or not.
   Broken/overflow recipients are dropped independently and disconnected
@@ -656,10 +667,12 @@ The handler cleans all due sessions/leases, enqueues due pings, handles queue
 overflow and broadcasts the surviving client count inside one synchronous
 SQLite transaction, then schedules the next derived deadline. Repeated delivery
 does not duplicate pings or deletions because `pong_deadline` and row removal
-are durable idempotency state. WebSocket closure tombstones and authorization
-failure rows add their own due times to the same derived minimum. API3 pruning
-and server-plugin jobs still need a shared persisted task table before using
-the same one-alarm slot.
+are durable idempotency state. A stale already-due platform alarm is replaced
+with a short prompt rather than being allowed to disappear after the current
+RPC; a still-future earlier prompt is preserved to avoid starvation. WebSocket
+closure tombstones and authorization failure rows add their own due times to
+the same derived minimum. API3 pruning and server-plugin jobs still need a
+shared persisted task table before using the same one-alarm slot.
 
 Initial authorization data mirrors `dataWithRecentStatuses()`. `loadRetro`
 uses a separate unfiltered device-status view over the same one-day raw SQL
@@ -675,13 +688,12 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`9e4ce398-8035-4d57-be1d-ab85373d3782`. Credential-free remote smoke opened a
-fresh EIO4 polling SID, connected `/storage` independently and received the
-locked missing-accessToken ACK. A separate fresh SID connected `/alarm`
-independently: anonymous subscription returned the exact successful
-`{read:true,ack:false}` response and a truthy invalid access token returned the
-locked failure response. Protected event delivery and ACK are covered locally
-rather than by a credentialed remote mutation. The at-most-once dequeue/send
+`9278cd8f-80aa-40bd-bf4e-4eb40a846849`. Credential-free remote smoke returned
+200 for health and v15.0.7 Status, while both v1/v2 notification ACK routes
+returned the locked 401 envelope. A fresh EIO4 polling SID connected `/alarm`
+independently and anonymous subscription returned the exact successful
+`{read:true,ack:false}` response. Protected event delivery and ACK are covered
+locally rather than by a credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
 intentionally still uses the REST polling shim, so these transport smokes prove
 the separate server slice rather than a page transport switch. The named
