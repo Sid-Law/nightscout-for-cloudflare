@@ -1675,6 +1675,25 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     }
   }
 
+  async countLegacyDocumentsJson(
+    collection: Api3CollectionName,
+    query: HistoryQuery,
+  ): Promise<string> {
+    try {
+      const count = this.documentRepository().countLegacyDocuments(query, collection);
+      return JSON.stringify({ ok: true, result: count });
+    } catch (error) {
+      const queryStatus = error instanceof DocumentQueryError
+        ? error.code === "QUERY_SCAN_LIMIT" ? 413 : 400
+        : undefined;
+      return JSON.stringify({
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        ...(queryStatus === undefined ? {} : { status: queryStatus }),
+      });
+    }
+  }
+
   async getSgvEntries(count: number): Promise<PublicEntry[]> {
     return this.documentRepository().queryLegacySgvBucket(count).map(toPublicEntry);
   }

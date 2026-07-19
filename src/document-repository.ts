@@ -2081,6 +2081,26 @@ export class SqliteDocumentRepository {
     return materializeApi3(row, TREATMENTS);
   }
 
+  private assertEntryQueryWithinScanBudget(query: DocumentQuery): void {
+    if (!entryQueryNeedsScanGuard(query)) return;
+    const probe = entryScanProbe(query);
+    const beyondBudget = this.sql.exec<{ present: number }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM documents
+         WHERE ${probe.sql}
+         ORDER BY sort_time DESC, id ASC
+         LIMIT 1 OFFSET ${MAX_UNINDEXED_ENTRY_CANDIDATES}
+       ) AS present`,
+      ...probe.bindings,
+    ).one().present !== 0;
+    if (beyondBudget) {
+      throw new DocumentQueryError(
+        "QUERY_SCAN_LIMIT",
+        `Entries query exceeds the ${MAX_UNINDEXED_ENTRY_CANDIDATES}-row scan budget; add a narrower date filter`,
+      );
+    }
+  }
+
   private queryTreatmentRows(
     query: DocumentQuery,
     policy: MaterializationPolicy,
@@ -2132,25 +2152,7 @@ export class SqliteDocumentRepository {
     // candidate set and fail closed before executing when it exceeds the
     // explicit Free-plan budget. Never truncate then filter: that would return
     // a plausible but incorrect empty/page result.
-    const guardEntryScan = collection === ENTRIES && entryQueryNeedsScanGuard(query);
-    if (guardEntryScan) {
-      const probe = entryScanProbe(query);
-      const beyondBudget = this.sql.exec<{ present: number }>(
-        `SELECT EXISTS(
-           SELECT 1 FROM documents
-           WHERE ${probe.sql}
-           ORDER BY sort_time DESC, id ASC
-           LIMIT 1 OFFSET ${MAX_UNINDEXED_ENTRY_CANDIDATES}
-         ) AS present`,
-        ...probe.bindings,
-      ).one().present !== 0;
-      if (beyondBudget) {
-        throw new DocumentQueryError(
-          "QUERY_SCAN_LIMIT",
-          `Entries query exceeds the ${MAX_UNINDEXED_ENTRY_CANDIDATES}-row scan budget; add a narrower date filter`,
-        );
-      }
-    }
+    if (collection === ENTRIES) this.assertEntryQueryWithinScanBudget(query);
     const statement = `SELECT * FROM ${source}
        WHERE ${clauses.join(" AND ")}
        ORDER BY ${order}
@@ -2269,6 +2271,41 @@ export class SqliteDocumentRepository {
       sort: query.sort.map((sort) => ({ ...sort })),
       limit: query.count,
     }, "legacy", ENTRIES).map(materializeLegacy);
+  }
+
+  countLegacyDocuments(
+    query: HistoryQuery,
+    collection: Api3CollectionName = ENTRIES,
+  ): number {
+    const filters: DocumentFilter[] = query.filters.map((filter) => ({ ...filter }));
+    if (query.type !== null && query.type !== undefined) {
+      filters.push({ field: "type", operator: "eq", value: query.type });
+    }
+    const countQuery: DocumentQuery = { filters };
+    if (collection === ENTRIES) this.assertEntryQueryWithinScanBudget(countQuery);
+
+    const useLegacyDateStringIndex = collection === ENTRIES
+      && filters.some((filter) =>
+        filter.field === "dateString"
+        && typeof filter.value === "string"
+        && (filter.operator === "eq"
+          || filter.operator === "gt"
+          || filter.operator === "gte"
+          || filter.operator === "lt"
+          || filter.operator === "lte")
+      );
+    const source = useLegacyDateStringIndex
+      ? "documents INDEXED BY documents_entries_date_string_sort"
+      : "documents";
+    const clauses = collection === ENTRIES ? ["collection = 'entries'"] : ["collection = ?"];
+    const bindings: SqlStorageValue[] = collection === ENTRIES ? [] : [collection];
+    for (const filter of filters) {
+      appendFilter(clauses, bindings, filter, "legacy", collection);
+    }
+    const statement = `SELECT COUNT(*) AS count FROM ${source}
+       WHERE ${clauses.join(" AND ")}`;
+    assertSqlQueryWithinLimits(statement, bindings);
+    return this.sql.exec<CountRow>(statement, ...bindings).one().count;
   }
 
   queryLegacySgvBucket(count: number): JsonDocument[] {

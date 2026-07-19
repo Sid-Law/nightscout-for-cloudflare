@@ -25,9 +25,10 @@ import {
   legacyEntryPreview,
   parseLegacyEntryPayload,
   parseEntryTypeFilter,
+  parseHistoryCountQuery,
   parseHistoryQuery,
 } from "./model";
-import type { PublicEntry } from "./model";
+import type { HistoryQuery, PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
 import { handleSocketIo } from "./realtime/http-adapter";
 import { normalizePlatformAuthFailDelay } from "./status";
@@ -1236,6 +1237,102 @@ async function legacyEntryJson(data: unknown, status = 200): Promise<Response> {
   return new Response(body, { status, headers });
 }
 
+function legacyEchoMongoQuery(query: HistoryQuery): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+  const operatorNames = {
+    eq: "$eq",
+    ne: "$ne",
+    gt: "$gt",
+    gte: "$gte",
+    lt: "$lt",
+    lte: "$lte",
+  } as const;
+  for (const filter of query.filters) {
+    if (filter.operator === "eq" && output[filter.field] === undefined) {
+      output[filter.field] = filter.value;
+      continue;
+    }
+    const existing = output[filter.field];
+    const operators: Record<string, unknown> = typeof existing === "object"
+      && existing !== null
+      && !Array.isArray(existing)
+      ? { ...(existing as Record<string, unknown>) }
+      : existing === undefined
+        ? {}
+        : { $eq: existing };
+    operators[operatorNames[filter.operator]] = filter.value;
+    output[filter.field] = operators;
+  }
+  if (query.type !== null && query.type !== undefined) output.type = query.type;
+  return output;
+}
+
+function legacyEchoInput(
+  url: URL,
+  model: string | undefined,
+  spec: string | undefined,
+): Record<string, unknown> {
+  if (spec !== undefined && /^[a-f\d]{24}$/.test(spec)) {
+    return { find: { _id: spec } };
+  }
+  const parameters = new URLSearchParams(url.search);
+  // Tenant routing and credentials belong to the Cloudflare boundary, not to
+  // the official Mongo query debugger, and must never be reflected as data.
+  for (const name of ["tenant", "secret", "token", "api-secret"]) parameters.delete(name);
+  let parsed: unknown;
+  try {
+    parsed = qs.parse(parameters.toString(), {
+      allowPrototypes: true,
+      arrayLimit: 100,
+      depth: 32,
+      strictDepth: true,
+      parameterLimit: 50_000,
+    });
+  } catch (error) {
+    if (error instanceof RangeError) {
+      throw new ApiError(400, "invalid_query", "query exceeds the supported nesting depth");
+    }
+    throw error;
+  }
+  const input = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? { ...(parsed as Record<string, unknown>) }
+    : {};
+  if (model !== undefined) {
+    const rawFind = input.find;
+    const find = typeof rawFind === "object" && rawFind !== null && !Array.isArray(rawFind)
+      ? { ...(rawFind as Record<string, unknown>) }
+      : {};
+    find.type = model;
+    input.find = find;
+  }
+  return input;
+}
+
+function legacyEchoHistoryQuery(
+  url: URL,
+  model: string | undefined,
+  spec: string | undefined,
+): HistoryQuery {
+  const normalized = new URL(url);
+  for (const name of ["tenant", "secret", "token", "api-secret"]) {
+    normalized.searchParams.delete(name);
+  }
+  for (const name of new Set(normalized.searchParams.keys())) {
+    if (name === "pipeline" || name.startsWith("pipeline[")) {
+      normalized.searchParams.delete(name);
+    }
+  }
+  if (spec !== undefined && /^[a-f\d]{24}$/.test(spec)) {
+    normalized.search = "";
+    normalized.searchParams.set("find[_id]", spec);
+  } else if (model !== undefined) {
+    normalized.searchParams.delete("find[type]");
+    normalized.searchParams.delete("find[type][$eq]");
+    normalized.searchParams.set("find[type]", model);
+  }
+  return parseHistoryCountQuery(normalized);
+}
+
 function requestValidatorsAreFresh(request: Request, headers: Headers): boolean {
   if (/(?:^|,)\s*?no-cache\s*?(?:,|$)/i.test(request.headers.get("Cache-Control") ?? "")) {
     return false;
@@ -1327,6 +1424,77 @@ async function handleEntriesApi(
 ): Promise<Response | null> {
   const splitPath = splitLegacyEntriesExtension(url.pathname);
   const readMethod = request.method === "GET" || request.method === "HEAD";
+
+  const echoMatch = /^\/api\/v[12]\/echo\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?\/?$/.exec(
+    splitPath.pathname,
+  );
+  if (readMethod && echoMatch !== null) {
+    await requirePermission(request, env, url, "api:entries:read");
+    let storage: string;
+    let model: string | undefined;
+    let spec: string | undefined;
+    try {
+      storage = decodeURIComponent(echoMatch[1]!);
+      model = echoMatch[2] === undefined ? undefined : decodeURIComponent(echoMatch[2]);
+      spec = echoMatch[3] === undefined ? undefined : decodeURIComponent(echoMatch[3]);
+    } catch {
+      throw new ApiError(400, "invalid_query", "echo path contains invalid encoding");
+    }
+    if (storage !== "entries") {
+      throw new ApiError(
+        400,
+        "unsupported_echo_storage",
+        "the current echo adapter supports entries storage only",
+      );
+    }
+    const query = legacyEchoHistoryQuery(url, model, spec);
+    const params: Record<string, string> = { echo: storage };
+    if (model !== undefined) params.model = model;
+    if (spec !== undefined) params.spec = spec;
+    const response = await legacyEntryJson({
+      query: legacyEchoMongoQuery(query),
+      input: legacyEchoInput(url, model, spec),
+      params,
+      storage,
+    });
+    return withoutBodyForHead(request, response);
+  }
+
+  const countMatch = /^\/api\/v[12]\/count\/([A-Za-z0-9_-]+)\/where\/?$/.exec(
+    splitPath.pathname,
+  );
+  if (readMethod && countMatch !== null) {
+    await requirePermission(request, env, url, "api:entries:read");
+    const requestedStorage = countMatch[1]!;
+    // Locked prep_storage selects these three names and falls back to Entries
+    // for every other path value. Keep that routing quirk while executing a
+    // bounded SQLite COUNT instead of materializing the selected documents.
+    const collection = requestedStorage === "treatments"
+      ? "treatments"
+      : requestedStorage === "devicestatus"
+        ? "devicestatus"
+        : "entries";
+    const query = parseHistoryCountQuery(url);
+    const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+    const decision = JSON.parse(await store.countLegacyDocumentsJson(collection, query)) as
+      | { ok: true; result: number }
+      | { ok: false; status?: number; message: string };
+    if (!decision.ok) {
+      if (decision.status === 400 || decision.status === 413) {
+        throw new ApiError(
+          decision.status,
+          decision.status === 413 ? "entry_query_limit" : "invalid_query",
+          decision.message,
+        );
+      }
+      throw new Error(decision.message);
+    }
+    const response = await legacyEntryJson(
+      decision.result === 0 ? [] : [{ _id: null, count: decision.result }],
+    );
+    return withoutBodyForHead(request, response);
+  }
+
   if (
     readMethod &&
     /^\/api\/v[12]\/entries\/current\/?$/.test(splitPath.pathname)

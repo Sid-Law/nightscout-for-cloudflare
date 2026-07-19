@@ -529,6 +529,130 @@ describe("API v1/v2 Entries uploader and read contract", () => {
     });
   });
 
+  it("echoes the bounded Mongo query shape inherited by v1 and v2", async () => {
+    const name = tenant("v1-echo");
+    const response = await SELF.fetch(withTenant(
+      "/api/v1/echo/entries/sgv.json?find[dateString][$gte]=2014-07-19&find[dateString][$lte]=2014-07-20",
+      name,
+    ));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      query: {
+        dateString: { $gte: "2014-07-19", $lte: "2014-07-20" },
+        type: "sgv",
+      },
+      input: {
+        find: {
+          dateString: { $gte: "2014-07-19", $lte: "2014-07-20" },
+          type: "sgv",
+        },
+      },
+      params: { echo: "entries", model: "sgv" },
+      storage: "entries",
+    });
+
+    const objectId = "aaaaaaaaaaaaaaaaaaaaaaaa";
+    const byId = await SELF.fetch(withTenant(
+      `/api/v2/echo/entries/sgv/${objectId}.json?find[sgv][$gte]=100&count=5`,
+      name,
+    ));
+    expect(await byId.json()).toEqual({
+      query: { _id: objectId },
+      input: { find: { _id: objectId } },
+      params: { echo: "entries", model: "sgv", spec: objectId },
+      storage: "entries",
+    });
+
+    const unsupported = await SELF.fetch(withTenant(
+      "/api/v1/echo/treatments/sgv.json",
+      name,
+    ));
+    expect(unsupported.status).toBe(400);
+    expect(await unsupported.json()).toMatchObject({
+      error: { code: "unsupported_echo_storage" },
+    });
+  });
+
+  it("counts long indexed ranges in SQLite without applying the Entries result limit", async () => {
+    const name = tenant("v1-count");
+    const base = Math.floor((Date.now() - 24 * 60 * 60_000) / 1_000) * 1_000;
+    const rows = Array.from({ length: 12 }, (_, index) => entry(
+      `count-${index}`,
+      base + index * 5 * 60_000,
+      { sgv: 100 + index },
+    ));
+    expect((await post(name, rows)).status).toBe(200);
+
+    const counted = await SELF.fetch(withTenant(
+      `/api/v1/count/entries/where.json?count=1&sort[unsupported]=sideways&find[date][$gte]=${base}`,
+      name,
+    ));
+    expect(counted.status).toBe(200);
+    expect(counted.headers.get("Content-Type")).toBe("application/json; charset=utf-8");
+    expect(counted.headers.get("ETag")).toMatch(/^W\//);
+    expect(await counted.json()).toEqual([{ _id: null, count: 12 }]);
+
+    const inherited = await SELF.fetch(withTenant(
+      `/api/v2/count/entries/where?find[date][$gte]=${base}`,
+      name,
+    ));
+    expect(await inherited.json()).toEqual([{ _id: null, count: 12 }]);
+
+    // Locked prep_storage falls back to entries for an unknown collection.
+    const fallback = await SELF.fetch(withTenant(
+      `/api/v1/count/profile/where?find[date][$gte]=${base}`,
+      name,
+    ));
+    expect(await fallback.json()).toEqual([{ _id: null, count: 12 }]);
+
+    const treatmentCreate = await SELF.fetch(withTenant("/api/v1/treatments", name), {
+      method: "POST",
+      headers: {
+        "api-secret": await secretDigest(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        eventType: "Note",
+        created_at: new Date(base).toISOString(),
+        notes: "count storage selection",
+      }),
+    });
+    const treatmentId = String(
+      (await treatmentCreate.json<JsonObject[]>())[0]?._id,
+    );
+    const treatmentCount = await SELF.fetch(withTenant(
+      `/api/v2/count/treatments/where?find[_id]=${treatmentId}`,
+      name,
+    ));
+    expect(await treatmentCount.json()).toEqual([{ _id: null, count: 1 }]);
+
+    const empty = await SELF.fetch(withTenant(
+      `/api/v1/count/entries/where?find[date][$gt]=${base + 24 * 60 * 60_000}`,
+      name,
+    ));
+    expect(await empty.json()).toEqual([]);
+
+    const head = await SELF.fetch(withTenant(
+      `/api/v1/count/entries/where?find[date][$gte]=${base}`,
+      name,
+    ), { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(head.headers.get("Content-Length")).toBe(String(JSON.stringify([{ _id: null, count: 12 }]).length));
+    expect(await head.text()).toBe("");
+
+    const pipeline = await SELF.fetch(withTenant(
+      "/api/v1/count/entries/where?pipeline[0][$limit]=1",
+      name,
+    ));
+    expect(pipeline.status).toBe(400);
+    expect(await pipeline.json()).toMatchObject({
+      error: {
+        code: "unsupported_query_pipeline",
+        message: expect.stringContaining("pipelines are not supported"),
+      },
+    });
+  });
+
   it("uses the latest runtime SGV for exact /entries If-Modified-Since and empty results", async () => {
     const name = tenant("v1-context-ims");
     const latest = Math.floor((Date.now() - 60_000) / 1_000) * 1_000;

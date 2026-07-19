@@ -429,3 +429,37 @@ export function parseHistoryQuery(url: URL): HistoryQuery {
   }
   return { count, filters, sort, type };
 }
+
+/**
+ * Parse the filter portion shared by the locked `/count/:storage/where`
+ * aggregate route without inheriting the Entries result-size contract.
+ *
+ * Upstream ignores `count` and ordinary `sort[...]` options when it builds
+ * the `$match` stage, then applies a server-side `$group`. Preserve that
+ * behavior so counting a long indexed date range never materializes the
+ * matching documents merely to satisfy the ordinary 10,000-row response cap.
+ * User-supplied aggregation pipelines remain an explicit Workers safety gap:
+ * accepting arbitrary Mongo stages would be code-like query execution rather
+ * than a SQLite syntax translation.
+ */
+export function parseHistoryCountQuery(url: URL): HistoryQuery {
+  for (const name of url.searchParams.keys()) {
+    if (name === "pipeline" || name.startsWith("pipeline[")) {
+      throw new ApiError(
+        400,
+        "unsupported_query_pipeline",
+        "custom count aggregation pipelines are not supported",
+      );
+    }
+  }
+
+  const normalized = new URL(url);
+  normalized.searchParams.delete("count");
+  const sortNames = new Set(
+    [...normalized.searchParams.keys()].filter((name) => name.startsWith("sort[")),
+  );
+  for (const name of sortNames) normalized.searchParams.delete(name);
+
+  const query = parseHistoryQuery(normalized);
+  return { ...query, count: 1, sort: [] };
+}
