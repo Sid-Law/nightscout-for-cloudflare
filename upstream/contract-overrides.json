@@ -490,6 +490,26 @@
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: current Flat/DoubleUp offers, every locked direction character/entity mapping, and the exact direct-HTML pill label."
     },
+    "vendor/nightscout/tests/levels.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime foundation contract in test/plugin-foundations-contract.test.ts: all six numeric levels, every asserted English display and lowercase label, and both unknown-level cases. The same adapter drives uploader-battery severity and pill classes."
+    },
+    "vendor/nightscout/tests/rawbg.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts: the locked calibration formula returns 113 mg/dl and Clean, the raw property/display line is exact, the single MetricNow intent is retained, and its English assistant title/response match. The property dispatcher honors the official enabled-plugin gate and uses a bounded SGV/calibration DO projection."
+    },
+    "vendor/nightscout/tests/times.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime foundation contract in test/plugin-foundations-contract.test.ts: hour/three-hour, minute/two-minute, and second/fifteen-second conversions preserve every asserted minutes, seconds, and milliseconds value."
+    },
+    "vendor/nightscout/tests/units.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime foundation contract in test/plugin-foundations-contract.test.ts: 99/180 mg/dl and 5.5/10.0 mmol conversions plus both locked round trips preserve exact number-versus-string output."
+    },
+    "vendor/nightscout/tests/upbat.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts and the live DO route contract in test/api-v2-data-contract.test.ts: exact 20% urgent/minimum analysis, pill classes, missing/-1 hiding, both assistant intents and responses, official enable gating, and /api/v2/properties output from bounded recent device status."
+    },
     "vendor/nightscout/tests/bridge.test.js": {
       "status": "excluded-fixed-scope",
       "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope permits only simulated data."

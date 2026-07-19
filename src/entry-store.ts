@@ -162,6 +162,12 @@ interface RealtimeWebSocketAttachment {
   sid: string;
 }
 
+interface PluginPropertyContext {
+  sgvs: RealtimeDocument[];
+  cals: RealtimeDocument[];
+  devicestatus: RealtimeDocument[];
+}
+
 type RealtimeWebSocketCloseResult = "inactive" | "closed" | "failed";
 
 function randomObjectId(): string {
@@ -1294,6 +1300,86 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return snapshot;
   }
 
+  /**
+   * Small bounded data view used by /api/v2/properties. The official server
+   * derives properties from its in-memory ddata cache; querying the complete
+   * snapshot here would also deserialize treatments, profiles, and food on
+   * every property poll. This adapter loads only the three plugin inputs.
+   */
+  private pluginPropertyContext(now: number): PluginPropertyContext {
+    const context: PluginPropertyContext = { sgvs: [], cals: [], devicestatus: [] };
+    let budget = new RealtimeJsonBudget(context);
+
+    for (const row of this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'entries'
+         AND sort_time >= ?
+         AND ${realtimeNumericMeasurementSql("$.sgv")}
+         AND NOT ${realtimeJsonTruthySql("$.mbg")}
+       ORDER BY sort_time DESC, id ASC
+       LIMIT 64`,
+      now - REALTIME_ENTRY_WINDOW_MS,
+    )) {
+      const entry = toPublicEntry(toDocument(row));
+      const raw = entry as PublicEntry & Record<string, unknown>;
+      if (raw.mbg) continue;
+      const mgdl = realtimeMeasurement(raw.sgv);
+      if (mgdl === null) continue;
+      const sgv = {
+        _id: entry._id,
+        mgdl,
+        mills: entry.date,
+        device: entry.device,
+        direction: entry.direction,
+        filtered: raw.filtered,
+        unfiltered: raw.unfiltered,
+        noise: raw.noise,
+        rssi: raw.rssi,
+        type: "sgv",
+      };
+      if (!budget.reserveArrayItem(sgv, context.sgvs.length)) break;
+      context.sgvs.push(sgv);
+    }
+    context.sgvs.reverse();
+    budget = new RealtimeJsonBudget(context, context.sgvs.length);
+
+    for (const row of this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'entries'
+         AND sort_time >= ?
+         AND json_extract(body, '$.type') = 'cal'
+         AND NOT ${realtimeJsonTruthySql("$.mbg")}
+         AND NOT ${realtimeJsonTruthySql("$.sgv")}
+       ORDER BY sort_time DESC, id ASC
+       LIMIT 10`,
+      now - REALTIME_ENTRY_WINDOW_MS,
+    )) {
+      const entry = toPublicEntry(toDocument(row)) as PublicEntry & Record<string, unknown>;
+      if (entry.mbg || entry.sgv) continue;
+      const calibration = {
+        _id: entry._id,
+        mills: entry.date,
+        scale: entry.scale,
+        intercept: entry.intercept,
+        slope: entry.slope,
+        type: "cal",
+      };
+      if (budget.reserveArrayItem(calibration, context.cals.length)) {
+        context.cals.push(calibration);
+      }
+      break;
+    }
+    budget = new RealtimeJsonBudget(
+      context,
+      context.sgvs.length + context.cals.length,
+    );
+    const rawDeviceStatus = this.realtimeRawDeviceStatus(now, budget);
+    context.devicestatus = selectRealtimeRecentDeviceStatus(rawDeviceStatus, now);
+    return context;
+  }
+
   private realtimeDocuments(
     statement: string,
     bindings: SqlStorageValue[],
@@ -1852,6 +1938,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       lastUpdated: at,
       ...this.realtimeSnapshot(Math.trunc(at), frame),
     });
+  }
+
+  async getPluginPropertyContextJson(at: number): Promise<string> {
+    if (!Number.isFinite(at)) throw new Error("invalid property context time");
+    return JSON.stringify(this.pluginPropertyContext(Math.trunc(at)));
   }
 
   async getEntryById(id: string): Promise<PublicEntry[]> {

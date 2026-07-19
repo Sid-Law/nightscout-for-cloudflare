@@ -27,11 +27,40 @@ export type NightscoutDisplayUnits = "mg/dl" | "mmol";
 
 export interface NightscoutStatusEnvironment {
   DISPLAY_UNITS?: string;
+  ENABLE?: string;
+  DISABLE?: string;
   AUTH_FAIL_DELAY?: string;
   BG_HIGH?: string;
   BG_TARGET_TOP?: string;
   BG_TARGET_BOTTOM?: string;
   BG_LOW?: string;
+}
+
+function configuredFeatureNames(value: string | undefined): string[] {
+  const raw = value?.trim();
+  if (raw === undefined || raw.length === 0) return [];
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw).toLowerCase();
+  } catch {
+    return [];
+  }
+  return decoded.split(" ").filter((feature) => feature.length > 0);
+}
+
+function configuredEnable(
+  environment: NightscoutStatusEnvironment,
+  simpleAlarms: boolean,
+): string[] | undefined {
+  if (environment.ENABLE === undefined && environment.DISABLE === undefined) return undefined;
+  const enabled = configuredFeatureNames(environment.ENABLE);
+  for (const feature of DEFAULT_FEATURES) {
+    if (!enabled.includes(feature)) enabled.push(feature);
+  }
+  const alarmPlugin = simpleAlarms ? "simplealarms" : "ar2";
+  if (!enabled.includes(alarmPlugin)) enabled.push(alarmPlugin);
+  const disabled = new Set(configuredFeatureNames(environment.DISABLE));
+  return enabled.filter((feature) => !disabled.has(feature));
 }
 
 export interface NightscoutStatusSettingsOverrides {
@@ -173,7 +202,12 @@ export function tenantStatusSettings(
     authFailDelay: normalizePlatformAuthFailDelay(environment.AUTH_FAIL_DELAY),
     simpleAlarms: thresholds !== undefined,
   };
-  return thresholds === undefined ? base : { ...base, thresholds };
+  const enable = configuredEnable(environment, base.simpleAlarms);
+  return {
+    ...base,
+    ...(thresholds === undefined ? {} : { thresholds }),
+    ...(enable === undefined ? {} : { enable }),
+  };
 }
 
 function nightscoutSettings(

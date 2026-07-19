@@ -103,6 +103,29 @@ describe("locked Nightscout v15.0.7 v2 data contracts", () => {
     expect(await emptyPretty.text()).not.toContain("\n  \"delta\": {");
   });
 
+  it("serves the enabled uploader-battery property from bounded device status", async () => {
+    const name = tenant("v2-upbat");
+    const now = Date.now();
+    await env.ENTRY_STORE.getByName(name).createDocuments(
+      "devicestatus",
+      JSON.stringify([{
+        device: "simulator://uploader",
+        created_at: new Date(now).toISOString(),
+        uploader: { battery: 20 },
+      }]),
+    );
+
+    const response = await SELF.fetch(endpoint("/api/v2/properties/upbat,rawbg", name));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      upbat: expect.objectContaining({
+        display: "20%",
+        status: "urgent",
+        min: expect.objectContaining({ value: 20, level: 25 }),
+      }),
+    });
+  });
+
   it("ports the locked summary SGV, treatment, profile, and empty-plugin-state mapping", () => {
     const now = Date.parse("2026-07-20T12:00:00.000Z");
     const snapshot: RealtimeSnapshot = {

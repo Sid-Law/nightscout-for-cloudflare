@@ -56,11 +56,11 @@ import {
 import { nightscoutCorsHeaders as corsHeaders } from "./api3/response";
 import { normalizeApi3MaxLimit } from "./api3/input";
 import { buildNightscoutSummary } from "./api2/summary";
+import type { NightscoutGlucoseUnits } from "./plugins/bgnow";
 import {
-  calculateBgnowProperties,
-  type NightscoutGlucoseUnits,
-} from "./plugins/bgnow";
-import { calculateDirectionProperty } from "./plugins/direction";
+  calculatePluginProperties,
+  type PluginPropertyContext,
+} from "./plugins/properties";
 
 export { EntryStore };
 
@@ -751,43 +751,6 @@ async function readBoundedBody(request: Request): Promise<unknown> {
   } catch {
     throw new ApiError(400, "invalid_json", "request body is not valid JSON");
   }
-}
-
-function runtimeMeasurement(value: unknown): number | null {
-  if (!value) return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
-function runtimeSgv(entry: PublicEntry): number | null {
-  return entry.mbg ? null : runtimeMeasurement(entry.sgv);
-}
-
-function toClockProperties(
-  entries: PublicEntry[],
-  units: NightscoutGlucoseUnits,
-  now: number,
-): Record<string, unknown> {
-  const sgvs = entries.flatMap((entry) => {
-    const sgv = runtimeSgv(entry);
-    const raw = entry as PublicEntry & Record<string, unknown>;
-    return sgv === null ? [] : [{
-      _id: entry._id,
-      mgdl: sgv,
-      mills: entry.date,
-      device: entry.device,
-      direction: entry.direction,
-      filtered: raw.filtered,
-      unfiltered: raw.unfiltered,
-      noise: raw.noise,
-      rssi: raw.rssi,
-      type: "sgv",
-    }];
-  }).sort((left, right) => Number(left.mills) - Number(right.mills));
-  const properties = calculateBgnowProperties(sgvs, now, units);
-  const latest = [...sgvs].reverse().find((entry) => Number(entry.mills) <= now);
-  const direction = calculateDirectionProperty(latest, now);
-  return direction === undefined ? properties : { ...properties, direction };
 }
 
 function statusQueryCredential(url: URL, name: "token" | "secret"): PresentedToken | null {
@@ -2737,20 +2700,27 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       ["api:entries:read", "api:treatments:read"],
     );
     const tenant = resolveTenant(request, url);
-    // The upstream sandbox properties are derived from the runtime SGV bucket,
-    // whose mbg-first/truthy-sgv classification is not equivalent to type=sgv.
+    // The upstream sandbox derives enabled plugin properties from ddata. Use a
+    // bounded DO projection containing only SGVs, calibrations, and device
+    // status rather than materializing unrelated treatment/food collections.
     const store = env.ENTRY_STORE.getByName(tenant);
     const now = Date.now();
-    const [entries, status] = await Promise.all([
-      store.getSgvEntries(64),
+    const [contextJson, status] = await Promise.all([
+      store.getPluginPropertyContextJson(now),
       store.nightscoutHttpStatus(now).then((value) => JSON.parse(value) as {
-        settings?: { units?: unknown };
+        settings?: { units?: unknown; enable?: unknown };
       }),
     ]);
+    const context = JSON.parse(contextJson) as PluginPropertyContext;
     const units: NightscoutGlucoseUnits = status.settings?.units === "mmol"
       ? "mmol"
       : "mg/dl";
-    const properties = toClockProperties(entries, units, now);
+    const enabled = new Set(
+      Array.isArray(status.settings?.enable)
+        ? status.settings.enable.filter((value): value is string => typeof value === "string")
+        : [],
+    );
+    const properties = calculatePluginProperties(context, units, now, enabled);
     let result = properties;
     const rawSelection = url.pathname
       .slice("/api/v2/properties".length)
