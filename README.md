@@ -117,9 +117,8 @@ for diagnosis, dosing, or medical decisions.
 ## What is not complete
 
 This is not yet a drop-in Nightscout server. Important missing work includes
-the complete v1/v2/v3 route and error surface, the remaining 10 upstream
-`api3.*` test files, large-response CSV/XML resource adaptation and broader
-generic API v3 mixed-type/nested/query parity,
+the complete v1/v2 route and error surface, large-response CSV/XML resource
+adaptation and broader generic API v3 mixed-type/nested/query parity,
 failed-auth admin notifications, Mongo query/collection parity beyond the
 tested safe subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
 the direct-WebSocket at-most-once crash window, root write handlers,
@@ -353,28 +352,26 @@ broken-recipient isolation. The
 locked upstream has 111 JavaScript test files; a static declaration audit finds
 883 active `it(...)` cases plus one skipped case. Those declarations are not
 directly comparable with the adapter suite and do not prove complete Nightscout
-compatibility. Six API3 files (`basic`, `generic.workflow`, `read`, `renderer`,
-`search` and `security`) plus `notifications-api.test.js` are classified as
-fully `adapted`; 102 files remain unresolved and two real-CGM bridge files are
-fixed-scope exclusions.
+compatibility. All 16 locked `api3.*` files plus
+`notifications-api.test.js` are classified as fully `adapted`; 92 files remain
+unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`cda832688bb9a85c0feb93c0618d8932baa3e5a5`. After rebuilding the locked
-official UI, its 24-file Workers-runtime suite passes 265/265 tests and both
+`e1c380a29450a06621b15f7df7c904f81e1b1147`. After rebuilding the locked
+official UI, its 27-file Workers-runtime suite passes 276/276 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
 reports 914.88 KiB raw / 164.21 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adapts four more locked upstream files:
-`api3.generic.workflow.test.js`, `api3.read.test.js`,
-`api3.renderer.test.js` and `api3.security.test.js`. The contracts cover the
-complete CRUD/history/tombstone/read-only lifecycle, v1-to-v3 reads,
-conditional/projection reads, missing/invalid/denied/allowed Bearer branches,
-and extension-versus-Accept JSON/CSV/XML behavior. It also converts known
-read-only DELETE failures into a typed Durable Object RPC result so validation
-does not escape as an uncaught cross-object exception. It retains HEAD/CORS,
-the configured search ceiling, v1/v2 Treatments `preBolus`,
-notification ACK, API v3 `/alarm` and `/storage`, generic collections, bounded
-Entries echo/count work and official UI. It does not make API v3 or any complete
-v1/v2 API compatible; `times/echo`, `times`, `slice`, EIO3, root writes,
+`ASSETS`. This deployed increment completes named Workers-runtime contract
+coverage for the ten remaining locked API3 files: create, update, patch,
+patch-operation, delete, shape handling, AAPS patterns, storage socket,
+storage find and storage modify. Together with the six prior files, all 16
+locked `api3.*` test files are now classified as adapted. The new contracts
+cover validation/auth ordering, UUID/ObjectId/fallback identity, dedupe and
+resurrection, single-object shapes, AAPS retry patterns, storage paging and
+mutation metadata, and `/storage` change normalization. This does not make the
+whole Nightscout port or any complete v1/v2 API compatible; controlled
+Workers Free large-result behavior and broader Mongo mixed-type/nested/array
+parity remain explicit API3 differences. `times/echo`, `times`, `slice`, EIO3, root writes,
 polling-to-WebSocket upgrade and the server-side notification/plugin engine
 remain missing.
 Deployment used `--keep-vars`; no deployed credential was supplied to remote
@@ -406,11 +403,11 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `04c8e103-4f0a-434a-87f0-7ed0e9900c33` was made current by
+Cloudflare version `f2801520-9c21-495a-acb2-337a157f82ec` was made current by
 the direct Wrangler deployment and was created at
-`2026-07-19T18:01:10.388448Z`, with a reported 25 ms startup. Version tag
-`git-cda832688bb9` and message
-`git cda832688bb9 api3 workflow read renderer security` record
+`2026-07-19T18:34:44.097129Z`, with a reported 24 ms startup. Version tag
+`git-e1c380a29450` and message
+`git e1c380a29450 complete api3 upstream contracts` record
 the Git mapping. No asset bytes needed uploading because all 248 official
 asset entries were unchanged. Credential-free remote smoke returned HTTP 200
 for health and the v15.0.7 API v3 version envelope; GET and HEAD version

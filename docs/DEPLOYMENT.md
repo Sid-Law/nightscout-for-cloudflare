@@ -12,15 +12,15 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `cda832688bb9a85c0feb93c0618d8932baa3e5a5`
-- Git HEAD used by Wrangler: `cda832688bb9a85c0feb93c0618d8932baa3e5a5`
-- Cloudflare Version ID: `04c8e103-4f0a-434a-87f0-7ed0e9900c33`
-- Version tag/message: `git-cda832688bb9` /
-  `git cda832688bb9 api3 workflow read renderer security`
-- Version creation time: `2026-07-19T18:01:10.388448Z`
+- Deployed code candidate: `e1c380a29450a06621b15f7df7c904f81e1b1147`
+- Git HEAD used by Wrangler: `e1c380a29450a06621b15f7df7c904f81e1b1147`
+- Cloudflare Version ID: `f2801520-9c21-495a-acb2-337a157f82ec`
+- Version tag/message: `git-e1c380a29450` /
+  `git e1c380a29450 complete api3 upstream contracts`
+- Version creation time: `2026-07-19T18:34:44.097129Z`
 - Activation: direct `wrangler deploy` reported this as the Current Version;
   no separate activation timestamp was printed
-- Worker startup: 25 ms
+- Worker startup: 24 ms
 - Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
@@ -175,10 +175,13 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`cda832688bb9a85c0feb93c0618d8932baa3e5a5`. It adds complete API3 generic
-workflow, read, renderer and security adaptations plus typed DELETE error
-containment while retaining search, implicit HEAD, complete API CORS and v1/v2
-Treatments POST `preBolus` fan-out, notification ACK, the
+`e1c380a29450a06621b15f7df7c904f81e1b1147`. It completes named
+Workers-runtime contract coverage for all 16 locked API3 test files. The final
+ten are create, update, patch, patch-operation, delete, shape handling, AAPS
+patterns, storage socket, storage find and storage modify. This extends the
+prior basic/generic-workflow/read/renderer/search/security coverage while
+retaining implicit HEAD, complete API CORS, v1/v2 Treatments POST `preBolus`
+fan-out, notification ACK, the
 stale-past DO alarm scheduling repair, persisted API v3 `/alarm`, prior
 `/storage`, six-collection API3, Entries, Profile, transport and official-page
 work.
@@ -193,16 +196,16 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 24 files, 265/265 passed |
+| Workers integration tests | 27 files, 276/276 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
 | Worker dry run | 914.88 KiB raw / 164.21 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 265 Workers
-tests cover the implemented adapter subset; six API3 files plus
-`notifications-api.test.js` are classified as fully `adapted`, 102 remain
+audit finds 883 active `it(...)` cases plus one skipped case. The 276 Workers
+tests cover the implemented adapter subset; all 16 API3 files plus
+`notifications-api.test.js` are classified as fully `adapted`, 92 remain
 unresolved and two bridge files are fixed-scope
 exclusions. The named Treatments contracts do not
 make the whole `api.treatments.test.js` adapted. Neither count proves complete
@@ -210,7 +213,7 @@ compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `04c8e103-4f0a-434a-87f0-7ed0e9900c33` as the Current
+Wrangler reports version `f2801520-9c21-495a-acb2-337a157f82ec` as the Current
 Version. These credential-free checks verified response content and protocol
 markers, not only Wrangler command success.
 
@@ -273,7 +276,7 @@ credential storage or submitting protected mutations:
 The browser console recorded zero errors. Secondary non-chart pages emitted
 only the locked bundle's known `Unable to find element for #chartContainer`
 warning. This browser run reloaded Cloudflare version
-`04c8e103-4f0a-434a-87f0-7ed0e9900c33` after deployment. Wrangler reported no
+`f2801520-9c21-495a-acb2-337a157f82ec` after deployment. Wrangler reported no
 changed asset upload for the same 248 official browser assets.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -291,9 +294,10 @@ mutation, report generation or every other protected page workflow.
   uploader, pump or closed-loop client.
 - API v1 and v2 remain subsets. Their inherited notification ACK is adapted,
   but summary, v2 notification-loop and other routes remain incomplete. API v3
-  now routes all six official generic collections and adapts six complete
-  upstream API3 files, but 10 `api3.*` files, broad large-response resource
-  handling and Mongo mixed-type/nested semantics remain incomplete.
+  routes all six official generic collections and all 16 locked upstream API3
+  test files have named Workers-runtime adaptations. Broad large-response
+  resource handling and Mongo mixed-type/nested/array semantics remain
+  controlled platform differences beyond that locked test-file evidence.
 - Entries `times/echo`, `times` and `slice` remain missing. Echo supports
   Entries storage only; count rejects client-supplied aggregation pipelines;
   exact DOMPurify output, wider Mongo query/mixed-type behavior and the locked

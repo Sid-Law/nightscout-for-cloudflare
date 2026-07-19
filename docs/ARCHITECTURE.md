@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`cda832688bb9a85c0feb93c0618d8932baa3e5a5`. It produced Cloudflare version
-`04c8e103-4f0a-434a-87f0-7ed0e9900c33`, reported as the Current Version by
-direct deploy. Its 24-file Workers-runtime suite passes 265/265
+`e1c380a29450a06621b15f7df7c904f81e1b1147`. It produced Cloudflare version
+`f2801520-9c21-495a-acb2-337a157f82ec`, reported as the Current Version by
+direct deploy. Its 27-file Workers-runtime suite passes 276/276
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
 entries; deployment and the final dry run both reported 914.88 KiB raw /
 164.21 KiB gzip, with the dry run declaring only the `ENTRY_STORE` Durable
-Object and `ASSETS` product bindings. Cloudflare reported a 25 ms startup.
+Object and `ASSETS` product bindings. Cloudflare reported a 24 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -339,7 +339,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`cda832688bb9a85c0feb93c0618d8932baa3e5a5` implements all six official generic
+`e1c380a29450a06621b15f7df7c904f81e1b1147` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -595,10 +595,13 @@ The locked history projection quirk is retained: when `fields` excludes
 `srvModified`, the response body excludes it and Last-Modified/ETag are derived
 from the always-projected collection `created_at` fallback. Legacy documents
 can be read with virtual srv fields but do not match raw srv filters or HISTORY.
-These are six generic collection vertical slices, not completion of API v3.
-The locked API3 `basic`, `generic.workflow`, `read`, `renderer`, `search` and
-`security` files are adapted by named Workers-runtime contracts; 10 other
-`api3.*` files remain unresolved.
+All 16 locked upstream `api3.*` test files are adapted by named
+Workers-runtime contracts. Besides the prior basic, generic-workflow, read,
+renderer, search and security set, the suite now covers create, update, patch,
+patch-operation, delete, shape handling, AAPS patterns, storage socket,
+storage find and storage modify. This is complete evidence for the locked API3
+test-file set, not a claim that SQLite and MongoDB have unrestricted parity for
+behaviors absent from those tests or deliberately bounded by Workers Free.
 CSV/XML currently serialize an entire bounded result in memory; large-result
 CPU and 128 MB memory adaptation remains open even though byte-level
 small/medium contracts are green.
@@ -724,7 +727,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`04c8e103-4f0a-434a-87f0-7ed0e9900c33`. Credential-free remote smoke returned
+`f2801520-9c21-495a-acb2-337a157f82ec`. Credential-free remote smoke returned
 200 for health and the v15.0.7 API3 version envelope. API3 GET/HEAD/OPTIONS,
 anonymous collection GET/HEAD and unknown-route HEAD matched the new boundary
 contracts. Protected realtime event/ACK behavior remains covered locally
