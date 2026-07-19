@@ -18,21 +18,21 @@ storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
 Deployed integration commit and Git HEAD used by Wrangler
-`a732524271e9a282ad50d7b86817a10ad8a250a3` pass 232/232 tests across 20
+`50ce2459306a04eb6be21a7398e381b92451517a` pass 234/234 tests across 20
 Workers-runtime files plus 20/20 audit tests. The suite includes focused
 EIO4 polling/direct-Hibernatable-WebSocket protocol, persisted session,
 HTTP-boundary, eviction, authorization, tenant-isolation and resource-cap
 contracts in addition to strict v1/v2 Status, API v3
 entries/treatments/device-status/profile, storage and official-page tests. This
 is not full-port evidence. The code is deployed as Cloudflare version
-`be7b9bee-7c9a-43d2-a26c-66b58ed196ad`; exact release evidence is recorded in
+`184448f5-bc5e-4766-b0a3-78405ddd3a54`; exact release evidence is recorded in
 `DEPLOYMENT.md`. The locked
 upstream has 111 `*.test.js` files; a static declaration audit finds 883 active
 `it(...)` cases plus one skipped case. Those sets are not directly comparable,
 and the local suite does not prove full compatibility.
 
-The final Wrangler dry-run reports 248 official assets, 874.79 KiB raw /
-157.16 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The final Wrangler dry-run reports 248 official assets, 882.25 KiB raw /
+158.48 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
@@ -125,7 +125,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Collections and indexes | `lib/storage/mongo-storage.js`, server storage modules | **Partial.** SQLite generic documents cover entries, treatments, device status and profile with indexed collection metadata, an API3 allocation clock and atomic change snapshots. Profile v1 writes share the repository and older rows receive idempotent metadata/fallback repair. Entries has date/dateString/type indexes plus a narrow compatibility shadow. Its v6 probe resets only an incompatible pre-1.0 shadow and preserves canonical documents/profile; it is deliberately not a legacy importer. Healthy activation is a read-only probe. This does not import an external Nightscout/MongoDB database. | Extend the repository to food/settings and prove in-place activation from every supported NSCF schema while preserving canonical data. Keep external Nightscout/MongoDB history import as separately scoped future work; make no first-release import claim. |
 | ObjectId, UUID and dedupe | `lib/server/query.js`, `lib/server/treatments.js`, `lib/api3/storage/mongoCollection/utils.js` | **Partial four-collection slice.** Generated IDs are random 24-hex strings. V1 Entries now matches locked default `UUID_HANDLING` behavior: every non-ObjectId string `_id` is copied to `identifier` when the supplied identifier is missing/null/empty, then removed before server allocation; a non-empty identifier wins. Valid ObjectIds are retained and an ordered batch commits only the successful prefix before duplicate/immutable-ID failure. Treatments/profile and API3 retain their tested collection selectors; IDs are not BSON ObjectIds. | Extend duplicate/partial-failure fixtures to every collection; the atomic two-document `preBolus` fan-out remains unported and carbs are retained until it exists. The 4,096-character identity and 100-item v1 batch caps are Free-plan controls. |
 | Mongo query behavior | `lib/server/query.js`, `lib/api3/storage/mongoCollection/**` | **Partial.** V1 Entries supports equality/comparison for numeric date/SGV/filter/RSSI/noise/MBG fields and bounded string ID/dateString/device/direction/identifier/sysTime fields, supported-field sort-before-limit and final time ordering; it keeps the four-day default and distinct string `dateString`. Legal shapes that exceed SQLite binding/statement limits now fail as controlled 400 rather than internal 500. V1 treatments retain their named subset. API3 implemented collections support locked scalar operators, safe nested/unknown fields, projection/paging, ordered sort chains and a bounded case-sensitive `$re` subset compiled to GLOB. SQLite/Mongo operators, mixed types, arrays, projections and collation remain incomplete. | Add `$in`/`$nin`/regex/exists and nested/array/mixed-type differential coverage before widening the v1 allowlist or calling generic search compatible. Other v1 collections still use limited filtering. |
-| API v1 entries | `lib/api/entries/index.js`, `lib/server/entries.js` | **Substantial adapted partial slice.** Create/list/current/model/ID/delete now include single/array/extended-urlencoded uploads, preview, server-owned/uploader-sync identity, ordered-prefix failures, idempotent fail-closed sanitization, the bounded query/sort subset, four-day reads, JSON/plain/CSV/TSV, result plus exact base-route runtime-SGV Last-Modified/IMS, weak ETag/INM and HEAD. V2 inherits the same router behavior. Echo, times, count, slice, exact DOMPurify output, large-result materialization control, wider Mongo/document semantics and some historical errors remain incomplete. | Port the remaining Entries utilities and whole-file shape/error contracts; retain the explicit Free-plan and sanitizer adaptations and the fresh-only pre-1.0 reset. |
+| API v1 entries | `lib/api/entries/index.js`, `lib/server/entries.js` | **Substantial adapted partial slice.** Create/list/current/model/ID/delete now include single/array/extended-urlencoded uploads, preview, server-owned/uploader-sync identity, ordered-prefix failures, idempotent fail-closed sanitization, the bounded query/sort subset, four-day reads, JSON/plain/CSV/TSV, result plus exact base-route runtime-SGV Last-Modified/IMS, weak ETag/INM and HEAD. Entries `echo` exposes a bounded query-debug envelope, and `count/:storage/where` performs direct SQLite aggregation for entries, treatments and device status; V2 inherits both. `times/echo`, `times`, `slice`, non-Entries echo, arbitrary aggregation pipelines, exact DOMPurify output, large-detail materialization control, wider Mongo/document semantics and some historical errors remain incomplete. | Port the remaining Entries utilities and whole-file shape/error contracts; retain the explicit Free-plan and sanitizer adaptations and the fresh-only pre-1.0 reset. |
 | API v1 document CRUD | food/profile/treatments/devicestatus modules | **Partial.** Page-used JSON CRUD exists with bounded filters. Treatments keep legacy materialization and mutation rules: `isValid:false` remains visible, `srv*` is not synthesized, read-only flags do not block v1 PUT/DELETE, numeric values, conditional GET and empty-array POST follow the locked shapes, and `/api/v2/ddata` keeps its raw legacy body. | Port every remaining route, content type, batch, validation and error variant; implement the atomic `preBolus` fan-out. |
 | API v1 activity | `lib/api/activity/index.js`, `lib/server/activity.js`, `tests/api.activity.test.js` | **Compatible subset deployed.** Create/list/filter/conditional GET/update/delete and empty-array create now follow the upstream shapes. | Remote authenticated create/read/update/delete smoke when a credential is explicitly supplied; expand remaining upstream shape tests. |
 | Remaining API v1 | notifications, Alexa, Google Home and entries utility routes | **Missing or partial.** `adminnotifies` is a hard-coded empty response. | Route inventory from Express registration plus contract tests for each enabled/scope-allowed route. External integrations remain disabled in the simulated-data deployment. |
@@ -199,9 +199,24 @@ compatibility. Its controlled differences and remaining gaps are:
   default HTTP 200, while `tests/api.unauthorized.test.js` contains a stale 201
   assertion. NSCF follows the executable locked source and records the
   contradiction instead of changing the route to satisfy that assertion;
-- `echo`, `times/echo`, `times`, `count` and `slice` are still missing. Count's
-  client-controlled aggregation pipeline and times/slice brace/regex expansion
-  require separate bounded adaptations before exposure.
+- Entries `echo` is implemented for the bounded query subset and returns the
+  locked `query`, `input`, `params` and `storage` envelope. It strips tenant and
+  credential transport parameters from reflected input. Echo for other storage
+  modules remains unsupported with a controlled 400.
+- `count/:storage/where` performs direct SQL `COUNT(*)` aggregation for entries,
+  treatments and device status. Like the locked `$match` plus `$group` utility,
+  result `count` and `sort[...]` options do not affect the aggregate; zero rows
+  return `[]`, and a nonzero total returns `[{"_id":null,"count":N}]`. Unknown
+  storage names inherit the locked entries fallback. The adapter accepts only
+  the bounded filter subset and rejects client-supplied aggregation pipelines
+  with controlled 400 instead of executing arbitrary stages.
+- Aggregate count does not materialize matching documents and is not capped by
+  the ordinary 10,000-row response limit. This does not remove the limit from
+  detailed Entries reads or exports: long histories still require date-bounded
+  partitions.
+- `times/echo`, `times` and `slice` remain missing. Their brace-list and regular-
+  expression route grammar requires a bounded protocol compiler before
+  exposure.
 - the ordinary compact-SGV path retains `count=10000`, but an artificial
   selection of thousands of documents containing abnormally large custom
   fields is still materialized across DO RPC, sorting, formatting and ETag
@@ -266,19 +281,27 @@ controls, not upstream claims.
 ## Current deployed integration evidence
 
 Code candidate and Git HEAD used by Wrangler
-`a732524271e9a282ad50d7b86817a10ad8a250a3` pass 232/232 tests in 20
+`50ce2459306a04eb6be21a7398e381b92451517a` pass 234/234 tests in 20
 Workers-runtime files plus 20/20 audit tests. They combine the adapted v1/v2
-Entries uploader/query/read-protocol slice with strict Status, authorization,
-direct Hibernatable EIO4 WebSocket and API v3
+Entries count/echo and uploader/query/read-protocol slices with strict Status,
+authorization, direct Hibernatable EIO4 WebSocket and API v3
 entries/treatments/device-status/profile slices. Cloudflare version
-`be7b9bee-7c9a-43d2-a26c-66b58ed196ad` reached 100% traffic at
-2026-07-19T02:25:09.076Z; its version was created at
-2026-07-19T02:25:08.249Z and Wrangler reported a 21 ms startup. It processed
-248 unchanged official asset entries, reported 874.79 KiB raw / 157.16 KiB
-gzip, and listed only `ENTRY_STORE` and `ASSETS`. Deployment used `--keep-vars`,
-tag `git-a732524` and a matching Git message; the configured secret was neither
-read nor printed. Deployment ID is
-`3351aacc-0020-4f62-8ba8-f9b08d0ae70b`.
+`184448f5-bc5e-4766-b0a3-78405ddd3a54` was created at
+2026-07-19T03:01:49.897Z and reported as the Current Version by the direct
+Wrangler deployment, which reported a 22 ms startup. Wrangler processed 248
+unchanged official asset entries, reported 882.25 KiB raw / 158.48 KiB gzip,
+and listed only `ENTRY_STORE` and `ASSETS`. Deployment used `--keep-vars`, tag
+`git-50ce245` and a matching Git message. Wrangler did not print a separate
+activation timestamp or Deployment ID, so neither is inferred here.
+
+No credential was supplied to local tests, remote API smoke or browser smoke,
+and no credential value is stored in the repository or these documents.
+Metadata inspection did reveal that the current lab `API_SECRET` is configured
+as a plaintext Worker variable and that Wrangler can render such values. Its
+value is deliberately omitted. It must be rotated and converted to an
+encrypted Worker Secret before non-lab use; this release did not rotate it
+because changing an existing credential would break clients without an
+explicit cutover.
 
 Entries is fresh-only for the pre-1.0 lab. An incompatible old narrow
 `entries` shadow is reset without importing its rows, while canonical documents
@@ -336,27 +359,25 @@ homepage REST shim. Their current bounds and named differences are:
   safety/resource tightening.
 
 
-Final credential-free remote checks returned HTTP 200 for health, homepage,
-Profile/current and empty v1/v2 Entries JSON, default text, TXT, CSV, TSV and
-HTML-fallback reads. Uppercase `.JSON` and the still-missing Entries utility
-route returned 404. HEAD preserved the selected representation metadata and a
-curl request with the emitted weak ETag returned 304. The post-deploy count
-check remained zero Entries and one profile. A legal filter shape above
-SQLite's binding budget returned controlled HTTP 400 `invalid_query` rather
-than 500. No protected remote mutation or credentialed Entries upload was
-attempted.
+Final credential-free remote checks returned HTTP 200 for health, API v3
+version and empty v1 Entries JSON. A future-date
+`/api/v1/count/entries/where` returned the locked zero-match `[]` shape;
+`/api/v2/echo/entries/sgv` returned the expected bounded query envelope; and a
+client-supplied count pipeline returned controlled HTTP 400
+`unsupported_query_pipeline`. Nonzero aggregate behavior, ignored count/sort,
+storage selection/fallback and HEAD are covered locally because the public
+Entries collection is empty. No protected remote mutation or credentialed
+Entries upload was attempted.
 
 EIO4 polling/direct-WebSocket smokes were not repeated because this increment
 changes no transport code. Their earlier open/root-CONNECT/clients/authorize,
 `dataUpdate` and ACK sequences remain historical evidence, not evidence of a
 homepage transport switch.
 
-A real browser run rendered the official homepage chart and observed repeated
-15-second REST-shim updates without a homepage warning/error. Profile reported
-`Values loaded.` and exposed Save. The locked bundle emitted its inherited
-`Unable to find element for #chartContainer` warning twice on the chartless
-Profile page; no browser error was observed. No authenticated Save or protected
-mutation was attempted.
+A real browser run rendered the official homepage chart and observed the
+initial update plus a 15-second REST-shim refresh without a warning/error.
+This release did not navigate to Profile and did not attempt an authenticated
+Save or protected mutation.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing

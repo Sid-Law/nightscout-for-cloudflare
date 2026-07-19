@@ -48,7 +48,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
 | 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. Protected Profile Save was not attempted in this release; add that regression plus the remaining mutation/report and pushed-live-update workflows. |
 | 3. SQLite collection compatibility | In progress | Entries, treatments, device status and profile share the generic API3 repository. Extend it to food/settings, close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
-| 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD; Activity CRUD is implemented. Complete echo/times/count/slice, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
+| 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD. Bounded Entries echo plus direct SQLite count for entries/treatments/device status are deployed; Activity CRUD is implemented. Complete times/echo, times, slice, non-Entries echo, bounded aggregation-pipeline parity, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
 | 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
 | 6. API v3 | Partial four-collection slice | Public `/version`, JWT-protected `/status`, the generic routes for entries/treatments/device-status/profile and four-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add food and settings plus large-response resource controls and broader mixed-type query parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
@@ -94,23 +94,34 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`a732524271e9a282ad50d7b86817a10ad8a250a3` combine the adapted v1/v2 Entries
-uploader/query/read-protocol slice with the prior strict Status,
-authorization, direct Hibernatable EIO4 WebSocket and four generic API v3
+`50ce2459306a04eb6be21a7398e381b92451517a` combine the adapted v1/v2 Entries
+count/echo utilities and uploader/query/read-protocol slice with the prior
+strict Status, authorization, direct Hibernatable EIO4 WebSocket and four
+generic API v3
 collections. Cloudflare Worker version
-`be7b9bee-7c9a-43d2-a26c-66b58ed196ad` reached 100% traffic at
-2026-07-19T02:25:09.076Z with a reported 21 ms startup. Wrangler processed
-248 official asset entries with no asset-byte uploads, reported 874.79 KiB raw
-/ 157.16 KiB gzip, and exposed only `ENTRY_STORE` plus `ASSETS`. Deployment
-used `--keep-vars` and version tag `git-a732524`; the configured secret was
-neither read nor printed. The 20-file Workers-runtime suite passed 232/232,
+`184448f5-bc5e-4766-b0a3-78405ddd3a54` was created at
+2026-07-19T03:01:49.897Z and reported as the Current Version by the direct
+deployment, with a 22 ms startup. Wrangler processed 248 official asset entries
+with no asset-byte uploads, reported 882.25 KiB raw / 158.48 KiB gzip, and the
+dry run exposed only `ENTRY_STORE` plus `ASSETS`. Deployment used `--keep-vars`
+and version tag `git-50ce245`; no credential was supplied to tests or remote
+smoke requests. The 20-file Workers-runtime suite passed 234/234,
 both audit suites passed 20/20, the dependency audit reported zero known
 vulnerabilities, and TypeScript plus the official UI build completed before
-deployment. These
-remain subset facts, not a full-port claim.
+deployment. A plaintext API credential can be rendered by metadata tooling;
+the lab credential must be rotated and converted to a Worker Secret before
+non-lab use. Its value is absent from repository documentation. These remain
+subset facts, not a full-port claim.
 
-This increment fixes the audited uploader edges: every non-ObjectId client
-`_id` is retained as `identifier` when the supplied identifier is falsy;
+This increment adds the upstream-shaped Entries query debugger for the bounded
+Entries filter subset and `/count/:storage/where` for entries, treatments and
+device status. Count executes `COUNT(*)` inside SQLite, preserves the locked
+empty/group response, unknown-storage fallback, ignored result-count/sort and
+HEAD behavior, and does not materialize matching documents across DO RPC.
+Client-controlled Mongo aggregation pipelines are rejected rather than treated
+as executable SQLite input. It retains the audited uploader edges: every
+non-ObjectId client `_id` is retained as `identifier` when the supplied
+identifier is falsy;
 recursive string adaptation is idempotent; extended URL-encoded nested/array
 fields use the locked qs-style parser; SQLite binding/statement limits return a
 controlled client error; and exact base `/entries` restores the upstream
@@ -160,6 +171,12 @@ generation and can approach the Workers Free CPU/memory boundary. This
 extreme-request hardening is explicitly deferred; it is not counted as a
 normal-family blocker and is not claimed solved.
 
+The new aggregate count is separate from that result cap: a one-year indexed
+range can be counted without returning roughly 105,000 five-minute SGV rows.
+Ordinary detail reads still cap one response at 10,000 and therefore require
+date-partitioned requests for long exports. Transparent partitioning and the
+locked `times/echo`, `times` and `slice` routes remain next work.
+
 The deployed increment includes:
 
 - the locked official v15.0.7 UI/pages/assets with no replacement UI;
@@ -169,6 +186,8 @@ The deployed increment includes:
 - adapted v1/v2 Entries single/array/extended-urlencoded uploads, preview,
   uploader-owned sync identity, ordered batch-prefix failures, bounded indexed
   query/sort, current/model/ID reads and JSON/plain/CSV/TSV conditional GET/HEAD;
+- bounded Entries `echo` plus SQL aggregate count for entries, treatments and
+  device status, inherited by API v2;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
 - all eight generic API v3 routes for entries, treatments, device status and
@@ -183,23 +202,22 @@ The deployed increment includes:
   Durable Object alarm survives eviction and drives ping, pong timeout,
   session/lease expiry, closure retry and client-count updates.
 
-Final credential-free remote smoke returned HTTP 200 for health, homepage,
-Profile/current and empty v1/v2 Entries JSON, default text, TXT, CSV, TSV and
-HTML-fallback reads. Uppercase `.JSON` and the missing Entries utility path
-returned 404; HEAD preserved representation metadata, curl confirmed an ETag
-304, and an over-budget legal filter returned controlled HTTP 400. EIO4
+Final credential-free remote smoke returned HTTP 200 for health, v15.0.7,
+empty Entries, an empty future-range count and the v2 Entries echo envelope. A
+custom count pipeline returned controlled HTTP 400. The wider unchanged
+Entries format/validator/query smokes remain evidence from the immediately
+preceding code version rather than being relabeled as current. EIO4
 polling/direct-WebSocket protocol smokes were not repeated because this commit
 does not change transport; their prior evidence remains historical.
 
 A real browser run rendered the official homepage/chart and observed repeated
-15-second REST-shim updates without a homepage warning/error. Profile reported
-`Values loaded.` and exposed its official Save control. The locked bundle
-emitted its known inherited `#chartContainer` warning on the chartless Profile
-page; no browser error appeared. No credentialed Profile Save or other
-protected write was attempted, so those workflows remain unproven.
+15-second REST-shim updates without a homepage warning/error. Profile evidence
+remains historical from the preceding version; no credentialed Profile Save or
+other protected write was attempted, so those workflows remain unproven.
 
 The code is still not a full port: API v3 food and settings,
-large-response CSV/XML resource adaptation, broader Mongo query/type parity,
+Entries times/echo/times/slice and non-Entries echo, large-response CSV/XML
+resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, `/storage` and `/alarm`, root writes, persisted
 change broadcasts, the shared background-task scheduler, server plugins,
 notifications and most upstream test files remain incomplete.

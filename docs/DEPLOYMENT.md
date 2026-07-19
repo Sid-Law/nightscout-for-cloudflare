@@ -12,26 +12,32 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `a732524271e9a282ad50d7b86817a10ad8a250a3`
-- Git HEAD used by Wrangler: `a732524271e9a282ad50d7b86817a10ad8a250a3`
-- Cloudflare Version ID: `be7b9bee-7c9a-43d2-a26c-66b58ed196ad`
-- Version tag/message: `git-a732524` /
-  `git a732524 v1 entries uploader contract fixes`
-- Version creation time: 2026-07-19T02:25:08.249Z
-- Activated: 2026-07-19T02:25:09.076Z
-- Traffic: 100%
-- Worker startup: 21 ms
-- Deployment ID: `3351aacc-0020-4f62-8ba8-f9b08d0ae70b`
+- Deployed code candidate: `50ce2459306a04eb6be21a7398e381b92451517a`
+- Git HEAD used by Wrangler: `50ce2459306a04eb6be21a7398e381b92451517a`
+- Cloudflare Version ID: `184448f5-bc5e-4766-b0a3-78405ddd3a54`
+- Version tag/message: `git-50ce245` /
+  `git 50ce245 entries count echo adapters`
+- Version creation time: 2026-07-19T03:01:49.897Z
+- Activation: direct `wrangler deploy` reported this as the Current Version;
+  no separate activation timestamp was printed
+- Worker startup: 22 ms
+- Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 874.79 KiB raw / 157.16 KiB gzip
-- Bindings: `ENTRY_STORE` Durable Object plus `ASSETS` only
+- Upload: 882.25 KiB raw / 158.48 KiB gzip
+- Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
+  only; the preserved `API_SECRET` application credential is not another
+  storage/product binding
 
-Deployment used `--keep-vars`. The configured `API_SECRET` value was never read,
-printed or copied. Post-deployment documentation changes are expected not to be
-part of the already active Worker version.
+Deployment used `--keep-vars`, and no credential was supplied to a local or
+remote smoke request. A post-deploy metadata inspection demonstrated why
+`API_SECRET` must be a Worker **Secret**, not a plaintext variable: Wrangler can
+render plaintext variable values. The value is intentionally absent from this
+repository and document. The current lab credential should be rotated and
+replaced with an encrypted Secret before non-lab use. Post-deployment
+documentation changes are not part of the already active Worker version.
 
 ## Cloudflare footprint
 
@@ -57,6 +63,12 @@ This increment deploys:
   HEAD, including the exact base-`/entries` runtime-SGV IMS precheck;
 - idempotent fail-closed string sanitization, so read-then-reupload does not
   grow `&amp;` into `&amp;amp;`;
+- the v1/v2 Entries `echo` query-debug envelope for the bounded Entries filter
+  subset, including model and ObjectId parameter behavior;
+- `/count/:storage/where` for entries, treatments and device status, using SQL
+  `COUNT(*)` rather than result materialization and preserving the locked
+  empty/group response, storage fallback, ignored result-count/sort and HEAD
+  behavior; custom aggregation pipelines are rejected;
 - strict v1/v2 Status contracts;
 - derived subject credentials, body/query/header credential precedence and a
   persisted authorization-failure delay with a named 60-second Workers cap;
@@ -105,13 +117,19 @@ bounded. Request bodies are capped at 512 KiB, batches at 100, synchronous
 deletion/revision cleanup at 128, and only the bounded safe `$re` subset is
 compiled to SQLite `GLOB`.
 
+The count route is not capped at 10,000 matching rows because it returns one
+aggregate row and never crosses the DO RPC boundary with the selected
+documents. This improves long-range history statistics; it does not remove the
+10,000-row limit from ordinary Entries detail responses, which still require
+bounded date partitions for long exports.
+
 ## Pre-deployment gate
 
 The deployed candidate is
-`a732524271e9a282ad50d7b86817a10ad8a250a3`. It includes the adapted v1/v2
-Entries uploader/query/read-protocol slice and retains the prior API v3 Profile,
-v1/API3 shared storage and official-page work. The table below records the
-exact local gate completed before deployment.
+`50ce2459306a04eb6be21a7398e381b92451517a`. It adds the adapted v1/v2 Entries
+count/echo utility slice and retains the prior uploader/query/read protocol,
+API v3 Profile, v1/API3 shared storage and official-page work. The table below
+records the exact local gate completed before deployment.
 
 | Check | Result |
 | --- | --- |
@@ -122,47 +140,40 @@ exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 20 files, 232/232 passed |
+| Workers integration tests | 20 files, 234/234 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 874.79 KiB raw / 157.16 KiB gzip |
+| Worker dry run | 882.25 KiB raw / 158.48 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
-| Deployment variables | successful command used `--keep-vars`; configured secret was not read or printed |
+| Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 232 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 234 Workers
 tests cover the implemented adapter subset; no whole upstream test file is
 claimed green. Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Cloudflare reports version `be7b9bee-7c9a-43d2-a26c-66b58ed196ad` at 100%
-traffic. These checks verified response content and protocol markers, not only
-Wrangler command success.
+Wrangler reports version `184448f5-bc5e-4766-b0a3-78405ddd3a54` as the Current
+Version. These credential-free checks verified response content and protocol
+markers, not only Wrangler command success.
 
 | Check | Result |
 | --- | --- |
 | `/healthz` | HTTP 200 |
 | `/api/v3/version` | HTTP 200; locked Nightscout version `15.0.7` |
-| `/` | HTTP 200, `text/html; charset=utf-8` |
-| `/split/` | HTTP 200, `text/html; charset=utf-8` |
 | `/api/v1/entries.json?count=1` | HTTP 200 `[]`; JSON type, `Vary: Accept`, 2-byte length and weak ETag |
-| Extensionless Entries and `.txt` | HTTP 200 empty `text/plain` with zero-byte length and weak ETag |
-| Entries `.csv` and `.tsv` | HTTP 200 empty selected text representation with zero-byte length and weak ETag |
-| Entries `.html` and unsupported Accept | HTTP 200 JSON fallback `[]` |
-| Entries uppercase `.JSON` | HTTP 404, preserving the locked extension fallthrough |
-| Entries CSV HEAD | HTTP 200, no body; content type, zero-byte length, `Vary` and weak ETag preserved |
-| Entries `If-None-Match` | curl received HTTP 304 with no body, emitted weak ETag and `Vary: Accept` |
-| Legal filter above SQLite's binding budget | HTTP 400 `invalid_query`, not an internal 500 |
-| v2 Entries current/model JSON | HTTP 200 `[]`, proving inherited read routing |
-| `/api/v1/count/entries/where` | HTTP 404; the unported utility was not exposed accidentally |
-| `/api/v1/profile/current` | HTTP 200 JSON object; contents not recorded in the remote smoke |
-| Final collection counts | zero Entries and one profile; no profile values recorded |
+| `/api/v1/count/entries/where` with a future indexed date | HTTP 200 `[]`, the locked zero-match aggregate shape |
+| `/api/v2/echo/entries/sgv` | HTTP 200 with the expected `query`, `input`, `params` and `storage` envelope |
+| count with `pipeline[0][$limit]` | HTTP 400 `unsupported_query_pipeline`, not arbitrary aggregation execution |
 
-No credentialed write was attempted because the test process did not read or
-use the configured secret. Local JWT, permission, API v3 CRUD/history,
+No credentialed write was attempted. Local JWT, permission, API v3 CRUD/history,
 Entries upload/batch/query/Last-Modified, rollback, expiry, tamper, eviction and
 cross-tenant cases remain covered by the Workers/SQLite test gate. The empty
-public Entries collection cannot prove non-empty sorting or Last-Modified.
+public Entries collection cannot prove a nonzero remote count, so the local
+SQLite test covers 12 matching Entries, zero matches, v1/v2 inheritance,
+unknown-storage fallback and a treatment selected by ObjectId. The wider
+format/validator/query smokes from the immediately preceding code version are
+historical unchanged-path evidence and were not relabeled as current.
 
 ## Post-deployment real-time evidence
 
@@ -186,12 +197,11 @@ A real browser session exercised the deployed official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered the official Nightscout chart and received repeated
-  15-second REST-shim `dataUpdate` events without a warning/error;
-- Profile reported `Values loaded.` and exposed the official Save control; no
-  authenticated Save was attempted;
-- the locked upstream bundle emitted two known
-  `Unable to find element for #chartContainer` warnings on Profile, which
-  intentionally has no chart container; no browser error was observed.
+  15-second REST-shim `dataUpdate` events without a warning/error.
+
+Profile load/Save-control and its inherited chartless-page warning remain
+historical evidence from the immediately preceding version; no Profile
+navigation or authenticated Save was attempted in this release.
 
 This does not prove longer-running stability, Profile Save, Food/Admin
 mutation, report generation or every other protected page workflow.
@@ -205,7 +215,8 @@ mutation, report generation or every other protected page workflow.
 - API v1 and v2 remain subsets. The deployed API v3 has version, JWT status and
   the generic entries/treatments/device-status/profile verticals. Food,
   settings and broad large-response resource parity remain missing.
-- Entries `echo`, `times/echo`, `times`, `count` and `slice` remain missing;
+- Entries `times/echo`, `times` and `slice` remain missing. Echo supports
+  Entries storage only; count rejects client-supplied aggregation pipelines;
   exact DOMPurify output, wider Mongo query/mixed-type behavior and the locked
   malformed-uploader response shapes remain adapted or incomplete.
 - An Entries request selecting thousands of documents with abnormally large
@@ -239,10 +250,9 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediate prior Cloudflare version is
-`8bd1a80c-a3a8-405e-bde1-10c16d74f5b9` (deployed code commit
-`e2526c3fca53f4891564088127cf38a066571bbd`). It contains the prior Entries
-uploader/query/read increment but not the uploader-identity, idempotent
-sanitizer, extended-form, controlled-query-error or runtime-SGV IMS fixes.
+`be7b9bee-7c9a-43d2-a26c-66b58ed196ad` (deployed code commit
+`a732524271e9a282ad50d7b86817a10ad8a250a3`). It contains the prior Entries
+uploader/query/read fixes but not the count/echo utility increment.
 
 Wrangler version rollback can restore Worker code and assets. Neither rollback
 nor redeployment clears or rolls back SQLite Durable Object data, and rollback

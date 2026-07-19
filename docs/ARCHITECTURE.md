@@ -7,13 +7,14 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`a732524271e9a282ad50d7b86817a10ad8a250a3`. It produced Cloudflare version
-`be7b9bee-7c9a-43d2-a26c-66b58ed196ad`, active at 100% traffic since
-2026-07-19T02:25:09.076Z. Its 20-file Workers-runtime suite passes 232/232
+`50ce2459306a04eb6be21a7398e381b92451517a`. It produced Cloudflare version
+`184448f5-bc5e-4766-b0a3-78405ddd3a54`, created at
+2026-07-19T03:01:49.897Z and reported as the Current Version by direct deploy.
+Its 20-file Workers-runtime suite passes 234/234
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries, reported 874.79 KiB raw / 157.16 KiB gzip, and declared only the
-`ENTRY_STORE` Durable Object and `ASSETS` bindings. Cloudflare reported a 21 ms
-startup. These are release facts for the named subset, not evidence of a
+entries, reported 882.25 KiB raw / 158.48 KiB gzip, and the dry run declared
+only the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Cloudflare
+reported a 22 ms startup. These are release facts for the named subset, not evidence of a
 complete port.
 
 ## Current request and data flow
@@ -205,6 +206,19 @@ Cloudflare can remove a dynamic response's `Content-Length` at the public HTTP
 boundary even though Workers-runtime responses retain it, the same transport
 P2 already recorded for Status.
 
+The inherited `/count/:storage/where` utility has a separate execution path.
+The Worker parses the bounded find subset, selects entries, treatments or
+device status with the locked unknown-storage fallback, then asks the tenant DO
+for SQL `COUNT(*)`. Only the integer crosses RPC, so a long indexed range does
+not allocate the matching document bodies and is not subject to the ordinary
+10,000-row response limit. Zero matches serialize as `[]`; nonzero matches use
+Mongo's `[{"_id":null,"count":N}]` group shape. Count/sort result options are
+ignored as upstream does, while client-supplied aggregation pipelines are
+rejected rather than translated into executable SQL. The bounded Entries
+`echo` adapter renders the supported Mongo query shape plus input/params/storage
+debug envelope without reflecting Cloudflare tenant or credential parameters.
+Non-Entries echo and times/slice pattern routes remain outside this slice.
+
 Upload and preview share one recursive sanitizer before normalization or
 persistence. The locked server uses DOMPurify with JSDOM; neither DOM runtime is
 available at this Worker boundary. NSCF therefore entity-encodes HTML-like and
@@ -295,7 +309,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`a732524271e9a282ad50d7b86817a10ad8a250a3` implements four generic vertical
+`50ce2459306a04eb6be21a7398e381b92451517a` implements four generic vertical
 slices—entries, treatments, device status and profile—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
 with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
@@ -602,7 +616,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`be7b9bee-7c9a-43d2-a26c-66b58ed196ad`. This release changes no transport
+`184448f5-bc5e-4766-b0a3-78405ddd3a54`. This release changes no transport
 code, so EIO4 polling/direct-WebSocket protocol smokes were not repeated; their
 prior credential-free open/root-CONNECT/clients/authorize/`dataUpdate`/ACK
 evidence remains historical. The at-most-once dequeue/send crash window
@@ -654,7 +668,9 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
 - The narrow realtime shadow stores numeric SGV/MBG only in its historical
   20–600 columns; the canonical v1 document no longer rejects an upstream
   uploader value solely for falling outside that range.
-- History count defaults to 10 and is capped at 10,000.
+- Ordinary Entries detail count defaults to 10 and is capped at 10,000. The
+  separate aggregate count returns one SQL-derived result and is not subject
+  to that result cap; long detail exports still require date partitioning.
 - Entries unindexed/dateString candidates are capped at 10,000 with controlled
   HTTP 413; synchronous deletion and stored-revision cleanup are capped at 128.
 - A selected Entries set is currently materialized across DO RPC, final sort,
@@ -664,9 +680,10 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
   or streaming redesign is deferred rather than hidden.
 - Official UI and calculations are not changed; no NSCF dosing logic exists.
 - `API_SECRET` is the bootstrap application credential; subject access tokens
-  and role documents are tenant-local SQLite records. The API_SECRET value is a
-  Cloudflare binding, never a committed Wrangler variable; the current lab uses
-  a plain-text dashboard variable at the owner's request.
+  and role documents are tenant-local SQLite records. The value is never
+  committed to Wrangler config or repository docs. Cloudflare metadata tooling
+  can display a plaintext dashboard variable, so the lab credential must be
+  rotated and converted to an encrypted Worker Secret before non-lab use.
 - The homepage polling shim is transport-only, runs every 15 seconds and has no
   medical or display logic. The separately routed EIO4 server is read-only and
   is not yet the homepage transport.

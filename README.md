@@ -26,8 +26,11 @@ for diagnosis, dosing, or medical decisions.
   server-owned ID normalization with non-ObjectId uploader IDs preserved as
   `identifier`, bounded numeric/string filters and request sorting,
   current/model/ID reads, JSON/plain/CSV/TSV representations, weak ETags,
-  result/runtime-SGV Last-Modified/conditional 304 and HEAD. HTML-like upload
-  leaves are recursively and idempotently entity-encoded before preview or
+  result/runtime-SGV Last-Modified/conditional 304 and HEAD. The Entries
+  `echo` query debugger is adapted for the supported filter subset, and
+  `count/{entries,treatments,devicestatus}/where` performs a server-side SQLite
+  aggregate without materializing matching documents. HTML-like upload leaves
+  are recursively and idempotently entity-encoded before preview or
   persistence; this safe Workers adaptation is stricter than the locked
   JSDOM/DOMPurify output.
 - Tenant-local, SQLite-persisted HS256 JWT signing, the upstream eight-hour
@@ -97,12 +100,15 @@ page workflow. The polling shim only keeps the official browser bundle supplied
 with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
 homepage to the official Socket.IO client is a later slice that also requires
 safe non-default tenant propagation and the page-used alarm namespace.
-Entries also remains incomplete: `echo`, `times/echo`, `times`, `count` and
-`slice` are absent; Mongo operators, nested/array/mixed-type behavior and
-collation extend beyond the fail-closed query subset; and the conservative
-Workers sanitizer is not byte-equivalent to upstream DOMPurify. The 512 KiB
-body, 100-item batch and 10,000-row query/scan bounds are explicit Free-plan
-controls rather than upstream limits. The adapter still materializes a selected
+Entries also remains incomplete: `times/echo`, `times` and `slice` are absent;
+non-Entries `echo`, client-supplied count aggregation pipelines, Mongo
+operators, nested/array/mixed-type behavior and collation extend beyond the
+fail-closed query subset; and the conservative Workers sanitizer is not
+byte-equivalent to upstream DOMPurify. The 512 KiB body, 100-item batch and
+10,000-row result/scan bounds are explicit Free-plan controls rather than
+upstream limits. Server-side `count` is not subject to the 10,000-row result
+limit, but retrieving the matching records still requires bounded date ranges.
+The adapter still materializes a selected
 Entries response before sorting, formatting and hashing it; an artificial
 request for thousands of records containing abnormally large custom fields can
 therefore approach the Workers Free CPU/memory boundary. Ordinary compact SGV
@@ -222,12 +228,16 @@ database mutation event.
 ## Configure API_SECRET on Cloudflare
 
 Open **Workers & Pages → `nscf-phase1` → Settings → Variables and Secrets**,
-click **Add**, select a plain-text variable, name it exactly `API_SECRET`, enter
-a passphrase of at least 12 characters, then save/deploy. Its value is the raw
-passphrase. A compatible Nightscout uploader normally asks for that same raw
-passphrase and hashes it before sending. Secret storage
-(`npx wrangler secret put API_SECRET`) is optional; both forms appear to Worker
-code as `env.API_SECRET`.
+click **Add**, select **Secret** rather than a plaintext variable, name it
+exactly `API_SECRET`, enter a passphrase of at least 12 characters, then
+save/deploy. Its value is the raw passphrase. A compatible Nightscout uploader
+normally asks for that same raw passphrase and hashes it before sending. The
+CLI equivalent is `npx wrangler secret put API_SECRET`; Worker code still
+receives it as `env.API_SECRET`, while Wrangler and the dashboard no longer
+show the value. This follows Cloudflare's current guidance to use encrypted
+[Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+for passwords and API tokens. A plaintext `API_SECRET` should be rotated and
+replaced with a Secret before any non-lab use.
 
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
 into an issue. Most current GET endpoints remain publicly readable. API v3
@@ -292,18 +302,19 @@ directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`a732524271e9a282ad50d7b86817a10ad8a250a3`. After rebuilding the locked
-official UI, its 20-file Workers-runtime suite passes 232/232 tests and both
+`50ce2459306a04eb6be21a7398e381b92451517a`. After rebuilding the locked
+official UI, its 20-file Workers-runtime suite passes 234/234 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 874.79 KiB raw / 157.16 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment preserves every non-ObjectId uploader
-sync ID, makes recursive upload sanitization idempotent, adopts the locked
-extended-urlencoded shape, returns controlled client errors for SQLite query
-limits, and restores the exact base-`/entries` runtime-SGV IMS precheck. It
-does not add the remaining Entries utilities or `/storage` realtime
-broadcasts and is not closed-loop completion. Deployment used `--keep-vars`;
-the configured secret was neither read nor printed. Entries migration remains
-intentionally
+reports 882.25 KiB raw / 158.48 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds v1/v2 Entries `echo` for the bounded
+query subset and direct SQLite `count` aggregation for entries, treatments and
+device status, including the locked empty/group response shape, ignored
+result-count/sort options, storage fallback and HEAD. Arbitrary aggregation
+pipelines remain rejected. It does not add `times/echo`, `times`, `slice` or
+`/storage` realtime broadcasts and is not closed-loop completion. Deployment
+used `--keep-vars`; no credential was supplied to remote smoke requests, and
+no credential value is stored or quoted in this repository. Entries migration
+remains intentionally
 fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
 being imported, while canonical documents and other collections such as
 profile are preserved. A read-only check found zero Entries and one profile in
@@ -330,25 +341,23 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `be7b9bee-7c9a-43d2-a26c-66b58ed196ad` reached 100% traffic
-at 2026-07-19T02:25:09.076Z with a reported 21 ms startup. Version tag
-`git-a732524` and its deployment message record the Git mapping. No asset bytes
+Cloudflare version `184448f5-bc5e-4766-b0a3-78405ddd3a54` was created at
+2026-07-19T03:01:49.897Z and made current by the direct Wrangler deployment,
+with a reported 22 ms startup. Version tag `git-50ce245` and its deployment
+message record the Git mapping. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
-Final credential-free remote smoke returned HTTP 200 for health, the homepage,
-Profile/current and empty v1/v2 Entries JSON, default text, TXT, CSV, TSV and
-HTML-fallback reads. It also confirmed uppercase `.JSON` and the still-missing
-Entries utility route return 404, HEAD preserves representation metadata, and
-an ETag validator returns 304. A legal-but-overcomplex Entries filter now
-returns the controlled HTTP 400 `invalid_query` envelope instead of 500. No
+Final credential-free remote smoke returned HTTP 200 for health, v15.0.7
+version, empty Entries, empty direct SQLite count and the v2 Entries echo
+shape. A supplied count pipeline returned controlled HTTP 400. The wider
+Entries format/validator and controlled-query evidence from the immediately
+preceding version remains historical because those paths did not change. No
 credentialed remote upload or protected mutation was attempted.
 
 A real browser run rendered the official homepage chart and observed repeated
-15-second REST-shim data updates without a homepage warning/error. The Profile
-Editor reported `Values loaded.` and exposed its official Save control; no
-credentialed Save was attempted. The locked bundle emitted its known inherited
-`Unable to find element for #chartContainer` warning on Profile, which has no
-chart container; no browser error was observed. These checks do not prove every
-protected mutation, report, plugin or realtime workflow.
+15-second REST-shim data updates without a homepage warning/error. Profile
+Editor evidence from the preceding version remains historical; no
+credentialed Save was attempted in this release. These checks do not prove
+every protected mutation, report, plugin or realtime workflow.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
