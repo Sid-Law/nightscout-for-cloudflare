@@ -45,7 +45,10 @@ for diagnosis, dosing, or medical decisions.
   read/replace/patch/delete, both history forms and collection-aware
   `lastModified` in the locked JSON, CSV and XML formats. The locked Settings
   exception is retained: collection search and history require admin while a
-  single-resource read uses read permission.
+  single-resource read uses read permission. The HTTP boundary now preserves
+  Express-style implicit HEAD behavior, exposes the complete upstream API CORS
+  method/header preflight, and accepts a lower `API3_MAX_LIMIT` while retaining
+  a hard 1,000-row Workers Free ceiling.
 - A shared SQLite repository for all six generic collections, covering
   legacy/API3 identity, collection-specific fallback dedupe, ordered search,
   branch-sensitive mutation permissions, server timestamps,
@@ -114,8 +117,9 @@ for diagnosis, dosing, or medical decisions.
 ## What is not complete
 
 This is not yet a drop-in Nightscout server. Important missing work includes
-the complete v1/v2/v3 route and error surface, large-response CSV/XML resource
-adaptation and broader generic API v3 mixed-type/nested/query parity,
+the complete v1/v2/v3 route and error surface, the remaining 13 upstream
+`api3.*` test files, large-response CSV/XML resource adaptation and broader
+generic API v3 mixed-type/nested/query parity,
 failed-auth admin notifications, Mongo query/collection parity beyond the
 tested safe subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
 the direct-WebSocket at-most-once crash window, root write handlers,
@@ -349,21 +353,24 @@ broken-recipient isolation. The
 locked upstream has 111 JavaScript test files; a static declaration audit finds
 883 active `it(...)` cases plus one skipped case. Those declarations are not
 directly comparable with the adapter suite and do not prove complete Nightscout
-compatibility. `notifications-api.test.js` is the first file classified as
-fully `adapted`; 108 files remain unresolved and two real-CGM bridge files are
-fixed-scope exclusions.
+compatibility. `api3.basic.test.js`, `api3.search.test.js` and
+`notifications-api.test.js` are classified as fully `adapted`; 106 files
+remain unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`94c3816ef58931362f2f576b181891f7188ae430`. After rebuilding the locked
-official UI, its 24-file Workers-runtime suite passes 258/258 tests and both
+`e44eda8b7fc155d1d8cc28d58a419bfa950f6bae`. After rebuilding the locked
+official UI, its 24-file Workers-runtime suite passes 261/261 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 912.74 KiB raw / 163.95 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds the locked v1/v2 Treatments POST
-`preBolus` fan-out and its ordered/retransmission/error contracts while
-retaining notification ACK, the API v3 `/alarm` and `/storage` slices, six
-generic collection verticals, bounded Entries echo/count work and official
-UI. It does not make the whole Treatments module or any complete v1/v2 API
-compatible; `times/echo`, `times`, `slice`, EIO3, root writes,
+reports 914.58 KiB raw / 164.19 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment completes named Workers-runtime adaptations
+for the locked `api3.basic.test.js` and `api3.search.test.js` contracts: API
+preflight advertises all official methods and conditional/auth headers,
+implicit HEAD returns the GET status/headers with an empty body, and the six
+collection search/history handlers share the configurable lower limit with a
+1,000-row Free-plan ceiling. It retains the v1/v2 Treatments `preBolus`,
+notification ACK, API v3 `/alarm` and `/storage`, generic collections, bounded
+Entries echo/count work and official UI. It does not make API v3 or any complete
+v1/v2 API compatible; `times/echo`, `times`, `slice`, EIO3, root writes,
 polling-to-WebSocket upgrade and the server-side notification/plugin engine
 remain missing.
 Deployment used `--keep-vars`; no deployed credential was supplied to remote
@@ -395,28 +402,25 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `59bac3ab-c448-4c9b-a360-db2179e62f74` was made current by
-the direct Wrangler deployment, with a reported 26 ms startup. Version tag
-`git-94c3816ef589` and its deployment message record the Git mapping. Wrangler did
-not print a separate creation/activation timestamp. No asset bytes
-needed uploading because all 248 official asset entries were unchanged.
-Final credential-free remote smoke returned HTTP 200 for health and v15.0.7
-Status. Anonymous v1 and v2 Treatments reads returned the empty collection;
-anonymous POSTs returned the locked HTTP 401 envelope, and a follow-up read
-confirmed that no record was written. The new credentialed `preBolus` create
-contract is covered locally because no deployed credential was read or sent.
+Cloudflare version `13697f3c-407d-4464-9297-c18657eacaf4` was made current by
+the direct Wrangler deployment and was created at
+`2026-07-19T17:35:48.507Z`, with a reported 28 ms startup. Version tag
+`git-e44eda8b7fc1` and message `git e44eda8b7fc1 api3 search head cors` record
+the Git mapping. No asset bytes needed uploading because all 248 official
+asset entries were unchanged. Credential-free remote smoke returned HTTP 200
+for health and the v15.0.7 API v3 version envelope; GET and HEAD version
+contracts passed, API OPTIONS returned the complete method/header policy,
+anonymous GET/HEAD collection access returned the locked 401 behavior, and an
+unknown HEAD route returned 404 with an empty body. No deployed credential was
+read or sent.
 
-A real browser run rendered the official homepage, waited for its realtime
-connection indicator to clear, and retained the expected empty chart state
-without console errors. The official Admin Tools, Food Editor, Profile Editor
-and `clock-color` page also loaded; Food and Profile left their initial
-`Not loaded` state, and no protected write was submitted. The public tenant
+A real browser run reloaded the current deployment and rendered the official
+homepage with its chart region and no console errors. The official Admin Tools,
+Food Editor, Profile Editor and `clock-color` page also loaded; Food reached
+`Database loaded`, Profile reached `Values loaded.`, and no protected write
+was submitted. The browser was returned to the homepage. The public tenant
 currently has no Entries, so `---` is expected. These checks do not prove every
-protected mutation, report, plugin or realtime workflow. That browser run was
-on the immediately preceding deployment in this increment; the final
-empty-carb correction changed only the Treatments POST repository path, and
-Wrangler confirmed all 248 browser assets were unchanged. Final-version remote
-API smoke was repeated after the correction.
+protected mutation, report, plugin or realtime workflow.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

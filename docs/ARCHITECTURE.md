@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`94c3816ef58931362f2f576b181891f7188ae430`. It produced Cloudflare version
-`59bac3ab-c448-4c9b-a360-db2179e62f74`, reported as the Current Version by
-direct deploy. Its 24-file Workers-runtime suite passes 258/258
+`e44eda8b7fc155d1d8cc28d58a419bfa950f6bae`. It produced Cloudflare version
+`13697f3c-407d-4464-9297-c18657eacaf4`, reported as the Current Version by
+direct deploy. Its 24-file Workers-runtime suite passes 261/261
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries; deployment and the final dry run both reported 912.74 KiB raw /
-163.95 KiB gzip, with the dry run declaring only the `ENTRY_STORE` Durable
-Object and `ASSETS` product bindings. Cloudflare reported a 26 ms startup.
+entries; deployment and the final dry run both reported 914.58 KiB raw /
+164.19 KiB gzip, with the dry run declaring only the `ENTRY_STORE` Durable
+Object and `ASSETS` product bindings. Cloudflare reported a 28 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -339,7 +339,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`94c3816ef58931362f2f576b181891f7188ae430` implements all six official generic
+`e44eda8b7fc155d1d8cc28d58a419bfa950f6bae` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -519,6 +519,15 @@ omitted when that permission is absent. Unmatched API v3 routes use the locked
 `{status,message}` 404 envelope rather than falling into the older adapter
 error shape.
 
+The Worker boundary uses one API-wide CORS policy matching the locked Express
+middleware: preflight returns `OK`, advertises
+`GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS`, and allows content, authorization,
+Nightscout secret and conditional-request headers. Express implicitly serves
+HEAD through GET; the adapter therefore evaluates the same API3 route and
+authorization path, preserves its status and headers, and strips the response
+body. This covers version, status, lastModified and all generic collection,
+history and resource routes.
+
 The public request still accepts only one `sort` or `sort$desc` value. Internally
 it preserves the locked ordered chain—requested field, `identifier`,
 `created_at`, then `date`—instead of collapsing it into an object or SQL
@@ -559,6 +568,9 @@ Other deliberate or unresolved platform differences are explicit:
   server's `isValid != false` condition replaces any caller `isValid` filter;
 - a parsed API v3 limit of zero (for example, from `limit=0x10`) is capped at
   1,000 rows; locked Mongo treats `cursor.limit(0)` as unlimited;
+- a finite positive `API3_MAX_LIMIT` below 1,000 lowers both search and history
+  limits; invalid settings fall back to 1,000 and larger values stay capped at
+  1,000 for Workers Free;
 - API v3 `$re` accepts only a bounded, case-sensitive, linear subset compiled
   to SQLite `GLOB`; unsupported constructs, patterns above 128 UTF-8 bytes or a
   compiled GLOB above SQLite's 50-byte limit return controlled 400;
@@ -576,10 +588,12 @@ The locked history projection quirk is retained: when `fields` excludes
 `srvModified`, the response body excludes it and Last-Modified/ETag are derived
 from the always-projected collection `created_at` fallback. Legacy documents
 can be read with virtual srv fields but do not match raw srv filters or HISTORY.
-These are six generic collection vertical slices, not completion of API v3 or
-of any whole upstream `api3.*` test file. CSV/XML currently serialize an entire
-bounded result in memory; large-result CPU and 128 MB memory adaptation remains
-open even though byte-level small/medium contracts are green.
+These are six generic collection vertical slices, not completion of API v3.
+The locked `api3.basic.test.js` and `api3.search.test.js` files are adapted by
+named Workers-runtime contracts; 13 other `api3.*` files remain unresolved.
+CSV/XML currently serialize an entire bounded result in memory; large-result
+CPU and 128 MB memory adaptation remains open even though byte-level
+small/medium contracts are green.
 
 ### SQLite limits and change-retention risk
 
@@ -702,12 +716,11 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`59bac3ab-c448-4c9b-a360-db2179e62f74`. Credential-free remote smoke returned
-200 for health and v15.0.7 Status. Anonymous v1/v2 Treatments reads returned
-the empty collection; anonymous POSTs returned the locked 401 envelope and no
-record persisted. The credentialed `preBolus` mutation and protected realtime
-event/ACK behavior are covered locally rather than by a credentialed remote
-mutation. The at-most-once dequeue/send
+`13697f3c-407d-4464-9297-c18657eacaf4`. Credential-free remote smoke returned
+200 for health and the v15.0.7 API3 version envelope. API3 GET/HEAD/OPTIONS,
+anonymous collection GET/HEAD and unknown-route HEAD matched the new boundary
+contracts. Protected realtime event/ACK behavior remains covered locally
+rather than by a credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
 intentionally still uses the REST polling shim. The inherited local transport
 contracts and the prior public EIO4 smoke prove only the separate server slice,

@@ -12,16 +12,15 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `94c3816ef58931362f2f576b181891f7188ae430`
-- Git HEAD used by Wrangler: `94c3816ef58931362f2f576b181891f7188ae430`
-- Cloudflare Version ID: `59bac3ab-c448-4c9b-a360-db2179e62f74`
-- Version tag/message: `git-94c3816ef589` /
-  `git 94c3816ef589 exact v1 v2 treatment prebolus`
-- Version creation time: not printed by this Wrangler deployment; none is
-  inferred
+- Deployed code candidate: `e44eda8b7fc155d1d8cc28d58a419bfa950f6bae`
+- Git HEAD used by Wrangler: `e44eda8b7fc155d1d8cc28d58a419bfa950f6bae`
+- Cloudflare Version ID: `13697f3c-407d-4464-9297-c18657eacaf4`
+- Version tag/message: `git-e44eda8b7fc1` /
+  `git e44eda8b7fc1 api3 search head cors`
+- Version creation time: `2026-07-19T17:35:48.507Z`
 - Activation: direct `wrangler deploy` reported this as the Current Version;
   no separate activation timestamp was printed
-- Worker startup: 26 ms
+- Worker startup: 28 ms
 - Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
@@ -29,7 +28,7 @@ is not counted as API, plugin or real-time compatibility.
   silence tables
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 912.74 KiB raw / 163.95 KiB gzip
+- Upload: 914.58 KiB raw / 164.19 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -58,6 +57,15 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 This increment deploys:
 
+- complete named Workers-runtime adaptations for the locked
+  `api3.basic.test.js` and `api3.search.test.js` contracts: API-wide OPTIONS
+  returns the upstream `OK` boundary with
+  `GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS`, complete authorization/content/
+  conditional-request headers, and CORS; implicit HEAD preserves GET status and
+  headers with an empty body for API3 version, status, lastModified and every
+  generic route; search/history share a configurable lower `API3_MAX_LIMIT`
+  with invalid values falling back to and larger values capped at the
+  1,000-row Workers Free boundary;
 - the locked v1 Treatments POST `preBolus` fan-out, inherited by v2: every
   truthy normalized value creates the time-shifted child, truthy carbs move off
   the primary, and a missing/zero carbs value retains upstream's empty-string
@@ -157,8 +165,9 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`94c3816ef58931362f2f576b181891f7188ae430`. It adds the locked v1/v2
-Treatments POST `preBolus` fan-out while retaining notification ACK, the
+`e44eda8b7fc155d1d8cc28d58a419bfa950f6bae`. It adds API3 search, implicit
+HEAD and complete API CORS adaptations while retaining the locked v1/v2
+Treatments POST `preBolus` fan-out, notification ACK, the
 stale-past DO alarm scheduling repair, persisted API v3 `/alarm`, prior
 `/storage`, six-collection API3, Entries, Profile, transport and official-page
 work.
@@ -173,40 +182,42 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 24 files, 258/258 passed |
+| Workers integration tests | 24 files, 261/261 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 912.74 KiB raw / 163.95 KiB gzip |
+| Worker dry run | 914.58 KiB raw / 164.19 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 258 Workers
-tests cover the implemented adapter subset; `notifications-api.test.js` is the
-first file classified as fully `adapted`, 108 remain unresolved and two bridge
-files are fixed-scope exclusions. The new named Treatments contracts do not
+audit finds 883 active `it(...)` cases plus one skipped case. The 261 Workers
+tests cover the implemented adapter subset; `api3.basic.test.js`,
+`api3.search.test.js` and `notifications-api.test.js` are classified as fully
+`adapted`, 106 remain unresolved and two bridge files are fixed-scope
+exclusions. The named Treatments contracts do not
 make the whole `api.treatments.test.js` adapted. Neither count proves complete
 compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `59bac3ab-c448-4c9b-a360-db2179e62f74` as the Current
+Wrangler reports version `13697f3c-407d-4464-9297-c18657eacaf4` as the Current
 Version. These credential-free checks verified response content and protocol
 markers, not only Wrangler command success.
 
 | Check | Result |
 | --- | --- |
-| `/healthz` | HTTP 200 |
-| `/api/v1/status.json` | HTTP 200; locked Nightscout version `15.0.7` and `runtimeState:loaded` |
-| anonymous `/api/v1/treatments.json?count=1` | HTTP 200 and `[]` |
-| anonymous `/api/v2/treatments.json?count=1` | HTTP 200 and `[]` |
-| anonymous v1 Treatments POST | HTTP 401 with the locked `Invalid/Missing` envelope |
-| anonymous v2 Treatments POST | HTTP 401 with the same inherited envelope |
-| follow-up Treatments read | still `[]`; rejected writes did not persist |
+| `/healthz` | HTTP 200 with `status:ok`, upstream `v15.0.7` and SQLite Durable Object storage marker |
+| GET `/api/v3/version` | HTTP 200; Nightscout `15.0.7`, API `3.0.3-alpha` |
+| HEAD `/api/v3/version` | HTTP 200 with an empty body |
+| OPTIONS `/api/v3/treatments/example` | HTTP 200 body `OK`; complete API methods and authorization/conditional headers |
+| anonymous GET `/api/v3/entries` | HTTP 401 with the locked missing/bad-token JSON envelope |
+| anonymous HEAD `/api/v3/entries` | HTTP 401 with an empty body |
+| HEAD `/api/v3/NOT_EXIST` | HTTP 404 with an empty body |
 
 No deployed credential was read or sent and no credentialed write was
-attempted. The full local suite covers exact primary/child fields and ordering,
-v2 inheritance, stable replay IDs, ddata visibility, ordered batches and
-rollback when the shifted child cannot be represented.
+attempted. Every checked API response carried the complete CORS policy. The
+full local suite covers authenticated search, ordering, skip, projections,
+limits, srvModified filters and error shapes in addition to inherited mutation
+and transport contracts.
 
 ## Post-deployment real-time evidence
 
@@ -241,19 +252,16 @@ generation pipeline.
 A real browser session exercised the deployed official UI without reading
 credential storage or submitting protected mutations:
 
-- the homepage rendered, its `Connecting to server` indicator cleared, and the
-  official empty chart state remained without console errors; the public
-  tenant has no Entries, so `---` is expected;
+- the homepage rendered its official chart region without console errors; the
+  public tenant has no Entries, so `---` is expected;
 - Admin Tools, Food Editor, Profile Editor and `clock-color` loaded from the
-  official bundle; Food and Profile left their initial `Not loaded` state;
+  official bundle; Food reached `Database loaded` and Profile reached
+  `Values loaded.`;
 - the browser was restored to the homepage and retained there for the user.
 
-This browser run used the immediately preceding deployment in the same
-increment. The final `94c3816` correction changed only the Treatments POST
-empty-carb repository edge, and Wrangler reported no changed asset upload for
-the same 248 official browser assets. Final-version remote API smoke was
-repeated after that correction; a second browser reload was not recorded as
-separate evidence.
+This browser run reloaded Cloudflare version
+`13697f3c-407d-4464-9297-c18657eacaf4` after deployment. Wrangler reported no
+changed asset upload for the same 248 official browser assets.
 
 Authenticated Profile Save remains historical evidence from an earlier
 version; the current load is recorded above, but no authenticated Food/Profile
@@ -270,9 +278,10 @@ mutation, report generation or every other protected page workflow.
   uploader, pump or closed-loop client.
 - API v1 and v2 remain subsets. Their inherited notification ACK is adapted,
   but summary, v2 notification-loop and other routes remain incomplete. API v3
-  now routes all six official generic collections, but broad large-response
-  resource handling, Mongo mixed-type/nested semantics and whole upstream API
-  v3 test execution remain incomplete.
+  now routes all six official generic collections and adapts the complete
+  `api3.basic.test.js` and `api3.search.test.js` contracts, but 13 `api3.*`
+  files, broad large-response resource handling and Mongo mixed-type/nested
+  semantics remain incomplete.
 - Entries `times/echo`, `times` and `slice` remain missing. Echo supports
   Entries storage only; count rejects client-supplied aggregation pipelines;
   exact DOMPurify output, wider Mongo query/mixed-type behavior and the locked
