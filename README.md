@@ -94,6 +94,14 @@ for diagnosis, dosing, or medical decisions.
   text body, and use the same SQLite ACK/clear transaction as Socket.IO.
   Repeated ACKs remain suppressed across eviction; malformed authenticated
   requests are bounded 200 no-ops rather than unbounded tenant state.
+- The v2 `/ddata/at` adapter plus the complete named `ddata.test.js` contract:
+  every official data bucket, deep cloning, runtime time/duration derivation
+  and prefer-new `_id`/`identifier` merging are represented. The v2
+  `/properties` route now supports upstream comma-selection and truthy
+  `pretty` formatting. `/api/v2/summary/` ports the locked SGV, treatment,
+  temporary-target, temp-basal and current-profile mapping without inventing
+  plugin values; until the official server plugin engine is present, its
+  IOB/COB/BWP state serializes as `null` and age/battery fields are absent.
 - A tenant-local Durable Object alarm derived from persisted realtime
   deadlines and authorization-delay cleanup. It survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
@@ -123,8 +131,8 @@ failed-auth admin notifications, Mongo query/collection parity beyond the
 tested safe subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
 the direct-WebSocket at-most-once crash window, root write handlers,
 main-namespace real-time database-update broadcasts, the general
-background-task scheduler, server plugin execution, notification generation
-and summary persistence, and end-to-end verification of every official page
+background-task scheduler, server plugin execution, notification generation,
+plugin-derived v2 summary state/persistence, and end-to-end verification of every official page
 workflow. The polling shim only keeps the official browser bundle supplied
 with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
 homepage to the official Socket.IO client is a later slice that also requires
@@ -358,31 +366,29 @@ broken-recipient isolation. The
 locked upstream has 111 JavaScript test files; a static declaration audit finds
 883 active `it(...)` cases plus one skipped case. Those declarations are not
 directly comparable with the adapter suite and do not prove complete Nightscout
-compatibility. All 16 locked `api3.*` files, `notifications-api.test.js` and 15
-v1 client/API files are classified as fully `adapted`. The newest eight are
+compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
+`ddata.test.js` and 15 v1 client/API files are classified as fully `adapted`.
+The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 77 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 76 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2`. After rebuilding the locked
-official UI, its 30-file Workers-runtime suite passes 299/299 tests and both
+`79ddf4985bd93510a07444e40bf61972120aa9b6`. After rebuilding the locked
+official UI, its 31-file Workers-runtime suite passes 303/303 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 933.04 KiB raw / 168.10 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds complete named Workers-runtime contract
-coverage for the eight locked v1 files listed above. It implements the locked
-numeric-brace `times/echo`, `times` and `slice` fixtures with explicit prefix,
-expansion and candidate bounds; exact/dateString-range Entries deletion;
-Treatment HTML sanitization, UUID/identifier and AAPS behavior; Loop/Trio batch
-shapes; root/Status/Alexa request envelopes and anonymous-write denial. This
-does not make the whole Nightscout port or the complete v1/v2 API compatible.
+reports 942.98 KiB raw / 170.71 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adapts locked `ddata.test.js`, v2 property
+selection/pretty serialization and the core summary mapper while retaining the
+prior v1/API3/authorization/realtime slices. This does not make the whole
+Nightscout port or the complete v1/v2 API compatible.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array semantics, safe-attribute DOMPurify byte parity, EIO3, root
 writes, polling-to-WebSocket upgrade and the server-side notification/plugin
-engine remain missing.
-Deployment used `--keep-vars`; no deployed credential was supplied to remote
-smoke requests, and no credential value is stored or quoted in this repository.
+engine, including plugin-derived summary state, remain missing. No deployed
+credential was read or supplied to remote smoke requests, and no credential
+value is stored or quoted in this repository.
 Entries migration remains intentionally
 fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
 being imported, while canonical documents and other collections such as
@@ -410,25 +416,20 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `936fcc1c-b6d8-4572-9a11-a50e1f507bb6` was made current by
-the direct Wrangler deployment and was created at
-`2026-07-19T19:44:26.242Z`, with a reported 26 ms startup. Version tag
-`git-cac4a86` and message
-`git cac4a86 adapt remaining v1 client contracts` record
-the Git mapping. No asset bytes needed uploading because all 248 official
-asset entries were unchanged. Credential-free remote smoke returned HTTP 200
-for health, root version discovery, v1 Status, the exact locked `times/echo`
-fixture, an empty bounded `slice` and the Alexa LaunchRequest envelope. API
-OPTIONS and Status HEAD passed, and an anonymous Entries POST returned the
-locked 401 envelope without writing data. No deployed credential was read or
-sent.
+Cloudflare version `be2ed773-9148-43df-bbfb-d438bb24fe6f` was made current by
+deployment `6d9e7df3-439c-44a4-a206-123a2ded391c` at
+`2026-07-19T20:16:32.660015Z`, with a reported 31 ms startup. No asset bytes
+needed uploading because all 248 official asset entries were unchanged.
+Credential-free remote smoke returned HTTP 200 for selected/pretty v2
+properties, v2 summary, v2 ddata, API3 version and v1 Status. No deployed
+credential was read or sent.
 
 A real browser run reloaded the current deployment and rendered the official
 homepage with its chart region and no console errors. The official Admin Tools,
 Food Editor, Profile Editor and `clock-color` page also loaded with their
-official controls and no console warning or error. Food/Profile remained in
-their anonymous `Not loaded` data state because this smoke deliberately did
-not read or enter a credential, and no protected write was submitted. The
+official controls and zero console errors. Profile reached `Values loaded.` and
+Food reached `Database loaded`; no credential was entered and no protected
+write was submitted. The
 browser was returned to the homepage. The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.

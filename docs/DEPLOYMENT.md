@@ -12,31 +12,32 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2`
-- Git HEAD used by Wrangler: `cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2`
-- Cloudflare Version ID: `936fcc1c-b6d8-4572-9a11-a50e1f507bb6`
+- Deployed code candidate: `79ddf4985bd93510a07444e40bf61972120aa9b6`
+- Git HEAD used by Wrangler: `79ddf4985bd93510a07444e40bf61972120aa9b6`
+- Cloudflare Version ID: `be2ed773-9148-43df-bbfb-d438bb24fe6f`
 - Cloudflare ordinal version number: not printed by Wrangler; the Version ID is
   authoritative
-- Version tag/message: `git-cac4a86` /
-  `git cac4a86 adapt remaining v1 client contracts`
-- Version creation time: `2026-07-19T19:44:26.242Z`
-- Activation: deployment created `2026-07-19T19:44:27.008Z`; Wrangler reports
+- Version tag/message: none printed or present in the deployment-list metadata
+- Version creation time: not separately printed; none is inferred
+- Activation: deployment `6d9e7df3-439c-44a4-a206-123a2ded391c` created
+  `2026-07-19T20:16:32.660015Z`; Wrangler reports
   this version at 100%
-- Worker startup: 26 ms
-- Deployment ID: not printed by this Wrangler deployment; none is inferred
+- Worker startup: 31 ms
+- Deployment ID: `6d9e7df3-439c-44a4-a206-123a2ded391c`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
   silence tables
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 933.04 KiB raw / 168.10 KiB gzip
+- Upload: 942.98 KiB raw / 170.71 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
 
-Deployment used `--keep-vars`, and no credential was supplied to a local or
-remote smoke request. A post-deploy metadata inspection demonstrated why
+The ordinary Wrangler deployment preserved the existing configuration; no
+credential was read or supplied to a local or remote smoke request. A prior
+metadata inspection demonstrated why
 `API_SECRET` must be a Worker **Secret**, not a plaintext variable: Wrangler can
 render plaintext variable values. The value is intentionally absent from this
 repository and document. The current lab credential should be rotated and
@@ -58,7 +59,19 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 ## Release content
 
 The current deployed build contains the prior adapted slices plus this
-increment's following v1 additions:
+increment's following v2 additions:
+
+- the complete named Workers-runtime mapping for locked `ddata.test.js`:
+  official empty buckets/deep clone, runtime mills/duration/endmills
+  normalization and prefer-new `_id`/`identifier` merging;
+- `/api/v2/properties`, wildcard/comma selection and truthy `pretty`
+  formatting for the currently available `bgnow`/`delta` properties;
+- `/api/v2/summary/` with locked hour filtering, SGV/noise, carb/insulin,
+  temporary-target, temp-basal schedule and current-profile mapping. It does
+  not fabricate server-plugin values: IOB/COB/BWP are `null`, and the
+  age/battery properties are absent until those official plugins run;
+
+The immediately preceding v1 increment remains deployed and includes:
 
 - complete named Workers-runtime mappings for the locked
   `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
@@ -198,14 +211,10 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2`. It adds complete named
-Workers-runtime contract coverage for the eight locked AAPS/Alexa/Entries/root/
-Status/Treatments/unauthorized/batch files while retaining all 16 adapted API3
-files, `notifications-api.test.js` and seven prior v1 collection/identity files.
-The increment locks bounded Entries pattern utilities and delete selectors,
-Treatment sanitization/identity/query/delete, client batch metadata and public
-discovery/Status/Alexa envelopes while retaining authorization, realtime,
-notification ACK and official-page work.
+`79ddf4985bd93510a07444e40bf61972120aa9b6`. It adds the complete named
+`ddata.test.js` mapping, selected/pretty properties and the core summary mapper
+while retaining all prior v1, API3, authorization, realtime, notification ACK
+and official-page work.
 The table below records the exact local gate completed before deployment.
 
 | Check | Result |
@@ -217,36 +226,32 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 30 files, 299/299 passed |
-| Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 933.04 KiB raw / 168.10 KiB gzip |
+| Workers integration tests | 31 files, 303/303 passed |
+| Worker dry run | 942.98 KiB raw / 170.71 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
-| Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
+| Deployment variables | existing configuration was preserved; no credential was read or supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 299 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 303 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
-`notifications-api.test.js` and 15 v1 client/API files are classified as fully
-`adapted`, 77 remain unresolved and two bridge files are fixed-scope exclusions.
+`notifications-api.test.js`, `ddata.test.js` and 15 v1 client/API files are
+classified as fully `adapted`, 76 remain unresolved and two bridge files are
+fixed-scope exclusions.
 Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `936fcc1c-b6d8-4572-9a11-a50e1f507bb6` at 100%.
+Wrangler reports version `be2ed773-9148-43df-bbfb-d438bb24fe6f` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
 | Check | Result |
 | --- | --- |
-| `/healthz` | HTTP 200 with `status:ok`, upstream `v15.0.7` and SQLite Durable Object storage marker |
-| GET `/api/versions` | HTTP 200 with exact v1 `1.0.0`, v2 `2.0.0` and v3 `3.0.3-alpha` discovery rows |
+| GET `/api/v2/properties/bgnow,delta?pretty=1` | HTTP 200, selected keys only and two-space JSON indentation |
+| GET `/api/v2/summary/?hours=6` | HTTP 200 with SGV/treatment/profile/state envelope; current profile preserved and unavailable plugin state explicit as null/absent |
+| GET `/api/v2/ddata/at` | HTTP 200 with every aggregate bucket and current profile |
+| GET `/api/v3/version` | HTTP 200 with Nightscout `15.0.7`, API3 `3.0.3-alpha` and SQLite Durable Object marker |
 | GET `/api/v1/status.json` | HTTP 200; `Nightscout` `15.0.7`, readable defaults and official settings envelope |
-| HEAD `/api/v1/status.json` | HTTP 200 with JSON headers and no response body |
-| exact locked `/api/v1/times/echo/2014-07/.*T{00..05}:` fixture | HTTP 200 with six expanded patterns and the locked query-debug envelope |
-| GET bounded `/api/v1/slice/entries/dateString/sgv/2026-07-20` | HTTP 200 with `[]` for the empty public tenant |
-| POST `/api/v1/alexa` LaunchRequest | HTTP 200 with official v1.0 Speechlet text/card/reprompt envelope; no external call |
-| anonymous POST `/api/v1/entries.json` | HTTP 401 with exact `Unauthorized` / `Invalid/Missing`; no document written |
-| OPTIONS `/api/v1/entries.json` | HTTP 200 body `OK` with complete API methods/headers |
 
 No deployed credential was read or sent and no credentialed write was
 attempted. Every checked API response carried the complete CORS policy. The
@@ -290,13 +295,14 @@ credential storage or submitting protected mutations:
 - the homepage rendered its official chart region without console errors; the
   public tenant has no Entries, so `---` is expected;
 - Admin Tools, Food Editor, Profile Editor and `clock-color` loaded from the
-  official bundle with their expected headings/forms/scripts. Food/Profile
-  remained at anonymous `Not loaded` because no credential was read or entered;
+  official bundle with their expected headings/forms/scripts. Profile reached
+  `Values loaded.` and Food reached `Database loaded` without entering a
+  credential;
 - the browser was restored to the homepage and retained there for the user.
 
-The browser console recorded zero errors and zero warnings on every checked
-page. This browser run reloaded Cloudflare version
-`936fcc1c-b6d8-4572-9a11-a50e1f507bb6` after deployment. Wrangler reported no
+The browser console recorded zero errors on every checked page; warning-level
+logs were not used as a release assertion in this pass. This browser run reloaded Cloudflare version
+`be2ed773-9148-43df-bbfb-d438bb24fe6f` after deployment. Wrangler reported no
 changed asset upload for the same 248 official browser assets.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -312,8 +318,9 @@ mutation, report generation or every other protected page workflow.
   it in the new instance must not migrate to this release.
 - This remains a simulated-data lab. It must not be connected to a real CGM
   uploader, pump or closed-loop client.
-- API v1 and v2 remain subsets. Their inherited notification ACK is adapted,
-  but summary, v2 notification-loop and other routes remain incomplete. API v3
+- API v1 and v2 remain subsets. Their inherited notification ACK, ddata helper
+  contract and core summary mapper are adapted, but plugin-derived summary
+  state/persistence, v2 notification-loop and other routes remain incomplete. API v3
   routes all six official generic collections and all 16 locked upstream API3
   test files have named Workers-runtime adaptations. Broad large-response
   resource handling and Mongo mixed-type/nested/array semantics remain
@@ -352,7 +359,7 @@ mutation, report generation or every other protected page workflow.
   named 60-second platform cap. Repeated/bracket secret arrays are deliberately
   handled safely instead of reproducing the locked upstream unhandled
   rejection.
-- Server plugin jobs, notification generation/processing, summary persistence
+- Server plugin jobs, notification generation/processing, plugin-derived summary state/persistence
   and the general alarm-driven background scheduler remain incomplete. Alarm
   ACK/silence state itself is persisted in schema v10 and must be consumed by
   that future notification engine. The existing realtime/auth alarm scheduler
@@ -368,11 +375,10 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediate prior Cloudflare version is
-`979afaaf-af26-4e9a-82a7-9c2018d29c6c` (deployed code commit
-`d2033c31b94a8a3e1d23eef25899030b433d1397`). It contains the primary
-Treatments `preBolus` fan-out, inherited v1/v2 HTTP ACK route and stale-past DO
-alarm repair, but not the exact empty-child-carbs edge added by the current
-version.
+`936fcc1c-b6d8-4572-9a11-a50e1f507bb6` (deployed code commit
+`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2`). It contains the complete prior
+v1 client-contract increment but not this release's ddata contract,
+property-selection/pretty behavior or v2 summary endpoint.
 
 Wrangler version rollback can restore Worker code and assets. Neither rollback
 nor redeployment clears or rolls back SQLite Durable Object data, and rollback

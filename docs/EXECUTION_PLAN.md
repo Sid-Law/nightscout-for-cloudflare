@@ -46,17 +46,17 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, prior authenticated Profile Save evidence, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current credential-free browser pass rendered homepage, Admin, Food, Profile and `clock-color` with no console warning/error; Food/Profile correctly stayed in anonymous `Not loaded` data state. Protected mutation/report and pushed-live-update workflows remain. |
+| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, prior authenticated Profile Save evidence, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current credential-free browser pass rendered homepage, Admin, Food, Profile and `clock-color` with zero console errors; Profile reached `Values loaded.` and Food reached `Database loaded`. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. `/storage` now atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 15 locked files adapted | Entries now adapts its complete locked upstream file: ordered batch-prefix failure, preview, single/array/extended-urlencoded uploads, uploader identity, bounded query/sort, current/model/ID reads, representations/validators/HEAD, exact and dateString-range deletion, numeric-brace `times/echo`, `times` and `slice` fixtures. The complete locked Treatments file is mapped with fail-closed HTML sanitization, time/numeric normalization, UUID/identifier and AAPS dedupe behavior. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are also mapped. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, the wider Mongo query/document surface and remaining v1 routes/test files. |
-| 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK and inherited Treatments `preBolus` create behavior are implemented; complete summary, the v2-only `/notifications/loop` external integration contract and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
+| 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. The complete locked `ddata.test.js` file is adapted. Plugin-derived properties and summary state (IOB/COB/BWP/ages/battery), summary persistence and the v2-only `/notifications/loop` integration remain; ddata uses a bounded two-day SGV window. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
 | 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read-only data events and the API3 `/storage` and `/alarm` namespaces. `/alarm` has locked subscription/auth/ACK behavior and a trusted notification outlet, but the server-side notification engine is missing. Complete the official-page switch only after safe tenant propagation and notification integration; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP and root writes. |
 | 9. Real-time storage updates | API3 `/storage` named slice implemented | Successful HTTP API3 mutations atomically enqueue official create/update/delete frames for authorized collection rooms; subscription/queue state survives DO eviction, v1 changes do not broadcast, and overflow/failure drops only the broken subscriber. Add main-namespace database updates and browser/credentialed remote workflows; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Realtime/auth plus notification-ACK foundation | The DO's single Cloudflare alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Stale already-due platform alarms are replaced so a queued delivery cannot erase the only SQL wakeup. Socket.IO and inherited v1/v2 HTTP ACK share the same durable group/level transaction. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share the scheduler. |
 | 11. Server plugins/notifications | ACK/outlet only | `/alarm` can publish trusted, already-computed notification objects; Socket and HTTP ACK persist the same snooze state and exact all-clear broadcast. Build the official registry and tenant platform context, then port upstream plugin/data/notification calculation and persistence tests without rewriting formulas. |
-| 12. Upstream regression suite | Tracked; 32 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, `notifications-api.test.js` and 15 v1 client/API files are adapted, 77 files remain unresolved and two are fixed-scope exclusions. |
+| 12. Upstream regression suite | Tracked; 33 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, `notifications-api.test.js`, `ddata.test.js` and 15 v1 client/API files are adapted, 76 files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -94,23 +94,30 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2` adds complete named
-Workers-runtime mappings for `api.aaps-client.test.js`, `api.alexa.test.js`,
-`api.entries.test.js`, `api.root.test.js`, `api.status.test.js`,
-`api.treatments.test.js`, `api.unauthorized.test.js` and
-`api.v1-batch-operations.test.js`. The prior mappings for all 16 locked API3
-files, `notifications-api.test.js` and seven v1 collection/identity files
+`79ddf4985bd93510a07444e40bf61972120aa9b6` adds the v2 ddata module
+contract, property selection/pretty formatting and the summary mapping slice.
+All prior v1, API3, authorization, realtime and notification-ACK contracts
 remain green. Cloudflare Worker version
-`936fcc1c-b6d8-4572-9a11-a50e1f507bb6` is the 100% active version, created at
-`2026-07-19T19:44:26.242Z`, with a 26 ms startup. Wrangler processed 248
-unchanged official asset entries; deployment and dry run reported 933.04 KiB
-raw / 168.10 KiB gzip, and the dry run exposed only `ENTRY_STORE` plus
-`ASSETS`. Deployment used `--keep-vars`, tag `git-cac4a86` and message
-`git cac4a86 adapt remaining v1 client contracts`; no deployed credential was
-supplied to remote smoke requests. The 30-file Workers-runtime suite passed
-299/299, both audit suites passed 20/20, the dependency audit reported zero
-known vulnerabilities, and TypeScript plus the official UI build completed
-before deployment. These remain subset facts, not a full-port claim.
+`be2ed773-9148-43df-bbfb-d438bb24fe6f` is active at 100%; deployment
+`6d9e7df3-439c-44a4-a206-123a2ded391c` was created at
+`2026-07-19T20:16:32.660015Z` and Wrangler reported a 31 ms startup. It
+processed 248 unchanged official asset entries; deployment and dry run
+reported 942.98 KiB raw / 170.71 KiB gzip, and the dry run exposed only
+`ENTRY_STORE` plus `ASSETS`. No deployed credential was read or supplied to
+remote smoke. The 31-file Workers-runtime suite passed 303/303, both audit
+suites passed 20/20, and TypeScript plus the official UI build completed
+before deployment. The manifest now records 33 adapted, 76 unresolved and two
+fixed-scope excluded files. These remain subset facts, not a full-port claim.
+
+The new v2 adapter keeps the Node singleton out of global Worker state:
+`ddata` creation, clone, runtime normalization and merge behavior are pure
+functions, while tenant data remains in the SQLite Durable Object. Properties
+now implements the upstream wildcard/comma picker and truthy `pretty` query.
+Summary reuses a direct port of the locked SGV/treatment/profile and basal-data
+processors. It deliberately supplies no fabricated server-plugin calculations:
+IOB, COB and BWP serialize as `null`, while cage/sage/iage/bage/battery remain
+absent until their official plugins are adapted. The normal summary endpoint
+works; plugin-derived state and persistence are still Milestone E work.
 
 The new v1 contracts preserve Loop, Trio and AndroidAPS ordered batch response
 shapes and pump/uploader metadata. Entries now implements exact numeric-date,
@@ -196,6 +203,9 @@ The deployed increment includes:
   device status, inherited by API v2;
 - bounded numeric-brace Entries `times/echo`, `times` and dateString `slice`,
   plus exact/dateString-range delete selectors;
+- v2 `/ddata/at` with the complete named upstream ddata helper contract,
+  `/properties/<comma-list>` selection and truthy `pretty`, and
+  `/summary/?hours=` SGV/treatment/target/temp-basal/current-profile mapping;
 - locked Treatments POST `preBolus` two-record fan-out on both v1 and v2,
   atomic in SQLite, complete UUID/identifier/AAPS/query/delete contracts and a
   stricter fail-closed safe-tag sanitizer, with PUT retaining the one-record
@@ -227,21 +237,19 @@ The deployed increment includes:
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
-Final credential-free remote smoke returned HTTP 200 for health, root version
-discovery, v1 Status, the exact locked `times/echo` request, an empty bounded
-`slice`, Alexa LaunchRequest, OPTIONS and Status HEAD. Anonymous Entries POST
-returned the locked 401 envelope without a write; no deployed credential was
-read or sent. A real browser reloaded the current deployment and loaded the
-official homepage, Admin, Food, Profile and `clock-color` pages with no console
-warning/error or protected write. Food/Profile remained in their expected
-anonymous `Not loaded` data state before the browser was returned home.
+Final credential-free remote smoke returned HTTP 200 for v2 selected/pretty
+properties, v2 summary, v2 ddata, API3 version and v1 Status. No deployed
+credential was read or sent. A real browser reloaded the current deployment
+and loaded the official homepage, Admin, Food, Profile and `clock-color` pages
+with zero console errors or protected writes. Profile reached `Values loaded.`
+and Food reached `Database loaded` before the browser was returned home.
 
 The code is still not a full port: non-Entries echo, arbitrary aggregation,
-large-response CSV/XML
-resource adaptation, broader Mongo query/type parity,
+large-response CSV/XML resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, root writes, main-namespace persisted change
 broadcasts, the shared background-task scheduler, server plugins, notification
-generation/processing and most upstream test files remain incomplete.
+generation/processing, plugin-derived summary state and most upstream test
+files remain incomplete.
 The homepage still consumes the REST polling shim and does not yet use the
 separate EIO4 server.
 
@@ -301,9 +309,11 @@ Token-bearing authorization paths are redacted from adapter error logs.
 ### Milestone C — API completion
 
 1. Finish v1 entries and document routes from Express registration and Swagger.
-2. Finish v2 properties, ddata, summary, the v2-only notification loop and
-   remaining authorization surfaces. Inherited v1/v2 notification ACK is
-   complete for its named adapted contract.
+2. Finish plugin-derived v2 properties/summary state and persistence, the
+   v2-only notification loop and remaining authorization surfaces. The ddata
+   helper file, aggregate route, property picker/pretty mode and core summary
+   mapper are deployed; inherited v1/v2 notification ACK is complete for its
+   named adapted contract.
 3. **Complete for the locked 16-file API3 contract set:** generic
    search/create/read/update/patch/delete/history, six-collection lastModified
    and byte-compatible small/medium JSON/CSV/XML rendering, plus shape, AAPS,

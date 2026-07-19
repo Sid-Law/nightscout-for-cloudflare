@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2`. It produced Cloudflare version
-`936fcc1c-b6d8-4572-9a11-a50e1f507bb6`, reported as 100% active by direct
-deploy. Its 30-file Workers-runtime suite passes 299/299 plus 20/20 audit
+`79ddf4985bd93510a07444e40bf61972120aa9b6`. It produced Cloudflare version
+`be2ed773-9148-43df-bbfb-d438bb24fe6f`, reported as 100% active by direct
+deploy. Its 31-file Workers-runtime suite passes 303/303 plus 20/20 audit
 tests. Wrangler processed 248 unchanged official asset entries; deployment and
-the final dry run both reported 933.04 KiB raw / 168.10 KiB gzip, with the dry
+the final dry run both reported 942.98 KiB raw / 170.71 KiB gzip, with the dry
 run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
-bindings. Cloudflare reported a 26 ms startup.
+bindings. Cloudflare reported a 31 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -29,6 +29,7 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
   - API_SECRET, subject access-token and signed-JWT authorization
   - bounded parsing, upstream query subset and tenant routing
+  - v2 ddata/properties/summary stateless response adaptation
   - inherited v1/v2 notification ACK authorization and HTTP adaptation
   - Socket.IO client-surface polling adapter
   - strict `/socket.io/` EIO4 polling and direct-WebSocket adapters
@@ -61,8 +62,9 @@ Editor, Food Editor, Reporting, Split/multiframe and clock views; the official
 Webpack bundle, Swagger UIs/specifications, `static/**`, `translations/**`, and
 the upstream service worker are copied from the locked release. Dynamic clock
 face names are inserted into the upstream clock template at request time. NSCF
-contains no alternative page, chart, component, CSS theme, plugin
-implementation, translation, or medical calculation.
+contains no alternative page, chart, component, CSS theme, translation or
+downstream-invented medical calculation. The request-scoped summary processor
+described below is ported from the locked upstream source.
 
 Nightscout's Express server supplies UTF-8 in response headers, while the
 upstream homepage itself has no `<meta charset>`. Cloudflare Static Assets
@@ -91,6 +93,19 @@ server for the current subset; it is not a Socket.IO or Engine.IO server.
 The adapter dispatches the first `dataUpdate` before completing `authorize`, as
 the upstream `lib/server/websocket.js` path does, so profile-dependent plugins
 can initialize from the first payload.
+
+The same aggregate snapshot feeds the v2 REST adapters without introducing a
+process-global `ctx.ddata`. `src/realtime/ddata-snapshot.ts` represents the
+locked ddata singleton's empty buckets, clone, runtime normalization and
+prefer-new merge operations as pure functions; tenant state remains inside the
+SQLite Durable Object. `/api/v2/properties` derives the currently available
+`bgnow` and `delta` properties and applies the upstream comma picker and
+truthy `pretty` serialization. `src/api2/summary.ts` is a direct stateless port
+of the locked SGV/treatment/profile and basal-data processors. It receives one
+bounded snapshot and a request clock, so it neither shares request state nor
+creates timers. Server-plugin properties are intentionally not synthesized:
+IOB/COB/BWP become JSON `null` and age/battery fields are omitted until the
+official plugin registry and tenant execution context are available.
 
 Separately, exact `/socket.io` and `/socket.io/` requests can now reach real
 tenant-local Engine.IO 4 polling and direct-WebSocket endpoints. Polling
@@ -345,7 +360,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2` implements all six official generic
+`79ddf4985bd93510a07444e40bf61972120aa9b6` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -747,10 +762,9 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`936fcc1c-b6d8-4572-9a11-a50e1f507bb6`. Current credential-free remote smoke
-returned 200 for health, root versions, v1 Status, bounded times/slice utility
-requests and Alexa LaunchRequest; Status HEAD and API OPTIONS also passed, while
-anonymous Entries POST returned the locked 401 without writing. Protected
+`be2ed773-9148-43df-bbfb-d438bb24fe6f`. Current credential-free remote smoke
+returned 200 for selected/pretty v2 properties, v2 summary, v2 ddata, API3
+version and v1 Status. Protected
 realtime event/ACK behavior remains covered locally rather than by a
 credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
@@ -785,6 +799,12 @@ platform code supplies storage, time, settings, notifications and logging.
 Live external bridge/push delivery remains disabled in the simulated-data
 scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
+
+The deployed summary basal processor is the first reused server calculation
+slice, but it is request-scoped mapping rather than a background plugin engine.
+It does not calculate insulin recommendations, IOB or COB. Future summary state
+must come from the locked plugin modules through the persisted scheduler above;
+platform code must not fill those fields with downstream formulas.
 
 ## Why no D1 or R2
 
