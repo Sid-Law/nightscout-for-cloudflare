@@ -12,22 +12,23 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`
-- Git HEAD used by Wrangler: `b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`
-- Cloudflare Version ID: `7385728f-b498-4360-93f5-dbcdac5131c2`
-- Version tag/message: `git-b1e7e31` /
-  `git b1e7e31 api3 food settings collections`
+- Deployed code candidate: `121db7ca5a0b45784713a5ac909a5bcbb3c1f499`
+- Git HEAD used by Wrangler: `121db7ca5a0b45784713a5ac909a5bcbb3c1f499`
+- Cloudflare Version ID: `00ecdd3a-240c-4fc1-a984-ad6449bb0b84`
+- Version tag/message: `git-121db7c` /
+  `git 121db7c api3 storage socket`
 - Version creation time: not printed by this Wrangler deployment; none is
   inferred
 - Activation: direct `wrangler deploy` reported this as the Current Version;
   no separate activation timestamp was printed
-- Worker startup: 23 ms
+- Worker startup: 22 ms
 - Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
-  `v1`; internal schema includes the v6 Entries compatibility probe
+  `v1`; internal schema includes the v6 Entries compatibility probe and the v9
+  persisted API3 storage-namespace tables
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 884.71 KiB raw / 158.92 KiB gzip
+- Upload: 895.01 KiB raw / 160.79 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -89,6 +90,11 @@ This increment deploys:
 - persisted EIO4 polling and direct Hibernatable WebSocket read-only-root
   slices with SIO5 CONNECT, clients count, authorization, `dataUpdate`, ACK and
   one SQL-derived Durable Object alarm;
+- the EIO4/SIO5 API v3 `/storage` namespace with subject access-token
+  authorization, official room filtering and Settings-admin exception;
+  namespace connection/subscription state and bounded outbound packets persist
+  across Durable Object eviction, and only successful API3 mutations emit the
+  locked `create`, `update` or `delete` event;
 - the locked official v15.0.7 UI and the existing REST polling shim.
 
 The homepage still uses the REST shim; deploying the separate EIO4 server does
@@ -132,11 +138,10 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`. It adds API v3 Food and Settings,
-six-collection `lastModified`, v1/API3 shared Food storage and idempotent Food
-metadata repair while retaining the prior Entries, Profile, transport and
-official-page work. The table below records the exact local gate completed
-before deployment.
+`121db7ca5a0b45784713a5ac909a5bcbb3c1f499`. It adds the persisted API v3
+`/storage` namespace and API3-only change-event delivery while retaining the
+prior six-collection API3, Entries, Profile, transport and official-page work.
+The table below records the exact local gate completed before deployment.
 
 | Check | Result |
 | --- | --- |
@@ -147,20 +152,20 @@ before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 21 files, 239/239 passed |
+| Workers integration tests | 22 files, 245/245 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 884.71 KiB raw / 158.92 KiB gzip |
+| Worker dry run | 895.01 KiB raw / 160.79 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 239 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 245 Workers
 tests cover the implemented adapter subset; no whole upstream test file is
 claimed green. Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `7385728f-b498-4360-93f5-dbcdac5131c2` as the Current
+Wrangler reports version `00ecdd3a-240c-4fc1-a984-ad6449bb0b84` as the Current
 Version. These credential-free checks verified response content and protocol
 markers, not only Wrangler command success.
 
@@ -172,40 +177,46 @@ markers, not only Wrangler command success.
 | `/api/v3/settings` without JWT | HTTP 401 with the locked missing/bad-token envelope |
 | `/api/v1/food/regular.json` | HTTP 200 `[]`; v1 Food read remains public under default permissions |
 
-No credentialed write was attempted. Local tests cover all eight generic routes
-for both new collections, Food JSON/CSV/XML, PUT/PATCH/delete/history,
-lastModified, v1/v3 visibility and created-at fallback dedupe, plus the Settings
-admin search/history exception, XML, resource read/update/delete and idempotent
-Food repair across eviction. Prior Entries/JWT/transport evidence remains green
-in the full suite but is not relabeled as a new remote smoke.
+No credentialed write was attempted. The full local suite keeps all eight
+generic routes for Food and Settings, their renderer/dedupe/permission behavior
+and the prior Entries/JWT contracts green. The new protected `/storage` event
+evidence is kept in the real-time section below rather than inferred from these
+public API responses.
 
 ## Post-deployment real-time evidence
 
-This release changed no real-time transport code, so its credential-free
-polling/direct-WebSocket protocol smokes were not repeated. The table below
-records historical remote evidence retained from the immediately preceding
-deployed transport increment.
+This release changes the real-time server. Credential-free remote checks used
+fresh tenant-local EIO4 polling sessions and verified the named public protocol
+boundary without reading or sending the deployed credential.
 
 | Check | Result |
 | --- | --- |
-| Historical EIO4 polling open | `upgrades: []`, 25 s ping interval, 20 s timeout, 1,000,000-byte maximum |
-| Historical polling SIO5 flow | root CONNECT and `clients` packet completed |
-| Historical wider flow | polling/direct-WebSocket authorize, `dataUpdate` and ACK |
+| EIO4 polling open | `upgrades: []`, 25 s ping interval, 20 s timeout, 1,000,000-byte maximum |
+| `/storage` CONNECT | independent SIO5 namespace connection returned a namespace SID |
+| Missing subscription token | ACK exactly `{success:false,message:"Missing or bad accessToken"}` |
+| `/alarm` CONNECT | SIO5 `CONNECT_ERROR` with `Invalid namespace`; this namespace remains unported |
 
-These checks prove the named read-only-root slices. They do not prove polling
-upgrade, EIO3, namespaces, writes or change broadcasts.
+Local tests additionally prove collection filtering/default order, the
+Settings-admin exception, persisted subscriptions across eviction, API3
+create/deduplicated update/PUT/PATCH/soft/permanent delete events, v1 exclusion,
+tenant/room isolation, hibernated-WebSocket delivery, broken-subscriber
+containment and v8-to-v9 schema repair. No credentialed remote mutation was
+attempted, so the remote pass alone does not prove protected event delivery.
+Neither layer proves polling upgrade, EIO3, `/alarm` or root write handlers.
 
 ## Real-browser evidence
 
 A real browser session exercised the deployed official UI without reading
 credential storage or submitting protected mutations:
 
-- the homepage rendered the official empty chart state and remained free of
-  warning/error logs across a REST-shim polling interval; the public tenant has
+- the homepage rendered the official empty chart state without warning/error
+  logs; the public tenant has
   no Entries, so the displayed `---` is expected;
-- the official Food Editor changed from `Not loaded` to `Database loaded`,
-  populated its empty database controls and showed the expected anonymous
-  read-only authentication state.
+- the official Food Editor reached `Database loaded`, populated its empty
+  database controls and showed the expected anonymous
+  read-only authentication state. Its upstream bundle emitted two non-fatal
+  `#chartContainer`-missing warnings on this chartless page; there were no
+  script errors.
 
 Profile load/Save-control and its inherited chartless-page warning remain
 historical evidence from an earlier version; no authenticated Food/Profile
@@ -237,11 +248,15 @@ mutation, report generation or every other protected page workflow.
 - Cloudflare can strip `Content-Length` from some dynamic Status/finalhandler
   responses. This release's Entries GET/HEAD smoke retained its exact length;
   the remaining transport difference stays scoped and non-blocking.
-- Polling-to-WebSocket upgrade, EIO3 HTTP, `/storage`, `/alarm`, root writes and
-  database-change broadcasts remain missing. Direct WebSocket retains a named
-  at-most-once crash window between durable dequeue and `send()`.
+- Polling-to-WebSocket upgrade, EIO3 HTTP, `/alarm`, root writes and the main
+  namespace's database-update broadcasts remain missing. `/storage` currently
+  supports EIO4/SIO5 polling and direct WebSocket only. Direct WebSocket retains
+  a named at-most-once crash window between durable dequeue and `send()`.
 - `document_changes` is still an unbounded full-body journal. No transport
-  consumes it; bounded outbox retention, cursors and alarm pruning are pending.
+  consumes it; `/storage` instead atomically queues bounded frames only for
+  currently subscribed live sessions. Journal retention and pruning are still
+  pending, and a disconnected client receives no replay (matching upstream's
+  live-notification model).
 - Failed-auth admin notification emission is missing; enforced delay has a
   named 60-second platform cap. Repeated/bracket secret arrays are deliberately
   handled safely instead of reproducing the locked upstream unhandled
@@ -258,9 +273,9 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediate prior Cloudflare version is
-`184448f5-bc5e-4766-b0a3-78405ddd3a54` (deployed code commit
-`50ce2459306a04eb6be21a7398e381b92451517a`). It contains the prior Entries
-count/echo increment but not the API v3 Food/Settings verticals.
+`7385728f-b498-4360-93f5-dbcdac5131c2` (deployed code commit
+`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`). It contains the six-collection
+API3/Food/Settings increment but not the persisted `/storage` namespace.
 
 Wrangler version rollback can restore Worker code and assets. Neither rollback
 nor redeployment clears or rolls back SQLite Durable Object data, and rollback

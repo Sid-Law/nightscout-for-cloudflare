@@ -65,6 +65,12 @@ for diagnosis, dosing, or medical decisions.
   WebSocket Hibernation. It persists protocol authority in SQLite and restores
   tagged socket attachments after eviction. It does not implement an
   Engine.IO polling-to-WebSocket upgrade; clients open the direct transport.
+- The API v3 `/storage` Socket.IO namespace on those EIO4/SIO5 transports.
+  Subject access-token authorization, the official six-collection default
+  order, per-collection rooms, the Settings-admin exception and subscription
+  state persist in SQLite. API v3 create/upsert/PUT/PATCH/soft-delete/permanent-
+  delete events use the official `create`, `update` and `delete` payloads;
+  changes made through v1 are deliberately not broadcast, as upstream specifies.
 - A tenant-local Durable Object alarm derived from persisted realtime
   deadlines and authorization-delay cleanup. It survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
@@ -90,14 +96,11 @@ for diagnosis, dosing, or medical decisions.
 This is not yet a drop-in Nightscout server. Important missing work includes
 the complete v1/v2/v3 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
-failed-auth
-admin notifications, Mongo query/collection parity beyond the tested safe
-subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
-the direct-WebSocket at-most-once crash window, `/storage` and `/alarm`
-namespaces, root write handlers, real-time
-database-change broadcasts, bounded change
-outbox retention, the general background-task scheduler, server plugin
-execution,
+failed-auth admin notifications, Mongo query/collection parity beyond the
+tested safe subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
+the direct-WebSocket at-most-once crash window, the `/alarm` namespace, root
+write handlers, main-namespace real-time database-update broadcasts, the
+general background-task scheduler, server plugin execution,
 notification/summary persistence and end-to-end verification of every official
 page workflow. The polling shim only keeps the official browser bundle supplied
 with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
@@ -226,7 +229,10 @@ HTTP writes: its authorization ACK is always `{read:true, write:false,
 write_treatment:false}`. Anonymous reads follow the current readable default;
 invalid explicit credentials disconnect only the root namespace without
 closing the Engine.IO SID. This narrow transport surface does not authorize any
-database mutation event.
+database mutation event. The separate `/storage` namespace accepts only a
+subject access token, joins only rooms for which that subject has the locked
+read permission (`api:settings:admin` for Settings), and emits notifications
+about successful HTTP API v3 mutations; it does not grant mutation permission.
 
 ## Configure API_SECRET on Cloudflare
 
@@ -300,23 +306,26 @@ EIO4 polling/direct-Hibernatable-WebSocket boundary: packet ordering, root
 authorization, alarm-driven heartbeat/expiry, eviction, overlap,
 body/session/queue caps, cursor-bounded initial/retro snapshots,
 byte/node/document truncation, removal of the fixed 100-status cutoff,
-deterministic older-tail truncation and cross-tenant session rejection. The
+deterministic older-tail truncation and cross-tenant session rejection. It now
+also covers `/storage` namespace connection, access-token/room authorization,
+persisted subscriptions, API3-only create/update/delete delivery, collection
+and tenant isolation, hibernated WebSocket delivery, broken-subscriber
+containment and v8-to-v9 schema repair. The
 locked upstream has 111 JavaScript test files; a static declaration audit finds
 883 active `it(...)` cases plus one skipped case. Those declarations are not
 directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`. After rebuilding the locked
-official UI, its 21-file Workers-runtime suite passes 239/239 tests and both
+`121db7ca5a0b45784713a5ac909a5bcbb3c1f499`. After rebuilding the locked
+official UI, its 22-file Workers-runtime suite passes 245/245 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 884.71 KiB raw / 158.92 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds the complete eight-route generic API v3
-verticals for Food and Settings, extends `lastModified` to all six official
-collections, shares v1/API3 Food identity and history, and repairs older Food
-metadata idempotently across Durable Object eviction. It retains the prior
-bounded Entries echo/count slice, but does not add `times/echo`, `times`,
-`slice` or `/storage` realtime broadcasts and is not closed-loop completion.
+reports 895.01 KiB raw / 160.79 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds the persisted API v3 `/storage`
+namespace and live API3-only collection-change events while retaining the prior
+six generic collection verticals, bounded Entries echo/count work and official
+UI. It does not add `times/echo`, `times`, `slice`, `/alarm`, EIO3, root writes
+or polling-to-WebSocket upgrade and is not closed-loop completion.
 Deployment used `--keep-vars`; no deployed credential was supplied to remote
 smoke requests, and no credential value is stored or quoted in this repository.
 Entries migration remains intentionally
@@ -346,22 +355,26 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `7385728f-b498-4360-93f5-dbcdac5131c2` was made current by
-the direct Wrangler deployment, with a reported 23 ms startup. Version tag
-`git-b1e7e31` and its deployment message record the Git mapping. Wrangler did
+Cloudflare version `00ecdd3a-240c-4fc1-a984-ad6449bb0b84` was made current by
+the direct Wrangler deployment, with a reported 22 ms startup. Version tag
+`git-121db7c` and its deployment message record the Git mapping. Wrangler did
 not print a separate creation/activation timestamp. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Final credential-free remote smoke returned HTTP 200 for health, v15.0.7
 version and the empty v1 Food collection. Missing JWTs on the new API v3 Food
 and Settings routes returned the locked HTTP 401 envelope. Their full
 CRUD/history/renderer/dedupe/permission contracts passed locally; no
-credentialed remote upload or protected mutation was attempted.
+credentialed remote upload or protected mutation was attempted. A fresh EIO4
+polling session connected `/storage` independently and returned the locked
+`Missing or bad accessToken` ACK for an empty subscription. A separate fresh
+session confirmed that `/alarm` remains an explicit `Invalid namespace` gap.
 
-A real browser run rendered the official homepage and its empty chart state,
-then remained warning/error-free across a REST-shim polling interval. The
-public tenant currently has no Entries, so `---` is the expected empty-data
-display. The official Food Editor changed from `Not loaded` to `Database loaded`
-and showed the expected anonymous read-only state without submitting a write.
+A real browser run rendered the official homepage and its empty chart state
+without warning/error logs. The public tenant currently has no Entries, so
+`---` is the expected empty-data display. The official Food Editor reached
+`Database loaded` and showed the expected anonymous read-only state without
+submitting a write. It emitted two non-fatal upstream-bundle warnings that the
+chartless Food page has no `#chartContainer`; there were no script errors.
 These checks do not prove every protected mutation, report, plugin or realtime
 workflow.
 

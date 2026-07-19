@@ -7,14 +7,14 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`. It produced Cloudflare version
-`7385728f-b498-4360-93f5-dbcdac5131c2`, reported as the Current Version by
-direct deploy. Its 21-file Workers-runtime suite passes 239/239
+`121db7ca5a0b45784713a5ac909a5bcbb3c1f499`. It produced Cloudflare version
+`00ecdd3a-240c-4fc1-a984-ad6449bb0b84`, reported as the Current Version by
+direct deploy. Its 22-file Workers-runtime suite passes 245/245
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries, reported 884.71 KiB raw / 158.92 KiB gzip, and the dry run declared
+entries, reported 895.01 KiB raw / 160.79 KiB gzip, and the dry run declared
 only the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Cloudflare
-reported a 23 ms startup. These are release facts for the named subset, not evidence of a
-complete port.
+reported a 22 ms startup. These are release facts for the named subset, not
+evidence of a complete port.
 
 ## Current request and data flow
 
@@ -22,7 +22,7 @@ complete port.
 Official Nightscout v15.0.7 pages and browser bundle / compatible uploader
         |
         | static HTML/CSS/JS, v1/v2 page API, REST shim polling
-        | or independent EIO4 polling clients
+        | or independent EIO4 polling/direct-WebSocket clients
         v
 Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
@@ -30,6 +30,7 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - bounded parsing, upstream query subset and tenant routing
   - Socket.IO client-surface polling adapter
   - strict `/socket.io/` EIO4 polling and direct-WebSocket adapters
+  - SIO5 root and API3 `/storage` namespace protocol adaptation
         |
         | ENTRY_STORE.getByName(tenant), typed RPC
         v
@@ -45,6 +46,7 @@ Embedded SQLite
   - per-collection sort and lookup indexes
   - tenant-local JWT signing material
   - persisted EIO4 sessions and bounded outbound packet queues
+  - persisted `/storage` namespace connections and collection subscriptions
   - hibernatable WebSocket attachments backed by persisted session authority
   - persisted authorization-failure delays
   - one SQL-derived Durable Object alarm for realtime/auth deadlines
@@ -103,6 +105,14 @@ through WebSocket Hibernation, and restores its tenant/SID authority from a
 validated attachment plus SQLite state after eviction. It is not an Engine.IO
 upgrade from an existing polling SID: polling continues to advertise no
 upgrade.
+The same transports expose the API v3 `/storage` namespace independently of
+the root namespace. A `subscribe` event resolves only the subject access token,
+checks the locked collection read permission (Settings requires admin), and
+stores granted rooms in SQLite. Successful HTTP API3 creates/upserts/PUTs/
+PATCHes/deletes enqueue the official SIO5 `create`, `update` or `delete` frame
+for each current subscriber inside the document mutation transaction. A failed
+or saturated subscriber is removed without rolling back the document. V1 and
+direct repository mutations do not emit this channel, matching upstream.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
 deadlines, bounded WebSocket close retries and stale authorization-failure
 cleanup are multiplexed through the DO's single persistent alarm. The handler
@@ -308,7 +318,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a` implements all six official generic
+`121db7ca5a0b45784713a5ac909a5bcbb3c1f499` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -558,24 +568,23 @@ row needs repair and the guarded clock upsert performs no write.
 
 `document_changes` currently retains a complete JSON body for migration,
 atomic audit evidence and every create, replace, patch and soft delete. API v3
-HISTORY reads current documents rather than this journal. Full-body snapshots
-still create unbounded write/storage amplification proportional to body size
-times revision count, with additional index cost. There is no history retention
-or pruning policy yet; only permanent deletion removes all snapshots for that
-document. This slice must therefore
-not be described as suitable for indefinite Free-plan retention until a
-locked-compatible history cursor and pruning policy are defined and tested.
+HISTORY reads current documents rather than this journal, and `/storage` does
+not consume it. Full-body snapshots still create unbounded write/storage
+amplification proportional to body size times revision count, with additional
+index cost. There is no history retention or pruning policy yet; only permanent
+deletion removes all snapshots for that document. This slice must therefore not
+be described as suitable for indefinite Free-plan retention until a tested
+retention policy is defined.
 
-The selected resolution stays inside the fixed SQLite-DO footprint: this table
-will become a bounded, short-lived real-time delivery outbox rather than a
-second permanent history store. API v3 HISTORY continues to use the current
-documents/tombstones required by upstream. Before any transport consumes the
-outbox, the adapter must add per-tenant age/count bounds, an acknowledged
-cursor, alarm-driven pruning and a reconnect fallback that reloads current
-state when a cursor has expired. This policy is a design decision, not current
-runtime behavior; the present unbounded snapshots remain a known limitation.
-R2 is not required for this transient coordination data and is outside the
-fixed deployment footprint.
+Live delivery instead reuses the bounded `realtime_outbound_packets` queue for
+each currently subscribed session. The frame and document mutation share one
+SQLite transaction; accepted frames therefore survive Durable Object eviction,
+while a broken or over-capacity subscriber is removed without blocking the
+write. There is intentionally no disconnected-client replay because upstream's
+`/storage` socket is a live notification channel; a reconnecting client must
+reload current state over REST. The queue is not a second permanent history
+store and does not solve `document_changes` retention. R2 is unnecessary for
+either contract and remains outside the fixed deployment footprint.
 
 ### Real-time transport
 
@@ -585,7 +594,8 @@ fixed deployment footprint.
 server endpoint. The separate endpoint now implements strict EIO4 HTTP polling
 and direct Hibernatable WebSocket with persisted session/queue state, root
 namespace CONNECT, read-only authorization ACKs, initial/retro data and
-connection-count broadcasts.
+connection-count broadcasts. It also implements the API v3 `/storage`
+namespace, persisted authorized collection rooms and API3-only mutation events.
 
 The current server boundary is explicit:
 
@@ -601,11 +611,18 @@ The current server boundary is explicit:
 - direct-WebSocket queue delivery is currently at-most-once across an isolate
   crash: a failure between durable dequeue and `server.send()` can lose that
   frame. Closing this P2 requires an acknowledgement/replay contract;
-- `/storage` and `/alarm` return SIO5 `CONNECT_ERROR` and do not terminate an
-  already connected root namespace;
+- `/storage` can connect without the root namespace. Its subscription accepts a
+  subject access token, defaults to the six official collections in locked
+  order, ignores unknown collection names, requires `api:settings:admin` for
+  Settings and the collection read permission otherwise, and persists granted
+  rooms across eviction;
+- `/alarm` still returns SIO5 `CONNECT_ERROR` and does not terminate an already
+  connected namespace;
 - root `subscribe` and all write events have no handler or ACK, matching the
   locked root's lack of `subscribe` while deliberately exposing no mutation;
-- no `document_changes` row is consumed and no database mutation is broadcast.
+- HTTP API3 create/upsert/PUT/PATCH/soft-delete/permanent-delete emits the
+  locked `/storage` payload only after a successful mutation decision; v1 and
+  direct database changes do not broadcast. `document_changes` is not consumed.
 
 Every realtime or authorization-delay state transition recomputes the single
 persisted alarm from SQL.
@@ -632,21 +649,25 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`7385728f-b498-4360-93f5-dbcdac5131c2`. This release changes no transport
-code, so EIO4 polling/direct-WebSocket protocol smokes were not repeated; their
-prior credential-free open/root-CONNECT/clients/authorize/`dataUpdate`/ACK
-evidence remains historical. The at-most-once dequeue/send crash window
-described above remains open. The official homepage intentionally still uses
-the REST polling shim, so these transport smokes prove the separate server
-slice rather than a page transport switch. The named polling HTTP edge
-difference is admission at the
+`00ecdd3a-240c-4fc1-a984-ad6449bb0b84`. Credential-free remote smoke opened a
+fresh EIO4 polling SID, connected `/storage` independently and received the
+locked missing-accessToken ACK; a separate fresh SID confirmed `/alarm` remains
+an invalid namespace. Protected event delivery is covered locally rather than
+by a credentialed remote mutation. The at-most-once dequeue/send crash window
+described above remains open for direct WebSocket. The official homepage
+intentionally still uses the REST polling shim, so these transport smokes prove
+the separate server slice rather than a page transport switch. The named
+polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
 
-The target transport persists a change record in the same DO turn as each
-mutation, then broadcasts only after the write succeeds. Hibernated sessions
-restore their tenant, namespace, authorization and subscription information
-from WebSocket attachments and SQLite.
+The current API3 `/storage` adapter persists each accepted subscriber frame in
+the same SQLite transaction as its mutation, then wakes polling waiters or
+hibernated WebSockets after commit. Hibernated sessions restore tenant and SID
+authority from WebSocket attachments plus SQLite; namespace connection and room
+subscriptions come from SQLite schema v9. The remaining target work is
+`/alarm`, root write/update behavior, EIO3, polling upgrade and the direct-send
+replay/acknowledgement boundary.
 
 ### Background work and server plugins
 

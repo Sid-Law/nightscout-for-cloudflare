@@ -46,14 +46,14 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current Food Editor reached `Database loaded` anonymously without console errors. Protected mutation/report and pushed-live-update workflows remain. |
-| 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food now shares its identity/history and older Food rows receive idempotent metadata repair. Close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
+| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current Food Editor reached `Database loaded` anonymously with no script error; its official bundle emitted two non-fatal chart-container warnings on the chartless page. Protected mutation/report and pushed-live-update workflows remain. |
+| 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. `/storage` now atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD. Bounded Entries echo plus direct SQLite count for entries/treatments/device status are deployed; Activity CRUD is implemented. Complete times/echo, times, slice, non-Entries echo, bounded aggregation-pipeline parity, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
 | 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
 | 6. API v3 | Partial six-collection slice | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add large-response resource controls, broader mixed-type/nested query parity and whole upstream API3 test execution. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
-| 8. Engine.IO/Socket.IO | Partial read-only polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT, read-only authorize ACK/dataUpdate, loadRetro and clients-count events. One derived alarm survives eviction. Complete the official-page switch only after `/alarm` and tenant propagation; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP, `/storage`, root writes and change broadcasts. |
-| 9. Real-time storage updates | Storage foundation only | Implemented generic mutations persist atomic change snapshots, but no transport consumes them; define bounded outbox retention, cursors and reconnect/eviction tests before broadcasting. |
+| 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read-only data events and the API3 `/storage` namespace. One derived alarm survives eviction. Complete the official-page switch only after `/alarm` and tenant propagation; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP and root writes. |
+| 9. Real-time storage updates | API3 `/storage` named slice implemented | Successful HTTP API3 mutations atomically enqueue official create/update/delete frames for authorized collection rooms; subscription/queue state survives DO eviction, v1 changes do not broadcast, and overflow/failure drops only the broken subscriber. Add main-namespace database updates and browser/credentialed remote workflows; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Realtime/auth foundation only | The DO's single alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share it. |
 | 11. Server plugins/notifications | Not started | Build-time official registry and platform context; port upstream plugin/data/notification tests without rewriting formulas. |
 | 12. Upstream regression suite | Tracked, execution not started | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; 109 files remain unresolved and two are fixed-scope exclusions. |
@@ -94,16 +94,16 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a` combine API v3 Food/Settings and
-six-collection storage/lastModified behavior with the prior Entries, Status,
+`121db7ca5a0b45784713a5ac909a5bcbb3c1f499` combines the persisted API v3
+`/storage` namespace with the prior six-collection API3, Entries, Status,
 authorization and direct Hibernatable EIO4 WebSocket slices. Cloudflare Worker
-version `7385728f-b498-4360-93f5-dbcdac5131c2` was reported as the Current
-Version by the direct deployment, with a 23 ms startup. Wrangler processed 248
-official asset entries with no asset-byte uploads, reported 884.71 KiB raw /
-158.92 KiB gzip, and the
+version `00ecdd3a-240c-4fc1-a984-ad6449bb0b84` was reported as the Current
+Version by the direct deployment, with a 22 ms startup. Wrangler processed 248
+official asset entries with no asset-byte uploads, reported 895.01 KiB raw /
+160.79 KiB gzip, and the
 dry run exposed only `ENTRY_STORE` plus `ASSETS`. Deployment used `--keep-vars`
-and version tag `git-b1e7e31`; no deployed credential was supplied to remote
-smoke requests. The 21-file Workers-runtime suite passed 239/239,
+and version tag `git-121db7c`; no deployed credential was supplied to remote
+smoke requests. The 22-file Workers-runtime suite passed 245/245,
 both audit suites passed 20/20, the dependency audit reported zero known
 vulnerabilities, and TypeScript plus the official UI build completed before
 deployment. A plaintext API credential can be rendered by metadata tooling;
@@ -111,9 +111,10 @@ the lab credential must be rotated and converted to a Worker Secret before
 non-lab use. Its value is absent from repository documentation. These remain
 subset facts, not a full-port claim.
 
-This increment adds all eight generic API v3 routes for Food and Settings,
-extends `lastModified` to all six official collections and moves v1 Food writes
-onto the same repository/history contract. Food uses the locked
+This increment adds the API v3 `/storage` namespace, persisted authorized room
+subscriptions and API3-only mutation events while retaining all eight generic
+API v3 routes for Food and Settings, six-collection `lastModified` and v1 Food
+writes on the same repository/history contract. Food uses the locked
 `created_at`-only fallback; Settings has no fallback identity, and its search/
 history permission is the locked admin exception while resource read remains
 read-protected. Activation repairs older Food metadata/fallback/history
@@ -121,16 +122,15 @@ idempotently across eviction without rewriting document bodies. It retains the
 upstream-shaped Entries query debugger and direct SQLite count from the prior
 release. Client-controlled Mongo aggregation pipelines remain rejected rather
 than treated as executable SQLite input. It also retains the audited uploader
-edges: every
-non-ObjectId client `_id` is retained as `identifier` when the supplied
-identifier is falsy;
-recursive string adaptation is idempotent; extended URL-encoded nested/array
+edges: every non-ObjectId client `_id` is retained as `identifier` when the
+supplied identifier is falsy; recursive string adaptation is idempotent;
+extended URL-encoded nested/array
 fields use the locked qs-style parser; SQLite binding/statement limits return a
 controlled client error; and exact base `/entries` restores the upstream
 runtime-SGV IMS precheck. It retains ordered batch-prefix commits, preview,
 bounded query/sort, current/model/ID reads, JSON/plain/CSV/TSV, validators and
-HEAD, plus API v3 Profile,
-AAPS create/retry/new-version behavior, v1/API3 shared storage, idempotent
+HEAD, plus API v3 Profile, AAPS create/retry/new-version behavior, v1/API3
+shared storage, idempotent
 legacy metadata repair and the official HTML/cache boundary fixes.
 
 Entries deliberately follows a fresh-only pre-1.0 policy. If activation finds
@@ -203,25 +203,29 @@ The deployed increment includes:
   persisted sessions/queues, heartbeat, SIO5 root CONNECT, read-only
   authorization/data snapshots and bounded resource handling; a SQL-derived
   Durable Object alarm survives eviction and drives ping, pong timeout,
-  session/lease expiry, closure retry and client-count updates.
+  session/lease expiry, closure retry and client-count updates;
+- a tenant-local API3 `/storage` namespace with subject access-token room
+  authorization, persisted subscriptions and bounded create/update/delete
+  delivery for successful API3 mutations only.
 
 Final credential-free remote smoke returned HTTP 200 for health, v15.0.7 and
 the empty v1 Food collection. Missing JWTs on API v3 Food and Settings returned
-the locked HTTP 401 envelope. Full protected CRUD/history/renderer/permission
-behavior remains locally tested because no deployed credential was used. EIO4
-polling/direct-WebSocket protocol smokes were not repeated because this commit
-does not change transport; their prior evidence remains historical.
+the locked HTTP 401 envelope. A fresh EIO4 polling session connected `/storage`
+and its empty subscription received the locked missing-accessToken ACK; another
+fresh session confirmed `/alarm` remains `Invalid namespace`. Full protected
+CRUD/history/renderer/permission and credentialed event behaviors remain
+locally tested because no deployed credential was used.
 
 A real browser run rendered the official homepage and empty chart state without
-warning/error across a REST-shim polling interval. The official Food Editor
-then reached `Database loaded` and showed its anonymous read-only state. No
-credentialed Food/Profile write was attempted, so protected workflows remain
-unproven.
+warning/error. The official Food Editor reached `Database loaded` and showed
+its anonymous read-only state. The chartless Food page emitted two non-fatal
+official-bundle `#chartContainer` warnings but no script error. No credentialed
+Food/Profile write was attempted, so protected workflows remain unproven.
 
 The code is still not a full port: Entries times/echo/times/slice and
 non-Entries echo, large-response CSV/XML
 resource adaptation, broader Mongo query/type parity,
-WebSocket upgrade, EIO3 HTTP, `/storage` and `/alarm`, root writes, persisted
+WebSocket upgrade, EIO3 HTTP, `/alarm`, root writes, main-namespace persisted
 change broadcasts, the shared background-task scheduler, server plugins,
 notifications and most upstream test files remain incomplete.
 The homepage still consumes the REST polling shim and does not yet use the
@@ -298,17 +302,23 @@ Token-bearing authorization paths are redacted from adapter error logs.
    `/socket.io/socket.io.js` shim asset.
 2. **Partial:** EIO4/SIO5 polling sessions and direct Hibernatable WebSocket,
    server-ping/client-pong, persisted queues, root CONNECT and a SQL-derived DO
-   alarm for ping/pong/session/lease/closure deadlines are implemented.
+   alarm for ping/pong/session/lease/closure deadlines are implemented. API3
+   `/storage` CONNECT, access-token room authorization and live mutation events
+   are implemented on both current EIO4 transports.
    EIO3/SIO4 remains codec-only and is deliberately rejected by the HTTP
    endpoint; polling advertises `upgrades: []`.
 3. Add the Engine.IO polling-to-WebSocket upgrade path; direct WebSocket open
    is already implemented and tested across DO eviction.
-4. Extend beyond the read-only `/` subset to `/storage` and `/alarm`, including
-   authorization, subscriptions and room behavior.
+4. **Complete for `/storage`; missing for `/alarm`:** preserve the tested
+   persisted namespace/room behavior and implement the page-used alarm
+   lifecycle next.
 5. Extend the implemented root `authorize` and `loadRetro` reads with the
-   locked write handlers only after storage/change-outbox contracts exist.
-6. Broadcast persisted collection changes immediately after their transaction
-   commits; current clients-count broadcasts are connection metadata only.
+   locked write handlers only after their exact permission, mutation and
+   broadcast contracts are mapped.
+6. **Complete for HTTP API3 `/storage` events:** create/update/delete frames are
+   enqueued in the same transaction for current authorized subscribers. Add the
+   separate locked main-namespace database-update behavior; v1 remains excluded
+   from `/storage` by upstream contract.
 7. Replace the REST polling shim with the official client only after protocol
    tests, safe tenant propagation, `/alarm`, and real browser workflows pass.
 
