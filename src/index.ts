@@ -59,7 +59,7 @@ import { buildNightscoutSummary } from "./api2/summary";
 import type { NightscoutGlucoseUnits } from "./plugins/bgnow";
 import {
   calculatePluginProperties,
-  type PluginPropertyContext,
+  loadPluginPropertyContext,
 } from "./plugins/properties";
 
 export { EntryStore };
@@ -2705,13 +2705,12 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     // status rather than materializing unrelated treatment/food collections.
     const store = env.ENTRY_STORE.getByName(tenant);
     const now = Date.now();
-    const [contextJson, status] = await Promise.all([
-      store.getPluginPropertyContextJson(now),
+    const [context, status] = await Promise.all([
+      loadPluginPropertyContext(store, now),
       store.nightscoutHttpStatus(now).then((value) => JSON.parse(value) as {
         settings?: { units?: unknown; enable?: unknown };
       }),
     ]);
-    const context = JSON.parse(contextJson) as PluginPropertyContext;
     const units: NightscoutGlucoseUnits = status.settings?.units === "mmol"
       ? "mmol"
       : "mg/dl";

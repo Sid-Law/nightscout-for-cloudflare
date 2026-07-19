@@ -24,7 +24,10 @@ import {
   uploaderBatteryAssistantResponse,
   uploaderBatteryVisualization,
 } from "../src/plugins/upbat";
-import { calculatePluginProperties } from "../src/plugins/properties";
+import {
+  calculatePluginProperties,
+  loadPluginPropertyContext,
+} from "../src/plugins/properties";
 import { tenantStatusSettings } from "../src/status";
 
 describe("locked Nightscout times.test.js", () => {
@@ -210,5 +213,39 @@ describe("enabled plugin property adapter", () => {
     const configured = tenantStatusSettings({ ENABLE: "rawbg", DISABLE: "dbsize" });
     expect(configured.enable).toContain("rawbg");
     expect(configured.enable).not.toContain("dbsize");
+  });
+
+  it("survives a rolling deploy by falling back only from a missing new DO RPC", async () => {
+    let legacyCalls = 0;
+    const source = {
+      getPluginPropertyContextJson: async (): Promise<string> => {
+        throw new Error(
+          'The RPC receiver does not implement the method "getPluginPropertyContextJson".',
+        );
+      },
+      getDdataSnapshotJson: async (): Promise<string> => {
+        legacyCalls += 1;
+        return JSON.stringify({
+          sgvs: [{ mills: 1, mgdl: 100 }],
+          cals: [{ mills: 1, slope: 1 }],
+          devicestatus: [{ mills: 1, uploader: { battery: 20 } }],
+          treatments: [{ shouldNotLeak: true }],
+        });
+      },
+    };
+    expect(await loadPluginPropertyContext(source, 1)).toEqual({
+      sgvs: [{ mills: 1, mgdl: 100 }],
+      cals: [{ mills: 1, slope: 1 }],
+      devicestatus: [{ mills: 1, uploader: { battery: 20 } }],
+    });
+    expect(legacyCalls).toBe(1);
+
+    await expect(loadPluginPropertyContext({
+      ...source,
+      getPluginPropertyContextJson: async (): Promise<string> => {
+        throw new Error("sqlite property query failed");
+      },
+    }, 1)).rejects.toThrow("sqlite property query failed");
+    expect(legacyCalls).toBe(1);
   });
 });

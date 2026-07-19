@@ -13,6 +13,43 @@ export interface PluginPropertyContext {
   devicestatus: RealtimeDocument[];
 }
 
+export interface PluginPropertySource {
+  getPluginPropertyContextJson(at: number): Promise<string>;
+  getDdataSnapshotJson(at: number, frame: boolean): Promise<string>;
+}
+
+function parsePluginPropertyContext(json: string): PluginPropertyContext {
+  const value = JSON.parse(json) as Partial<PluginPropertyContext>;
+  return {
+    sgvs: Array.isArray(value.sgvs) ? value.sgvs : [],
+    cals: Array.isArray(value.cals) ? value.cals : [],
+    devicestatus: Array.isArray(value.devicestatus) ? value.devicestatus : [],
+  };
+}
+
+function missingPropertyContextRpc(error: unknown): boolean {
+  return error instanceof Error &&
+    error.message.includes("RPC receiver does not implement the method") &&
+    error.message.includes("getPluginPropertyContextJson");
+}
+
+/**
+ * New Worker versions can reach an older, still-live Durable Object isolate
+ * during Cloudflare's rolling deployment. Fall back only for that precise
+ * missing-method condition; all actual storage/parser failures still surface.
+ */
+export async function loadPluginPropertyContext(
+  source: PluginPropertySource,
+  now: number,
+): Promise<PluginPropertyContext> {
+  try {
+    return parsePluginPropertyContext(await source.getPluginPropertyContextJson(now));
+  } catch (error) {
+    if (!missingPropertyContextRpc(error)) throw error;
+    return parsePluginPropertyContext(await source.getDdataSnapshotJson(now, false));
+  }
+}
+
 /**
  * Workers-safe equivalent of plugins.setProperties(): execute property
  * setters in locked server-plugin order and only for enabled plugins.
