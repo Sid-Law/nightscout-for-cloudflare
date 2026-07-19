@@ -34,6 +34,7 @@ import {
   migrateRealtimeAlarmNamespaceV10,
   migrateRealtimeClosuresV8,
   migrateRealtimeSessions,
+  migrateRealtimeRootUpdatesV11,
   migrateRealtimeStorageNamespaceV9,
   migrateRealtimeTransportsV7,
 } from "./realtime/session-repository";
@@ -538,6 +539,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (10)",
       );
 
+      migrateRealtimeRootUpdatesV11(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (11)",
+      );
+
       // This named, idempotent auth state is intentionally independent of the
       // numeric migration sequence. WebSocket transport remediation owns the
       // next numeric marker, while delay-list state can safely repair itself
@@ -552,6 +558,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           ON authorization_failures(updated_at, ip);
       `);
     });
+    this.realtime.synchronizeRootDataSnapshot();
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -1708,10 +1715,17 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return accepted;
   }
 
-  private async flushApi3RealtimeMutation(): Promise<void> {
+  private async flushRealtimeMutation(): Promise<void> {
     if (this.realtime.flushApplicationWakes() === 0) return;
     this.flushRealtimeWebSockets();
     await this.synchronizeRealtimeAlarm();
+  }
+
+  private async publishRootDataUpdate(): Promise<void> {
+    this.ctx.storage.transactionSync(() => {
+      this.realtime.recordRootDataUpdateInTransaction();
+    });
+    await this.flushRealtimeMutation();
   }
 
   private async synchronizeRealtimeAlarm(): Promise<void> {
@@ -1861,7 +1875,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async putEntries(entries: ValidatedEntry[]): Promise<WriteResult> {
-    const mutations = this.documentRepository().upsertLegacyEntries(entries);
+    let mutations: ReturnType<SqliteDocumentRepository["upsertLegacyEntries"]>;
+    try {
+      mutations = this.documentRepository().upsertLegacyEntries(entries);
+    } finally {
+      // Ordered Mongo-compatible batches can commit a successful prefix before
+      // a later item fails. Publish that resulting state in both outcomes.
+      await this.publishRootDataUpdate();
+    }
     return {
       inserted: mutations.filter((mutation) => mutation.created).length,
       duplicates: mutations.filter((mutation) => !mutation.created).length,
@@ -1967,7 +1988,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     dateStringLte: string | null = null,
     dateStringGte: string | null = null,
   ): Promise<number> {
-    return this.documentRepository().deleteLegacyEntries(
+    const deleted = this.documentRepository().deleteLegacyEntries(
       ids,
       lte,
       gte,
@@ -1977,6 +1998,8 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       dateStringLte,
       dateStringGte,
     );
+    await this.publishRootDataUpdate();
+    return deleted;
   }
 
   async listDocuments(collection: DocumentCollection, limit = 5000): Promise<string> {
@@ -2014,7 +2037,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       return result.value;
     }
     if (collection === "profile" || collection === "food") {
-      return JSON.stringify(
+      const result = JSON.stringify(
         documents.map((document) =>
           this.documentRepository().createLegacyDocument(
             collection,
@@ -2025,15 +2048,19 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
                 : { ...document, created_at: new Date().toISOString() },
           ).document),
       );
+      await this.publishRootDataUpdate();
+      return result;
     }
     if (collection === "devicestatus") {
-      return JSON.stringify(
+      const result = JSON.stringify(
         documents.map((document) =>
           this.documentRepository().createLegacyDocument(
             collection,
             normalizeLegacyDeviceStatusDocument(document),
           ).document),
       );
+      await this.publishRootDataUpdate();
+      return result;
     }
     if (collection === "subjects" || collection === "roles") {
       documents = documents.map((document) =>
@@ -2101,15 +2128,17 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       );
       stored.push(normalized);
     }
+    if (collection === "activity") await this.publishRootDataUpdate();
     return JSON.stringify(stored);
   }
 
   async createLegacyTreatments(
     documentsJson: string,
   ): Promise<LegacyTreatmentCreateResult> {
+    let result: LegacyTreatmentCreateResult;
     try {
       const documents = JSON.parse(documentsJson) as JsonDocument[];
-      return {
+      result = {
         ok: true,
         value: JSON.stringify(
           documents.flatMap((document) =>
@@ -2122,8 +2151,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       // Keep expected storage/normalization failures inside the RPC boundary;
       // the HTTP adapter emits the public legacy error without an unhandled DO
       // rejection or leaking internal SQLite details.
-      return { ok: false, error: "Treatment storage failure" };
+      result = { ok: false, error: "Treatment storage failure" };
     }
+    await this.publishRootDataUpdate();
+    return result;
   }
 
   async saveDocuments(
@@ -2132,12 +2163,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): Promise<string> {
     let documents = JSON.parse(documentsJson) as JsonDocument[];
     if (collection === "treatments") {
-      return JSON.stringify(
+      const result = JSON.stringify(
         documents.map((document) => this.documentRepository().upsertTreatment(document).document),
       );
+      await this.publishRootDataUpdate();
+      return result;
     }
     if (collection === "profile" || collection === "food") {
-      return JSON.stringify(
+      const result = JSON.stringify(
         documents.map((document) =>
           this.documentRepository().saveLegacyDocument(
             collection,
@@ -2146,12 +2179,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
               : { ...document, created_at: new Date().toISOString() },
           ).document),
       );
+      await this.publishRootDataUpdate();
+      return result;
     }
     if (collection === "devicestatus") {
-      return JSON.stringify(
+      const result = JSON.stringify(
         documents.map((document) =>
           this.documentRepository().saveLegacyDocument(collection, document).document),
       );
+      await this.publishRootDataUpdate();
+      return result;
     }
     if (collection === "subjects" || collection === "roles") {
       documents = documents.map((document) =>
@@ -2229,6 +2266,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         now,
       );
     }
+    if (collection === "activity") await this.publishRootDataUpdate();
     return JSON.stringify(documents);
   }
 
@@ -2243,6 +2281,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       for (const id of ids) {
         if (this.documentRepository().deleteDocumentById(collection, id)) deleted += 1;
       }
+      await this.publishRootDataUpdate();
       return deleted;
     }
     let deleted = 0;
@@ -2250,6 +2289,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       deleted += this.ctx.storage.sql
         .exec("DELETE FROM documents WHERE collection = ? AND id = ?", collection, id).rowsWritten;
     }
+    if (collection === "activity") await this.publishRootDataUpdate();
     return deleted;
   }
 
@@ -2380,7 +2420,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         message: error instanceof Error ? error.message : String(error),
       });
     }
-    await this.flushApi3RealtimeMutation();
+    await this.flushRealtimeMutation();
     return result;
   }
 
@@ -2409,7 +2449,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         message: error instanceof Error ? error.message : String(error),
       });
     }
-    await this.flushApi3RealtimeMutation();
+    await this.flushRealtimeMutation();
     return result;
   }
 
@@ -2438,7 +2478,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         message: error instanceof Error ? error.message : String(error),
       });
     }
-    await this.flushApi3RealtimeMutation();
+    await this.flushRealtimeMutation();
     return result;
   }
 
@@ -2467,7 +2507,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         error: error instanceof Error ? error.message : String(error),
       };
     }
-    await this.flushApi3RealtimeMutation();
+    await this.flushRealtimeMutation();
     return result;
   }
 
@@ -2496,12 +2536,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
   async upsertTreatment(documentJson: string): Promise<string> {
     const document = JSON.parse(documentJson) as JsonDocument;
-    return JSON.stringify(this.documentRepository().upsertTreatment(document));
+    const result = JSON.stringify(this.documentRepository().upsertTreatment(document));
+    await this.publishRootDataUpdate();
+    return result;
   }
 
   async createTreatment(documentJson: string): Promise<string> {
     const document = JSON.parse(documentJson) as JsonDocument;
-    return JSON.stringify(this.documentRepository().createTreatment(document));
+    const result = JSON.stringify(this.documentRepository().createTreatment(document));
+    await this.publishRootDataUpdate();
+    return result;
   }
 
   async api3CreateTreatment(
@@ -2516,7 +2560,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     documentJson: string,
   ): Promise<string> {
     const document = JSON.parse(documentJson) as JsonDocument;
-    return JSON.stringify(this.documentRepository().replaceTreatment(identity, document));
+    const result = JSON.stringify(this.documentRepository().replaceTreatment(identity, document));
+    await this.publishRootDataUpdate();
+    return result;
   }
 
   async api3ReplaceTreatment(
@@ -2533,6 +2579,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): Promise<string | null> {
     const patch = JSON.parse(patchJson) as JsonDocument;
     const result = this.documentRepository().patchTreatment(identity, patch);
+    await this.publishRootDataUpdate();
     return result === null ? null : JSON.stringify(result);
   }
 
@@ -2545,7 +2592,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async deleteTreatment(identity: string, permanent = false): Promise<DocumentDeleteResult> {
-    return this.documentRepository().deleteTreatment(identity, permanent);
+    const result = this.documentRepository().deleteTreatment(identity, permanent);
+    await this.publishRootDataUpdate();
+    return result;
   }
 
   async api3DeleteTreatment(
@@ -2557,7 +2606,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async deleteLegacyTreatment(identity: string): Promise<boolean> {
-    return this.documentRepository().deleteLegacyTreatment(identity);
+    const deleted = this.documentRepository().deleteLegacyTreatment(identity);
+    await this.publishRootDataUpdate();
+    return deleted;
   }
 
   async treatmentsLastModified(): Promise<number | null> {

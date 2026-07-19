@@ -17,6 +17,11 @@ import type {
   Api3RealtimeMutationEvent,
 } from "../document-repository";
 import {
+  calculateRealtimeDelta,
+  type RealtimeDeltaDocument,
+  type RealtimeDeltaState,
+} from "./calcdelta";
+import {
   REALTIME_CLEANUP_BATCH,
   REALTIME_MAX_ALARM_GROUP_CHARACTERS,
   REALTIME_MAX_PAYLOAD_BYTES,
@@ -208,6 +213,30 @@ function recordValue(value: unknown, label: string): Record<string, unknown> {
 
 function engineFrames(packets: readonly EngineIoV4Packet[]): string[] {
   return packets.map((packet) => encodeEngineIoV4Packet(packet));
+}
+
+function deltaDocuments(values: unknown[]): RealtimeDeltaDocument[] {
+  return values.map((value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new Error("realtime snapshot arrays must contain objects");
+    }
+    return value as RealtimeDeltaDocument;
+  });
+}
+
+function deltaState(snapshot: RealtimeSnapshot, now: number): RealtimeDeltaState {
+  return {
+    sgvs: deltaDocuments(snapshot.sgvs),
+    treatments: deltaDocuments(snapshot.treatments),
+    mbgs: deltaDocuments(snapshot.mbgs),
+    cals: deltaDocuments(snapshot.cals),
+    profiles: snapshot.profiles,
+    devicestatus: deltaDocuments(snapshot.devicestatus),
+    food: deltaDocuments(snapshot.food),
+    activity: [],
+    dbstats: snapshot.dbstats,
+    lastUpdated: now,
+  };
 }
 
 export class RealtimeSessionService {
@@ -684,6 +713,76 @@ export class RealtimeSessionService {
     for (const sid of result.wakeTargets) this.wake(sid);
   }
 
+  /** Seeds the persisted replacement for upstream websocket.js `lastData`. */
+  synchronizeRootDataSnapshot(): void {
+    const now = this.now();
+    const snapshot = this.snapshot(now);
+    if (snapshot === null) return;
+    const encoded = JSON.stringify(deltaState(snapshot, now));
+    this.storage.transactionSync(() => {
+      this.repository.initializeRootDataState(encoded, now);
+    });
+  }
+
+  /**
+   * Recomputes the bounded tenant ddata state and queues the locked calcdelta
+   * event for current root DataReceivers. The caller already owns the document
+   * mutation transaction, so the new baseline and accepted frames commit with
+   * that mutation. Queue saturation drops only the affected realtime session.
+   */
+  recordRootDataUpdateInTransaction(): void {
+    const now = this.now();
+    const snapshot = this.snapshot(now);
+    if (snapshot === null) return;
+    const current = deltaState(snapshot, now);
+    const currentJson = JSON.stringify(current);
+    const previousJson = this.repository.rootDataStateJson();
+    this.repository.replaceRootDataState(currentJson, now);
+    if (previousJson === null) return;
+
+    let previous: RealtimeDeltaState;
+    try {
+      const parsed = JSON.parse(previousJson) as unknown;
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+      previous = parsed as RealtimeDeltaState;
+    } catch {
+      // A bad legacy baseline must not roll back the user's document mutation.
+      // The valid current snapshot above repairs it for the next update.
+      return;
+    }
+
+    const delta = calculateRealtimeDelta(previous, current);
+    if (delta.delta !== true) return;
+
+    let frame: string;
+    try {
+      frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+        type: "event",
+        namespace: "/",
+        data: ["dataUpdate", delta],
+      }));
+    } catch {
+      return;
+    }
+
+    let droppedConnectedRoot = false;
+    for (const sid of this.repository.listDataReceiverSessionIds(now)) {
+      try {
+        this.repository.enqueueFrames(sid, [frame], now);
+        this.pendingApplicationWakeSids.add(sid);
+      } catch {
+        this.repository.deleteSessionInTransaction(sid);
+        this.pendingApplicationWakeSids.add(sid);
+        droppedConnectedRoot = true;
+      }
+    }
+    if (droppedConnectedRoot) {
+      for (const sid of this.enqueueClientsForConnectedSessions(now)) {
+        this.pendingApplicationWakeSids.add(sid);
+      }
+    }
+  }
+
   /**
    * Called from the document repository while its API3 mutation transaction is
    * still open. The persisted per-session packet queues are therefore the
@@ -692,6 +791,7 @@ export class RealtimeSessionService {
    * failing the storage mutation.
    */
   recordApi3StorageMutationInTransaction(event: Api3RealtimeMutationEvent): void {
+    this.recordRootDataUpdateInTransaction();
     let packet: string;
     try {
       const payload = event.type === "delete"

@@ -251,6 +251,13 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
           )
           .one().id,
       ).toBe(5);
+      expect(
+        state.storage.sql
+          .exec<{ id: number }>(
+            "SELECT id FROM _sql_schema_migrations WHERE id = 11",
+          )
+          .one().id,
+      ).toBe(11);
     });
   });
 
@@ -345,6 +352,90 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         authorized: true,
         readAllowed: true,
         outboundPackets: 0,
+      });
+    });
+  });
+
+  it("persists root calcdelta state and queues updates only for authorized readers", async () => {
+    const stub = store("realtime-root-delta");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      let now = 2_500_000;
+      let current = snapshot(now);
+      const service = new RealtimeSessionService(state.storage, {
+        now: () => now,
+        snapshot: () => current,
+      });
+      // runInDurableObject has already constructed the real EntryStore, whose
+      // empty database seeded its own baseline. Replace that fixture baseline
+      // with this test's injected snapshot before exercising the service.
+      state.storage.sql.exec("DELETE FROM realtime_root_state");
+      service.synchronizeRootDataSnapshot();
+
+      const authorizedSid = service.createHandshake().sid;
+      await post(service, authorizedSid, clientPayload({ type: "connect", namespace: "/" }));
+      await service.poll(authorizedSid);
+      await post(service, authorizedSid, clientPayload({
+        type: "event",
+        namespace: "/",
+        data: ["authorize", { client: "web" }],
+      }));
+      await service.poll(authorizedSid);
+
+      const connectedOnlySid = service.createHandshake().sid;
+      await post(service, connectedOnlySid, clientPayload({ type: "connect", namespace: "/" }));
+      await service.poll(connectedOnlySid);
+      // The new root connection broadcast a clients count to the authorized
+      // receiver; clear it before asserting the application delta queue.
+      await service.poll(authorizedSid);
+
+      now += 1_000;
+      current = {
+        ...current,
+        treatments: [{ _id: "live-treatment", mills: now, notes: "created" }],
+      };
+      state.storage.transactionSync(() => service.recordRootDataUpdateInTransaction());
+
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      expect(repository.requireSession(authorizedSid).outboundPackets).toBe(1);
+      expect(repository.requireSession(connectedOnlySid).outboundPackets).toBe(0);
+      const [createdFrame] = decodeEngineIoV4PollingPayload(await service.poll(authorizedSid));
+      expect(unwrapSocketIoV5Packet(createdFrame!)).toEqual({
+        type: "event",
+        namespace: "/",
+        data: ["dataUpdate", {
+          delta: true,
+          lastUpdated: now,
+          treatments: [{ _id: "live-treatment", mills: now, notes: "created" }],
+        }],
+      });
+
+      // A new service instance has no in-memory lastData but must continue from
+      // the SQLite baseline written by the previous instance.
+      const resumed = new RealtimeSessionService(state.storage, {
+        now: () => now,
+        snapshot: () => current,
+      });
+      now += 1_000;
+      current = {
+        ...current,
+        treatments: [{ _id: "live-treatment", mills: now - 1_000, notes: "updated" }],
+      };
+      state.storage.transactionSync(() => resumed.recordRootDataUpdateInTransaction());
+      const [updatedFrame] = decodeEngineIoV4PollingPayload(await resumed.poll(authorizedSid));
+      expect(unwrapSocketIoV5Packet(updatedFrame!)).toEqual({
+        type: "event",
+        namespace: "/",
+        data: ["dataUpdate", {
+          delta: true,
+          lastUpdated: now,
+          treatments: [{
+            _id: "live-treatment",
+            mills: now - 1_000,
+            notes: "updated",
+            action: "update",
+          }],
+        }],
       });
     });
   });

@@ -97,6 +97,11 @@ interface AlarmSilenceRow {
   silence_time: number;
 }
 
+interface RootDataStateRow {
+  [key: string]: SqlStorageValue;
+  snapshot: string;
+}
+
 export interface RealtimeSession {
   sid: string;
   socketSid: string;
@@ -217,6 +222,7 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
   // independent v9/v10 markers below still record deployment provenance.
   migrateRealtimeStorageNamespaceV9(storage);
   migrateRealtimeAlarmNamespaceV10(storage);
+  migrateRealtimeRootUpdatesV11(storage);
 }
 
 interface SchemaRow {
@@ -374,6 +380,21 @@ export function migrateRealtimeAlarmNamespaceV10(storage: DurableObjectStorage):
       last_ack_at INTEGER NOT NULL,
       silence_time INTEGER NOT NULL,
       PRIMARY KEY (level, alarm_group)
+    );
+  `);
+}
+
+/**
+ * The Node server keeps websocket `lastData` in process memory. Workers may be
+ * evicted between every request, so v11 persists the one tenant-local baseline
+ * used by the locked calcdelta algorithm.
+ */
+export function migrateRealtimeRootUpdatesV11(storage: DurableObjectStorage): void {
+  storage.sql.exec(`
+    CREATE TABLE IF NOT EXISTS realtime_root_state (
+      singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+      snapshot TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
     );
   `);
 }
@@ -835,6 +856,55 @@ export class SqliteRealtimeSessionRepository {
       )
       .toArray()
       .map((row) => row.sid);
+  }
+
+  listDataReceiverSessionIds(now: number): string[] {
+    return this.storage.sql
+      .exec<SidRow>(
+        `SELECT sid
+         FROM realtime_sessions
+         WHERE socket_connected = 1
+           AND authorized = 1
+           AND read_allowed = 1
+           AND expires_at > ?
+           AND (pong_deadline IS NULL OR pong_deadline > ?)
+         ORDER BY created_at, sid
+         LIMIT ?`,
+        now,
+        now,
+        REALTIME_MAX_SESSIONS_PER_TENANT,
+      )
+      .toArray()
+      .map((row) => row.sid);
+  }
+
+  rootDataStateJson(): string | null {
+    return this.storage.sql
+      .exec<RootDataStateRow>(
+        "SELECT snapshot FROM realtime_root_state WHERE singleton = 1 LIMIT 1",
+      )
+      .toArray()[0]?.snapshot ?? null;
+  }
+
+  initializeRootDataState(snapshot: string, now: number): void {
+    this.storage.sql.exec(
+      `INSERT OR IGNORE INTO realtime_root_state (singleton, snapshot, updated_at)
+       VALUES (1, ?, ?)`,
+      snapshot,
+      now,
+    );
+  }
+
+  replaceRootDataState(snapshot: string, now: number): void {
+    this.storage.sql.exec(
+      `INSERT INTO realtime_root_state (singleton, snapshot, updated_at)
+       VALUES (1, ?, ?)
+       ON CONFLICT(singleton) DO UPDATE SET
+         snapshot = excluded.snapshot,
+         updated_at = excluded.updated_at`,
+      snapshot,
+      now,
+    );
   }
 
   listQueuedWebSocketSessionIds(limit: number): string[] {

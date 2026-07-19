@@ -82,7 +82,15 @@ function clientPayload(packet: SocketIoV5Packet): string {
   return encodeEngineIoV4PollingPayload([wrapSocketIoV5Packet(packet)]);
 }
 
-async function openAndAuthorize(tenantName: string): Promise<SocketIoV5Packet[]> {
+interface AuthorizedPollingSession {
+  sid: string;
+  packets: SocketIoV5Packet[];
+  poll: () => Promise<SocketIoV5Packet[]>;
+}
+
+async function openAuthorizedPollingSession(
+  tenantName: string,
+): Promise<AuthorizedPollingSession> {
   const handshake = await SELF.fetch(socketEndpoint(tenantName));
   expect(handshake.status).toBe(200);
   const [openPacket] = decodeEngineIoV4PollingPayload(await handshake.text());
@@ -106,7 +114,11 @@ async function openAndAuthorize(tenantName: string): Promise<SocketIoV5Packet[]>
     id: 9,
     data: ["authorize", { client: "web" }],
   })).status).toBe(200);
-  return poll();
+  return { sid, packets: await poll(), poll };
+}
+
+async function openAndAuthorize(tenantName: string): Promise<SocketIoV5Packet[]> {
+  return (await openAuthorizedPollingSession(tenantName)).packets;
 }
 
 function snapshotFrom(packets: SocketIoV5Packet[]): JsonObject {
@@ -120,6 +132,90 @@ function snapshotFrom(packets: SocketIoV5Packet[]): JsonObject {
 }
 
 describe("API3 and realtime integrated tenant contract", () => {
+  it("pushes a legacy v1 SGV upload through the same root dataUpdate queue", async () => {
+    const tenantName = tenant("v1-root-delta");
+    const realtime = await openAuthorizedPollingSession(tenantName);
+    expect(snapshotFrom(realtime.packets).sgvs).toEqual([]);
+
+    const timestamp = Date.now() - 1_000;
+    const created = await adminWrite(tenantName, "/api/v1/entries", [{
+      type: "sgv",
+      sgv: 123,
+      date: timestamp,
+      dateString: new Date(timestamp).toISOString(),
+      direction: "Flat",
+      device: "simulated-v1-root-delta",
+    }]);
+    expect(created.status).toBe(200);
+
+    const packets = await realtime.poll();
+    const update = packets.find((packet) =>
+      packet.type === "event"
+      && packet.namespace === "/"
+      && packet.data[0] === "dataUpdate"
+    );
+    expect(update).toBeDefined();
+    const delta = (
+      update as Extract<SocketIoV5Packet, { type: "event" }>
+    ).data[1] as JsonObject;
+    expect(delta.delta).toBe(true);
+    expect(delta.sgvs).toEqual([
+      expect.objectContaining({
+        mgdl: 123,
+        mills: timestamp,
+        direction: "Flat",
+        device: "simulated-v1-root-delta",
+      }),
+    ]);
+  });
+
+  it("pushes the locked root calcdelta to an already-authorized DataReceiver", async () => {
+    const tenantName = tenant("api3-root-delta");
+    const jwt = await issueTreatmentCreator(tenantName);
+    const realtime = await openAuthorizedPollingSession(tenantName);
+    expect(snapshotFrom(realtime.packets).treatments).toEqual([]);
+
+    const identifier = `live-treatment-${crypto.randomUUID()}`;
+    const createdAt = "2026-07-18T05:00:00.000Z";
+    const created = await SELF.fetch(
+      `https://example.test/api/v3/treatments?tenant=${tenantName}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          identifier,
+          date: Date.parse(createdAt),
+          utcOffset: 0,
+          app: "nscf-root-delta-test",
+          device: "simulated",
+          eventType: "Note",
+          created_at: createdAt,
+          notes: "live root delta",
+        }),
+      },
+    );
+    expect(created.status).toBe(201);
+
+    const packets = await realtime.poll();
+    const update = packets.find((packet) =>
+      packet.type === "event"
+      && packet.namespace === "/"
+      && packet.data[0] === "dataUpdate"
+    );
+    expect(update).toBeDefined();
+    const delta = (
+      update as Extract<SocketIoV5Packet, { type: "event" }>
+    ).data[1] as JsonObject;
+    expect(delta.delta).toBe(true);
+    expect(delta.lastUpdated).toEqual(expect.any(Number));
+    expect(delta.treatments).toEqual([
+      expect.objectContaining({ identifier, notes: "live root delta" }),
+    ]);
+  });
+
   it("exposes an API3-created treatment in the same tenant snapshot without leaking it", async () => {
     const alpha = tenant("api3-realtime-alpha");
     const beta = tenant("api3-realtime-beta");
