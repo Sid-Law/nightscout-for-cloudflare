@@ -12,6 +12,7 @@ import {
 } from "../src/protocol";
 import {
   migrateRealtimeSessions,
+  migrateRealtimeWriteAuthorityV12,
   SqliteRealtimeSessionRepository,
 } from "../src/realtime/session-repository";
 import {
@@ -254,10 +255,71 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       expect(
         state.storage.sql
           .exec<{ id: number }>(
-            "SELECT id FROM _sql_schema_migrations WHERE id = 11",
+            "SELECT id FROM _sql_schema_migrations WHERE id = 12",
           )
           .one().id,
-      ).toBe(11);
+      ).toBe(12);
+      const columns = state.storage.sql
+        .exec<{ name: string }>("PRAGMA table_info(realtime_sessions)")
+        .toArray()
+        .map((row) => row.name);
+      expect(columns).toEqual(expect.arrayContaining([
+        "write_allowed",
+        "treatment_write_allowed",
+      ]));
+      // The repair is idempotent on every Durable Object activation.
+      expect(() => migrateRealtimeWriteAuthorityV12(state.storage)).not.toThrow();
+    });
+  });
+
+  it("repairs a deployed v11 session table without losing live session rows", async () => {
+    const stub = store("realtime-v12-repair");
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(`
+        DROP TABLE realtime_sessions;
+        CREATE TABLE realtime_sessions (
+          sid TEXT PRIMARY KEY,
+          socket_sid TEXT NOT NULL UNIQUE,
+          engine_protocol INTEGER NOT NULL CHECK (engine_protocol = 4),
+          transport TEXT NOT NULL CHECK (transport IN ('polling', 'websocket')),
+          socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
+          authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
+          read_allowed INTEGER NOT NULL DEFAULT 0 CHECK (read_allowed IN (0, 1)),
+          created_at INTEGER NOT NULL,
+          last_seen_at INTEGER NOT NULL,
+          next_ping_at INTEGER NOT NULL,
+          pong_deadline INTEGER,
+          expires_at INTEGER NOT NULL,
+          next_sequence INTEGER NOT NULL DEFAULT 1,
+          outbound_packets INTEGER NOT NULL DEFAULT 0,
+          outbound_bytes INTEGER NOT NULL DEFAULT 0,
+          poll_token TEXT,
+          poll_deadline INTEGER,
+          post_token TEXT,
+          post_deadline INTEGER
+        );
+        INSERT INTO realtime_sessions (
+          sid, socket_sid, engine_protocol, transport, socket_connected,
+          authorized, read_allowed, created_at, last_seen_at, next_ping_at,
+          expires_at
+        ) VALUES (
+          'v11-session', 'v11-socket', 4, 'websocket', 1,
+          1, 1, 1000, 1000, 26000, 46000
+        );
+      `);
+
+      migrateRealtimeWriteAuthorityV12(state.storage);
+      const repaired = new SqliteRealtimeSessionRepository(state.storage)
+        .requireSession("v11-session");
+      expect(repaired).toMatchObject({
+        sid: "v11-session",
+        socketConnected: true,
+        authorized: true,
+        readAllowed: true,
+        writeAllowed: false,
+        treatmentWriteAllowed: false,
+      });
+      expect(() => migrateRealtimeWriteAuthorityV12(state.storage)).not.toThrow();
     });
   });
 
@@ -293,6 +355,8 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         socketConnected: false,
         authorized: false,
         readAllowed: false,
+        writeAllowed: false,
+        treatmentWriteAllowed: false,
         nextPingAt: 1_025_000,
         expiresAt: 1_045_000,
       });
@@ -351,6 +415,8 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         socketConnected: true,
         authorized: true,
         readAllowed: true,
+        writeAllowed: false,
+        treatmentWriteAllowed: false,
         outboundPackets: 0,
       });
     });

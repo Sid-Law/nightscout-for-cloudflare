@@ -27,6 +27,17 @@ function tenant(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
+async function secretDigest(): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-1",
+    new TextEncoder().encode("nscf-test-secret-20260717"),
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 function endpoint(tenantName: string, query = ""): string {
   return `https://example.test/socket.io/?EIO=4&transport=websocket&tenant=${tenantName}${query}`;
 }
@@ -275,13 +286,22 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
       },
     ]);
 
-    // Every upstream mutation event is a deliberate no-op in this downstream.
+    // A readable-only socket receives the locked permission failure shape and
+    // cannot mutate tenant storage.
     inbox.socket.send(clientFrame({
       type: "event",
       namespace: "/",
       id: 9,
       data: ["dbAdd", { collection: "treatments", data: { carbs: 10 } }],
     }));
+    expect(await nextSocketPackets(inbox, 1)).toEqual([
+      {
+        type: "ack",
+        namespace: "/",
+        id: 9,
+        data: [{ result: "Not permitted" }],
+      },
+    ]);
     await new Promise<void>((resolve) => setTimeout(resolve, 25));
     await runInDurableObject(store(name), async (_instance, state) => {
       expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid))
@@ -291,6 +311,87 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
       ).one().count).toBe(0);
     });
     await expect(inbox.nextString(50)).rejects.toThrow("timed out");
+    inbox.socket.close(1000, "done");
+  });
+
+  it("persists write authority across hibernation and sends ACK before root dataUpdate", async () => {
+    const name = tenant("ws-root-write");
+    const stub = store(name);
+    const { sid, inbox } = await openWebSocket(name);
+
+    inbox.socket.send(clientFrame({ type: "connect", namespace: "/" }));
+    await nextSocketPackets(inbox, 2);
+    inbox.socket.send(clientFrame({
+      type: "event",
+      namespace: "/",
+      id: 30,
+      data: ["authorize", {
+        client: "test",
+        secret: await secretDigest(),
+      }],
+    }));
+    const authorization = await nextSocketPackets(inbox, 3);
+    expect(authorization.at(-1)).toEqual({
+      type: "ack",
+      namespace: "/",
+      id: 30,
+      data: [{ read: true, write: true, write_treatment: true }],
+    });
+    await expect(expectStoredSession(name, sid)).resolves.toMatchObject({
+      authorized: true,
+      readAllowed: true,
+      writeAllowed: true,
+      treatmentWriteAllowed: true,
+    });
+
+    await evictDurableObject(stub);
+    inbox.socket.send(clientFrame({
+      type: "event",
+      namespace: "/",
+      id: 31,
+      data: ["dbAdd", {
+        collection: "treatments",
+        data: {
+          _id: "hibernated-treatment-id",
+          eventType: "Note",
+          created_at: new Date().toISOString(),
+          notes: "hibernated write",
+        },
+      }],
+    }));
+    const mutation = await nextSocketPackets(inbox, 2);
+    expect(mutation[0]).toEqual({
+      type: "ack",
+      namespace: "/",
+      id: 31,
+      data: [[expect.objectContaining({
+        _id: "hibernated-treatment-id",
+        eventType: "Note",
+        notes: "hibernated write",
+      })]],
+    });
+    expect(mutation[1]).toMatchObject({
+      type: "event",
+      namespace: "/",
+      data: ["dataUpdate", {
+        delta: true,
+        treatments: [expect.objectContaining({
+          _id: "hibernated-treatment-id",
+          notes: "hibernated write",
+        })],
+      }],
+    });
+    await runInDurableObject(stub, async (_instance, state) => {
+      const row = state.storage.sql.exec<{ body: string }>(
+        `SELECT body FROM documents
+         WHERE collection = 'treatments' AND id = 'hibernated-treatment-id'`,
+      ).one();
+      expect(JSON.parse(row.body)).toMatchObject({
+        _id: "hibernated-treatment-id",
+        eventType: "Note",
+        notes: "hibernated write",
+      });
+    });
     inbox.socket.close(1000, "done");
   });
 

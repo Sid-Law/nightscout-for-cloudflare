@@ -11,6 +11,21 @@ export type Api3CollectionName =
   | "settings"
   | "treatments";
 
+export type WebsocketRootCollectionName =
+  | "activity"
+  | "devicestatus"
+  | "entries"
+  | "food"
+  | "profile"
+  | "treatments";
+
+type StoredDocumentCollectionName = Api3CollectionName | "activity";
+
+export interface WebsocketRootAddResult {
+  documents: JsonDocument[];
+  changed: boolean;
+}
+
 const TREATMENTS: Api3CollectionName = "treatments";
 const DEVICESTATUS: Api3CollectionName = "devicestatus";
 const ENTRIES: Api3CollectionName = "entries";
@@ -277,7 +292,7 @@ function canonicalCreatedAt(value: JsonValue | undefined): JsonValue | undefined
 
 function fallbackKey(
   document: JsonDocument,
-  collection: Api3CollectionName = TREATMENTS,
+  collection: StoredDocumentCollectionName = TREATMENTS,
 ): string | null {
   // Locked v15.0.7 lib/api3/generic/setup.js configures the API3 legacy
   // fallback as date+type for entries, created_at+device for devicestatus,
@@ -285,7 +300,7 @@ function fallbackKey(
   // treatments. Settings deliberately has no fallback identity.
   // This is deliberately separate from v1's sysTime+type upsert selector in
   // lib/server/entries.js. Settings must not inherit the created_at fallback.
-  if (collection === SETTINGS) return null;
+  if (collection === SETTINGS || collection === "activity") return null;
   const dateValue = collection === ENTRIES
     ? document.date
     : canonicalCreatedAt(document.created_at);
@@ -375,6 +390,84 @@ function normalizeTreatmentIdentity(document: JsonDocument): JsonDocument {
     normalized._id = normalized._id.toLowerCase();
   }
   return normalized;
+}
+
+function websocketStorageId(value: JsonValue | undefined): string | null {
+  if (typeof value !== "string" || value.length === 0 || value.length > 4096) return null;
+  return OBJECT_ID.test(value) ? value.toLowerCase() : value;
+}
+
+function websocketSqlScalar(value: JsonValue | undefined): SqlStorageValue | undefined {
+  if (value === null || typeof value === "string" || typeof value === "number") return value;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  return undefined;
+}
+
+function websocketFieldPath(field: string): string[] | null {
+  if (field.length === 0 || field.length > MAX_FIELD_NAME_LENGTH || field.includes("\0")) {
+    return null;
+  }
+  const path = field.split(".");
+  return path.some((segment) => segment.length === 0) ? null : path;
+}
+
+function websocketOwnValue(document: JsonDocument, field: string): JsonValue | undefined {
+  return Object.prototype.hasOwnProperty.call(document, field)
+    ? document[field]
+    : undefined;
+}
+
+function websocketDefineOwn(
+  document: JsonDocument,
+  field: string,
+  value: JsonValue,
+): void {
+  // Assignment to the magic `__proto__` setter would mutate an isolate-wide
+  // prototype instead of representing Mongo's ordinary BSON field. Defining
+  // an enumerable own property preserves the document shape safely.
+  Object.defineProperty(document, field, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+}
+
+function websocketSetFields(document: JsonDocument, fields: JsonDocument): JsonDocument {
+  const updated = structuredClone(document);
+  for (const [field, value] of Object.entries(fields)) {
+    const path = websocketFieldPath(field);
+    if (path === null || path[0] === "_id") throw new Error("invalid websocket update field");
+    let target: JsonDocument = updated;
+    for (const segment of path.slice(0, -1)) {
+      const current = websocketOwnValue(target, segment);
+      if (typeof current !== "object" || current === null || Array.isArray(current)) {
+        websocketDefineOwn(target, segment, {});
+      }
+      target = websocketOwnValue(target, segment) as JsonDocument;
+    }
+    websocketDefineOwn(target, path.at(-1)!, structuredClone(value));
+  }
+  return updated;
+}
+
+function websocketUnsetFields(document: JsonDocument, fields: JsonDocument): JsonDocument {
+  const updated = structuredClone(document);
+  for (const field of Object.keys(fields)) {
+    const path = websocketFieldPath(field);
+    if (path === null || path[0] === "_id") throw new Error("invalid websocket unset field");
+    let target: JsonDocument | null = updated;
+    for (const segment of path.slice(0, -1)) {
+      const current = websocketOwnValue(target, segment);
+      if (typeof current !== "object" || current === null || Array.isArray(current)) {
+        target = null;
+        break;
+      }
+      target = current as JsonDocument;
+    }
+    if (target !== null) delete target[path.at(-1)!];
+  }
+  return updated;
 }
 
 function utcOffsetMinutes(value: JsonValue | undefined): number {
@@ -1713,7 +1806,7 @@ export class SqliteDocumentRepository {
 
   private findByIdRow(
     id: string,
-    collection: Api3CollectionName = TREATMENTS,
+    collection: StoredDocumentCollectionName = TREATMENTS,
   ): DbDocumentV4 | undefined {
     return this.sql.exec<DbDocumentV4>(
       `SELECT * FROM documents WHERE collection = ? AND id = ? LIMIT 1`,
@@ -1995,8 +2088,12 @@ export class SqliteDocumentRepository {
     operation: "create" | "replace" | "patch" | "delete",
     policy: MutationPolicy,
     serverSrvCreated?: number,
-    collection: Api3CollectionName = TREATMENTS,
+    collection: StoredDocumentCollectionName = TREATMENTS,
   ): DocumentMutationResult {
+    if (policy === "api3" && collection === "activity") {
+      throw new Error("activity is not an API3 collection");
+    }
+    const api3Collection = collection as Api3CollectionName;
     const revision = (existing?.revision ?? 0) + 1;
     const identity = identifierMetadata(document);
     const identifier = identity.identifier;
@@ -2004,7 +2101,7 @@ export class SqliteDocumentRepository {
     const stored = { ...document };
     stored._id = id;
     const generatedSrvModified = policy === "api3"
-      ? this.nextSrvModified(Date.now(), collection)
+      ? this.nextSrvModified(Date.now(), api3Collection)
       : null;
     if (policy === "api3") {
       if (generatedSrvModified === null) throw new Error("API3 srvModified allocation failed");
@@ -2092,7 +2189,7 @@ export class SqliteDocumentRepository {
         ? materializeApi3({
           id,
           body,
-        }, collection)
+        }, api3Collection)
         : stored,
       created: existing === undefined,
       deduplicated: existing !== undefined,
@@ -2500,6 +2597,210 @@ export class SqliteDocumentRepository {
     });
   }
 
+  private websocketFirstByFields(
+    collection: WebsocketRootCollectionName,
+    fields: Array<[
+      "NSCLIENT_ID" | "created_at" | "eventType" | "startDate",
+      JsonValue | undefined,
+    ]>,
+  ): DbDocumentV4 | undefined {
+    const bindings: SqlStorageValue[] = [collection];
+    const clauses: string[] = [];
+    for (const [field, value] of fields) {
+      const scalar = websocketSqlScalar(value);
+      if (scalar === undefined) return undefined;
+      clauses.push(`json_extract(body, '$.${field}') IS ?`);
+      bindings.push(scalar);
+    }
+    return this.sql.exec<DbDocumentV4>(
+      `SELECT * FROM documents
+       WHERE collection = ? AND ${clauses.join(" AND ")}
+       ORDER BY created_at ASC, id ASC
+       LIMIT 1`,
+      ...bindings,
+    ).toArray()[0];
+  }
+
+  private websocketSimilarTreatment(document: JsonDocument): DbDocumentV4 | undefined {
+    const createdAt = new Date(document.created_at as string | number).getTime();
+    if (!Number.isFinite(createdAt)) return undefined;
+    const lower = new Date(createdAt - 2_000).toISOString();
+    const upper = new Date(createdAt + 2_000).toISOString();
+    const selected: Array<[
+      | "insulin"
+      | "carbs"
+      | "percent"
+      | "absolute"
+      | "duration"
+      | "NSCLIENT_ID"
+      | "eventType",
+      JsonValue | undefined,
+    ]> = [];
+    for (const field of ["insulin", "carbs", "percent", "absolute", "duration"] as const) {
+      if (document[field]) selected.push([field, document[field]]);
+    }
+    if (document.NSCLIENT_ID) selected.push(["NSCLIENT_ID", document.NSCLIENT_ID]);
+    if (selected.length === 0) selected.push(["eventType", document.eventType]);
+
+    const bindings: SqlStorageValue[] = [TREATMENTS, lower, upper];
+    const clauses = [
+      "json_type(body, '$.created_at') = 'text'",
+      "json_extract(body, '$.created_at') >= ?",
+      "json_extract(body, '$.created_at') <= ?",
+    ];
+    for (const [field, value] of selected) {
+      const scalar = websocketSqlScalar(value);
+      if (scalar === undefined) return undefined;
+      clauses.push(`json_extract(body, '$.${field}') IS ?`);
+      bindings.push(scalar);
+    }
+    return this.sql.exec<DbDocumentV4>(
+      `SELECT * FROM documents
+       WHERE collection = ? AND ${clauses.join(" AND ")}
+       ORDER BY created_at ASC, id ASC
+       LIMIT 1`,
+      ...bindings,
+    ).toArray()[0];
+  }
+
+  /** Raw main-namespace dbAdd semantics from locked websocket.js. */
+  addWebsocketRootDocument(
+    collection: WebsocketRootCollectionName,
+    input: JsonDocument,
+    receivedAt: number,
+  ): WebsocketRootAddResult {
+    return this.storage.transactionSync(() => {
+      const document = structuredClone(input);
+      if (!hasOwn(document, "created_at")) {
+        document.created_at = new Date(receivedAt).toISOString();
+      }
+      if (collection === TREATMENTS && !hasOwn(document, "eventType")) {
+        document.eventType = "<none>";
+      }
+
+      if (collection === TREATMENTS) {
+        const exact = document.NSCLIENT_ID
+          ? this.websocketFirstByFields(TREATMENTS, [["NSCLIENT_ID", document.NSCLIENT_ID]])
+          : this.websocketFirstByFields(TREATMENTS, [
+            ["created_at", document.created_at],
+            ["eventType", document.eventType],
+          ]);
+        if (exact !== undefined) {
+          return { documents: [materializeLegacy(exact)], changed: false };
+        }
+        const similar = this.websocketSimilarTreatment(document);
+        if (similar !== undefined) {
+          const updated = materializeLegacy(similar);
+          updated.created_at = document.created_at!;
+          const mutation = this.writeSnapshot(
+            similar.id,
+            updated,
+            similar,
+            "patch",
+            "legacy",
+            undefined,
+            TREATMENTS,
+          );
+          return { documents: [mutation.document], changed: true };
+        }
+      } else if (collection === DEVICESTATUS) {
+        const exact = document.NSCLIENT_ID
+          ? this.websocketFirstByFields(DEVICESTATUS, [["NSCLIENT_ID", document.NSCLIENT_ID]])
+          : this.websocketFirstByFields(DEVICESTATUS, [["created_at", document.created_at]]);
+        if (exact !== undefined) {
+          return { documents: [materializeLegacy(exact)], changed: false };
+        }
+      } else if (collection === PROFILE) {
+        const existing = document.NSCLIENT_ID
+          ? this.websocketFirstByFields(PROFILE, [["NSCLIENT_ID", document.NSCLIENT_ID]])
+          : document.startDate
+            ? this.websocketFirstByFields(PROFILE, [["startDate", document.startDate]])
+            : undefined;
+        if (existing !== undefined) {
+          document._id = existing.id;
+          const mutation = this.writeSnapshot(
+            existing.id,
+            document,
+            existing,
+            "replace",
+            "legacy",
+            undefined,
+            PROFILE,
+          );
+          return { documents: [mutation.document], changed: true };
+        }
+      }
+
+      const id = websocketStorageId(document._id) ?? randomObjectId();
+      document._id = id;
+      const mutation = this.writeSnapshot(
+        id,
+        document,
+        undefined,
+        "create",
+        "legacy",
+        undefined,
+        collection,
+      );
+      return { documents: [mutation.document], changed: true };
+    });
+  }
+
+  updateWebsocketRootDocument(
+    collection: WebsocketRootCollectionName,
+    id: string,
+    fields: JsonDocument,
+  ): boolean {
+    return this.storage.transactionSync(() => {
+      const storageId = websocketStorageId(id);
+      if (storageId === null) return false;
+      const existing = this.findByIdRow(storageId, collection);
+      if (existing === undefined) return false;
+      const updated = websocketSetFields(materializeLegacy(existing), fields);
+      this.writeSnapshot(
+        existing.id,
+        updated,
+        existing,
+        "patch",
+        "legacy",
+        undefined,
+        collection,
+      );
+      if (collection === ENTRIES) this.sql.exec("DELETE FROM entries WHERE id = ?", existing.id);
+      return true;
+    });
+  }
+
+  unsetWebsocketRootDocument(
+    collection: WebsocketRootCollectionName,
+    id: string,
+    fields: JsonDocument,
+  ): boolean {
+    return this.storage.transactionSync(() => {
+      const storageId = websocketStorageId(id);
+      if (storageId === null) return false;
+      const existing = this.findByIdRow(storageId, collection);
+      if (existing === undefined) return false;
+      const updated = websocketUnsetFields(materializeLegacy(existing), fields);
+      this.writeSnapshot(
+        existing.id,
+        updated,
+        existing,
+        "patch",
+        "legacy",
+        undefined,
+        collection,
+      );
+      if (collection === ENTRIES) this.sql.exec("DELETE FROM entries WHERE id = ?", existing.id);
+      return true;
+    });
+  }
+
+  deleteWebsocketRootDocument(collection: WebsocketRootCollectionName, id: string): boolean {
+    const storageId = websocketStorageId(id);
+    return storageId === null ? false : this.deleteDocumentById(collection, storageId);
+  }
+
   private upsertPreparedLegacyTreatment(document: JsonDocument): DocumentMutationResult {
     const existing = this.findTreatmentUpsertCandidate(document);
     if (requestedIdentifier(document) !== null) delete document._id;
@@ -2892,7 +3193,7 @@ export class SqliteDocumentRepository {
     return this.deleteTreatment(identity, permanent, actor, collection, true);
   }
 
-  deleteDocumentById(collection: Api3CollectionName, id: string): boolean {
+  deleteDocumentById(collection: StoredDocumentCollectionName, id: string): boolean {
     return this.storage.transactionSync(() => {
       const existing = this.findByIdRow(id, collection);
       if (existing === undefined) return false;

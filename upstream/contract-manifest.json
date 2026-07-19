@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "25fcef701173748312030878415a8039b2fd1aa317cd94db1415f1a403a2468a",
+  "inputs_sha256": "043466039d32cdf3d73e597483c76c23aa9311103bf83be11c638f6e71fbc308",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 41,
+      "adapted": 42,
       "excluded-fixed-scope": 2,
-      "unresolved": 68
+      "unresolved": 67
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8698,8 +8698,8 @@
     },
     {
       "file": "vendor/nightscout/tests/websocket.shape-handling.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime main-namespace mutation contract in test/realtime-root-writes.test.ts plus direct hibernatable transport coverage in test/realtime-websocket.test.ts: treatment, devicestatus and entries single/array dbAdd shapes; generated and custom-id treatment update/remove; custom-id unset and two-second fuzzy dedupe; all three AAPS profile insert/replace/distinct-startDate workflows; generic Food custom-id add/update/remove; exact checkConditions error ordering; ACK-before-dataUpdate; and persisted write authority across Durable Object eviction. Activity is additionally covered even though the locked file does not exercise it.",
       "workstream": "6-realtime",
       "depends_on": [
         "1-storage-foundation",

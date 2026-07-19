@@ -48,6 +48,40 @@ export interface RealtimeAuthorization {
   write_treatment: boolean;
 }
 
+export type RealtimeRootWriteCollection =
+  | "activity"
+  | "devicestatus"
+  | "entries"
+  | "food"
+  | "profile"
+  | "treatments";
+
+export type RealtimeRootWriteRequest =
+  | {
+      event: "dbAdd";
+      collection: RealtimeRootWriteCollection;
+      data: unknown;
+      receivedAt: number;
+    }
+  | {
+      event: "dbUpdate" | "dbUpdateUnset";
+      collection: RealtimeRootWriteCollection;
+      id: string;
+      data: unknown;
+      receivedAt: number;
+    }
+  | {
+      event: "dbRemove";
+      collection: RealtimeRootWriteCollection;
+      id: string;
+      receivedAt: number;
+    };
+
+export interface RealtimeRootWriteResult {
+  acknowledgement: unknown;
+  changed: boolean;
+}
+
 export type RealtimeAlarmAuthorization =
   | { mode: "accessToken" }
   | { mode: "web"; read: boolean; ack: boolean };
@@ -79,6 +113,9 @@ export interface RealtimeServiceOptions {
     | RealtimeAlarmAuthorization
     | null
     | Promise<RealtimeAlarmAuthorization | null>;
+  writeRoot?: (request: RealtimeRootWriteRequest) =>
+    | RealtimeRootWriteResult
+    | Promise<RealtimeRootWriteResult>;
   snapshot?: (now: number) => RealtimeSnapshot | null;
   retroDeviceStatus?: (now: number) => unknown[] | null;
   status?: (now: number) => Record<string, unknown>;
@@ -110,6 +147,10 @@ interface RealtimeAlarmAcknowledgement {
   level: number;
   group: string;
   silenceTime: number;
+}
+
+interface RealtimeRootMutationState {
+  changed: boolean;
 }
 
 function cloneSession(session: RealtimeSession): RealtimeSession {
@@ -153,6 +194,34 @@ function defaultAlarmAuthorization(
   return credential === undefined || credential === null || credential === ""
     ? { mode: "web", read: true, ack: false }
     : null;
+}
+
+function defaultRootWrite(request: RealtimeRootWriteRequest): RealtimeRootWriteResult {
+  return {
+    acknowledgement: request.event === "dbAdd" ? [] : { result: "success" },
+    changed: false,
+  };
+}
+
+const REALTIME_ROOT_WRITE_COLLECTIONS: readonly RealtimeRootWriteCollection[] = [
+  "treatments",
+  "entries",
+  "devicestatus",
+  "profile",
+  "food",
+  "activity",
+];
+
+function realtimeRootWriteCollection(value: unknown): RealtimeRootWriteCollection | null {
+  return typeof value === "string"
+      && REALTIME_ROOT_WRITE_COLLECTIONS.includes(value as RealtimeRootWriteCollection)
+    ? value as RealtimeRootWriteCollection
+    : null;
+}
+
+function realtimeRootWriteId(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0 || value.length > 4096) return null;
+  return value;
 }
 
 function alarmLevelDisplay(level: number): string {
@@ -246,6 +315,7 @@ export class RealtimeSessionService {
   private readonly authorize: NonNullable<RealtimeServiceOptions["authorize"]>;
   private readonly authorizeStorage: NonNullable<RealtimeServiceOptions["authorizeStorage"]>;
   private readonly authorizeAlarm: NonNullable<RealtimeServiceOptions["authorizeAlarm"]>;
+  private readonly writeRoot: NonNullable<RealtimeServiceOptions["writeRoot"]>;
   private readonly snapshot: NonNullable<RealtimeServiceOptions["snapshot"]>;
   private readonly retroDeviceStatus: NonNullable<RealtimeServiceOptions["retroDeviceStatus"]>;
   private readonly status: RealtimeServiceOptions["status"];
@@ -262,6 +332,7 @@ export class RealtimeSessionService {
     this.authorize = options.authorize ?? defaultAuthorization;
     this.authorizeStorage = options.authorizeStorage ?? defaultStorageAuthorization;
     this.authorizeAlarm = options.authorizeAlarm ?? defaultAlarmAuthorization;
+    this.writeRoot = options.writeRoot ?? defaultRootWrite;
     this.snapshot = options.snapshot ?? defaultSnapshot;
     this.retroDeviceStatus = options.retroDeviceStatus ?? ((now) =>
       this.snapshot(now)?.devicestatus ?? null
@@ -408,6 +479,7 @@ export class RealtimeSessionService {
     const outbound: EngineIoV4Packet[] = [];
     const broadcasts: EngineIoV4Packet[] = [];
     const alarmAcknowledgements: RealtimeAlarmAcknowledgement[] = [];
+    const rootMutation: RealtimeRootMutationState = { changed: false };
     let closed = false;
     try {
       for (const packet of packets) {
@@ -433,6 +505,7 @@ export class RealtimeSessionService {
           outbound,
           broadcasts,
           alarmAcknowledgements,
+          rootMutation,
         );
       }
     } catch (error) {
@@ -466,11 +539,15 @@ export class RealtimeSessionService {
               )
             : null,
     );
-    for (const targetSid of commit.wakeTargets) this.wake(targetSid);
     if (commit.error !== null) {
       this.wake(sid);
       throw commit.error;
     }
+    if (rootMutation.changed) {
+      this.storage.transactionSync(() => this.recordRootDataUpdateInTransaction());
+      this.flushApplicationWakes();
+    }
+    for (const targetSid of commit.wakeTargets) this.wake(targetSid);
     if (outbound.length > 0) this.wake(sid);
   }
 
@@ -497,6 +574,7 @@ export class RealtimeSessionService {
     const outbound: EngineIoV4Packet[] = [];
     const broadcasts: EngineIoV4Packet[] = [];
     const alarmAcknowledgements: RealtimeAlarmAcknowledgement[] = [];
+    const rootMutation: RealtimeRootMutationState = { changed: false };
     try {
       if (packet.type === "pong") {
         this.acceptPong(session, packet);
@@ -508,6 +586,7 @@ export class RealtimeSessionService {
           outbound,
           broadcasts,
           alarmAcknowledgements,
+          rootMutation,
         );
       } else {
         throw new RealtimeSessionError(
@@ -534,8 +613,12 @@ export class RealtimeSessionService {
           ? null
           : new RealtimeSessionError("unknown_sid", "session ID is unknown"),
     );
-    for (const targetSid of commit.wakeTargets) this.wake(targetSid);
     if (commit.error !== null) throw commit.error;
+    if (rootMutation.changed) {
+      this.storage.transactionSync(() => this.recordRootDataUpdateInTransaction());
+      this.flushApplicationWakes();
+    }
+    for (const targetSid of commit.wakeTargets) this.wake(targetSid);
     return { closed: false };
   }
 
@@ -1036,6 +1119,7 @@ export class RealtimeSessionService {
     outbound: EngineIoV4Packet[],
     broadcasts: EngineIoV4Packet[],
     alarmAcknowledgements: RealtimeAlarmAcknowledgement[],
+    rootMutation: RealtimeRootMutationState,
   ): Promise<void> {
     if (packet.type === "connect") {
       if (packet.namespace === "/storage") {
@@ -1105,6 +1189,8 @@ export class RealtimeSessionService {
         session.socketConnected = false;
         session.authorized = false;
         session.readAllowed = false;
+        session.writeAllowed = false;
+        session.treatmentWriteAllowed = false;
         broadcasts.push(wrapSocketIoV5Packet({
           type: "event",
           namespace: "/",
@@ -1141,7 +1227,7 @@ export class RealtimeSessionService {
     if (packet.namespace !== "/" || !session.socketConnected) {
       throw new RealtimeSessionError("bad_packet", "event requires the connected root namespace");
     }
-    await this.processRootEvent(session, packet, outbound, broadcasts);
+    await this.processRootEvent(session, packet, outbound, broadcasts, rootMutation);
   }
 
   private async processAlarmEvent(
@@ -1251,6 +1337,7 @@ export class RealtimeSessionService {
     packet: SocketIoV5EventPacket,
     outbound: EngineIoV4Packet[],
     broadcasts: EngineIoV4Packet[],
+    rootMutation: RealtimeRootMutationState,
   ): Promise<void> {
     const eventName = packet.data[0];
     if (eventName === "authorize") {
@@ -1267,6 +1354,8 @@ export class RealtimeSessionService {
         session.socketConnected = false;
         session.authorized = false;
         session.readAllowed = false;
+        session.writeAllowed = false;
+        session.treatmentWriteAllowed = false;
         outbound.push(wrapSocketIoV5Packet({ type: "disconnect", namespace: "/" }));
         broadcasts.push(wrapSocketIoV5Packet({
           type: "event",
@@ -1288,6 +1377,8 @@ export class RealtimeSessionService {
       }));
       session.authorized = true;
       session.readAllowed = authorization.read;
+      session.writeAllowed = authorization.write;
+      session.treatmentWriteAllowed = authorization.write_treatment;
       if (authorization.read) {
         const now = this.now();
         const snapshot = this.snapshot(now);
@@ -1318,6 +1409,84 @@ export class RealtimeSessionService {
       return;
     }
 
+    if (
+      eventName === "dbAdd"
+      || eventName === "dbUpdate"
+      || eventName === "dbUpdateUnset"
+      || eventName === "dbRemove"
+    ) {
+      const rawMessage = packet.data.length >= 2 ? packet.data[1] : undefined;
+      const message = typeof rawMessage === "object"
+          && rawMessage !== null
+          && !Array.isArray(rawMessage)
+        ? rawMessage as Record<string, unknown>
+        : {};
+      const collection = realtimeRootWriteCollection(message.collection);
+      let acknowledgement: unknown;
+      if (collection === null) {
+        acknowledgement = { result: "Wrong collection" };
+      } else if (!session.authorized) {
+        acknowledgement = { result: "Not authorized" };
+      } else if (
+        collection === "treatments"
+          ? !session.treatmentWriteAllowed
+          : !session.writeAllowed
+      ) {
+        acknowledgement = { result: "Not permitted" };
+      } else {
+        const receivedAt = this.now();
+        const id = eventName === "dbAdd" ? null : realtimeRootWriteId(message._id);
+        if (eventName !== "dbAdd" && id === null) {
+          acknowledgement = { result: "Missing _id" };
+        } else {
+          let result: RealtimeRootWriteResult;
+          try {
+            result = eventName === "dbAdd"
+              ? await this.writeRoot({
+                event: "dbAdd",
+                collection,
+                data: message.data,
+                receivedAt,
+              })
+              : eventName === "dbRemove"
+                ? await this.writeRoot({
+                  event: "dbRemove",
+                  collection,
+                  id: id!,
+                  receivedAt,
+                })
+                : await this.writeRoot({
+                  event: eventName,
+                  collection,
+                  id: id!,
+                  data: message.data,
+                  receivedAt,
+                });
+          } catch {
+            // Locked websocket.js logs storage failures but keeps the namespace
+            // connected. dbAdd reports an empty result; update/unset/remove
+            // have already exposed their optimistic success callback shape.
+            result = {
+              acknowledgement: eventName === "dbAdd" ? [] : { result: "success" },
+              changed: false,
+            };
+          }
+          acknowledgement = result.acknowledgement;
+          rootMutation.changed ||= result.changed;
+        }
+      }
+
+      if (packet.id !== undefined) {
+        outbound.push(wrapSocketIoV5Packet({
+          type: "ack",
+          namespace: "/",
+          id: packet.id,
+          data: [acknowledgement],
+        }));
+      }
+      return;
+    }
+
     if (eventName === "loadRetro") {
       if (packet.data.length !== 2) {
         throw new RealtimeSessionError("bad_packet", "loadRetro requires one object payload");
@@ -1343,7 +1512,7 @@ export class RealtimeSessionService {
 
     // `subscribe` is intentionally included here only as locked evidence: the
     // v15.0.7 root namespace has no listener, so Socket.IO produces no ACK.
-    // Other unimplemented events, including every write event, behave the same.
+    // Other unimplemented events behave the same.
   }
 
   private acceptPong(session: RealtimeSession, _packet: EngineIoV4Packet): void {

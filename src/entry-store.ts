@@ -37,12 +37,15 @@ import {
   migrateRealtimeRootUpdatesV11,
   migrateRealtimeStorageNamespaceV9,
   migrateRealtimeTransportsV7,
+  migrateRealtimeWriteAuthorityV12,
 } from "./realtime/session-repository";
 import {
   RealtimeSessionError,
   RealtimeSessionService,
   type RealtimeAlarmAuthorization,
   type RealtimeAuthorization,
+  type RealtimeRootWriteRequest,
+  type RealtimeRootWriteResult,
   type RealtimeSnapshot,
 } from "./realtime/session-service";
 import {
@@ -279,6 +282,7 @@ const AUTHORIZATION_SUBJECT_LIMIT = 256;
 const AUTHORIZATION_FAILURE_AGE_MS = 60_000;
 const AUTHORIZATION_FAILURE_LIMIT = 4096;
 const AUTHORIZATION_FAILURE_MAX_DELAY_MS = 60_000;
+const REALTIME_ROOT_WRITE_BATCH_MAX_DOCUMENTS = 100;
 
 function realtimeJsonBytes(value: unknown): number {
   const serialized = JSON.stringify(value);
@@ -367,6 +371,18 @@ function realtimeDocumentShapeAllowed(metrics: RealtimeJsonMetrics): boolean {
     && metrics.maxStringCharacters <= REALTIME_SNAPSHOT_MAX_STRING_CHARACTERS;
 }
 
+function realtimeRootWriteDocument(value: unknown): JsonDocument | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const metrics = realtimeJsonMetrics(value, true);
+  if (!realtimeDocumentShapeAllowed(metrics)) return null;
+  try {
+    if (realtimeJsonBytes(value) > REALTIME_SNAPSHOT_MAX_BYTES) return null;
+    return structuredClone(value) as JsonDocument;
+  } catch {
+    return null;
+  }
+}
+
 class RealtimeJsonBudget {
   private usedBytes: number;
   private usedNodes: number;
@@ -423,6 +439,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       authorize: (message) => this.realtimeAuthorize(message),
       authorizeStorage: (message) => this.realtimeStorageAuthorize(message),
       authorizeAlarm: (message) => this.realtimeAlarmAuthorize(message),
+      writeRoot: (request) => this.realtimeRootWrite(request),
     });
     ctx.blockConcurrencyWhile(async () => {
       this.migrate();
@@ -542,6 +559,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       migrateRealtimeRootUpdatesV11(this.ctx.storage);
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (11)",
+      );
+
+      migrateRealtimeWriteAuthorityV12(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (12)",
       );
 
       // This named, idempotent auth state is intentionally independent of the
@@ -1614,6 +1636,68 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       message.token,
     );
     return groups === null ? null : this.realtimeAuthorizationFromGroups(groups);
+  }
+
+  private realtimeRootWrite(request: RealtimeRootWriteRequest): RealtimeRootWriteResult {
+    const repository = this.documentRepository();
+    if (request.event === "dbAdd") {
+      const values = Array.isArray(request.data) ? request.data : [request.data];
+      if (values.length > REALTIME_ROOT_WRITE_BATCH_MAX_DOCUMENTS) {
+        return { acknowledgement: [], changed: false };
+      }
+
+      const documents: JsonDocument[] = [];
+      let changed = false;
+      for (const value of values) {
+        const document = realtimeRootWriteDocument(value);
+        if (document === null) {
+          // processSingleDbAdd rejects malformed values. The locked array
+          // wrapper reports [] even if an earlier sequential item committed.
+          return { acknowledgement: [], changed };
+        }
+        try {
+          const result = repository.addWebsocketRootDocument(
+            request.collection,
+            document,
+            request.receivedAt,
+          );
+          documents.push(...result.documents);
+          changed ||= result.changed;
+        } catch {
+          // Mongo insertion/dedupe failures are item-local in the locked
+          // processSingleDbAdd branches; array processing continues.
+        }
+      }
+      return { acknowledgement: documents, changed };
+    }
+
+    if (request.event === "dbRemove") {
+      let changed = false;
+      try {
+        changed = repository.deleteWebsocketRootDocument(
+          request.collection,
+          request.id,
+        );
+      } catch {
+        // dbRemove acknowledges optimistically before its async Mongo result.
+      }
+      return { acknowledgement: { result: "success" }, changed };
+    }
+
+    const fields = realtimeRootWriteDocument(request.data);
+    if (fields === null) {
+      return { acknowledgement: { result: "success" }, changed: false };
+    }
+    let changed = false;
+    try {
+      changed = request.event === "dbUpdate"
+        ? repository.updateWebsocketRootDocument(request.collection, request.id, fields)
+        : repository.unsetWebsocketRootDocument(request.collection, request.id, fields);
+    } catch {
+      // dbUpdate and dbUpdateUnset expose the same optimistic success ACK when
+      // Mongo rejects the asynchronous update operation.
+    }
+    return { acknowledgement: { result: "success" }, changed };
   }
 
   private async realtimeAlarmAuthorize(

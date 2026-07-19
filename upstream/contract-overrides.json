@@ -514,6 +514,10 @@
       "status": "adapted",
       "reason": "Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts and the live DO route contract in test/api-v2-data-contract.test.ts: exact 20% urgent/minimum analysis, pill classes, missing/-1 hiding, both assistant intents and responses, official enable gating, and /api/v2/properties output from bounded recent device status."
     },
+    "vendor/nightscout/tests/websocket.shape-handling.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime main-namespace mutation contract in test/realtime-root-writes.test.ts plus direct hibernatable transport coverage in test/realtime-websocket.test.ts: treatment, devicestatus and entries single/array dbAdd shapes; generated and custom-id treatment update/remove; custom-id unset and two-second fuzzy dedupe; all three AAPS profile insert/replace/distinct-startDate workflows; generic Food custom-id add/update/remove; exact checkConditions error ordering; ACK-before-dataUpdate; and persisted write authority across Durable Object eviction. Activity is additionally covered even though the locked file does not exercise it."
+    },
     "vendor/nightscout/tests/bridge.test.js": {
       "status": "excluded-fixed-scope",
       "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope permits only simulated data."

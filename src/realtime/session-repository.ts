@@ -28,6 +28,8 @@ interface SessionRow {
   socket_connected: number;
   authorized: number;
   read_allowed: number;
+  write_allowed: number;
+  treatment_write_allowed: number;
   created_at: number;
   last_seen_at: number;
   next_ping_at: number;
@@ -109,6 +111,8 @@ export interface RealtimeSession {
   socketConnected: boolean;
   authorized: boolean;
   readAllowed: boolean;
+  writeAllowed: boolean;
+  treatmentWriteAllowed: boolean;
   createdAt: number;
   lastSeenAt: number;
   nextPingAt: number;
@@ -143,6 +147,8 @@ function sessionFromRow(row: SessionRow): RealtimeSession {
     socketConnected: row.socket_connected === 1,
     authorized: row.authorized === 1,
     readAllowed: row.read_allowed === 1,
+    writeAllowed: row.write_allowed === 1,
+    treatmentWriteAllowed: row.treatment_write_allowed === 1,
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
     nextPingAt: row.next_ping_at,
@@ -183,6 +189,9 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
       socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
       authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
       read_allowed INTEGER NOT NULL DEFAULT 0 CHECK (read_allowed IN (0, 1)),
+      write_allowed INTEGER NOT NULL DEFAULT 0 CHECK (write_allowed IN (0, 1)),
+      treatment_write_allowed INTEGER NOT NULL DEFAULT 0
+        CHECK (treatment_write_allowed IN (0, 1)),
       created_at INTEGER NOT NULL,
       last_seen_at INTEGER NOT NULL,
       next_ping_at INTEGER NOT NULL,
@@ -223,6 +232,7 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
   migrateRealtimeStorageNamespaceV9(storage);
   migrateRealtimeAlarmNamespaceV10(storage);
   migrateRealtimeRootUpdatesV11(storage);
+  migrateRealtimeWriteAuthorityV12(storage);
 }
 
 interface SchemaRow {
@@ -254,6 +264,9 @@ export function migrateRealtimeTransportsV7(storage: DurableObjectStorage): void
       socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
       authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
       read_allowed INTEGER NOT NULL DEFAULT 0 CHECK (read_allowed IN (0, 1)),
+      write_allowed INTEGER NOT NULL DEFAULT 0 CHECK (write_allowed IN (0, 1)),
+      treatment_write_allowed INTEGER NOT NULL DEFAULT 0
+        CHECK (treatment_write_allowed IN (0, 1)),
       created_at INTEGER NOT NULL,
       last_seen_at INTEGER NOT NULL,
       next_ping_at INTEGER NOT NULL,
@@ -269,13 +282,15 @@ export function migrateRealtimeTransportsV7(storage: DurableObjectStorage): void
     );
     INSERT INTO realtime_sessions (
       sid, socket_sid, engine_protocol, transport, socket_connected,
-      authorized, read_allowed, created_at, last_seen_at, next_ping_at,
+      authorized, read_allowed, write_allowed, treatment_write_allowed,
+      created_at, last_seen_at, next_ping_at,
       pong_deadline, expires_at, next_sequence, outbound_packets,
       outbound_bytes, poll_token, poll_deadline, post_token, post_deadline
     )
     SELECT
       sid, socket_sid, engine_protocol, transport, socket_connected,
-      authorized, read_allowed, created_at, last_seen_at, next_ping_at,
+      authorized, read_allowed, write_allowed, treatment_write_allowed,
+      created_at, last_seen_at, next_ping_at,
       pong_deadline, expires_at, next_sequence, outbound_packets,
       outbound_bytes, poll_token, poll_deadline, post_token, post_deadline
     FROM realtime_sessions_polling_v5;
@@ -399,6 +414,35 @@ export function migrateRealtimeRootUpdatesV11(storage: DurableObjectStorage): vo
   `);
 }
 
+/**
+ * Root write authorization is established once by `authorize` and must remain
+ * authoritative after a Durable Object/WebSocket hibernation boundary. The
+ * Node server kept these flags in the per-socket closure; v12 persists them on
+ * the Engine.IO session row.
+ */
+export function migrateRealtimeWriteAuthorityV12(storage: DurableObjectStorage): void {
+  const columns = new Set(
+    storage.sql
+      .exec<TableInfoRow>("PRAGMA table_info(realtime_sessions)")
+      .toArray()
+      .map((row) => row.name),
+  );
+  if (!columns.has("write_allowed")) {
+    storage.sql.exec(
+      `ALTER TABLE realtime_sessions
+       ADD COLUMN write_allowed INTEGER NOT NULL DEFAULT 0
+       CHECK (write_allowed IN (0, 1))`,
+    );
+  }
+  if (!columns.has("treatment_write_allowed")) {
+    storage.sql.exec(
+      `ALTER TABLE realtime_sessions
+       ADD COLUMN treatment_write_allowed INTEGER NOT NULL DEFAULT 0
+       CHECK (treatment_write_allowed IN (0, 1))`,
+    );
+  }
+}
+
 export class SqliteRealtimeSessionRepository {
   constructor(private readonly storage: DurableObjectStorage) {}
 
@@ -441,6 +485,7 @@ export class SqliteRealtimeSessionRepository {
     const row = this.storage.sql
       .exec<SessionRow>(
         `SELECT sid, socket_sid, transport, socket_connected, authorized, read_allowed,
+                write_allowed, treatment_write_allowed,
                 created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
                 next_sequence, outbound_packets, outbound_bytes,
                 poll_token, poll_deadline, post_token, post_deadline
@@ -725,6 +770,7 @@ export class SqliteRealtimeSessionRepository {
     const expired = this.storage.sql
       .exec<SessionRow>(
         `SELECT sid, socket_sid, transport, socket_connected, authorized, read_allowed,
+                write_allowed, treatment_write_allowed,
                 created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
                 next_sequence, outbound_packets, outbound_bytes,
                 poll_token, poll_deadline, post_token, post_deadline
@@ -810,6 +856,7 @@ export class SqliteRealtimeSessionRepository {
     this.storage.sql.exec(
       `UPDATE realtime_sessions SET
          socket_sid = ?, socket_connected = ?, authorized = ?, read_allowed = ?,
+         write_allowed = ?, treatment_write_allowed = ?,
          last_seen_at = ?, next_ping_at = ?, pong_deadline = ?, expires_at = ?,
          poll_token = ?, poll_deadline = ?, post_token = ?, post_deadline = ?
        WHERE sid = ?`,
@@ -817,6 +864,8 @@ export class SqliteRealtimeSessionRepository {
       session.socketConnected ? 1 : 0,
       session.authorized ? 1 : 0,
       session.readAllowed ? 1 : 0,
+      session.writeAllowed ? 1 : 0,
+      session.treatmentWriteAllowed ? 1 : 0,
       session.lastSeenAt,
       session.nextPingAt,
       session.pongDeadline,
@@ -845,6 +894,7 @@ export class SqliteRealtimeSessionRepository {
     return this.storage.sql
       .exec<SessionRow>(
         `SELECT sid, socket_sid, transport, socket_connected, authorized, read_allowed,
+                write_allowed, treatment_write_allowed,
                 created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
                 next_sequence, outbound_packets, outbound_bytes,
                 poll_token, poll_deadline, post_token, post_deadline

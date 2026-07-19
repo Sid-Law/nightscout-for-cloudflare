@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 41, excluded-fixed-scope: 2, unresolved: 68
-- Input fingerprint: `25fcef701173748312030878415a8039b2fd1aa317cd94db1415f1a403a2468a`
+- Statuses: pass: 0, adapted: 42, excluded-fixed-scope: 2, unresolved: 67
+- Input fingerprint: `043466039d32cdf3d73e597483c76c23aa9311103bf83be11c638f6e71fbc308`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -24,7 +24,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 31 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
-| 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 1 | 0 |
+| 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
 | 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 8 | 0 |
 
@@ -162,7 +162,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | Test file | Status | Candidate routes (heuristic) | Reason |
 | --- | --- | ---: | --- |
 | `vendor/nightscout/tests/api3.socket.test.js` | adapted | 0 | Represented by the Workers-runtime /storage Socket.IO contracts in test/api3-storage-socket.test.ts: missing/invalid accessToken failures, no-authorized-collection failure, filtered and default subscriptions, and complete create/update/patch/delete event payloads over Engine.IO polling, with additional hibernatable WebSocket and Durable Object eviction coverage. |
-| `vendor/nightscout/tests/websocket.shape-handling.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/websocket.shape-handling.test.js` | adapted | 0 | Represented by the complete named Workers-runtime main-namespace mutation contract in test/realtime-root-writes.test.ts plus direct hibernatable transport coverage in test/realtime-websocket.test.ts: treatment, devicestatus and entries single/array dbAdd shapes; generated and custom-id treatment update/remove; custom-id unset and two-second fuzzy dedupe; all three AAPS profile insert/replace/distinct-startDate workflows; generic Food custom-id add/update/remove; exact checkConditions error ordering; ACK-before-dataUpdate; and persisted write authority across Durable Object eviction. Activity is additionally covered even though the locked file does not exercise it. |
 
 ### 7-background-and-integrations
 
