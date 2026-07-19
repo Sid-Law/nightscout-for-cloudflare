@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 42, excluded-fixed-scope: 2, unresolved: 67
-- Input fingerprint: `043466039d32cdf3d73e597483c76c23aa9311103bf83be11c638f6e71fbc308`
+- Statuses: pass: 0, adapted: 45, excluded-fixed-scope: 2, unresolved: 64
+- Input fingerprint: `ab21a04865ffb2044c833688f501cac634ecdee94e06f7e6663f0547cf20fd28`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -19,7 +19,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
-| 1-storage-foundation | none | 15 | 14 | 0 |
+| 1-storage-foundation | none | 15 | 11 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 6 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 31 | 0 |
@@ -46,10 +46,10 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 
 | Test file | Status | Candidate routes (heuristic) | Reason |
 | --- | --- | ---: | --- |
-| `vendor/nightscout/tests/api.deduplication.test.js` | unresolved | 4 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api.entries.uuid.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api.deduplication.test.js` | adapted | 4 | Represented by the complete nine-case Workers-runtime v1 contract in test/api-v1-deduplication.test.ts: the locked AAPS treatment and entry replays, Loop carb and dose replays, Trio meal and temporary-target replays, four-item mixed batch, distinct separately timestamped cross-client uploads, and original treatment _id response. The tests preserve the actual locked selectors—Entries sysTime+type and Treatments identifier/_id then created_at+eventType—rather than treating descriptive pump/sync/id comments as database unique indexes. |
+| `vendor/nightscout/tests/api.entries.uuid.test.js` | adapted | 2 | Represented by the complete nine-case Workers-runtime contract in test/api-v1-entry-uuid.test.ts: the three sysTime+type baseline replays, UUID create/same-UUID/different-UUID behavior, mixed ObjectId/UUID/generated-ID batch, update of a pre-fix custom UUID _id row, and UUID preservation as identifier under a server ObjectId. The pre-fix row is inserted through the already adapted raw main-namespace storage path rather than fabricated by the v1 normalizer. |
 | `vendor/nightscout/tests/api.objectid-validation.test.js` | adapted | 0 | Represented by the pure Workers-runtime helper contract in test/api-v1-collections-contract.test.ts: undefined/null acceptance, 24-hex acceptance, UUID/number rejection, first-invalid batch reporting and all-valid null result. |
-| `vendor/nightscout/tests/api.partial-failures.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api.partial-failures.test.js` | adapted | 6 | Represented by the complete 14-case Workers-runtime contract in test/api-v1-partial-failures.test.ts: non-unique Trio id batches, response and Loop syncIdentifier ordering, replay positions, ObjectId/Trio/AAPS identity separation, per-item response IDs, large DeviceStatus predictions, configured/default/disabled IOB/COB/UAM/ZT truncation for suggested and enacted branches, the locked non-validating string-sgv fixture, and the 50-entry recovery batch. The adapter retains the 100-document and 512-KiB Workers bounds. |
 | `vendor/nightscout/tests/cache-objectid-compat.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/concurrent-writes.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/issue-6923-legacy-uuid.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |

@@ -23,6 +23,8 @@ const LEGACY_SAFE_HTML_TAGS = new Set([
 const LEGACY_VOID_HTML_TAGS = new Set(["br", "hr", "img"]);
 const LEGACY_FORBIDDEN_HTML_BLOCK = /<(script|style|iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
 const LEGACY_HTML_TAG = /<\s*(\/?)\s*([a-z][a-z0-9-]*)(?:\s[^<>]*?)?\/?\s*>/gi;
+const LEGACY_PREDICTION_TYPES = ["IOB", "COB", "UAM", "ZT"] as const;
+export const LEGACY_DEFAULT_PREDICTIONS_MAX_SIZE = 288;
 
 export interface InvalidLegacyObjectId {
   index: number;
@@ -57,12 +59,48 @@ function legacyUtcOffsetMinutes(value: unknown): number {
   return match[1] === "-" ? -minutes : minutes;
 }
 
-/** Mirrors locked devicestatus.create() date normalization on the UTC Worker runtime. */
+/** Mirrors locked env.js parsing plus devicestatus.js's truthy opt-out. */
+export function parseLegacyPredictionsMaxSize(value: unknown): number | null {
+  if (value === undefined || value === null) return LEGACY_DEFAULT_PREDICTIONS_MAX_SIZE;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return LEGACY_DEFAULT_PREDICTIONS_MAX_SIZE;
+  return parsed === 0 ? null : parsed;
+}
+
+/** Mirrors locked devicestatus.truncatePredictions() without mutating its caller. */
+export function truncateLegacyDeviceStatusPredictions(
+  input: JsonDocument,
+  maxSize: number | null,
+): JsonDocument {
+  const document = structuredClone(input);
+  if (maxSize === null || maxSize <= 0) return document;
+  const openaps = document.openaps;
+  if (typeof openaps !== "object" || openaps === null || Array.isArray(openaps)) {
+    return document;
+  }
+  for (const branchName of ["suggested", "enacted"] as const) {
+    const branch = openaps[branchName];
+    if (typeof branch !== "object" || branch === null || Array.isArray(branch)) continue;
+    const predBGs = branch.predBGs;
+    if (typeof predBGs !== "object" || predBGs === null || Array.isArray(predBGs)) continue;
+    for (const type of LEGACY_PREDICTION_TYPES) {
+      const predictions = predBGs[type];
+      if (Array.isArray(predictions) && predictions.length > maxSize) {
+        predBGs[type] = predictions.slice(0, maxSize);
+      }
+    }
+  }
+  return document;
+}
+
+/** Mirrors locked devicestatus.create() normalization on the UTC Worker runtime. */
 export function normalizeLegacyDeviceStatusDocument(
   input: JsonDocument,
   now = Date.now(),
+  predictionsMaxSize: number | null = LEGACY_DEFAULT_PREDICTIONS_MAX_SIZE,
 ): JsonDocument {
-  const source = input.created_at;
+  const document = truncateLegacyDeviceStatusPredictions(input, predictionsMaxSize);
+  const source = document.created_at;
   const parsed = typeof source === "number"
     ? source
     : typeof source === "string"
@@ -70,7 +108,7 @@ export function normalizeLegacyDeviceStatusDocument(
       : Number.NaN;
   const millis = Number.isFinite(parsed) ? parsed : now;
   return {
-    ...input,
+    ...document,
     created_at: new Date(millis).toISOString(),
     utcOffset: legacyUtcOffsetMinutes(source),
   };

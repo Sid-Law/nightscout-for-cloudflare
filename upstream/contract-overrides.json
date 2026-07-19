@@ -354,6 +354,10 @@
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime AndroidAPS v1 contract in test/api-v1-core-contract.test.ts: SGV device/app metadata, dateString-derived utcOffset, SMB/meal/temp-basal numeric and boolean fields, pumpId/pumpType/pumpSerial preservation, single-array and multi-document batches, ordered ObjectId responses and stored-field reads."
     },
+    "vendor/nightscout/tests/api.deduplication.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete nine-case Workers-runtime v1 contract in test/api-v1-deduplication.test.ts: the locked AAPS treatment and entry replays, Loop carb and dose replays, Trio meal and temporary-target replays, four-item mixed batch, distinct separately timestamped cross-client uploads, and original treatment _id response. The tests preserve the actual locked selectors—Entries sysTime+type and Treatments identifier/_id then created_at+eventType—rather than treating descriptive pump/sync/id comments as database unique indexes."
+    },
     "vendor/nightscout/tests/api.alexa.test.js": {
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime Alexa REST contract in test/api-v1-core-contract.test.ts: the locked en-US LaunchRequest response and reprompt, LaunchRequest intent fallback, SessionEndedRequest response, anonymous readable-role authorization and official Speechlet response envelope. This is local protocol compatibility and does not call an external Alexa service."
@@ -370,6 +374,10 @@
       "status": "adapted",
       "reason": "Represented across test/api-v1-entries-contract.test.ts, test/api-v1-entries-utilities-contract.test.ts and test/api-v1-core-contract.test.ts: explicit/default count and date ordering, echo query shape, literal and numeric-brace multi-prefix slice, times/echo and modal times/minutes expansion, current/ID/model reads, preview and mutation authorization, single/multi/empty uploads, dateString normalization/utcOffset, and exact-date plus open dateString-range deletion. Pattern routes use documented Workers bounds and a fixture-complete linear regex subset."
     },
+    "vendor/nightscout/tests/api.entries.uuid.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete nine-case Workers-runtime contract in test/api-v1-entry-uuid.test.ts: the three sysTime+type baseline replays, UUID create/same-UUID/different-UUID behavior, mixed ObjectId/UUID/generated-ID batch, update of a pre-fix custom UUID _id row, and UUID preservation as identifier under a server ObjectId. The pre-fix row is inserted through the already adapted raw main-namespace storage path rather than fabricated by the v1 normalizer."
+    },
     "vendor/nightscout/tests/api.food.test.js": {
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime Food contract in test/api-v1-collections-contract.test.ts: urlencoded POST/PUT, JSON object and multi-item POST/PUT arrays, missing-ID upsert, existing-ID replacement with changed created_at, empty-array success, generated IDs, exact invalid-ID errors, delete response shape and read-after-delete."
@@ -381,6 +389,10 @@
     "vendor/nightscout/tests/api.objectid-validation.test.js": {
       "status": "adapted",
       "reason": "Represented by the pure Workers-runtime helper contract in test/api-v1-collections-contract.test.ts: undefined/null acceptance, 24-hex acceptance, UUID/number rejection, first-invalid batch reporting and all-valid null result."
+    },
+    "vendor/nightscout/tests/api.partial-failures.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete 14-case Workers-runtime contract in test/api-v1-partial-failures.test.ts: non-unique Trio id batches, response and Loop syncIdentifier ordering, replay positions, ObjectId/Trio/AAPS identity separation, per-item response IDs, large DeviceStatus predictions, configured/default/disabled IOB/COB/UAM/ZT truncation for suggested and enacted branches, the locked non-validating string-sgv fixture, and the 50-entry recovery batch. The adapter retains the 100-document and 512-KiB Workers bounds."
     },
     "vendor/nightscout/tests/api.root.test.js": {
       "status": "adapted",

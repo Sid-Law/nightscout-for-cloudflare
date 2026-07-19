@@ -29,7 +29,10 @@ import {
   type DocumentQuery,
 } from "./document-repository";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
-import { normalizeLegacyDeviceStatusDocument } from "./documents";
+import {
+  normalizeLegacyDeviceStatusDocument,
+  parseLegacyPredictionsMaxSize,
+} from "./documents";
 import {
   migrateRealtimeAlarmNamespaceV10,
   migrateRealtimeClosuresV8,
@@ -138,6 +141,7 @@ export type LegacyTreatmentCreateResult =
 type EntryStoreEnv = Env & NightscoutStatusEnvironment & {
   API_SECRET?: string;
   AUTH_DEFAULT_ROLES?: string;
+  PREDICTIONS_MAX_SIZE?: string;
 };
 
 const REALTIME_WEBSOCKET_TAG = "eio4-websocket";
@@ -2136,11 +2140,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       return result;
     }
     if (collection === "devicestatus") {
+      const predictionsMaxSize = parseLegacyPredictionsMaxSize(
+        this.env.PREDICTIONS_MAX_SIZE,
+      );
       const result = JSON.stringify(
         documents.map((document) =>
           this.documentRepository().createLegacyDocument(
             collection,
-            normalizeLegacyDeviceStatusDocument(document),
+            normalizeLegacyDeviceStatusDocument(document, Date.now(), predictionsMaxSize),
           ).document),
       );
       await this.publishRootDataUpdate();

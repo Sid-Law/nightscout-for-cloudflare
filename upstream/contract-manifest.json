@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "043466039d32cdf3d73e597483c76c23aa9311103bf83be11c638f6e71fbc308",
+  "inputs_sha256": "ab21a04865ffb2044c833688f501cac634ecdee94e06f7e6663f0547cf20fd28",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 42,
+      "adapted": 45,
       "excluded-fixed-scope": 2,
-      "unresolved": 67
+      "unresolved": 64
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7208,8 +7208,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.deduplication.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the complete nine-case Workers-runtime v1 contract in test/api-v1-deduplication.test.ts: the locked AAPS treatment and entry replays, Loop carb and dose replays, Trio meal and temporary-target replays, four-item mixed batch, distinct separately timestamped cross-client uploads, and original treatment _id response. The tests preserve the actual locked selectors—Entries sysTime+type and Treatments identifier/_id then created_at+eventType—rather than treating descriptive pump/sync/id comments as database unique indexes.",
       "workstream": "1-storage-foundation",
       "depends_on": [],
       "related_routes": [
@@ -7278,8 +7278,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.entries.uuid.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the complete nine-case Workers-runtime contract in test/api-v1-entry-uuid.test.ts: the three sysTime+type baseline replays, UUID create/same-UUID/different-UUID behavior, mixed ObjectId/UUID/generated-ID batch, update of a pre-fix custom UUID _id row, and UUID preservation as identifier under a server ObjectId. The pre-fix row is inserted through the already adapted raw main-namespace storage path rather than fabricated by the v1 normalizer.",
       "workstream": "1-storage-foundation",
       "depends_on": [],
       "related_routes": [
@@ -7341,8 +7341,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.partial-failures.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the complete 14-case Workers-runtime contract in test/api-v1-partial-failures.test.ts: non-unique Trio id batches, response and Loop syncIdentifier ordering, replay positions, ObjectId/Trio/AAPS identity separation, per-item response IDs, large DeviceStatus predictions, configured/default/disabled IOB/COB/UAM/ZT truncation for suggested and enacted branches, the locked non-validating string-sgv fixture, and the 50-entry recovery batch. The adapter retains the 100-document and 512-KiB Workers bounds.",
       "workstream": "1-storage-foundation",
       "depends_on": [],
       "related_routes": [
