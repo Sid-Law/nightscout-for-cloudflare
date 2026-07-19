@@ -124,6 +124,18 @@ export interface DocumentMutationResult {
   deduplicatedIdentifier?: string;
 }
 
+export type Api3RealtimeMutationEvent =
+  | {
+      type: "create" | "update";
+      collection: Api3CollectionName;
+      document: JsonDocument;
+    }
+  | {
+      type: "delete";
+      collection: Api3CollectionName;
+      identifier: string;
+    };
+
 export interface DocumentDeleteResult {
   deleted: boolean;
   permanent: boolean;
@@ -151,6 +163,8 @@ export interface Api3MutationOptions {
   ifUnmodifiedSince: number | null;
   /** HTTP API3 enables branch-sensitive validation; compatibility wrappers opt out. */
   validate?: boolean;
+  /** Only the HTTP API3 boundary emits the upstream `/storage` change event. */
+  emitRealtime?: boolean;
 }
 
 interface DbDocumentV4 {
@@ -1658,10 +1672,28 @@ export function migrateEntriesV6(sql: SqlStorage): void {
   }
 }
 export class SqliteDocumentRepository {
-  constructor(private readonly storage: DurableObjectStorage) {}
+  constructor(
+    private readonly storage: DurableObjectStorage,
+    private readonly onApi3RealtimeMutation?: (event: Api3RealtimeMutationEvent) => void,
+  ) {}
 
   private get sql(): SqlStorage {
     return this.storage.sql;
+  }
+
+  private emitApi3RealtimeMutation(
+    collection: Api3CollectionName,
+    mutation: DocumentMutationResult,
+    enabled: boolean | undefined,
+  ): DocumentMutationResult {
+    if (enabled === true && this.onApi3RealtimeMutation !== undefined) {
+      this.onApi3RealtimeMutation({
+        type: mutation.created ? "create" : "update",
+        collection,
+        document: mutation.document,
+      });
+    }
+    return mutation;
   }
 
   private findByIdRow(
@@ -2509,16 +2541,21 @@ export class SqliteDocumentRepository {
       }
       if (options.actor !== null) document.subject = options.actor;
       const id = existing?.id ?? requestedId(document) ?? randomObjectId();
+      const mutation = this.writeSnapshot(
+        id,
+        document,
+        existing,
+        existing === undefined ? "create" : "replace",
+        "api3",
+        undefined,
+        collection,
+      );
       return {
         ok: true,
-        mutation: this.writeSnapshot(
-          id,
-          document,
-          existing,
-          existing === undefined ? "create" : "replace",
-          "api3",
-          undefined,
+        mutation: this.emitApi3RealtimeMutation(
           collection,
+          mutation,
+          options.emitRealtime,
         ),
       };
     });
@@ -2563,16 +2600,21 @@ export class SqliteDocumentRepository {
           assertApi3Common(document);
         }
         if (options.actor !== null) document.subject = options.actor;
+        const mutation = this.writeSnapshot(
+          requestedId(document) ?? randomObjectId(),
+          document,
+          undefined,
+          "create",
+          "api3",
+          undefined,
+          collection,
+        );
         return {
           ok: true,
-          mutation: this.writeSnapshot(
-            requestedId(document) ?? randomObjectId(),
-            document,
-            undefined,
-            "create",
-            "api3",
-            undefined,
+          mutation: this.emitApi3RealtimeMutation(
             collection,
+            mutation,
+            options.emitRealtime,
           ),
         };
       }
@@ -2594,16 +2636,21 @@ export class SqliteDocumentRepository {
         document.srvCreated = resolvedExisting.srvCreated;
       }
       const serverSrvCreated = finiteInteger(resolvedExisting.srvCreated);
+      const mutation = this.writeSnapshot(
+        existing.id,
+        document,
+        existing,
+        "replace",
+        "api3",
+        serverSrvCreated ?? undefined,
+        collection,
+      );
       return {
         ok: true,
-        mutation: this.writeSnapshot(
-          existing.id,
-          document,
-          existing,
-          "replace",
-          "api3",
-          serverSrvCreated ?? undefined,
+        mutation: this.emitApi3RealtimeMutation(
           collection,
+          mutation,
+          options.emitRealtime,
         ),
       };
     });
@@ -2653,16 +2700,21 @@ export class SqliteDocumentRepository {
       if (options.actor !== null) serverPatch.modifiedBy = options.actor;
       normalizeTreatmentDuration(serverPatch, original);
       const document = { ...original, ...serverPatch };
+      const mutation = this.writeSnapshot(
+        existing.id,
+        document,
+        existing,
+        "patch",
+        "api3",
+        undefined,
+        collection,
+      );
       return {
         ok: true,
-        mutation: this.writeSnapshot(
-          existing.id,
-          document,
-          existing,
-          "patch",
-          "api3",
-          undefined,
+        mutation: this.emitApi3RealtimeMutation(
           collection,
+          mutation,
+          options.emitRealtime,
         ),
       };
     });
@@ -2697,6 +2749,7 @@ export class SqliteDocumentRepository {
     permanent = false,
     actor: string | null = null,
     collection: Api3CollectionName = TREATMENTS,
+    emitRealtime = false,
   ): DocumentDeleteResult {
     return this.storage.transactionSync(() => {
       const existing = this.findByIdentity(identity, collection);
@@ -2725,6 +2778,9 @@ export class SqliteDocumentRepository {
           existing.id,
         );
         if (collection === ENTRIES) this.sql.exec("DELETE FROM entries WHERE id = ?", existing.id);
+        if (emitRealtime && this.onApi3RealtimeMutation !== undefined) {
+          this.onApi3RealtimeMutation({ type: "delete", collection, identifier: identity });
+        }
         return { deleted: true, permanent: true };
       }
       const document = materializeLegacy(existing);
@@ -2740,6 +2796,9 @@ export class SqliteDocumentRepository {
         collection,
       );
       if (mutation.srvModified === null) throw new Error("soft delete has no srvModified");
+      if (emitRealtime && this.onApi3RealtimeMutation !== undefined) {
+        this.onApi3RealtimeMutation({ type: "delete", collection, identifier: identity });
+      }
       return {
         deleted: true,
         permanent: false,
@@ -2755,7 +2814,7 @@ export class SqliteDocumentRepository {
     permanent = false,
     actor: string | null = null,
   ): DocumentDeleteResult {
-    return this.deleteTreatment(identity, permanent, actor, collection);
+    return this.deleteTreatment(identity, permanent, actor, collection, true);
   }
 
   deleteDocumentById(collection: Api3CollectionName, id: string): boolean {

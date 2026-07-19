@@ -12,6 +12,10 @@ import {
   type SocketIoV5EventPacket,
   type SocketIoV5Packet,
 } from "../protocol";
+import type {
+  Api3CollectionName,
+  Api3RealtimeMutationEvent,
+} from "../document-repository";
 import {
   REALTIME_CLEANUP_BATCH,
   REALTIME_MAX_PAYLOAD_BYTES,
@@ -57,6 +61,10 @@ export interface RealtimeServiceOptions {
     | RealtimeAuthorization
     | null
     | Promise<RealtimeAuthorization | null>;
+  authorizeStorage?: (message: Record<string, unknown>) =>
+    | readonly Api3CollectionName[]
+    | null
+    | Promise<readonly Api3CollectionName[] | null>;
   snapshot?: (now: number) => RealtimeSnapshot | null;
   retroDeviceStatus?: (now: number) => unknown[] | null;
   status?: (now: number) => Record<string, unknown>;
@@ -111,6 +119,12 @@ function defaultAuthorization(message: Record<string, unknown>): RealtimeAuthori
     : null;
 }
 
+function defaultStorageAuthorization(
+  _message: Record<string, unknown>,
+): readonly Api3CollectionName[] | null {
+  return null;
+}
+
 function randomLeaseToken(): string {
   return crypto.randomUUID();
 }
@@ -131,10 +145,12 @@ export class RealtimeSessionService {
   private readonly now: () => number;
   private readonly pollWaitMs: number;
   private readonly authorize: NonNullable<RealtimeServiceOptions["authorize"]>;
+  private readonly authorizeStorage: NonNullable<RealtimeServiceOptions["authorizeStorage"]>;
   private readonly snapshot: NonNullable<RealtimeServiceOptions["snapshot"]>;
   private readonly retroDeviceStatus: NonNullable<RealtimeServiceOptions["retroDeviceStatus"]>;
   private readonly status: RealtimeServiceOptions["status"];
   private readonly waiters = new Map<string, PollWaiter>();
+  private readonly pendingApplicationWakeSids = new Set<string>();
 
   constructor(
     private readonly storage: DurableObjectStorage,
@@ -144,6 +160,7 @@ export class RealtimeSessionService {
     this.now = options.now ?? Date.now;
     this.pollWaitMs = options.pollWaitMs ?? REALTIME_PING_INTERVAL_MS;
     this.authorize = options.authorize ?? defaultAuthorization;
+    this.authorizeStorage = options.authorizeStorage ?? defaultStorageAuthorization;
     this.snapshot = options.snapshot ?? defaultSnapshot;
     this.retroDeviceStatus = options.retroDeviceStatus ?? ((now) =>
       this.snapshot(now)?.devicestatus ?? null
@@ -584,6 +601,57 @@ export class RealtimeSessionService {
     for (const sid of result.wakeTargets) this.wake(sid);
   }
 
+  /**
+   * Called from the document repository while its API3 mutation transaction is
+   * still open. The persisted per-session packet queues are therefore the
+   * change outbox: either the document and every accepted frame commit
+   * together, or neither does. A saturated subscriber is dropped without
+   * failing the storage mutation.
+   */
+  recordApi3StorageMutationInTransaction(event: Api3RealtimeMutationEvent): void {
+    let packet: string;
+    try {
+      const payload = event.type === "delete"
+        ? { colName: event.collection, identifier: event.identifier }
+        : { colName: event.collection, doc: event.document };
+      packet = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+        type: "event",
+        namespace: "/storage",
+        data: [event.type, payload],
+      }));
+    } catch {
+      // A document mutation must never be rolled back because one realtime
+      // representation cannot fit the bounded transport adapter.
+      return;
+    }
+
+    const now = this.now();
+    let droppedConnectedRoot = false;
+    for (const sid of this.repository.listStorageSubscriberSessionIds(event.collection, now)) {
+      try {
+        this.repository.enqueueFrames(sid, [packet], now);
+        this.pendingApplicationWakeSids.add(sid);
+      } catch {
+        const session = this.repository.getSession(sid);
+        if (session?.socketConnected === true) droppedConnectedRoot = true;
+        this.repository.deleteSessionInTransaction(sid);
+        this.pendingApplicationWakeSids.add(sid);
+      }
+    }
+    if (droppedConnectedRoot) {
+      for (const sid of this.enqueueClientsForConnectedSessions(now)) {
+        this.pendingApplicationWakeSids.add(sid);
+      }
+    }
+  }
+
+  flushApplicationWakes(): number {
+    const sids = [...this.pendingApplicationWakeSids];
+    this.pendingApplicationWakeSids.clear();
+    for (const sid of sids) this.wake(sid);
+    return sids.length;
+  }
+
   private commitProcessedSession(
     sid: string,
     initial: RealtimeSession,
@@ -689,6 +757,19 @@ export class RealtimeSessionService {
     broadcasts: EngineIoV4Packet[],
   ): Promise<void> {
     if (packet.type === "connect") {
+      if (packet.namespace === "/storage") {
+        const socketSid = this.repository.connectStorageNamespace(session.sid, this.now());
+        if (socketSid === null) {
+          throw new RealtimeSessionError(
+            "bad_packet",
+            "storage namespace is already connected",
+          );
+        }
+        outbound.push(wrapSocketIoV5Packet(
+          createSocketIoV5ServerConnectPacket("/storage", socketSid),
+        ));
+        return;
+      }
       if (packet.namespace !== "/") {
         outbound.push(wrapSocketIoV5Packet({
           type: "error",
@@ -718,6 +799,10 @@ export class RealtimeSessionService {
     }
 
     if (packet.type === "disconnect") {
+      if (packet.namespace === "/storage") {
+        this.repository.disconnectStorageNamespace(session.sid);
+        return;
+      }
       if (packet.namespace === "/") {
         session.socketConnected = false;
         session.authorized = false;
@@ -735,10 +820,55 @@ export class RealtimeSessionService {
     }
 
     if (packet.type === "ack" || packet.type === "error") return;
+    if (packet.namespace === "/storage") {
+      if (!this.repository.storageNamespaceConnected(session.sid)) {
+        throw new RealtimeSessionError(
+          "bad_packet",
+          "storage event requires the connected storage namespace",
+        );
+      }
+      await this.processStorageEvent(session, packet, outbound);
+      return;
+    }
     if (packet.namespace !== "/" || !session.socketConnected) {
       throw new RealtimeSessionError("bad_packet", "event requires the connected root namespace");
     }
     await this.processRootEvent(session, packet, outbound, broadcasts);
+  }
+
+  private async processStorageEvent(
+    session: RealtimeSession,
+    packet: SocketIoV5EventPacket,
+    outbound: EngineIoV4Packet[],
+  ): Promise<void> {
+    if (packet.data[0] !== "subscribe") return;
+
+    const rawMessage = packet.data.length === 2 ? packet.data[1] : undefined;
+    const message = typeof rawMessage === "object"
+      && rawMessage !== null
+      && !Array.isArray(rawMessage)
+      ? rawMessage as Record<string, unknown>
+      : null;
+    const collections = message === null ? null : await this.authorizeStorage(message);
+    let result: Record<string, unknown>;
+    if (collections === null) {
+      result = { success: false, message: "Missing or bad accessToken" };
+    } else if (collections.length === 0) {
+      result = { success: false, message: "Unauthorized to receive any collection" };
+    } else {
+      const granted = [...collections];
+      this.repository.addStorageSubscriptions(session.sid, granted, this.now());
+      result = { success: true, collections: granted };
+    }
+
+    if (packet.id !== undefined) {
+      outbound.push(wrapSocketIoV5Packet({
+        type: "ack",
+        namespace: "/storage",
+        id: packet.id,
+        data: [result],
+      }));
+    }
   }
 
   private async processRootEvent(

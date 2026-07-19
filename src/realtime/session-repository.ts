@@ -206,6 +206,9 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
       socket_offset INTEGER NOT NULL DEFAULT 0 CHECK (socket_offset >= 0)
     );
   `);
+  // Keep the public bootstrap sufficient for repository users and tests; the
+  // independent v9 marker below still records deployment provenance.
+  migrateRealtimeStorageNamespaceV9(storage);
 }
 
 interface SchemaRow {
@@ -314,6 +317,30 @@ export function migrateRealtimeClosuresV8(storage: DurableObjectStorage): void {
   `);
 }
 
+/**
+ * API v3's `/storage` namespace keeps connection and room membership durable so
+ * a Durable Object eviction does not silently unsubscribe an Engine.IO SID.
+ */
+export function migrateRealtimeStorageNamespaceV9(storage: DurableObjectStorage): void {
+  storage.sql.exec(`
+    CREATE TABLE IF NOT EXISTS realtime_storage_connections (
+      sid TEXT PRIMARY KEY,
+      socket_sid TEXT NOT NULL UNIQUE,
+      connected_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS realtime_storage_subscriptions (
+      sid TEXT NOT NULL,
+      collection TEXT NOT NULL CHECK (
+        collection IN ('entries', 'treatments', 'devicestatus', 'profile', 'food', 'settings')
+      ),
+      subscribed_at INTEGER NOT NULL,
+      PRIMARY KEY (sid, collection)
+    );
+    CREATE INDEX IF NOT EXISTS realtime_storage_by_collection
+      ON realtime_storage_subscriptions(collection, subscribed_at, sid);
+  `);
+}
+
 export class SqliteRealtimeSessionRepository {
   constructor(private readonly storage: DurableObjectStorage) {}
 
@@ -391,8 +418,89 @@ export class SqliteRealtimeSessionRepository {
       now,
       sid,
     );
+    this.storage.sql.exec("DELETE FROM realtime_storage_subscriptions WHERE sid = ?", sid);
+    this.storage.sql.exec("DELETE FROM realtime_storage_connections WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_outbound_packets WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_sessions WHERE sid = ?", sid);
+  }
+
+  connectStorageNamespace(sid: string, now: number): string | null {
+    this.requireSession(sid);
+    const existing = this.storage.sql
+      .exec<SidRow>(
+        "SELECT socket_sid AS sid FROM realtime_storage_connections WHERE sid = ? LIMIT 1",
+        sid,
+      )
+      .toArray()[0];
+    if (existing !== undefined) return null;
+    const socketSid = randomSessionId();
+    this.storage.sql.exec(
+      `INSERT INTO realtime_storage_connections (sid, socket_sid, connected_at)
+       VALUES (?, ?, ?)`,
+      sid,
+      socketSid,
+      now,
+    );
+    return socketSid;
+  }
+
+  storageNamespaceConnected(sid: string): boolean {
+    return this.storage.sql
+      .exec<CountRow>(
+        `SELECT EXISTS(
+           SELECT 1 FROM realtime_storage_connections WHERE sid = ?
+         ) AS count`,
+        sid,
+      )
+      .one().count === 1;
+  }
+
+  disconnectStorageNamespace(sid: string): void {
+    this.storage.sql.exec("DELETE FROM realtime_storage_subscriptions WHERE sid = ?", sid);
+    this.storage.sql.exec("DELETE FROM realtime_storage_connections WHERE sid = ?", sid);
+  }
+
+  addStorageSubscriptions(
+    sid: string,
+    collections: readonly string[],
+    now: number,
+  ): void {
+    if (!this.storageNamespaceConnected(sid)) {
+      throw new RealtimeRepositoryError("unknown_sid", "storage namespace is not connected");
+    }
+    for (const collection of new Set(collections)) {
+      this.storage.sql.exec(
+        `INSERT OR IGNORE INTO realtime_storage_subscriptions
+           (sid, collection, subscribed_at)
+         VALUES (?, ?, ?)`,
+        sid,
+        collection,
+        now,
+      );
+    }
+  }
+
+  listStorageSubscriberSessionIds(collection: string, now: number): string[] {
+    return this.storage.sql
+      .exec<SidRow>(
+        `SELECT session.sid AS sid
+         FROM realtime_storage_subscriptions AS subscription
+         INNER JOIN realtime_storage_connections AS connection
+           ON connection.sid = subscription.sid
+         INNER JOIN realtime_sessions AS session
+           ON session.sid = subscription.sid
+         WHERE subscription.collection = ?
+           AND session.expires_at > ?
+           AND (session.pong_deadline IS NULL OR session.pong_deadline > ?)
+         ORDER BY subscription.subscribed_at, session.created_at, session.sid
+         LIMIT ?`,
+        collection,
+        now,
+        now,
+        REALTIME_MAX_SESSIONS_PER_TENANT,
+      )
+      .toArray()
+      .map((row) => row.sid);
   }
 
   cleanupOpportunity(

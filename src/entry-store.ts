@@ -32,6 +32,7 @@ import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
 import {
   migrateRealtimeClosuresV8,
   migrateRealtimeSessions,
+  migrateRealtimeStorageNamespaceV9,
   migrateRealtimeTransportsV7,
 } from "./realtime/session-repository";
 import {
@@ -133,6 +134,14 @@ const REALTIME_WEBSOCKET_ATTACHMENT_VERSION = 1;
 const REALTIME_WEBSOCKET_EVENT_TIMEOUT_MS = 15_000;
 const REALTIME_SID = /^[A-Za-z0-9_-]{20}$/;
 const REALTIME_ENTRY_WINDOW_MS = 2 * 24 * 60 * 60 * 1_000;
+const API3_STORAGE_COLLECTIONS: readonly Api3CollectionName[] = [
+  "devicestatus",
+  "entries",
+  "food",
+  "profile",
+  "settings",
+  "treatments",
+];
 // Locked Profile.last() is the source for /profile/current, status settings,
 // and dataloader realtime profiles. json_valid keeps the adapter resilient to
 // a corrupt SQLite row that MongoDB itself could never have stored.
@@ -397,6 +406,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         this.tenantStatusSettings(),
       ),
       authorize: (message) => this.realtimeAuthorize(message),
+      authorizeStorage: (message) => this.realtimeStorageAuthorize(message),
     });
     ctx.blockConcurrencyWhile(async () => {
       this.migrate();
@@ -501,6 +511,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       migrateRealtimeClosuresV8(this.ctx.storage);
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (8)",
+      );
+
+      migrateRealtimeStorageNamespaceV9(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (9)",
       );
 
       // This named, idempotent auth state is intentionally independent of the
@@ -821,7 +836,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private documentRepository(): SqliteDocumentRepository {
-    return new SqliteDocumentRepository(this.ctx.storage);
+    return new SqliteDocumentRepository(
+      this.ctx.storage,
+      (event) => this.realtime.recordApi3StorageMutationInTransaction(event),
+    );
   }
 
   private configuredApiSecret(): string | null {
@@ -1486,6 +1504,49 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return null;
   }
 
+  private async realtimeStorageAuthorize(
+    message: Record<string, unknown>,
+  ): Promise<readonly Api3CollectionName[] | null> {
+    const accessToken = message.accessToken;
+    if (
+      typeof accessToken !== "string"
+      || accessToken.length === 0
+      || accessToken.length > 4096
+    ) {
+      return null;
+    }
+    const subjectJson = await this.resolveAuthorizationSubject(
+      JSON.stringify([accessToken]),
+    );
+    if (subjectJson === null) return null;
+    const subject = JSON.parse(subjectJson) as JsonDocument;
+    const groups = await this.realtimePermissionGroups(subject.roles);
+    const requested = Array.isArray(message.collections)
+      ? message.collections
+      : API3_STORAGE_COLLECTIONS;
+    const granted: Api3CollectionName[] = [];
+    for (const candidate of requested) {
+      if (
+        typeof candidate !== "string"
+        || !API3_STORAGE_COLLECTIONS.includes(candidate as Api3CollectionName)
+      ) {
+        continue;
+      }
+      const collection = candidate as Api3CollectionName;
+      const permission = collection === "settings"
+        ? "api:settings:admin"
+        : `api:${collection}:read`;
+      if (permissionGroupsAllow(groups, permission)) granted.push(collection);
+    }
+    return granted;
+  }
+
+  private async flushApi3RealtimeMutation(): Promise<void> {
+    if (this.realtime.flushApplicationWakes() === 0) return;
+    this.flushRealtimeWebSockets();
+    await this.synchronizeRealtimeAlarm();
+  }
+
   private async synchronizeRealtimeAlarm(): Promise<void> {
     // Cloudflare persists one alarm per Durable Object. Derive that alarm from
     // SQL after every state transition so eviction never makes in-memory timer
@@ -2091,17 +2152,20 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): Promise<string> {
     const document = JSON.parse(documentJson) as JsonDocument;
     const options = JSON.parse(optionsJson) as Api3MutationOptions;
+    let result: string;
     try {
-      return JSON.stringify(
+      result = JSON.stringify(
         this.documentRepository().createDocumentForApi3(collection, document, options),
       );
     } catch (error) {
-      return JSON.stringify({
+      result = JSON.stringify({
         ok: false,
         reason: "operation-error",
         message: error instanceof Error ? error.message : String(error),
       });
     }
+    await this.flushApi3RealtimeMutation();
+    return result;
   }
 
   async api3ReplaceDocument(
@@ -2112,8 +2176,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): Promise<string> {
     const document = JSON.parse(documentJson) as JsonDocument;
     const options = JSON.parse(optionsJson) as Api3MutationOptions;
+    let result: string;
     try {
-      return JSON.stringify(
+      result = JSON.stringify(
         this.documentRepository().replaceDocumentForApi3(
           collection,
           identity,
@@ -2122,12 +2187,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         ),
       );
     } catch (error) {
-      return JSON.stringify({
+      result = JSON.stringify({
         ok: false,
         reason: "operation-error",
         message: error instanceof Error ? error.message : String(error),
       });
     }
+    await this.flushApi3RealtimeMutation();
+    return result;
   }
 
   async api3PatchDocument(
@@ -2138,8 +2205,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): Promise<string> {
     const patch = JSON.parse(patchJson) as JsonDocument;
     const options = JSON.parse(optionsJson) as Api3MutationOptions;
+    let result: string;
     try {
-      return JSON.stringify(
+      result = JSON.stringify(
         this.documentRepository().patchDocumentForApi3(
           collection,
           identity,
@@ -2148,12 +2216,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         ),
       );
     } catch (error) {
-      return JSON.stringify({
+      result = JSON.stringify({
         ok: false,
         reason: "operation-error",
         message: error instanceof Error ? error.message : String(error),
       });
     }
+    await this.flushApi3RealtimeMutation();
+    return result;
   }
 
   async api3DeleteDocument(
@@ -2162,12 +2232,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     permanent: boolean,
     actor: string | null,
   ): Promise<DocumentDeleteResult> {
-    return this.documentRepository().deleteDocumentForApi3(
-      collection,
-      identity,
-      permanent,
-      actor,
-    );
+    try {
+      return this.documentRepository().deleteDocumentForApi3(
+        collection,
+        identity,
+        permanent,
+        actor,
+      );
+    } finally {
+      await this.flushApi3RealtimeMutation();
+    }
   }
 
   async api3CollectionLastModified(

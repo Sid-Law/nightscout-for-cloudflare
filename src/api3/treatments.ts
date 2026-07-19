@@ -256,6 +256,7 @@ function mutationOptions(
     actor: authorization.sub || null,
     ifUnmodifiedSince: ifUnmodifiedSince(request),
     validate: true,
+    emitRealtime: true,
   };
 }
 
