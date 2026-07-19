@@ -1,6 +1,6 @@
 # Complete Nightscout port execution plan
 
-Last synchronized: 2026-07-19
+Last synchronized: 2026-07-20
 
 ## Goal and fixed scope
 
@@ -48,8 +48,8 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
 | 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current homepage and Food Editor load successfully; Food reached `Database loaded` anonymously. The locked chart module logs its known missing-`#chartContainer` warning on the non-chart Food page, but no console error occurred. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. `/storage` now atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
-| 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD. Bounded Entries echo plus direct SQLite count for entries/treatments/device status are deployed; Activity CRUD and authenticated GET `/notifications/ack` are implemented. Complete times/echo, times, slice, non-Entries echo, bounded aggregation-pipeline parity, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
-| 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status and inherited v1 notification ACK are implemented; complete summary, the v2-only `/notifications/loop` external integration contract and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
+| 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD. Bounded Entries echo plus direct SQLite count for entries/treatments/device status are deployed; Activity CRUD, authenticated GET `/notifications/ack`, and Treatments POST `preBolus` fan-out are implemented. Complete times/echo, times, slice, non-Entries echo, bounded aggregation-pipeline parity, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
+| 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK and inherited Treatments `preBolus` create behavior are implemented; complete summary, the v2-only `/notifications/loop` external integration contract and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
 | 6. API v3 | Partial six-collection slice | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add large-response resource controls, broader mixed-type/nested query parity and whole upstream API3 test execution. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
 | 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read-only data events and the API3 `/storage` and `/alarm` namespaces. `/alarm` has locked subscription/auth/ACK behavior and a trusted notification outlet, but the server-side notification engine is missing. Complete the official-page switch only after safe tenant propagation and notification integration; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP and root writes. |
@@ -94,17 +94,17 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0` adds inherited v1/v2 notification
-ACK and a DO alarm wakeup-race repair to the persisted API v3 `/alarm`
-namespace, prior `/storage`, six-collection API3, Entries, Status,
-authorization and direct Hibernatable EIO4 WebSocket slices. Cloudflare Worker
-version `9278cd8f-80aa-40bd-bf4e-4eb40a846849` was reported as the Current
-Version by the direct deployment, with a 24 ms startup. Wrangler processed 248
-official asset entries with no asset-byte uploads, reported 910.19 KiB raw /
-163.26 KiB gzip, and the
-dry run exposed only `ENTRY_STORE` plus `ASSETS`. Deployment used `--keep-vars`
-and version tag `git-56fb221`; no deployed credential was supplied to remote
-smoke requests. The 23-file Workers-runtime suite passed 254/254,
+`94c3816ef58931362f2f576b181891f7188ae430` adds the locked v1 Treatments POST
+`preBolus` fan-out, inherited by v2, to the prior notification ACK, API v3
+`/alarm` and `/storage`, six-collection API3, Entries, Status, authorization
+and direct Hibernatable EIO4 WebSocket slices. Cloudflare Worker version
+`59bac3ab-c448-4c9b-a360-db2179e62f74` was reported as the Current Version by
+the direct deployment, with a 26 ms startup. Wrangler processed 248 official
+asset entries with no asset-byte uploads; deployment reported 912.74 KiB raw /
+163.95 KiB gzip, while the final dry run reported 912.70 KiB raw /
+163.93 KiB gzip and exposed only `ENTRY_STORE` plus `ASSETS`. Deployment used
+`--keep-vars` and version tag `git-94c3816ef589`; no deployed credential was
+supplied to remote smoke requests. The 24-file Workers-runtime suite passed 258/258,
 both audit suites passed 20/20, the dependency audit reported zero known
 vulnerabilities, and TypeScript plus the official UI build completed before
 deployment. A plaintext API credential can be rendered by metadata tooling;
@@ -112,12 +112,18 @@ the lab credential must be rotated and converted to a Worker Secret before
 non-lab use. Its value is absent from repository documentation. These remain
 subset facts, not a full-port claim.
 
-This increment adds the official v1 `/notifications/ack` route on both v1 and
-v2 mounts, sharing one persisted ACK/all-clear transaction with the API v3
-`/alarm` namespace. It also repairs a stale already-due DO alarm race while
-retaining `/alarm` subscription authority, the trusted live notification
-outlet, the `/storage` namespace, its authorized room subscriptions and
-API3-only mutation events, plus all eight generic
+This increment reproduces the official Treatments create split: every truthy
+nonzero normalized `preBolus` creates the time-shifted carb record. Truthy
+carbs move off the primary; missing or zero carbs retains the locked empty
+string on the child. V2 inherits the same v1 route; PUT remains the
+official one-record save path. NSCF commits both POST records in one synchronous
+SQLite transaction, a deliberate platform strengthening over a possible
+partial two-write failure, and retransmission deduplicates both records. It
+retains the official v1 `/notifications/ack` route on both v1 and v2 mounts,
+the repaired stale already-due DO alarm behavior, `/alarm` subscription
+authority, the trusted live notification outlet, the `/storage` namespace,
+its authorized room subscriptions and API3-only mutation events, plus all
+eight generic
 API v3 routes for Food and Settings, six-collection `lastModified` and v1 Food
 writes on the same repository/history contract. Food uses the locked
 `created_at`-only fallback; Settings has no fallback identity, and its search/
@@ -196,6 +202,8 @@ The deployed increment includes:
   query/sort, current/model/ID reads and JSON/plain/CSV/TSV conditional GET/HEAD;
 - bounded Entries `echo` plus SQL aggregate count for entries, treatments and
   device status, inherited by API v2;
+- locked Treatments POST `preBolus` two-record fan-out on both v1 and v2,
+  atomic in SQLite, with PUT retaining the one-record save contract;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
 - all eight generic API v3 routes for entries, treatments, device status,
@@ -222,18 +230,16 @@ The deployed increment includes:
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
 Final credential-free remote smoke returned HTTP 200 for health and v15.0.7
-Status. Both v1 and v2 notification ACK routes returned the locked HTTP 401
-envelope without a credential. A fresh EIO4 polling session connected `/alarm`
-independently and its anonymous web subscription returned the exact successful
-`{read:true,ack:false}` response. Full credentialed ACK/broadcast behavior
-remains locally tested because no deployed credential was read or sent.
-
-A real browser run rendered the official homepage and empty chart state without
-console errors. The official Food Editor reached `Database loaded` and showed
-its anonymous read-only state. The locked upstream chart module logged its
-known missing-`#chartContainer` warning on that non-chart page; it is recorded
-rather than hidden by a downstream UI change. No credentialed Food/Profile
-write was attempted, so protected workflows remain unproven.
+Status. Anonymous v1/v2 Treatments reads returned the empty collection;
+anonymous v1/v2 POSTs returned the locked HTTP 401 envelope and no record was
+written. The credentialed `preBolus` mutation and inherited realtime contracts
+remain locally tested because no deployed credential was read or sent. A real
+browser loaded the official homepage through a stable realtime connection and
+the Admin, Food, Profile and `clock-color` pages without console errors or a
+protected write. That browser run used the immediately preceding deployment in
+this increment; the final correction changed only the Treatments POST
+empty-carb edge and uploaded no changed browser asset. Final-version remote API
+smoke was repeated.
 
 The code is still not a full port: Entries times/echo/times/slice and
 non-Entries echo, large-response CSV/XML

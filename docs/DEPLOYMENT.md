@@ -1,6 +1,6 @@
 # Current deployment record
 
-Last synchronized: 2026-07-19 (Asia/Shanghai)
+Last synchronized: 2026-07-20 (Asia/Shanghai)
 
 ## Status
 
@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`
-- Git HEAD used by Wrangler: `56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`
-- Cloudflare Version ID: `9278cd8f-80aa-40bd-bf4e-4eb40a846849`
-- Version tag/message: `git-56fb221` /
-  `git 56fb221 v1 v2 notification ack`
+- Deployed code candidate: `94c3816ef58931362f2f576b181891f7188ae430`
+- Git HEAD used by Wrangler: `94c3816ef58931362f2f576b181891f7188ae430`
+- Cloudflare Version ID: `59bac3ab-c448-4c9b-a360-db2179e62f74`
+- Version tag/message: `git-94c3816ef589` /
+  `git 94c3816ef589 exact v1 v2 treatment prebolus`
 - Version creation time: not printed by this Wrangler deployment; none is
   inferred
 - Activation: direct `wrangler deploy` reported this as the Current Version;
   no separate activation timestamp was printed
-- Worker startup: 24 ms
+- Worker startup: 26 ms
 - Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
@@ -29,7 +29,7 @@ is not counted as API, plugin or real-time compatibility.
   silence tables
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 910.19 KiB raw / 163.26 KiB gzip
+- Upload: 912.74 KiB raw / 163.95 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -58,6 +58,12 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 This increment deploys:
 
+- the locked v1 Treatments POST `preBolus` fan-out, inherited by v2: every
+  truthy normalized value creates the time-shifted child, truthy carbs move off
+  the primary, and a missing/zero carbs value retains upstream's empty-string
+  child field. Response ordering and retransmission identity match upstream,
+  and both records commit in one SQLite transaction. PUT retains the upstream
+  one-record save behavior;
 - an adapted v1/v2 Entries vertical: single/array/extended-urlencoded uploads,
   preview, body-credential removal precedence, ordered batch-prefix commits,
   all non-ObjectId uploader sync IDs preserved as `identifier`, bounded scalar
@@ -151,10 +157,11 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`. It adds inherited v1/v2
-notification ACK and the stale-past DO alarm scheduling repair while retaining
-the persisted API v3 `/alarm`, prior `/storage`, six-collection API3, Entries,
-Profile, transport and official-page work.
+`94c3816ef58931362f2f576b181891f7188ae430`. It adds the locked v1/v2
+Treatments POST `preBolus` fan-out while retaining notification ACK, the
+stale-past DO alarm scheduling repair, persisted API v3 `/alarm`, prior
+`/storage`, six-collection API3, Entries, Profile, transport and official-page
+work.
 The table below records the exact local gate completed before deployment.
 
 | Check | Result |
@@ -166,21 +173,23 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 23 files, 254/254 passed |
+| Workers integration tests | 24 files, 258/258 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 910.19 KiB raw / 163.26 KiB gzip |
+| Worker dry run | 912.70 KiB raw / 163.93 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 254 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 258 Workers
 tests cover the implemented adapter subset; `notifications-api.test.js` is the
 first file classified as fully `adapted`, 108 remain unresolved and two bridge
-files are fixed-scope exclusions. Neither count proves complete compatibility.
+files are fixed-scope exclusions. The new named Treatments contracts do not
+make the whole `api.treatments.test.js` adapted. Neither count proves complete
+compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `9278cd8f-80aa-40bd-bf4e-4eb40a846849` as the Current
+Wrangler reports version `59bac3ab-c448-4c9b-a360-db2179e62f74` as the Current
 Version. These credential-free checks verified response content and protocol
 markers, not only Wrangler command success.
 
@@ -188,19 +197,23 @@ markers, not only Wrangler command success.
 | --- | --- |
 | `/healthz` | HTTP 200 |
 | `/api/v1/status.json` | HTTP 200; locked Nightscout version `15.0.7` and `runtimeState:loaded` |
-| `/api/v1/notifications/ack?level=1` without credential | HTTP 401 with the locked `Invalid/Missing` envelope |
-| `/api/v2/notifications/ack?level=2` without credential | HTTP 401 with the same inherited envelope |
+| anonymous `/api/v1/treatments.json?count=1` | HTTP 200 and `[]` |
+| anonymous `/api/v2/treatments.json?count=1` | HTTP 200 and `[]` |
+| anonymous v1 Treatments POST | HTTP 401 with the locked `Invalid/Missing` envelope |
+| anonymous v2 Treatments POST | HTTP 401 with the same inherited envelope |
+| follow-up Treatments read | still `[]`; rejected writes did not persist |
 
-No deployed credential was read or sent, no alarm was silenced remotely and no
-credentialed write was attempted. The full local suite keeps the exact
-credentialed ACK, clear broadcast, repeated suppression and prior API contracts
-green.
+No deployed credential was read or sent and no credentialed write was
+attempted. The full local suite covers exact primary/child fields and ordering,
+v2 inheritance, stable replay IDs, ddata visibility, ordered batches and
+rollback when the shifted child cannot be represented.
 
 ## Post-deployment real-time evidence
 
-This release changes the real-time server. Credential-free remote checks used
-fresh tenant-local EIO4 polling sessions and verified the named public protocol
-boundary without reading or sending the deployed credential.
+This release does not change the real-time server. Its inherited local
+contracts all remained green. The immediately preceding public release used
+fresh tenant-local EIO4 polling sessions for the following credential-free
+protocol checks; they were not repeated as current-version remote evidence.
 
 | Check | Result |
 | --- | --- |
@@ -228,17 +241,23 @@ generation pipeline.
 A real browser session exercised the deployed official UI without reading
 credential storage or submitting protected mutations:
 
-- the homepage rendered the official empty chart state without console errors;
-  the public tenant has no Entries, so the displayed `---` is expected;
-- the official Food Editor reached `Database loaded`, populated its empty
-  database controls and showed the expected anonymous
-  read-only authentication state. The locked upstream `chart.js` module logged
-  its known `Unable to find element for #chartContainer` warning when the
-  chart bundle ran on this non-chart page; no downstream UI change hides it and
-  no console error was recorded.
+- the homepage rendered, its `Connecting to server` indicator cleared, and the
+  official empty chart state remained without console errors; the public
+  tenant has no Entries, so `---` is expected;
+- Admin Tools, Food Editor, Profile Editor and `clock-color` loaded from the
+  official bundle; Food and Profile left their initial `Not loaded` state;
+- the browser was restored to the homepage and retained there for the user.
 
-Profile load/Save-control remains historical evidence from an earlier version;
-no authenticated Food/Profile write was attempted in this release.
+This browser run used the immediately preceding deployment in the same
+increment. The final `94c3816` correction changed only the Treatments POST
+empty-carb repository edge, and Wrangler reported no changed asset upload for
+the same 248 official browser assets. Final-version remote API smoke was
+repeated after that correction; a second browser reload was not recorded as
+separate evidence.
+
+Authenticated Profile Save remains historical evidence from an earlier
+version; the current load is recorded above, but no authenticated Food/Profile
+write was attempted in this release.
 
 This does not prove longer-running stability, Profile Save, Food/Admin
 mutation, report generation or every other protected page workflow.
@@ -301,10 +320,11 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediate prior Cloudflare version is
-`9e4ce398-8035-4d57-be1d-ab85373d3782` (deployed code commit
-`f872343a6851198f3d18d6cf80108cdf05c13ede`). It contains the persisted
-`/storage` and `/alarm` namespace slices, but not the inherited v1/v2 HTTP ACK
-route or stale-past DO alarm repair introduced by this release.
+`979afaaf-af26-4e9a-82a7-9c2018d29c6c` (deployed code commit
+`d2033c31b94a8a3e1d23eef25899030b433d1397`). It contains the primary
+Treatments `preBolus` fan-out, inherited v1/v2 HTTP ACK route and stale-past DO
+alarm repair, but not the exact empty-child-carbs edge added by the current
+version.
 
 Wrangler version rollback can restore Worker code and assets. Neither rollback
 nor redeployment clears or rolls back SQLite Durable Object data, and rollback

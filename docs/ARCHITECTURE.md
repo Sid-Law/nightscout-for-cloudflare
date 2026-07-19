@@ -1,19 +1,20 @@
 # NSCF architecture
 
-Last audited: 2026-07-19
+Last audited: 2026-07-20
 
 This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`. It produced Cloudflare version
-`9278cd8f-80aa-40bd-bf4e-4eb40a846849`, reported as the Current Version by
-direct deploy. Its 23-file Workers-runtime suite passes 254/254
+`94c3816ef58931362f2f576b181891f7188ae430`. It produced Cloudflare version
+`59bac3ab-c448-4c9b-a360-db2179e62f74`, reported as the Current Version by
+direct deploy. Its 24-file Workers-runtime suite passes 258/258
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries, reported 910.19 KiB raw / 163.26 KiB gzip, and the dry run declared
-only the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Cloudflare
-reported a 24 ms startup. These are release facts for the named subset, not
+entries; deployment reported 912.74 KiB raw / 163.95 KiB gzip and the dry run
+reported 912.70 KiB raw / 163.93 KiB gzip with only the `ENTRY_STORE` Durable
+Object and `ASSETS` product bindings. Cloudflare reported a 26 ms startup.
+These are release facts for the named subset, not
 evidence of a complete port.
 
 ## Current request and data flow
@@ -338,7 +339,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0` implements all six official generic
+`94c3816ef58931362f2f576b181891f7188ae430` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -478,10 +479,22 @@ materialization also maps a missing/falsy identifier to the server ID and
 removes Mongo `_id`. `/api/v2/ddata` consumes the same legacy treatment shape
 as v1.
 
-The locked v1 two-document `preBolus` carb fan-out is not implemented in this
-slice. Until that operation can be atomic, the adapter deliberately retains
-carbs on the original treatment instead of applying only the destructive half
-of upstream `prepareData`.
+The locked v1 Treatments POST path now implements the complete two-document
+`preBolus` create behavior. `prepareData` normalizes the primary treatment and
+moves truthy carbs off it. Every truthy normalized `preBolus` creates a second
+record at
+`created_at + preBolus * 60,000` containing the event type, carbs and optional
+notes; when carbs are missing or zero, the child preserves the upstream empty
+string initialized by `prepareData`. API v2 inherits that v1 route. Retransmissions use the same
+`created_at + eventType` fallback for each record, so both IDs remain stable.
+The PUT path intentionally calls the one-record upstream save behavior: it
+normalizes and removes the moved carbs but does not fan out a child.
+
+NSCF wraps the two POST upserts in one synchronous SQLite transaction. This is
+a named Cloudflare strengthening: if the shifted timestamp or second write is
+invalid, neither record persists, instead of exposing a possible half-created
+meal across two Mongo writes. It does not change the treatment calculation or
+add a dosing algorithm.
 
 Every create, replace, patch and soft delete writes its current document and a
 `document_changes` snapshot in one synchronous storage transaction. Generic
@@ -490,9 +503,10 @@ real persisted numeric `srvModified`, orders them ascending and includes soft
 delete tombstones. It does not use audit timestamps or virtual `created_at`
 fallbacks. Permanent deletion removes the document and its snapshots together,
 matching upstream history behavior for `permanent=true`.
-This transaction guarantee is per document. V1 Entries deliberately uses one
-such transaction per ordered batch item, so a later error does not roll back a
-successful prefix.
+This transaction guarantee is per document except for one official logical
+bundle: a Treatments `preBolus` POST commits its primary and carb child
+together. V1 Entries deliberately uses one transaction per ordered batch item,
+so a later error does not roll back a successful prefix.
 
 ### Deployed generic slice: all six official API v3 collections
 
@@ -688,15 +702,16 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`9278cd8f-80aa-40bd-bf4e-4eb40a846849`. Credential-free remote smoke returned
-200 for health and v15.0.7 Status, while both v1/v2 notification ACK routes
-returned the locked 401 envelope. A fresh EIO4 polling SID connected `/alarm`
-independently and anonymous subscription returned the exact successful
-`{read:true,ack:false}` response. Protected event delivery and ACK are covered
-locally rather than by a credentialed remote mutation. The at-most-once dequeue/send
+`59bac3ab-c448-4c9b-a360-db2179e62f74`. Credential-free remote smoke returned
+200 for health and v15.0.7 Status. Anonymous v1/v2 Treatments reads returned
+the empty collection; anonymous POSTs returned the locked 401 envelope and no
+record persisted. The credentialed `preBolus` mutation and protected realtime
+event/ACK behavior are covered locally rather than by a credentialed remote
+mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
-intentionally still uses the REST polling shim, so these transport smokes prove
-the separate server slice rather than a page transport switch. The named
+intentionally still uses the REST polling shim. The inherited local transport
+contracts and the prior public EIO4 smoke prove only the separate server slice,
+not a page transport switch. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.

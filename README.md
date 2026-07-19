@@ -52,6 +52,12 @@ for diagnosis, dosing, or medical decisions.
   tombstones/history and atomic change snapshots. V1 Food writes use the same
   repository and history as API v3; Settings deliberately has no legacy
   fallback identity.
+- The locked v1 Treatments `preBolus` create behavior, inherited unchanged by
+  v2: every truthy normalized `preBolus` creates the official time-shifted
+  child; truthy carbs move off the primary, while a missing/zero carbs value
+  retains upstream's empty-string child field. PUT remains the upstream
+  one-record save path. Both POST records are committed in one SQLite
+  transaction and retransmissions deduplicate both fallback identities.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -348,16 +354,18 @@ fully `adapted`; 108 files remain unresolved and two real-CGM bridge files are
 fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`56fb2210ef26f4f4bf2f71da05ca0c38de4f88b0`. After rebuilding the locked
-official UI, its 23-file Workers-runtime suite passes 254/254 tests and both
+`94c3816ef58931362f2f576b181891f7188ae430`. After rebuilding the locked
+official UI, its 24-file Workers-runtime suite passes 258/258 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 910.19 KiB raw / 163.26 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds inherited v1/v2 notification ACK and
-repairs a stale-past DO alarm wakeup race while retaining the API v3 `/alarm`
-and `/storage` slices, six generic collection verticals, bounded Entries
-echo/count work and official UI. It does not add `times/echo`, `times`,
-`slice`, EIO3, root writes, polling-to-WebSocket upgrade or the server-side
-notification/plugin engine and is not closed-loop completion.
+reports 912.70 KiB raw / 163.93 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds the locked v1/v2 Treatments POST
+`preBolus` fan-out and its ordered/retransmission/error contracts while
+retaining notification ACK, the API v3 `/alarm` and `/storage` slices, six
+generic collection verticals, bounded Entries echo/count work and official
+UI. It does not make the whole Treatments module or any complete v1/v2 API
+compatible; `times/echo`, `times`, `slice`, EIO3, root writes,
+polling-to-WebSocket upgrade and the server-side notification/plugin engine
+remain missing.
 Deployment used `--keep-vars`; no deployed credential was supplied to remote
 smoke requests, and no credential value is stored or quoted in this repository.
 Entries migration remains intentionally
@@ -387,27 +395,28 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `9278cd8f-80aa-40bd-bf4e-4eb40a846849` was made current by
-the direct Wrangler deployment, with a reported 24 ms startup. Version tag
-`git-56fb221` and its deployment message record the Git mapping. Wrangler did
+Cloudflare version `59bac3ab-c448-4c9b-a360-db2179e62f74` was made current by
+the direct Wrangler deployment, with a reported 26 ms startup. Version tag
+`git-94c3816ef589` and its deployment message record the Git mapping. Wrangler did
 not print a separate creation/activation timestamp. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Final credential-free remote smoke returned HTTP 200 for health and v15.0.7
-Status. Both `/api/v1/notifications/ack` and inherited v2 returned the locked
-HTTP 401 envelope without a credential. A fresh EIO4 polling session connected
-`/alarm` independently and anonymous web subscription returned the exact
-successful `{read:true,ack:false}` response. Full credentialed ACK/broadcast
-contracts passed locally; no deployed credential was read or sent and no
-remote alarm was silenced.
+Status. Anonymous v1 and v2 Treatments reads returned the empty collection;
+anonymous POSTs returned the locked HTTP 401 envelope, and a follow-up read
+confirmed that no record was written. The new credentialed `preBolus` create
+contract is covered locally because no deployed credential was read or sent.
 
-A real browser run rendered the official homepage and its empty chart state
-without console errors. The public tenant currently has no Entries, so `---`
-is the expected empty-data display. The official Food Editor reached `Database
-loaded` and showed the expected anonymous read-only state without submitting a
-write. The locked upstream bundle emitted its known `chart.js` warning when
-that chart code ran on the Food page, which intentionally has no
-`#chartContainer`; no downstream UI change masks it. These checks do not prove
-every protected mutation, report, plugin or realtime workflow.
+A real browser run rendered the official homepage, waited for its realtime
+connection indicator to clear, and retained the expected empty chart state
+without console errors. The official Admin Tools, Food Editor, Profile Editor
+and `clock-color` page also loaded; Food and Profile left their initial
+`Not loaded` state, and no protected write was submitted. The public tenant
+currently has no Entries, so `---` is expected. These checks do not prove every
+protected mutation, report, plugin or realtime workflow. That browser run was
+on the immediately preceding deployment in this increment; the final
+empty-carb correction changed only the Treatments POST repository path, and
+Wrangler confirmed all 248 browser assets were unchanged. Final-version remote
+API smoke was repeated after the correction.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
