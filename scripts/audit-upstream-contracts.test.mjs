@@ -177,13 +177,19 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.equal(first.tests.length, 111);
   assert.equal(serializeManifest(first), serializeManifest(second));
   assert.equal(first.tests.filter((item) => item.status === "pass").length, 0);
-  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 0);
+  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 1);
   assert.deepEqual(first.statistics.tests_by_status, {
     pass: 0,
-    adapted: 0,
+    adapted: 1,
     "excluded-fixed-scope": 2,
-    unresolved: 109,
+    unresolved: 108,
   });
+  assert.equal(
+    first.tests.find((item) =>
+      item.file === "vendor/nightscout/tests/notifications-api.test.js"
+    )?.status,
+    "adapted",
+  );
   assert.deepEqual(
     first.tests
       .filter((item) => item.status === "excluded-fixed-scope")

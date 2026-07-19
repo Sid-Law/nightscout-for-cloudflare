@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "0d4c0889cba889711594a4c8b9795ad2e96736e4d827cac23f7f2cc3f0224f81",
+  "inputs_sha256": "00244faab235f2dda44edab99cbdf4d236eab2a3b4dce2c6b5da542158788722",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 0,
+      "adapted": 1,
       "excluded-fixed-scope": 2,
-      "unresolved": 109
+      "unresolved": 108
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8290,8 +8290,8 @@
     },
     {
       "file": "vendor/nightscout/tests/notifications-api.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by Workers-runtime contracts in test/api3-alarm-socket.test.ts: authenticated v1/v2 inherited ACK routes, exact 200/OK response and clear_alarm payload, durable repeated-snooze suppression, Urgent-to-Warning cascade, Hibernation delivery, bounded malformed input, and broken-recipient isolation.",
       "workstream": "7-background-and-integrations",
       "depends_on": [
         "1-storage-foundation",

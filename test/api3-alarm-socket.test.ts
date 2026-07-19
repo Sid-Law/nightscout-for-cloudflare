@@ -445,6 +445,119 @@ describe("API3 /alarm Socket.IO namespace", () => {
     });
   });
 
+  it("inherits the official HTTP notification ACK through v1 and v2", async () => {
+    for (const version of ["v1", "v2"] as const) {
+      const name = tenant(`notification-http-${version}`);
+      const socket = await openAlarmPolling(name);
+      const level = version === "v1" ? 1 : 2;
+      const group = `http-${version}`;
+      const target =
+        `https://example.test/api/${version}/notifications/ack`
+        + `?tenant=${name}&level=${level}&group=${group}&time=60000`;
+
+      const anonymous = await SELF.fetch(target);
+      expect(anonymous.status).toBe(401);
+      expect(await queuedFrames(name, socket.sid)).toBe(0);
+
+      const headers = version === "v1"
+        ? { "api-secret": await secretDigest() }
+        : {
+          "api-secret": (await issueSubject(
+            name,
+            [],
+            ["notifications:*:ack"],
+          )).accessToken,
+        };
+      const acknowledged = await SELF.fetch(target, { headers });
+      expect(acknowledged.status).toBe(200);
+      expect(acknowledged.headers.get("Content-Type")).toBe(
+        "text/plain; charset=utf-8",
+      );
+      expect(acknowledged.headers.get("Cache-Control")).toBe("no-store");
+      expect(await acknowledged.text()).toBe("OK");
+      expect(await socket.poll()).toEqual([{
+        type: "event",
+        namespace: "/alarm",
+        data: ["clear_alarm", {
+          clear: true,
+          title: "All Clear",
+          message: `${group} - ${level === 2 ? "Urgent" : "Warning"} was ack'd`,
+          group,
+        }],
+      }]);
+
+      await runInDurableObject(store(name), async (_instance, state) => {
+        const rows = state.storage.sql.exec<{
+          level: number;
+          alarm_group: string;
+          silence_time: number;
+        }>(
+          `SELECT level, alarm_group, silence_time
+           FROM realtime_alarm_silences
+           WHERE alarm_group = ? ORDER BY level`,
+          group,
+        ).toArray();
+        expect(rows).toEqual(level === 2
+          ? [
+            { level: 1, alarm_group: group, silence_time: 60_000 },
+            { level: 2, alarm_group: group, silence_time: 60_000 },
+          ]
+          : [{ level: 1, alarm_group: group, silence_time: 60_000 }]);
+      });
+
+      await evictDurableObject(store(name));
+      const repeated = await SELF.fetch(target, { headers });
+      expect(repeated.status).toBe(200);
+      expect(await repeated.text()).toBe("OK");
+      expect(await queuedFrames(name, socket.sid)).toBe(0);
+    }
+  });
+
+  it("delivers an HTTP ACK to an evicted hibernatable socket and bounds malformed state", async () => {
+    const name = tenant("notification-http-websocket");
+    const inbox = await openAlarmWebSocket(name);
+    await evictDurableObject(store(name));
+
+    const target =
+      `https://example.test/api/v2/notifications/ack`
+      + `?tenant=${name}&level=1&group=http-websocket&time=45000`;
+    const response = await SELF.fetch(target, {
+      headers: { "api-secret": await secretDigest() },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("OK");
+    expect(websocketPacket(await inbox.next())).toEqual({
+      type: "event",
+      namespace: "/alarm",
+      data: ["clear_alarm", {
+        clear: true,
+        title: "All Clear",
+        message: "http-websocket - Warning was ack'd",
+        group: "http-websocket",
+      }],
+    });
+
+    const invalidName = tenant("notification-http-invalid");
+    const invalidTargets = [
+      `https://example.test/api/v1/notifications/ack?tenant=${invalidName}`,
+      `https://example.test/api/v1/notifications/ack?tenant=${invalidName}&level=99`,
+      `https://example.test/api/v2/notifications/ack?tenant=${invalidName}&level=1&group=${"x".repeat(257)}`,
+      `https://example.test/api/v2/notifications/ack?tenant=${invalidName}&level=1&group=bad-time&time=Infinity`,
+    ];
+    for (const invalidTarget of invalidTargets) {
+      const invalid = await SELF.fetch(invalidTarget, {
+        headers: { "api-secret": await secretDigest() },
+      });
+      expect(invalid.status).toBe(200);
+      expect(await invalid.text()).toBe("OK");
+    }
+    await runInDurableObject(store(invalidName), async (_instance, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_alarm_silences",
+      ).one().count).toBe(0);
+    });
+  });
+
   it("delivers notifications and ACK clears to a hibernatable WebSocket after eviction", async () => {
     const name = tenant("alarm-websocket");
     const native = await issueSubject(name, []);
@@ -514,6 +627,46 @@ describe("API3 /alarm Socket.IO namespace", () => {
         socket.sid,
       ).one().count).toBe(0);
       state.storage.sql.exec("DROP TRIGGER fail_alarm_outbound");
+    });
+  });
+
+  it("persists an HTTP ACK while isolating a broken alarm recipient", async () => {
+    const name = tenant("notification-http-outbox-failure");
+    const socket = await openAlarmPolling(name);
+    await runInDurableObject(store(name), async (_instance, state) => {
+      state.storage.sql.exec(`
+        CREATE TRIGGER fail_http_ack_outbound
+        BEFORE INSERT ON realtime_outbound_packets
+        BEGIN
+          SELECT RAISE(ABORT, 'forced HTTP ACK outbound failure');
+        END;
+      `);
+    });
+
+    const response = await SELF.fetch(
+      `https://example.test/api/v1/notifications/ack`
+        + `?tenant=${name}&level=1&group=broken-recipient&time=30000`,
+      { headers: { "api-secret": await secretDigest() } },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("OK");
+    await runInDurableObject(store(name), async (_instance, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_sessions WHERE sid = ?",
+        socket.sid,
+      ).one().count).toBe(0);
+      expect(state.storage.sql.exec<{
+        last_ack_at: number;
+        silence_time: number;
+      }>(
+        `SELECT last_ack_at, silence_time
+         FROM realtime_alarm_silences
+         WHERE level = 1 AND alarm_group = 'broken-recipient'`,
+      ).one()).toMatchObject({
+        last_ack_at: expect.any(Number),
+        silence_time: 30_000,
+      });
+      state.storage.sql.exec("DROP TRIGGER fail_http_ack_outbound");
     });
   });
 

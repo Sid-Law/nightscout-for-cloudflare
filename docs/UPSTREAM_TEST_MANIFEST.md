@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 0, excluded-fixed-scope: 2, unresolved: 109
-- Input fingerprint: `0d4c0889cba889711594a4c8b9795ad2e96736e4d827cac23f7f2cc3f0224f81`
+- Statuses: pass: 0, adapted: 1, excluded-fixed-scope: 2, unresolved: 108
+- Input fingerprint: `00244faab235f2dda44edab99cbdf4d236eab2a3b4dce2c6b5da542158788722`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -25,7 +25,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 40 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 15 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 2 | 0 |
-| 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 9 | 2 |
+| 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
 | 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 8 | 0 |
 
 Dispatch work in numeric order. Within a workstream, use each test's `related_routes` in `upstream/contract-manifest.json` only as heuristic candidate links for grouping implementation slices; confirm each link against upstream source before claiming coverage.
@@ -174,7 +174,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/flakiness-control.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/maker.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/mmconnect.test.js` | excluded-fixed-scope | 0 | Fixed-scope exclusion: MiniMed CareLink ingestion is an external real-CGM bridge and is disabled in the simulated-data port. |
-| `vendor/nightscout/tests/notifications-api.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/notifications-api.test.js` | adapted | 2 | Represented by Workers-runtime contracts in test/api3-alarm-socket.test.ts: authenticated v1/v2 inherited ACK routes, exact 200/OK response and clear_alarm payload, durable repeated-snooze suppression, Urgent-to-Warning cascade, Hibernation delivery, bounded malformed input, and broken-recipient isolation. |
 | `vendor/nightscout/tests/notifications.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/production-safety.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/pushnotify.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |

@@ -1606,6 +1606,17 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return delivered;
   }
 
+  async acknowledgeAlarmNotification(
+    level: number,
+    group: string,
+    silenceTime: number,
+  ): Promise<boolean> {
+    const accepted = this.realtime.acknowledgeAlarm(level, group, silenceTime);
+    this.flushRealtimeWebSockets();
+    await this.synchronizeRealtimeAlarm();
+    return accepted;
+  }
+
   private async flushApi3RealtimeMutation(): Promise<void> {
     if (this.realtime.flushApplicationWakes() === 0) return;
     this.flushRealtimeWebSockets();
@@ -1633,13 +1644,19 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     // newly written past alarm as immediately due; scheduling one short turn
     // ahead keeps it observable/persistent while still prompting the next
     // bounded flush turn without a polling timer.
-    const promptDeadline = Date.now() + 100;
+    const scheduleNow = Date.now();
+    const promptDeadline = scheduleNow + 100;
     const isDue = nextDeadline <= promptDeadline;
     const scheduledDeadline = isDue ? promptDeadline : nextDeadline;
-    // Do not postpone an already-prompt alarm on every busy WebSocket turn;
-    // otherwise a steady input stream could starve durable pending output.
+    // Do not postpone a still-future prompt alarm on every busy WebSocket
+    // turn; otherwise a steady input stream could starve durable pending
+    // output. A past alarm is different: getAlarm() can briefly retain its
+    // timestamp while delivery is being queued, then clear it after this RPC.
+    // Replace that stale schedule so due SQL work cannot lose its only wakeup.
     const shouldReplace = isDue
-      ? currentAlarm === null || currentAlarm > scheduledDeadline
+      ? currentAlarm === null
+        || currentAlarm <= scheduleNow
+        || currentAlarm > scheduledDeadline
       : currentAlarm !== scheduledDeadline;
     if (shouldReplace) {
       await this.ctx.storage.setAlarm(scheduledDeadline);

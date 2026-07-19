@@ -128,6 +128,15 @@ function json(data: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
+function legacyOk(): Response {
+  const body = new TextEncoder().encode("OK");
+  const headers = new Headers(corsHeaders());
+  headers.set("Content-Type", "text/plain; charset=utf-8");
+  headers.set("Content-Length", String(body.byteLength));
+  headers.set("Cache-Control", "no-store");
+  return new Response(body, { status: 200, headers });
+}
+
 function withUtf8Charset(response: Response): Response {
   const contentType = response.headers.get("Content-Type");
   if (
@@ -2308,6 +2317,33 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     // whose mbg-first/truthy-sgv classification is not equivalent to type=sgv.
     const entries = await env.ENTRY_STORE.getByName(tenant).getSgvEntries(4);
     return json(toClockProperties(entries));
+  }
+
+  if (
+    request.method === "GET"
+    && /^\/api\/v[12]\/notifications\/ack\/?$/.test(url.pathname)
+  ) {
+    await requirePermission(request, env, url, "notifications:*:ack");
+    if (env.ENTRY_STORE === undefined) {
+      throw new ApiError(
+        503,
+        "entry_store_not_configured",
+        "ENTRY_STORE must be configured before notification acknowledgements are enabled",
+      );
+    }
+    // Locked v15.0.7 uses Number(req.query.level), defaults an empty group,
+    // and lets notifications.ack() replace every falsy time with 30 minutes.
+    // The DO adapter accepts the ordinary bounded level/group domain and keeps
+    // malformed authenticated requests as the upstream route's 200 no-op.
+    const rawLevel = url.searchParams.get("level");
+    const rawTime = url.searchParams.get("time");
+    await env.ENTRY_STORE.getByName(resolveTenant(request, url)).acknowledgeAlarmNotification(
+      Number(rawLevel === null ? undefined : rawLevel),
+      url.searchParams.get("group") || "default",
+      rawTime === null || rawTime === "" ? 0 : Number(rawTime),
+    );
+    // Express res.sendStatus(200) returns this exact text body.
+    return legacyOk();
   }
 
   if (request.method === "GET" && /^\/api\/v[12]\/verifyauth\/?$/.test(url.pathname)) {

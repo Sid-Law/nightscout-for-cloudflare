@@ -891,17 +891,20 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     // expired failure through the public RPC. Its prompt alarm runs cleanup
     // first, without consuming or advancing the WebSocket retry.
     const futureRetryAt = Date.now() + 10_000;
-    await runInDurableObject(stub, async (_instance, state) => {
+    let promptStartedAt = 0;
+    await runInDurableObject(stub, async (instance, state) => {
       state.storage.sql.exec(
         `UPDATE realtime_websocket_closures
          SET next_attempt_at = ? WHERE sid = ?`,
         futureRetryAt,
         sid,
       );
-    });
-    const promptStartedAt = Date.now();
-    await stub.authorizationFailed(expiredIp, promptStartedAt - 60_100, 0);
-    await runInDurableObject(stub, async (_instance, state) => {
+      // Model the Cloudflare edge where an already-due alarm timestamp is
+      // still observable until delivery is queued. synchronizeRealtimeAlarm()
+      // must replace it instead of letting the only wakeup disappear.
+      await state.storage.setAlarm(Date.now() - 1);
+      promptStartedAt = Date.now();
+      await instance.authorizationFailed(expiredIp, promptStartedAt - 60_100, 0);
       const promptAlarm = await state.storage.getAlarm();
       expect(promptAlarm).not.toBeNull();
       expect(promptAlarm!).toBeGreaterThanOrEqual(promptStartedAt + 100);

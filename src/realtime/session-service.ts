@@ -101,6 +101,12 @@ interface PollWaiter {
   timer: ReturnType<typeof setTimeout>;
 }
 
+interface RealtimeAlarmAcknowledgement {
+  level: number;
+  group: string;
+  silenceTime: number;
+}
+
 function cloneSession(session: RealtimeSession): RealtimeSession {
   return { ...session };
 }
@@ -162,6 +168,31 @@ function alarmEventName(notification: Record<string, unknown>): string {
   if (notification.level === 2) return "urgent_alarm";
   if (notification.isAnnouncement) return "announcement";
   return "notification";
+}
+
+function normalizeAlarmAcknowledgement(
+  level: number,
+  group: string,
+  rawSilenceTime: number,
+): RealtimeAlarmAcknowledgement | null {
+  if (
+    !Number.isSafeInteger(level)
+    || level < -3
+    || level > 2
+    || typeof group !== "string"
+    || group.length === 0
+    || group.length > REALTIME_MAX_ALARM_GROUP_CHARACTERS
+  ) {
+    return null;
+  }
+  let silenceTime = 30 * 60 * 1_000;
+  // Locked notifications.ack() uses the default for every falsy value,
+  // including 0 and NaN. A truthy value must fit SQLite's integer contract.
+  if (rawSilenceTime) {
+    if (!Number.isSafeInteger(rawSilenceTime)) return null;
+    silenceTime = rawSilenceTime;
+  }
+  return { level, group, silenceTime };
 }
 
 function randomLeaseToken(): string {
@@ -347,7 +378,7 @@ export class RealtimeSessionService {
     const session = cloneSession(initial);
     const outbound: EngineIoV4Packet[] = [];
     const broadcasts: EngineIoV4Packet[] = [];
-    const alarmBroadcasts: EngineIoV4Packet[] = [];
+    const alarmAcknowledgements: RealtimeAlarmAcknowledgement[] = [];
     let closed = false;
     try {
       for (const packet of packets) {
@@ -372,7 +403,7 @@ export class RealtimeSessionService {
           socketPacket,
           outbound,
           broadcasts,
-          alarmBroadcasts,
+          alarmAcknowledgements,
         );
       }
     } catch (error) {
@@ -394,7 +425,7 @@ export class RealtimeSessionService {
       session,
       outbound,
       broadcasts,
-      alarmBroadcasts,
+      alarmAcknowledgements,
       now,
       (current) =>
         current.transport !== REALTIME_TRANSPORT
@@ -436,7 +467,7 @@ export class RealtimeSessionService {
     const session = cloneSession(initial);
     const outbound: EngineIoV4Packet[] = [];
     const broadcasts: EngineIoV4Packet[] = [];
-    const alarmBroadcasts: EngineIoV4Packet[] = [];
+    const alarmAcknowledgements: RealtimeAlarmAcknowledgement[] = [];
     try {
       if (packet.type === "pong") {
         this.acceptPong(session, packet);
@@ -447,7 +478,7 @@ export class RealtimeSessionService {
           unwrapSocketIoV5Packet(packet),
           outbound,
           broadcasts,
-          alarmBroadcasts,
+          alarmAcknowledgements,
         );
       } else {
         throw new RealtimeSessionError(
@@ -467,7 +498,7 @@ export class RealtimeSessionService {
       session,
       outbound,
       broadcasts,
-      alarmBroadcasts,
+      alarmAcknowledgements,
       now,
       (current) =>
         current.transport === REALTIME_WEBSOCKET_TRANSPORT
@@ -724,6 +755,23 @@ export class RealtimeSessionService {
     return result.delivered;
   }
 
+  acknowledgeAlarm(level: number, group: string, rawSilenceTime: number): boolean {
+    const acknowledgement = normalizeAlarmAcknowledgement(level, group, rawSilenceTime);
+    if (acknowledgement === null) return false;
+    const now = this.now();
+    const result = this.storage.transactionSync(() => {
+      const wakeTargets = new Set<string>();
+      const accepted = this.acknowledgeAlarmInTransaction(
+        acknowledgement,
+        now,
+        wakeTargets,
+      );
+      return { accepted, wakeTargets: [...wakeTargets] };
+    });
+    for (const sid of result.wakeTargets) this.wake(sid);
+    return result.accepted;
+  }
+
   flushApplicationWakes(): number {
     const sids = [...this.pendingApplicationWakeSids];
     this.pendingApplicationWakeSids.clear();
@@ -758,13 +806,35 @@ export class RealtimeSessionService {
     return delivered;
   }
 
+  private acknowledgeAlarmInTransaction(
+    acknowledgement: RealtimeAlarmAcknowledgement,
+    now: number,
+    wakeTargets: Set<string>,
+  ): boolean {
+    const { level, group, silenceTime } = acknowledgement;
+    if (!this.repository.ackAlarm(level, group, silenceTime, now)) return false;
+    const clear = {
+      clear: true,
+      title: "All Clear",
+      message: `${group} - ${alarmLevelDisplay(level)} was ack'd`,
+      group,
+    };
+    const frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+      type: "event",
+      namespace: "/alarm",
+      data: ["clear_alarm", clear],
+    }));
+    this.enqueueAlarmFrameInTransaction(frame, now, wakeTargets);
+    return true;
+  }
+
   private commitProcessedSession(
     sid: string,
     initial: RealtimeSession,
     session: RealtimeSession,
     outbound: readonly EngineIoV4Packet[],
     broadcasts: readonly EngineIoV4Packet[],
-    alarmBroadcasts: readonly EngineIoV4Packet[],
+    alarmAcknowledgements: readonly RealtimeAlarmAcknowledgement[],
     now: number,
     validateCurrent: (current: RealtimeSession) => RealtimeSessionError | null,
   ): { error: RealtimeSessionError | null; wakeTargets: string[] } {
@@ -853,12 +923,8 @@ export class RealtimeSessionService {
           }
         }
       }
-      for (const broadcast of alarmBroadcasts) {
-        this.enqueueAlarmFrameInTransaction(
-          encodeEngineIoV4Packet(broadcast),
-          now,
-          wakeTargets,
-        );
+      for (const acknowledgement of alarmAcknowledgements) {
+        this.acknowledgeAlarmInTransaction(acknowledgement, now, wakeTargets);
       }
       return { error: null, wakeTargets: [...wakeTargets] };
     });
@@ -869,7 +935,7 @@ export class RealtimeSessionService {
     packet: SocketIoV5Packet,
     outbound: EngineIoV4Packet[],
     broadcasts: EngineIoV4Packet[],
-    alarmBroadcasts: EngineIoV4Packet[],
+    alarmAcknowledgements: RealtimeAlarmAcknowledgement[],
   ): Promise<void> {
     if (packet.type === "connect") {
       if (packet.namespace === "/storage") {
@@ -959,7 +1025,7 @@ export class RealtimeSessionService {
           "alarm event requires the connected alarm namespace",
         );
       }
-      await this.processAlarmEvent(session, packet, outbound, alarmBroadcasts);
+      await this.processAlarmEvent(session, packet, outbound, alarmAcknowledgements);
       return;
     }
     if (packet.namespace === "/storage") {
@@ -982,7 +1048,7 @@ export class RealtimeSessionService {
     session: RealtimeSession,
     packet: SocketIoV5EventPacket,
     outbound: EngineIoV4Packet[],
-    alarmBroadcasts: EngineIoV4Packet[],
+    alarmAcknowledgements: RealtimeAlarmAcknowledgement[],
   ): Promise<void> {
     const eventName = packet.data[0];
     if (eventName === "subscribe") {
@@ -1032,40 +1098,17 @@ export class RealtimeSessionService {
     }
 
     if (eventName !== "ack" || !this.repository.alarmAckAllowed(session.sid)) return;
-    const level = packet.data[1];
-    const group = packet.data[2];
-    const rawSilenceTime = packet.data[3];
-    if (
-      typeof level !== "number"
-      || !Number.isSafeInteger(level)
-      || level < -3
-      || level > 2
-      || typeof group !== "string"
-      || group.length === 0
-      || group.length > REALTIME_MAX_ALARM_GROUP_CHARACTERS
-    ) {
+    const acknowledgement = normalizeAlarmAcknowledgement(
+      packet.data[1] as number,
+      packet.data[2] as string,
+      packet.data[3] as number,
+    );
+    if (acknowledgement === null) {
       // Upstream has no protocol ACK or error for malformed alarm ACK events.
       // Ignore them without allocating tenant state or closing the transport.
       return;
     }
-    let silenceTime = 30 * 60 * 1_000;
-    if (rawSilenceTime) {
-      if (typeof rawSilenceTime !== "number" || !Number.isSafeInteger(rawSilenceTime)) return;
-      silenceTime = rawSilenceTime;
-    }
-    const now = this.now();
-    if (!this.repository.ackAlarm(level, group, silenceTime, now)) return;
-    const clear = {
-      clear: true,
-      title: "All Clear",
-      message: `${group} - ${alarmLevelDisplay(level)} was ack'd`,
-      group,
-    };
-    alarmBroadcasts.push(wrapSocketIoV5Packet({
-      type: "event",
-      namespace: "/alarm",
-      data: ["clear_alarm", clear],
-    }));
+    alarmAcknowledgements.push(acknowledgement);
   }
 
   private async processStorageEvent(
