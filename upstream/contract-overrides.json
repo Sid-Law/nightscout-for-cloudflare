@@ -350,6 +350,14 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/api3.basic.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime version-envelope contract in test/worker.test.ts: public GET /api/v3/version returns the locked Nightscout 15.0.7 version, API3 3.0.3-alpha version, a numeric server timestamp, and the platform storage metadata extension."
+    },
+    "vendor/nightscout/tests/api3.search.test.js": {
+      "status": "adapted",
+      "reason": "Represented by named Workers-runtime contracts in test/api3-entries.test.ts and test/api3-input.test.ts: JWT requirement, unknown collection, twelve-document search and srvModified filtering, exact paging errors, valid/default/configured hard limits including string configuration, ascending/descending ordered sort, skip, selected/all projection, plus the Workers Free 1,000-document ceiling."
+    },
     "vendor/nightscout/tests/notifications-api.test.js": {
       "status": "adapted",
       "reason": "Represented by Workers-runtime contracts in test/api3-alarm-socket.test.ts: authenticated v1/v2 inherited ACK routes, exact 200/OK response and clear_alarm payload, durable repeated-snooze suppression, Urgent-to-Warning cascade, Hibernation delivery, bounded malformed input, and broken-recipient isolation."

@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 1, excluded-fixed-scope: 2, unresolved: 108
-- Input fingerprint: `00244faab235f2dda44edab99cbdf4d236eab2a3b4dce2c6b5da542158788722`
+- Statuses: pass: 0, adapted: 3, excluded-fixed-scope: 2, unresolved: 106
+- Input fingerprint: `7b1b586a73518623a3ad2f4f6e73faee2b3a0a35914be1e63d7b8ab8a64e6853`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -23,7 +23,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 2-authorization | 1-storage-foundation | 6 | 6 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 14 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 40 | 0 |
-| 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 15 | 0 |
+| 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 13 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 2 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
 | 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 8 | 0 |
@@ -142,7 +142,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | Test file | Status | Candidate routes (heuristic) | Reason |
 | --- | --- | ---: | --- |
 | `vendor/nightscout/tests/api3.aaps-patterns.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api3.basic.test.js` | unresolved | 1 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api3.basic.test.js` | adapted | 1 | Represented by the named Workers-runtime version-envelope contract in test/worker.test.ts: public GET /api/v3/version returns the locked Nightscout 15.0.7 version, API3 3.0.3-alpha version, a numeric server timestamp, and the platform storage metadata extension. |
 | `vendor/nightscout/tests/api3.create.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api3.delete.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api3.generic.workflow.test.js` | unresolved | 14 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
@@ -150,7 +150,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/api3.patch.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api3.read.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api3.renderer.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api3.search.test.js` | unresolved | 7 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api3.search.test.js` | adapted | 7 | Represented by named Workers-runtime contracts in test/api3-entries.test.ts and test/api3-input.test.ts: JWT requirement, unknown collection, twelve-document search and srvModified filtering, exact paging errors, valid/default/configured hard limits including string configuration, ascending/descending ordered sort, skip, selected/all projection, plus the Workers Free 1,000-document ceiling. |
 | `vendor/nightscout/tests/api3.security.test.js` | unresolved | 1 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api3.shape-handling.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/api3.storage.find.test.js` | unresolved | 12 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |

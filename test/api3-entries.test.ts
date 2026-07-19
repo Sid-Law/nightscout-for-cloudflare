@@ -562,6 +562,134 @@ describe("API v3 Entries vertical slice", () => {
     });
   });
 
+  it("represents every locked api3.search contract on the Workers runtime", async () => {
+    const name = tenant("api3-search-contract");
+    const started = Date.now() - 1;
+    const jwt = await issueSubject(name, "Search contract", [
+      "api:entries:create",
+      "api:entries:read",
+    ]);
+
+    const missing = await api3Fetch(name, null, "/api/v3/entries");
+    expect(missing.status).toBe(401);
+    expect(await missing.json()).toEqual({
+      status: 401,
+      message: "Missing or bad access token or JWT",
+    });
+    const unknown = await api3Fetch(name, jwt, "/api/v3/NOT_EXIST");
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toEqual({
+      status: 404,
+      message: "Bad operation or collection",
+    });
+
+    const base = Date.now() - 60 * 60_000;
+    for (let index = 0; index < 12; index += 1) {
+      const created = await api3Fetch(
+        name,
+        jwt,
+        "/api/v3/entries",
+        jsonMutation("POST", entry(
+          `search-contract-${String(index).padStart(2, "0")}`,
+          base + index * 300_000,
+          { sgv: 100 + index },
+        )),
+      );
+      expect(created.status, String(index)).toBe(201);
+    }
+
+    const all = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/entries",
+    ));
+    expect(all).toHaveLength(12);
+    const fromStartPath = `/api/v3/entries?srvModified%24gte=${started}`;
+    const fromStart = await result<JsonObject[]>(await api3Fetch(name, jwt, fromStartPath));
+    expect(fromStart).toHaveLength(12);
+
+    for (const [parameter, message] of [
+      ["limit=INVALID", "Parameter limit out of tolerance"],
+      ["limit=-1", "Parameter limit out of tolerance"],
+      ["limit=0", "Parameter limit out of tolerance"],
+      ["limit=1001", "Parameter limit out of tolerance"],
+      ["skip=INVALID", "Parameter skip out of tolerance"],
+      ["skip=-5", "Parameter skip out of tolerance"],
+    ] as const) {
+      const response = await api3Fetch(name, jwt, `/api/v3/entries?${parameter}`);
+      expect(response.status, parameter).toBe(400);
+      expect(await response.json(), parameter).toEqual({ status: 400, message });
+    }
+    const combinedSort = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/entries?sort=date&sort%24desc=created_at",
+    );
+    expect(combinedSort.status).toBe(400);
+    expect(await combinedSort.json()).toEqual({
+      status: 400,
+      message: "Parameters sort and sort_desc cannot be combined",
+    });
+
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/entries?limit=3",
+    ))).toHaveLength(3);
+
+    const ascending = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `${fromStartPath}&sort=date`,
+    ));
+    const descending = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `${fromStartPath}&sort%24desc=date`,
+    ));
+    expect(descending).toEqual([...ascending].reverse());
+    for (let index = 1; index < ascending.length; index += 1) {
+      expect(Number(ascending[index - 1]?.date)).toBeLessThanOrEqual(
+        Number(ascending[index]?.date),
+      );
+    }
+
+    const firstEight = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/entries?sort=date&limit=8",
+    ));
+    const skipped = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/entries?sort=date&skip=3&limit=5",
+    ));
+    expect(skipped).toEqual(firstEight.slice(3));
+
+    const projected = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/entries?fields=date%2Capp%2Csubject",
+    ));
+    for (const document of projected) {
+      expect(Object.keys(document).sort()).toEqual(["app", "date", "subject"]);
+    }
+    const complete = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/entries?fields=_all",
+    ));
+    for (const document of complete) {
+      expect(Object.keys(document).length).toBeGreaterThanOrEqual(10);
+      expect(document).not.toHaveProperty("_id");
+      expect(document).toMatchObject({
+        identifier: expect.any(String),
+        srvCreated: expect.any(Number),
+        srvModified: expect.any(Number),
+      });
+    }
+  });
+
   it("pushes a bounded case-sensitive Nightscout regex subset into SQLite without ReDoS", async () => {
     const name = tenant("api3-entry-safe-regex");
     const jwt = await issueSubject(name, "Regex reader", ["api:entries:read"]);

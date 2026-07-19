@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "00244faab235f2dda44edab99cbdf4d236eab2a3b4dce2c6b5da542158788722",
+  "inputs_sha256": "7b1b586a73518623a3ad2f4f6e73faee2b3a0a35914be1e63d7b8ab8a64e6853",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 1,
+      "adapted": 3,
       "excluded-fixed-scope": 2,
-      "unresolved": 108
+      "unresolved": 106
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7542,8 +7542,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api3.basic.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the named Workers-runtime version-envelope contract in test/worker.test.ts: public GET /api/v3/version returns the locked Nightscout 15.0.7 version, API3 3.0.3-alpha version, a numeric server timestamp, and the platform storage metadata extension.",
       "workstream": "5-api-v3",
       "depends_on": [
         "1-storage-foundation",
@@ -7700,8 +7700,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api3.search.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by named Workers-runtime contracts in test/api3-entries.test.ts and test/api3-input.test.ts: JWT requirement, unknown collection, twelve-document search and srvModified filtering, exact paging errors, valid/default/configured hard limits including string configuration, ascending/descending ordered sort, skip, selected/all projection, plus the Workers Free 1,000-document ceiling.",
       "workstream": "5-api-v3",
       "depends_on": [
         "1-storage-foundation",

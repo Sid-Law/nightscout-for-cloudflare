@@ -50,6 +50,8 @@ import {
   splitApi3Extension,
   type Api3CollectionRoute,
 } from "./api3/treatments";
+import { nightscoutCorsHeaders as corsHeaders } from "./api3/response";
+import { normalizeApi3MaxLimit } from "./api3/input";
 
 export { EntryStore };
 
@@ -108,17 +110,10 @@ const SEEN_PERMISSIONS = [
 
 type AppEnv = Env & {
   API_SECRET?: string;
+  API3_MAX_LIMIT?: string;
   AUTH_DEFAULT_ROLES?: string;
   AUTH_FAIL_DELAY?: string;
 };
-
-function corsHeaders(): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, api-secret",
-  };
-}
 
 function json(data: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
@@ -2119,7 +2114,10 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     if (split.extension !== undefined) {
       const extensionMimeType = mime.getType(split.extension);
       if (extensionMimeType === null) {
-        return api3Error(406, "Unsupported output format requested");
+        return withoutBodyForHead(
+          request,
+          api3Error(406, "Unsupported output format requested"),
+        );
       }
       api3ExtensionMimeType = extensionMimeType;
     }
@@ -2176,37 +2174,42 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   }
 
   if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders() });
+    const headers = new Headers(corsHeaders());
+    headers.set("Cache-Control", "no-store");
+    headers.set("Content-Type", "text/plain; charset=utf-8");
+    return new Response("OK", { status: 200, headers });
   }
 
-  if (request.method === "GET" && url.pathname === "/api/versions") {
-    return json([
+  if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/versions") {
+    return withoutBodyForHead(request, json([
       { version: "1.0.0", url: "/api/v1" },
       { version: "2.0.0", url: "/api/v2" },
       { version: "3.0.3-alpha", url: "/api/v3" },
-    ]);
+    ]));
   }
 
-  if (request.method === "GET" && api3Pathname === "/api/v3/version") {
+  if ((request.method === "GET" || request.method === "HEAD") && api3Pathname === "/api/v3/version") {
     resolveTenant(request, url);
-    return json({
+    return withoutBodyForHead(request, json({
       status: 200,
       result: api3VersionInfo(),
-    });
+    }));
   }
 
-  if (request.method === "GET" && api3Pathname === "/api/v3/status") {
+  if ((request.method === "GET" || request.method === "HEAD") && api3Pathname === "/api/v3/status") {
     const authentication = await authenticateApi3(request, env, url);
-    return authentication.ok
-      ? handleApi3Status(authentication.authorized)
+    const response = authentication.ok
+      ? await handleApi3Status(authentication.authorized)
       : authentication.response;
+    return withoutBodyForHead(request, response);
   }
 
-  if (request.method === "GET" && api3Pathname === "/api/v3/lastModified") {
+  if ((request.method === "GET" || request.method === "HEAD") && api3Pathname === "/api/v3/lastModified") {
     const authentication = await authenticateApi3(request, env, url);
-    return authentication.ok
-      ? handleApi3LastModified(authentication.store, authentication.authorized)
+    const response = authentication.ok
+      ? await handleApi3LastModified(authentication.store, authentication.authorized)
       : authentication.response;
+    return withoutBodyForHead(request, response);
   }
 
   const matchedTreatmentRoute = matchApi3TreatmentRoute(request.method, api3Pathname);
@@ -2234,14 +2237,18 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       : { ...matchedApi3Route.route, extension: api3ExtensionMimeType };
   if (matchedApi3Route !== null && api3CollectionRoute !== null) {
     const authentication = await authenticateApi3(request, env, url);
-    if (!authentication.ok) return authentication.response;
-    return matchedApi3Route.collection === "treatments"
+    if (!authentication.ok) {
+      return withoutBodyForHead(request, authentication.response);
+    }
+    const api3MaxLimit = normalizeApi3MaxLimit(env.API3_MAX_LIMIT);
+    const response = matchedApi3Route.collection === "treatments"
       ? handleApi3Treatments(
         request,
         url,
         authentication.store,
         authentication.authorized,
         api3CollectionRoute,
+        api3MaxLimit,
       )
       : matchedApi3Route.collection === "devicestatus"
         ? handleApi3DeviceStatus(
@@ -2250,6 +2257,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
           authentication.store,
           authentication.authorized,
           api3CollectionRoute,
+          api3MaxLimit,
         )
         : matchedApi3Route.collection === "entries"
           ? handleApi3Entries(
@@ -2258,6 +2266,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
             authentication.store,
             authentication.authorized,
             api3CollectionRoute,
+            api3MaxLimit,
           )
           : matchedApi3Route.collection === "food"
             ? handleApi3Food(
@@ -2266,6 +2275,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
               authentication.store,
               authentication.authorized,
               api3CollectionRoute,
+              api3MaxLimit,
             )
             : matchedApi3Route.collection === "profile"
               ? handleApi3Profile(
@@ -2274,6 +2284,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
                 authentication.store,
                 authentication.authorized,
                 api3CollectionRoute,
+                api3MaxLimit,
               )
               : handleApi3Settings(
                 request,
@@ -2281,10 +2292,14 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
                 authentication.store,
                 authentication.authorized,
                 api3CollectionRoute,
+                api3MaxLimit,
               );
+    return withoutBodyForHead(request, await response);
   }
 
-  if (isApi3) return api3Error(404, "Bad operation or collection");
+  if (isApi3) {
+    return withoutBodyForHead(request, api3Error(404, "Bad operation or collection"));
+  }
 
   const ddataRoute = /^\/api\/v2\/ddata\/at(?:\/([^/]+))?\/?$/.exec(url.pathname);
   if (request.method === "GET" && ddataRoute !== null) {

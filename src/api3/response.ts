@@ -5,6 +5,28 @@ import { API3_MESSAGES, Api3InputError } from "./input";
 
 export type Api3Format = "json" | "csv" | "xml";
 
+/**
+ * The locked server-wide CORS middleware advertises GET/PUT/POST/DELETE/OPTIONS.
+ * Keep those methods and add the API3 PATCH plus implicit Express HEAD methods,
+ * together with the conditional headers used by the generic API3 routes.
+ */
+export function nightscoutCorsHeaders(): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": [
+      "Content-Type",
+      "Authorization",
+      "Content-Length",
+      "X-Requested-With",
+      "api-secret",
+      "Last-Modified",
+      "If-Modified-Since",
+      "If-Unmodified-Since",
+    ].join(", "),
+  };
+}
+
 export class Api3RenderError extends Error {
   readonly responseHeaders: Headers;
 
@@ -42,9 +64,9 @@ function varyOnAccept(headers: Headers): void {
 function responseHeaders(init?: HeadersInit): Headers {
   const headers = new Headers(init);
   headers.set("Cache-Control", "no-store");
-  headers.set("Access-Control-Allow-Origin", "*");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, Last-Modified, If-Modified-Since, If-Unmodified-Since");
+  for (const [name, value] of Object.entries(nightscoutCorsHeaders())) {
+    headers.set(name, value);
+  }
   return headers;
 }
 

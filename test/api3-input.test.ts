@@ -4,6 +4,7 @@ import {
   Api3InputError,
   calculateApi3Identifier,
   normalizeApi3Date,
+  normalizeApi3MaxLimit,
   parseApi3Document,
   parseApi3History,
   parseApi3Search,
@@ -70,6 +71,36 @@ describe("locked API3 input adapter", () => {
     expect(input.fields).toEqual(["identifier", "carbs"]);
     expect(input.limit).toBe(7);
     expect(input.skip).toBe(2);
+  });
+
+  it("matches the locked search paging errors and the fixed API3 ceiling", () => {
+    expect(parseApi3Search(new URL(
+      "https://example.test/api/v3/entries",
+    )).limit).toBe(1_000);
+    expect(parseApi3Search(new URL(
+      "https://example.test/api/v3/entries?limit=3",
+    )).limit).toBe(3);
+    expect(normalizeApi3MaxLimit(5)).toBe(5);
+    expect(normalizeApi3MaxLimit("5")).toBe(5);
+    expect(normalizeApi3MaxLimit("INVALID")).toBe(1_000);
+    expect(normalizeApi3MaxLimit(10_000)).toBe(1_000);
+    expect(parseApi3Search(new URL(
+      "https://example.test/api/v3/entries",
+    ), "5").limit).toBe(5);
+    expect(() => parseApi3Search(new URL(
+      "https://example.test/api/v3/entries?limit=10",
+    ), 5)).toThrowError(API3_MESSAGES.badLimit);
+
+    for (const limit of ["INVALID", "-1", "0", "1001"]) {
+      expect(() => parseApi3Search(new URL(
+        `https://example.test/api/v3/entries?limit=${limit}`,
+      )), limit).toThrowError(API3_MESSAGES.badLimit);
+    }
+    for (const skip of ["INVALID", "-5"]) {
+      expect(() => parseApi3Search(new URL(
+        `https://example.test/api/v3/entries?skip=${skip}`,
+      )), skip).toThrowError(API3_MESSAGES.badSkip);
+    }
   });
 
   it("matches locked Mongo field overwrite and onlyValid precedence", () => {

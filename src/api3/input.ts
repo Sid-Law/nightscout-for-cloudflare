@@ -2,7 +2,7 @@ import type { DocumentFilter, DocumentSort } from "../document-repository";
 import type { JsonDocument, JsonValue } from "../entry-store";
 import { compileMongoRegexToSqlGlob, SafeRegexError } from "../safe-regex";
 
-const API3_MAX_LIMIT = 1_000;
+export const API3_MAX_LIMIT = 1_000;
 const MIN_TIMESTAMP = Date.UTC(2000, 0, 1);
 const MIN_UTC_OFFSET = -1_440;
 const MAX_UTC_OFFSET = 1_440;
@@ -169,16 +169,26 @@ function parseFilterValue(field: string, value: string | string[]): JsonValue {
   return parsed;
 }
 
-function parseLimit(url: URL): number {
+export function normalizeApi3MaxLimit(value: unknown): number {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return API3_MAX_LIMIT;
+  // Upstream allows deployments to raise this without a ceiling. The Workers
+  // Free adapter deliberately keeps the existing 1,000-document resource cap,
+  // while preserving the useful upstream ability to configure a lower limit.
+  return Math.min(parsed, API3_MAX_LIMIT);
+}
+
+function parseLimit(url: URL, configuredMaxLimit: unknown = API3_MAX_LIMIT): number {
+  const maxLimit = normalizeApi3MaxLimit(configuredMaxLimit);
   const value = expressScalar(queryValues(url, "limit"));
-  if (!queryTruthy(value)) return API3_MAX_LIMIT;
+  if (!queryTruthy(value)) return maxLimit;
   if (value === undefined || Array.isArray(value)) {
     throw new Api3InputError(400, API3_MESSAGES.badLimit);
   }
   const numeric = Number(value);
-  if (!Number.isNaN(numeric) && numeric > 0 && numeric <= API3_MAX_LIMIT) {
+  if (!Number.isNaN(numeric) && numeric > 0 && numeric <= maxLimit) {
     const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : API3_MAX_LIMIT;
+    return Number.isFinite(parsed) ? parsed : maxLimit;
   }
   throw new Api3InputError(400, API3_MESSAGES.badLimit);
 }
@@ -241,7 +251,10 @@ export function parseApi3Sort(url: URL): DocumentSort[] {
   return sort;
 }
 
-export function parseApi3Search(url: URL): Api3SearchInput {
+export function parseApi3Search(
+  url: URL,
+  configuredMaxLimit: unknown = API3_MAX_LIMIT,
+): Api3SearchInput {
   // Locked mongoCollection.utils.parseFilter() assigns each condition to an
   // object property. A later condition for the same field therefore replaces
   // the earlier one, and its final onlyValid clause replaces a caller-supplied
@@ -293,7 +306,7 @@ export function parseApi3Search(url: URL): Api3SearchInput {
   const result: Api3SearchInput = {
     filters: [...filtersByField.values()],
     sort: parseApi3Sort(url),
-    limit: parseLimit(url),
+    limit: parseLimit(url, configuredMaxLimit),
     skip: parseSkip(url),
   };
   if (fields !== undefined) result.fields = fields;
@@ -304,6 +317,7 @@ export function parseApi3History(
   url: URL,
   lastModifiedPath: string | undefined,
   lastModifiedHeader: string | null,
+  configuredMaxLimit: unknown = API3_MAX_LIMIT,
 ): Api3HistoryInput {
   let since: number;
   let inclusive: boolean;
@@ -322,7 +336,11 @@ export function parseApi3History(
     inclusive = true;
   }
   const fields = parseApi3Fields(url);
-  const result: Api3HistoryInput = { since, inclusive, limit: parseLimit(url) };
+  const result: Api3HistoryInput = {
+    since,
+    inclusive,
+    limit: parseLimit(url, configuredMaxLimit),
+  };
   if (fields !== undefined) result.fields = fields;
   return result;
 }

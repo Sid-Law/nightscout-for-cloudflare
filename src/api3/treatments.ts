@@ -67,16 +67,17 @@ export function matchApi3CollectionRoute(
   pathname: string,
   collection: Api3CollectionName,
 ): Api3CollectionRoute | null {
+  const reads = method === "GET" || method === "HEAD";
   const trailingTrimmed = pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
   const split = splitApi3Extension(trailingTrimmed);
   if (
     split.pathname === `/api/v3/${collection}`
-    && (method === "GET" || method === "POST")
+    && (reads || method === "POST")
   ) {
     return { kind: "collection", ...(split.extension === undefined ? {} : { extension: split.extension }) };
   }
 
-  if (method === "GET") {
+  if (reads) {
     const history = new RegExp(`^/api/v3/${collection}/history(?:/([^/]+))?$`).exec(
       split.pathname,
     );
@@ -91,7 +92,7 @@ export function matchApi3CollectionRoute(
     }
   }
 
-  if (!["GET", "PUT", "PATCH", "DELETE"].includes(method)) return null;
+  if (!["GET", "HEAD", "PUT", "PATCH", "DELETE"].includes(method)) return null;
   const resource = new RegExp(`^/api/v3/${collection}/([^/]+)$`).exec(split.pathname);
   if (resource === null) return null;
   const identifier = decodedPathSegment(resource[1]!);
@@ -507,10 +508,11 @@ async function searchTreatments(
   authorization: Api3Authorization,
   extension: string | undefined,
   collection: Api3CollectionName,
+  maxLimit: number,
 ): Promise<Response> {
   const action = collection === "settings" ? "admin" : "read";
   if (!allowed(authorization, collection, action)) return forbidden(collection, action);
-  const input = parseApi3Search(url);
+  const input = parseApi3Search(url, maxLimit);
   const query: DocumentQuery = {
     filters: input.filters,
     sort: input.sort,
@@ -541,6 +543,7 @@ async function historyTreatments(
   authorization: Api3Authorization,
   route: Extract<Api3TreatmentRoute, { kind: "history" }>,
   collection: Api3CollectionName,
+  maxLimit: number,
 ): Promise<Response> {
   const action = collection === "settings" ? "admin" : "read";
   if (!allowed(authorization, collection, action)) return forbidden(collection, action);
@@ -548,6 +551,7 @@ async function historyTreatments(
     url,
     route.lastModified,
     request.headers.get("Last-Modified"),
+    maxLimit,
   );
   const requestedFields = input.fields;
   const storageInput = { ...input };
@@ -594,10 +598,11 @@ async function handleApi3Collection(
   authorization: Api3Authorization,
   route: Api3CollectionRoute,
   collection: Api3CollectionName,
+  maxLimit: number,
 ): Promise<Response> {
   try {
     if (route.kind === "collection") {
-      if (request.method === "GET") {
+      if (request.method === "GET" || request.method === "HEAD") {
         return await searchTreatments(
           request,
           url,
@@ -605,6 +610,7 @@ async function handleApi3Collection(
           authorization,
           route.extension,
           collection,
+          maxLimit,
         );
       }
       if (request.method === "POST") {
@@ -613,11 +619,19 @@ async function handleApi3Collection(
       return api3Status(404, "Bad operation or collection");
     }
     if (route.kind === "history") {
-      return request.method === "GET"
-        ? await historyTreatments(request, url, store, authorization, route, collection)
+      return request.method === "GET" || request.method === "HEAD"
+        ? await historyTreatments(
+          request,
+          url,
+          store,
+          authorization,
+          route,
+          collection,
+          maxLimit,
+        )
         : api3Status(404, "Bad operation or collection");
     }
-    if (request.method === "GET") {
+    if (request.method === "GET" || request.method === "HEAD") {
       return await readTreatment(request, url, store, authorization, route, collection);
     }
     if (request.method === "PUT") {
@@ -672,8 +686,9 @@ export async function handleApi3Treatments(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   route: Api3TreatmentRoute,
+  maxLimit: number,
 ): Promise<Response> {
-  return handleApi3Collection(request, url, store, authorization, route, "treatments");
+  return handleApi3Collection(request, url, store, authorization, route, "treatments", maxLimit);
 }
 
 export async function handleApi3DeviceStatus(
@@ -682,8 +697,9 @@ export async function handleApi3DeviceStatus(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   route: Api3CollectionRoute,
+  maxLimit: number,
 ): Promise<Response> {
-  return handleApi3Collection(request, url, store, authorization, route, "devicestatus");
+  return handleApi3Collection(request, url, store, authorization, route, "devicestatus", maxLimit);
 }
 
 export async function handleApi3Entries(
@@ -692,8 +708,9 @@ export async function handleApi3Entries(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   route: Api3CollectionRoute,
+  maxLimit: number,
 ): Promise<Response> {
-  return handleApi3Collection(request, url, store, authorization, route, "entries");
+  return handleApi3Collection(request, url, store, authorization, route, "entries", maxLimit);
 }
 
 export async function handleApi3Profile(
@@ -702,8 +719,9 @@ export async function handleApi3Profile(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   route: Api3CollectionRoute,
+  maxLimit: number,
 ): Promise<Response> {
-  return handleApi3Collection(request, url, store, authorization, route, "profile");
+  return handleApi3Collection(request, url, store, authorization, route, "profile", maxLimit);
 }
 
 export async function handleApi3Food(
@@ -712,8 +730,9 @@ export async function handleApi3Food(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   route: Api3CollectionRoute,
+  maxLimit: number,
 ): Promise<Response> {
-  return handleApi3Collection(request, url, store, authorization, route, "food");
+  return handleApi3Collection(request, url, store, authorization, route, "food", maxLimit);
 }
 
 export async function handleApi3Settings(
@@ -722,8 +741,9 @@ export async function handleApi3Settings(
   store: DurableObjectStub<EntryStore>,
   authorization: Api3Authorization,
   route: Api3CollectionRoute,
+  maxLimit: number,
 ): Promise<Response> {
-  return handleApi3Collection(request, url, store, authorization, route, "settings");
+  return handleApi3Collection(request, url, store, authorization, route, "settings", maxLimit);
 }
 
 export async function handleApi3LastModified(

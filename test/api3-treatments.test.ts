@@ -351,6 +351,83 @@ describe("API v3 treatments vertical slice", () => {
     });
   });
 
+  it("adapts Express implicit HEAD and complete cross-origin API preflight", async () => {
+    const name = tenant("api3-head-cors");
+    const preflight = await SELF.fetch(withTenant(
+      "/api/v3/treatments/head-cors-treatment",
+      name,
+    ), {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://client.example",
+        "Access-Control-Request-Method": "PATCH",
+        "Access-Control-Request-Headers": "authorization,if-unmodified-since",
+      },
+    });
+    expect(preflight.status).toBe(200);
+    expect(await preflight.text()).toBe("OK");
+    expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const methods = preflight.headers.get("Access-Control-Allow-Methods") ?? "";
+    for (const method of ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"]) {
+      expect(methods.split(",")).toContain(method);
+    }
+    const allowedHeaders = (preflight.headers.get("Access-Control-Allow-Headers") ?? "")
+      .toLowerCase();
+    for (const header of ["authorization", "api-secret", "if-modified-since", "if-unmodified-since"]) {
+      expect(allowedHeaders).toContain(header);
+    }
+
+    for (const path of ["/api/versions", "/api/v3/version"]) {
+      const response = await SELF.fetch(`https://example.test${path}`, { method: "HEAD" });
+      expect(response.status, path).toBe(200);
+      expect(await response.text(), path).toBe("");
+      expect(response.headers.get("Content-Type"), path).toContain("application/json");
+    }
+
+    const jwt = await issueSubject(name, "HEAD reader", [
+      "api:treatments:create",
+      "api:treatments:read",
+    ]);
+    expect((await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/treatments",
+      jsonMutation("POST", treatment(
+        "head-cors-treatment",
+        "2026-06-01T02:30:00.000Z",
+      )),
+    )).status).toBe(201);
+
+    for (const path of [
+      "/api/v3/status",
+      "/api/v3/lastModified",
+      "/api/v3/treatments",
+      "/api/v3/treatments/head-cors-treatment",
+      "/api/v3/treatments/history/946684800001",
+    ]) {
+      const response = await api3Fetch(name, jwt, path, { method: "HEAD" });
+      expect(response.status, path).toBe(200);
+      expect(await response.text(), path).toBe("");
+    }
+
+    const missingAuth = await api3Fetch(
+      name,
+      null,
+      "/api/v3/treatments",
+      { method: "HEAD" },
+    );
+    expect(missingAuth.status).toBe(401);
+    expect(await missingAuth.text()).toBe("");
+    const unknown = await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/NOT_EXIST",
+      { method: "HEAD" },
+    );
+    expect(unknown.status).toBe(404);
+    expect(await unknown.text()).toBe("");
+  });
+
   it("orders dynamic permission, existence, precondition, and validation like the locked handlers", async () => {
     const name = tenant("api3-validation-order");
     const reader = await issueSubject(name, "Validation reader", []);
