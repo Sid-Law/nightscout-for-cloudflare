@@ -46,9 +46,9 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current homepage and Food Editor load successfully; Food reached `Database loaded` anonymously. The locked chart module logs its known missing-`#chartContainer` warning on the non-chart Food page, but no console error occurred. Protected mutation/report and pushed-live-update workflows remain. |
+| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, prior authenticated Profile Save evidence, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current credential-free browser pass rendered homepage, Admin, Food, Profile and `clock-color` with no console warning/error; Food/Profile correctly stayed in anonymous `Not loaded` data state. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. `/storage` now atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
-| 4. API v1 | In progress; seven more locked files adapted | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD. Bounded Entries echo plus direct SQLite count for entries/treatments/device status are deployed. Activity, DeviceStatus, Food, Profile, legacy ID/ObjectId validation and cross-collection shape handling now have complete named mappings for their locked upstream test files; authenticated `/notifications/ack` and Treatments POST `preBolus` fan-out remain implemented partial slices. Complete times/echo, times, slice, non-Entries echo, bounded aggregation-pipeline parity, exact DOMPurify output, the wider Mongo query/document surface and the remaining v1 routes/test files. |
+| 4. API v1 | In progress; 15 locked files adapted | Entries now adapts its complete locked upstream file: ordered batch-prefix failure, preview, single/array/extended-urlencoded uploads, uploader identity, bounded query/sort, current/model/ID reads, representations/validators/HEAD, exact and dateString-range deletion, numeric-brace `times/echo`, `times` and `slice` fixtures. The complete locked Treatments file is mapped with fail-closed HTML sanitization, time/numeric normalization, UUID/identifier and AAPS dedupe behavior. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are also mapped. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, the wider Mongo query/document surface and remaining v1 routes/test files. |
 | 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK and inherited Treatments `preBolus` create behavior are implemented; complete summary, the v2-only `/notifications/loop` external integration contract and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
@@ -56,7 +56,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 9. Real-time storage updates | API3 `/storage` named slice implemented | Successful HTTP API3 mutations atomically enqueue official create/update/delete frames for authorized collection rooms; subscription/queue state survives DO eviction, v1 changes do not broadcast, and overflow/failure drops only the broken subscriber. Add main-namespace database updates and browser/credentialed remote workflows; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Realtime/auth plus notification-ACK foundation | The DO's single Cloudflare alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Stale already-due platform alarms are replaced so a queued delivery cannot erase the only SQL wakeup. Socket.IO and inherited v1/v2 HTTP ACK share the same durable group/level transaction. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share the scheduler. |
 | 11. Server plugins/notifications | ACK/outlet only | `/alarm` can publish trusted, already-computed notification objects; Socket and HTTP ACK persist the same snooze state and exact all-clear broadcast. Build the official registry and tenant platform context, then port upstream plugin/data/notification calculation and persistence tests without rewriting formulas. |
-| 12. Upstream regression suite | Tracked; 24 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, `notifications-api.test.js` and seven v1 collection/identity files are adapted, 85 files remain unresolved and two are fixed-scope exclusions. |
+| 12. Upstream regression suite | Tracked; 32 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, `notifications-api.test.js` and 15 v1 client/API files are adapted, 77 files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -94,69 +94,44 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`b2518d725433ea120132c59ce9b249d4224533d4` adds complete named
-Workers-runtime mappings for `api.activity.test.js`,
-`api.devicestatus.test.js`, `api.food.test.js`, `api.id-validation.test.js`,
-`api.objectid-validation.test.js`, `api.profiles.test.js` and
-`api.shape-handling.test.js`. The prior complete mapping for all 16 locked API3
-test files remains green. Cloudflare Worker version
-`481d5d25-4e4e-4bb9-966a-144bcab19194` was reported as the Current Version,
-created at `2026-07-19T19:01:12.326131Z`, with a 45 ms startup. Wrangler
-processed 248 official asset entries with no asset-byte uploads; deployment
-and the final dry run reported 917.18 KiB raw / 164.85 KiB gzip, and the dry run
-exposed only `ENTRY_STORE` plus `ASSETS`. Deployment used `--keep-vars`, version
-tag `git-b2518d725433` and the matching message
-`git b2518d725433 adapt legacy collection upload contracts`; no deployed
-credential was supplied to remote smoke requests. The 28-file Workers-runtime suite passed 282/282,
-both audit suites passed 20/20, the dependency audit reported zero known
-vulnerabilities, and TypeScript plus the official UI build completed before
-deployment. A plaintext API credential can be rendered by metadata tooling;
-the lab credential must be rotated and converted to a Worker Secret before
-non-lab use. Its value is absent from repository documentation. These remain
-subset facts, not a full-port claim.
+`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2` adds complete named
+Workers-runtime mappings for `api.aaps-client.test.js`, `api.alexa.test.js`,
+`api.entries.test.js`, `api.root.test.js`, `api.status.test.js`,
+`api.treatments.test.js`, `api.unauthorized.test.js` and
+`api.v1-batch-operations.test.js`. The prior mappings for all 16 locked API3
+files, `notifications-api.test.js` and seven v1 collection/identity files
+remain green. Cloudflare Worker version
+`936fcc1c-b6d8-4572-9a11-a50e1f507bb6` is the 100% active version, created at
+`2026-07-19T19:44:26.242Z`, with a 26 ms startup. Wrangler processed 248
+unchanged official asset entries; deployment and dry run reported 933.04 KiB
+raw / 168.10 KiB gzip, and the dry run exposed only `ENTRY_STORE` plus
+`ASSETS`. Deployment used `--keep-vars`, tag `git-cac4a86` and message
+`git cac4a86 adapt remaining v1 client contracts`; no deployed credential was
+supplied to remote smoke requests. The 30-file Workers-runtime suite passed
+299/299, both audit suites passed 20/20, the dependency audit reported zero
+known vulnerabilities, and TypeScript plus the official UI build completed
+before deployment. These remain subset facts, not a full-port claim.
 
-The new v1 contracts preserve the locked acceptance of missing, `null` and
-24-hex IDs while rejecting UUID/numeric IDs with the first invalid batch item
-in the exact legacy 400 envelope. They also lock empty-array POST behavior for
-Activity, Food, Profile, DeviceStatus and Treatments; empty Food PUT; Food PUT
-creation when `_id` is absent; DeviceStatus offset-bearing `created_at`
-normalization to UTC plus `utcOffset`; DeviceStatus wildcard delete combined
-with other filters; and the official `{}` mutation responses for Activity,
-Food and Profile. The unintended generic DeviceStatus PUT route is no longer
-exposed. These are adapter contracts over SQLite, not evidence that unrestricted
-MongoDB query semantics have been reproduced.
+The new v1 contracts preserve Loop, Trio and AndroidAPS ordered batch response
+shapes and pump/uploader metadata. Entries now implements exact numeric-date,
+exact `dateString` and open `dateString`-range deletion plus the locked
+numeric-brace `times/echo`, `times` and `slice` fixtures. Pattern compilation is
+deliberately limited to eight literal prefixes, 256 expansions, 10,000
+candidates per prefix and a reviewed linear regex subset. These are Workers
+Free controls, not a claim that arbitrary JavaScript RegExp/Mongo behavior is
+portable.
 
-This increment reproduces the official Treatments create split: every truthy
-nonzero normalized `preBolus` creates the time-shifted carb record. Truthy
-carbs move off the primary; missing or zero carbs retains the locked empty
-string on the child. V2 inherits the same v1 route; PUT remains the
-official one-record save path. NSCF commits both POST records in one synchronous
-SQLite transaction, a deliberate platform strengthening over a possible
-partial two-write failure, and retransmission deduplicates both records. It
-retains the official v1 `/notifications/ack` route on both v1 and v2 mounts,
-the repaired stale already-due DO alarm behavior, `/alarm` subscription
-authority, the trusted live notification outlet, the `/storage` namespace,
-its authorized room subscriptions and API3-only mutation events, plus all
-eight generic
-API v3 routes for Food and Settings, six-collection `lastModified` and v1 Food
-writes on the same repository/history contract. Food uses the locked
-`created_at`-only fallback; Settings has no fallback identity, and its search/
-history permission is the locked admin exception while resource read remains
-read-protected. Activation repairs older Food metadata/fallback/history
-idempotently across eviction without rewriting document bodies. It retains the
-upstream-shaped Entries query debugger and direct SQLite count from the prior
-release. Client-controlled Mongo aggregation pipelines remain rejected rather
-than treated as executable SQLite input. It also retains the audited uploader
-edges: every non-ObjectId client `_id` is retained as `identifier` when the
-supplied identifier is falsy; recursive string adaptation is idempotent;
-extended URL-encoded nested/array
-fields use the locked qs-style parser; SQLite binding/statement limits return a
-controlled client error; and exact base `/entries` restores the upstream
-runtime-SGV IMS precheck. It retains ordered batch-prefix commits, preview,
-bounded query/sort, current/model/ID reads, JSON/plain/CSV/TSV, validators and
-HEAD, plus API v3 Profile, AAPS create/retry/new-version behavior, v1/API3
-shared storage, idempotent
-legacy metadata repair and the official HTML/cache boundary fixes.
+Treatments now maps the complete locked test file: XSS-bearing strings are
+sanitized before persistence, zoned timestamps and numeric fields normalize as
+upstream, UUID `_id` values become client identifiers, explicit AAPS identifiers
+deduplicate, and query/bulk-delete plus server-ID lifecycle behavior are locked.
+The Worker sanitizer keeps a reviewed safe tag set but strips all attributes;
+it matches the locked malicious IMG fixture while intentionally remaining
+stricter than DOMPurify for otherwise-safe attributes. The prior `preBolus`
+two-record transaction, v1/v2 notification ACK, API3 collections, `/storage`,
+`/alarm`, authorization, official pages and transport slices remain green.
+Alexa compatibility is the mocked local REST/Speechlet contract only and makes
+no external Amazon call.
 
 Entries deliberately follows a fresh-only pre-1.0 policy. If activation finds
 the old narrow `entries` shadow structurally incompatible, it resets that
@@ -189,7 +164,9 @@ ordered bulk prefix rather than pretending the full request is atomic. Preview
 and persistence share recursive string sanitization; Workers entity-encodes
 HTML-like input because the locked JSDOM/DOMPurify runtime is not portable, so
 existing entities are preserved across read-then-reupload while active markup
-still cannot be stored. Exact safe-HTML DOMPurify bytes remain incomplete.
+still cannot be stored. Treatments uses a separate safe-tag/all-attributes-
+stripped adapter that matches the locked XSS fixture. Exact safe-attribute
+DOMPurify bytes remain incomplete.
 
 The ordinary compact-SGV path retains a requested count up to 10,000. A single
 request selecting thousands of records that each contain abnormally large
@@ -201,9 +178,10 @@ normal-family blocker and is not claimed solved.
 The aggregate count is separate from that result cap: a one-year indexed
 range can be counted without returning roughly 105,000 five-minute SGV rows.
 Ordinary detail reads still cap one response at 10,000 and therefore require
-date-partitioned requests for long exports. Transparent partitioning and the
-locked `times/echo`, `times` and `slice` routes remain deliberately deferred
-behind ordinary-family and closed-loop-critical work.
+date-partitioned requests for long exports. The locked `times/echo`, `times`
+and `slice` fixtures now provide bounded dateString partition helpers; arbitrary
+regex syntax, more than eight expanded prefixes and more than 10,000 candidates
+per prefix are controlled platform differences.
 
 The deployed increment includes:
 
@@ -216,8 +194,14 @@ The deployed increment includes:
   query/sort, current/model/ID reads and JSON/plain/CSV/TSV conditional GET/HEAD;
 - bounded Entries `echo` plus SQL aggregate count for entries, treatments and
   device status, inherited by API v2;
+- bounded numeric-brace Entries `times/echo`, `times` and dateString `slice`,
+  plus exact/dateString-range delete selectors;
 - locked Treatments POST `preBolus` two-record fan-out on both v1 and v2,
-  atomic in SQLite, with PUT retaining the one-record save contract;
+  atomic in SQLite, complete UUID/identifier/AAPS/query/delete contracts and a
+  stricter fail-closed safe-tag sanitizer, with PUT retaining the one-record
+  save contract;
+- locked root version discovery, complete v1/v2 Status representations, local
+  Alexa Speechlet requests, AndroidAPS metadata and Loop/Trio batch behavior;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
 - all eight generic API v3 routes for entries, treatments, device status,
@@ -243,17 +227,17 @@ The deployed increment includes:
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
-Final credential-free remote smoke returned HTTP 200 for health and the locked
-v15.0.7/API 3.0.3-alpha version envelope. GET and HEAD version behavior, API
-OPTIONS, anonymous collection GET/HEAD and unknown-route HEAD matched the new
-contracts; no deployed credential was read or sent. A real browser reloaded
-the current deployment and loaded the official homepage, Admin, Food, Profile
-and `clock-color` pages without console errors or a protected write. Food
-reached `Database loaded` and Profile reached `Values loaded.` before the
-browser was returned to the homepage.
+Final credential-free remote smoke returned HTTP 200 for health, root version
+discovery, v1 Status, the exact locked `times/echo` request, an empty bounded
+`slice`, Alexa LaunchRequest, OPTIONS and Status HEAD. Anonymous Entries POST
+returned the locked 401 envelope without a write; no deployed credential was
+read or sent. A real browser reloaded the current deployment and loaded the
+official homepage, Admin, Food, Profile and `clock-color` pages with no console
+warning/error or protected write. Food/Profile remained in their expected
+anonymous `Not loaded` data state before the browser was returned home.
 
-The code is still not a full port: Entries times/echo/times/slice and
-non-Entries echo, large-response CSV/XML
+The code is still not a full port: non-Entries echo, arbitrary aggregation,
+large-response CSV/XML
 resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, root writes, main-namespace persisted change
 broadcasts, the shared background-task scheduler, server plugins, notification

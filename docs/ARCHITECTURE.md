@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`b2518d725433ea120132c59ce9b249d4224533d4`. It produced Cloudflare version
-`481d5d25-4e4e-4bb9-966a-144bcab19194`, reported as the Current Version by
-direct deploy. Its 28-file Workers-runtime suite passes 282/282
-plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries; deployment and the final dry run both reported 917.18 KiB raw /
-164.85 KiB gzip, with the dry run declaring only the `ENTRY_STORE` Durable
-Object and `ASSETS` product bindings. Cloudflare reported a 45 ms startup.
+`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2`. It produced Cloudflare version
+`936fcc1c-b6d8-4572-9a11-a50e1f507bb6`, reported as 100% active by direct
+deploy. Its 30-file Workers-runtime suite passes 299/299 plus 20/20 audit
+tests. Wrangler processed 248 unchanged official asset entries; deployment and
+the final dry run both reported 933.04 KiB raw / 168.10 KiB gzip, with the dry
+run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
+bindings. Cloudflare reported a 26 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -247,16 +247,22 @@ ignored as upstream does, while client-supplied aggregation pipelines are
 rejected rather than translated into executable SQL. The bounded Entries
 `echo` adapter renders the supported Mongo query shape plus input/params/storage
 debug envelope without reflecting Cloudflare tenant or credential parameters.
-Non-Entries echo and times/slice pattern routes remain outside this slice.
+`times/echo`, `times` and `slice` expand the locked numeric-brace fixtures into
+at most 256 linear patterns and eight literal dateString prefixes. Each prefix
+becomes an indexed SQLite range read capped at 10,000 candidates; merged results
+are deduplicated and time-sorted before the requested count is applied.
+Arbitrary JavaScript regex syntax, other slice storage/field combinations and
+non-Entries echo remain outside this slice.
 
-Upload and preview share one recursive sanitizer before normalization or
-persistence. The locked server uses DOMPurify with JSDOM; neither DOM runtime is
-available at this Worker boundary. NSCF therefore entity-encodes HTML-like and
-entity-bearing nonnumeric strings so active markup cannot enter SQLite, while
-preserving existing named/numeric entities to make read-then-reupload
-idempotent. This is a deliberate fail-closed safety adaptation: safe HTML that
-upstream preserves may be returned as text, so byte-equivalent DOMPurify output
-remains open.
+Entries upload and preview share one recursive sanitizer before normalization
+or persistence. The locked server uses DOMPurify with JSDOM; neither DOM runtime
+is available at this Worker boundary. NSCF therefore entity-encodes HTML-like
+and entity-bearing nonnumeric Entry strings while preserving existing named/
+numeric entities to make read-then-reupload idempotent. Legacy Treatment POST
+uses a separate safe-tag serializer: active blocks are removed, reviewed tags
+are lowercased and retained, and every attribute is stripped. It matches the
+locked malicious IMG fixture but is deliberately stricter than DOMPurify for
+otherwise-safe attributes, so general byte-equivalent output remains open.
 Persistent batches cross the RPC boundary as validated values. Each item runs
 in its own synchronous SQLite transaction that atomically updates the canonical
 document, narrow Entries shadow and change snapshot. A conflict rolls back that
@@ -339,7 +345,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`b2518d725433ea120132c59ce9b249d4224533d4` implements all six official generic
+`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -740,12 +746,13 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 `loadRetro` require exactly one object payload; this is a resource/safety
 tightening over permissive upstream JavaScript call shapes.
 
-Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`481d5d25-4e4e-4bb9-966a-144bcab19194`. Credential-free remote smoke returned
-200 for health and the v15.0.7 API3 version envelope. API3 GET/HEAD/OPTIONS,
-anonymous collection GET/HEAD and unknown-route HEAD matched the new boundary
-contracts. Protected realtime event/ACK behavior remains covered locally
-rather than by a credentialed remote mutation. The at-most-once dequeue/send
+Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
+`936fcc1c-b6d8-4572-9a11-a50e1f507bb6`. Current credential-free remote smoke
+returned 200 for health, root versions, v1 Status, bounded times/slice utility
+requests and Alexa LaunchRequest; Status HEAD and API OPTIONS also passed, while
+anonymous Entries POST returned the locked 401 without writing. Protected
+realtime event/ACK behavior remains covered locally rather than by a
+credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
 intentionally still uses the REST polling shim. The inherited local transport
 contracts and the prior public EIO4 smoke prove only the separate server slice,
@@ -807,6 +814,9 @@ Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
   to that result cap; long detail exports still require date partitioning.
 - Entries unindexed/dateString candidates are capped at 10,000 with controlled
   HTTP 413; synchronous deletion and stored-revision cleanup are capped at 128.
+- Entries pattern utilities accept at most eight expanded dateString prefixes,
+  256 numeric-brace expansions and 10,000 candidates per prefix, using only the
+  locked fixture's reviewed linear regex subset.
 - A selected Entries set is currently materialized across DO RPC, final sort,
   representation and ETag hashing. Compact SGV records at ordinary client
   counts are the supported path; thousands of abnormally large custom

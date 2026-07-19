@@ -130,13 +130,15 @@ with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
 homepage to the official Socket.IO client is a later slice that also requires
 safe non-default tenant propagation and integration with the still-missing
 server-side notification/plugin pipeline.
-Entries also remains incomplete: `times/echo`, `times` and `slice` are absent;
-non-Entries `echo`, client-supplied count aggregation pipelines, Mongo
-operators, nested/array/mixed-type behavior and collation extend beyond the
-fail-closed query subset; and the conservative Workers sanitizer is not
-byte-equivalent to upstream DOMPurify. The 512 KiB body, 100-item batch and
-10,000-row result/scan bounds are explicit Free-plan controls rather than
-upstream limits. Server-side `count` is not subject to the 10,000-row result
+Entries also remains incomplete beyond its now-adapted locked test file:
+`times/echo`, `times` and dateString `slice` support only the bounded numeric-
+brace fixtures, while non-Entries `echo`, client-supplied count aggregation
+pipelines, arbitrary regex/slice fields, Mongo operators, nested/array/mixed-
+type behavior and collation extend beyond the fail-closed subset. Treatment
+safe attributes are stripped, so the Workers sanitizer is not generally byte-
+equivalent to upstream DOMPurify. The 512 KiB body, 100-item batch, eight-prefix,
+256-expansion and 10,000-row result/candidate bounds are explicit Free-plan
+controls rather than upstream limits. Server-side `count` is not subject to the 10,000-row result
 limit, but retrieving the matching records still requires bounded date ranges.
 The adapter still materializes a selected
 Entries response before sorting, formatting and hashing it; an artificial
@@ -356,28 +358,29 @@ broken-recipient isolation. The
 locked upstream has 111 JavaScript test files; a static declaration audit finds
 883 active `it(...)` cases plus one skipped case. Those declarations are not
 directly comparable with the adapter suite and do not prove complete Nightscout
-compatibility. All 16 locked `api3.*` files, `notifications-api.test.js` and the
-seven v1 collection/identity files `api.activity.test.js`,
-`api.devicestatus.test.js`, `api.food.test.js`, `api.id-validation.test.js`,
-`api.objectid-validation.test.js`, `api.profiles.test.js` and
-`api.shape-handling.test.js` are classified as fully `adapted`; 85 files remain
+compatibility. All 16 locked `api3.*` files, `notifications-api.test.js` and 15
+v1 client/API files are classified as fully `adapted`. The newest eight are
+`api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
+`api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 77 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`b2518d725433ea120132c59ce9b249d4224533d4`. After rebuilding the locked
-official UI, its 28-file Workers-runtime suite passes 282/282 tests and both
+`cac4a8671ef8238570ef8a1a25c5ce98b3f4cba2`. After rebuilding the locked
+official UI, its 30-file Workers-runtime suite passes 299/299 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 917.18 KiB raw / 164.85 KiB gzip and exposes only `ENTRY_STORE` and
+reports 933.04 KiB raw / 168.10 KiB gzip and exposes only `ENTRY_STORE` and
 `ASSETS`. This deployed increment adds complete named Workers-runtime contract
-coverage for the seven locked v1 collection/identity files listed above. It
-preserves the previous complete 16-file API3 mapping while locking legacy
-empty-array, identifier, date, delete and response-shape behavior across
-Activity, DeviceStatus, Food and Profile. This does not make the whole
-Nightscout port or the complete v1/v2 API compatible; controlled
-Workers Free large-result behavior and broader Mongo mixed-type/nested/array
-parity remain explicit API3 differences. `times/echo`, `times`, `slice`, EIO3, root writes,
-polling-to-WebSocket upgrade and the server-side notification/plugin engine
-remain missing.
+coverage for the eight locked v1 files listed above. It implements the locked
+numeric-brace `times/echo`, `times` and `slice` fixtures with explicit prefix,
+expansion and candidate bounds; exact/dateString-range Entries deletion;
+Treatment HTML sanitization, UUID/identifier and AAPS behavior; Loop/Trio batch
+shapes; root/Status/Alexa request envelopes and anonymous-write denial. This
+does not make the whole Nightscout port or the complete v1/v2 API compatible.
+Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
+type/nested/array semantics, safe-attribute DOMPurify byte parity, EIO3, root
+writes, polling-to-WebSocket upgrade and the server-side notification/plugin
+engine remain missing.
 Deployment used `--keep-vars`; no deployed credential was supplied to remote
 smoke requests, and no credential value is stored or quoted in this repository.
 Entries migration remains intentionally
@@ -407,29 +410,28 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `481d5d25-4e4e-4bb9-966a-144bcab19194` was made current by
+Cloudflare version `936fcc1c-b6d8-4572-9a11-a50e1f507bb6` was made current by
 the direct Wrangler deployment and was created at
-`2026-07-19T19:01:12.326131Z`, with a reported 45 ms startup. Version tag
-`git-b2518d725433` and message
-`git b2518d725433 adapt legacy collection upload contracts` record
+`2026-07-19T19:44:26.242Z`, with a reported 26 ms startup. Version tag
+`git-cac4a86` and message
+`git cac4a86 adapt remaining v1 client contracts` record
 the Git mapping. No asset bytes needed uploading because all 248 official
 asset entries were unchanged. Credential-free remote smoke returned HTTP 200
-for health and the v15.0.7 API v3 version envelope; GET and HEAD version
-contracts passed, API OPTIONS returned the complete method/header policy,
-anonymous GET/HEAD collection access returned the locked 401 behavior, and an
-unknown HEAD route returned 404 with an empty body. Public Food, Profile and
-DeviceStatus reads also returned HTTP 200 without exposing their bodies in the
-smoke log. No deployed credential was read or sent.
+for health, root version discovery, v1 Status, the exact locked `times/echo`
+fixture, an empty bounded `slice` and the Alexa LaunchRequest envelope. API
+OPTIONS and Status HEAD passed, and an anonymous Entries POST returned the
+locked 401 envelope without writing data. No deployed credential was read or
+sent.
 
 A real browser run reloaded the current deployment and rendered the official
 homepage with its chart region and no console errors. The official Admin Tools,
-Food Editor, Profile Editor and `clock-color` page also loaded; Food reached
-`Database loaded`, Profile reached `Values loaded.`, and no protected write
-was submitted. The locked bundle emitted only its known missing-chart warning
-on secondary pages that do not contain `#chartContainer`. The browser was
-returned to the homepage. The public tenant currently has no Entries, so `---`
-is expected. These checks do not prove every protected mutation, report,
-plugin or realtime workflow.
+Food Editor, Profile Editor and `clock-color` page also loaded with their
+official controls and no console warning or error. Food/Profile remained in
+their anonymous `Not loaded` data state because this smoke deliberately did
+not read or enter a credential, and no protected write was submitted. The
+browser was returned to the homepage. The public tenant currently has no
+Entries, so `---` is expected. These checks do not prove every protected
+mutation, report, plugin or realtime workflow.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
