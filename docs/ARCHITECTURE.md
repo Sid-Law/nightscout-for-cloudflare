@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`f5aaa5d94c44db9d5af3741743cb74744cc182c2`. It produced Cloudflare version
-`eaf8b72b-939d-43c6-827f-05014fa3bf9b`, reported as 100% active by direct
-deploy. Its 34-file Workers-runtime suite passes 331/331 plus 20/20 audit
+`4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`. It produced Cloudflare version
+`d997c600-edaf-40e4-ad53-78e8d2788a00`, reported as 100% active by direct
+deploy. Its 35-file Workers-runtime suite passes 339/339 plus 20/20 audit
 tests. Wrangler processed 248 unchanged official asset entries; deployment and
-the final dry run both reported 971.63 KiB raw / 177.25 KiB gzip, with the dry
+the final dry run both reported 988.17 KiB raw / 180.00 KiB gzip, with the dry
 run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
-bindings. Cloudflare reported a 25 ms startup.
+bindings. Cloudflare reported a 24 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -160,7 +160,22 @@ transaction. Existing polling and Hibernatable-WebSocket flush paths deliver
 the same durable queue. Food and activity still advance the baseline but emit
 no delta because the locked calculator exposes neither field. Upstream
 profile-switch status injection and server-plugin preprocessing before the
-comparison remain unadapted, as do client-originated root mutation events.
+comparison remain unadapted.
+
+Schema v12 extends each persisted root session with `write_allowed` and
+`treatment_write_allowed`. A successful `authorize` therefore retains all
+three upstream authority branches across Durable Object reconstruction and
+Hibernatable-WebSocket eviction. The main namespace accepts the locked
+`dbAdd`, `dbUpdate`, `dbUpdateUnset` and `dbRemove` events for treatments,
+entries, device status, profile, food and activity. Collection validation and
+permission checks retain upstream error order; the acknowledged mutation runs
+through the shared repository, and a changed snapshot queues the later root
+`dataUpdate` only after the ACK packet. Treatment exact/plus-or-minus-two-second
+dedupe, device-status dedupe, AAPS Profile replacement, custom string `_id`,
+dotted set/unset and prototype-safe field traversal are named contracts. A
+100-document event cap, document-depth/size limits and string-ID bounds are
+Free-plan controls; unrestricted Mongo/BSON numeric, object and mixed-type ID
+semantics remain outside this slice.
 
 The same transports expose the API v3 `/storage` namespace independently of
 the root namespace. A `subscribe` event resolves only the subject access token,
@@ -399,7 +414,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`f5aaa5d94c44db9d5af3741743cb74744cc182c2` implements all six official generic
+`4bbc75e24fc7f2eed76697afcab67cca1b7d5f90` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -726,7 +741,7 @@ either contract and remains outside the fixed deployment footprint.
 15 seconds. It still supplies the official page and does not use the new
 server endpoint. The separate endpoint now implements strict EIO4 HTTP polling
 and direct Hibernatable WebSocket with persisted session/queue state, root
-namespace CONNECT, read-only authorization ACKs, initial/retro data and
+namespace CONNECT, read/write/treatment-write authorization ACKs, initial/retro data and
 connection-count broadcasts. It also implements the API v3 `/storage`
 namespace, persisted authorized collection rooms and API3-only mutation events,
 plus the API v3 `/alarm` namespace's persisted subscription/ACK/snooze slice
@@ -768,10 +783,11 @@ The current server boundary is explicit:
   Broken/overflow recipients are dropped independently and disconnected
   clients receive no replay. Actual notification/plugin computation remains
   missing;
-- root `subscribe` and all client-originated write events have no handler or
-  ACK, matching the locked root's lack of `subscribe` while deliberately
-  exposing no client mutation. Server-originated implemented v1/v2/API3
-  changes do enqueue locked `dataUpdate` deltas from a persisted baseline;
+- root `subscribe` has no handler or ACK, matching the locked root. The four
+  locked client-originated mutation events validate collection, authority,
+  required `_id` and bounded payloads in upstream order, then return the exact
+  ACK shapes before any resulting root `dataUpdate`. Server-originated
+  implemented v1/v2/API3 changes use the same persisted delta baseline;
 - HTTP API3 create/upsert/PUT/PATCH/soft-delete/permanent-delete emits the
   locked `/storage` payload only after a successful mutation decision; v1 and
   direct database changes do not broadcast. `document_changes` is not consumed.
@@ -803,11 +819,13 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`eaf8b72b-939d-43c6-827f-05014fa3bf9b`. Current credential-free remote smoke
+`d997c600-edaf-40e4-ad53-78e8d2788a00`. Current credential-free remote smoke
 returned 200 for health, a bounded v1 Entries read, selected v2 properties, v2
 summary, API3 version and an EIO4 polling open packet; API3 Entries without a token returned
-the expected 401. Protected
-realtime event/ACK behavior remains covered locally rather than by a
+the expected 401. A fresh anonymous-readable root session returned
+`read:true`, `write:false`, `write_treatment:false`; its Food `dbAdd` was
+rejected with `Not permitted` and a follow-up read stayed empty. Successful
+protected realtime mutation behavior remains covered locally rather than by a
 credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
 intentionally still uses the REST polling shim. The inherited local transport
@@ -823,9 +841,12 @@ hibernated WebSockets after commit. Hibernated sessions restore tenant and SID
 authority from WebSocket attachments plus SQLite; namespace connection and room
 subscriptions come from SQLite schema v9. `/alarm` connection/subscription
 authority and silence rows come from idempotently repaired schema v10. Root
-delta authority and the last full comparison snapshot come from schema v11.
-The remaining transport work is client root write behavior, profile-switch
-status/plugin preprocessing, EIO3, polling upgrade
+delta baseline and the last full comparison snapshot come from schema v11;
+root write and treatment-write authority come from idempotently repaired schema
+v12. Pre-v12 live sessions default those new flags to false and must
+re-authorize after rollout, while their rows and data remain intact.
+The remaining transport work is profile-switch status/plugin preprocessing,
+EIO3, polling upgrade
 and the direct-send replay/acknowledgement boundary; server-side notification
 generation remains background/plugin work.
 

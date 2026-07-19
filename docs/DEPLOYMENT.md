@@ -12,24 +12,25 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `f5aaa5d94c44db9d5af3741743cb74744cc182c2`
-- Git HEAD used by Wrangler: `f5aaa5d94c44db9d5af3741743cb74744cc182c2`
-- Cloudflare Version ID: `eaf8b72b-939d-43c6-827f-05014fa3bf9b`
-- Cloudflare ordinal version number: `45`
+- Deployed code candidate: `4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`
+- Git HEAD used by Wrangler: `4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`
+- Cloudflare Version ID: `d997c600-edaf-40e4-ad53-78e8d2788a00`
+- Cloudflare ordinal version number: `46`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-19T21:53:24.698844Z`
-- Activation: deployment `c79cda69-5d96-4ac3-aef4-3b4596e2eca9` created
-  `2026-07-19T21:53:25.858703Z`; Wrangler reports
+- Version creation time: `2026-07-19T22:40:11.311165Z`
+- Activation: deployment `6eee8448-8796-434f-8cd0-81db74334ed4` created
+  `2026-07-19T22:40:12.221625Z`; Wrangler reports
   this version at 100%
-- Worker startup: 25 ms
-- Deployment ID: `c79cda69-5d96-4ac3-aef4-3b4596e2eca9`
+- Worker startup: 24 ms
+- Deployment ID: `6eee8448-8796-434f-8cd0-81db74334ed4`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
-  silence tables and the v11 root-delta baseline
+  silence tables, the v11 root-delta baseline and the v12 persisted root-write
+  authority columns
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 971.63 KiB raw / 177.25 KiB gzip
+- Upload: 988.17 KiB raw / 180.00 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -58,22 +59,32 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 ## Release content
 
 The current deployed build contains the prior adapted slices plus this
-increment's main-namespace delta work:
+increment's main-namespace client-write work:
 
 - complete named Workers-runtime mapping for locked
-  `data.calcdelta.test.js`: SGV/MBG/calibration/device-status replacement,
-  treatment add/update/remove classification, `mgdl` suppression, profile
-  replacement and `lastUpdated` behavior;
-- schema-v11 `realtime_root_state`, with a full tenant comparison baseline that
-  survives service/DO reconstruction instead of relying on Node process memory;
-- root `dataUpdate` queueing for connected, authorized, read-allowed live
-  sessions after implemented v1/v2 and HTTP API3 mutations. API3 root and
-  `/storage` frames share the mutation transaction; legacy root publication is
-  a follow-up DO transaction, including the committed prefix after an ordered
-  Entries failure;
-- reuse of the bounded persisted polling/direct-Hibernatable-WebSocket queue
-  and flush path. Client root write events, profile-switch status injection and
-  plugin processing before the comparison remain unimplemented.
+  `websocket.shape-handling.test.js`: `dbAdd`, `dbUpdate`, `dbUpdateUnset` and
+  `dbRemove` for treatments, entries, device status, profile, food and activity;
+- exact collection/authorization/missing-ID error order and ACK shapes, with
+  successful ACKs queued before any resulting root `dataUpdate`;
+- upstream treatment exact and plus-or-minus-two-second fuzzy dedupe,
+  device-status dedupe, AAPS Profile same-start-date/`NSCLIENT_ID` replacement,
+  custom string `_id` preservation and raw dotted set/unset/remove;
+- schema-v12 persisted write/treatment-write authority across DO reconstruction
+  and Hibernatable WebSocket eviction. Pre-v12 session rows retain their data
+  and safely default the new flags to false until re-authorization;
+- prototype-pollution-safe own-property updates, a 100-document event cap and
+  existing document depth/size bounds as explicit Workers Free controls.
+  Broader Mongo/BSON numeric, object-ID and mixed-type semantics remain outside
+  this named contract.
+
+The immediately preceding root-delta increment remains deployed and includes
+the complete named `data.calcdelta.test.js` mapping, schema-v11
+`realtime_root_state`, and bounded server-originated `dataUpdate` queueing for
+implemented v1/v2 and HTTP API3 mutations. API3 root and `/storage` frames
+share the mutation transaction; legacy root publication is a follow-up DO
+transaction, including the committed prefix after an ordered Entries failure.
+Profile-switch status injection and plugin processing before comparison remain
+unimplemented.
 
 The immediately preceding v2 property/plugin increment remains deployed and
 includes:
@@ -243,10 +254,10 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`f5aaa5d94c44db9d5af3741743cb74744cc182c2`. It adds the complete named
-`data.calcdelta` mapping and schema-v11 root baseline while retaining all prior
-property, v1, API3, authorization, realtime, notification ACK and official-page
-work.
+`4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`. It adds the complete named
+`websocket.shape-handling` mapping and schema-v12 persisted write authority on
+top of the schema-v11 delta baseline while retaining all prior property, v1,
+API3, authorization, realtime, notification ACK and official-page work.
 The table below records the exact local gate completed before deployment.
 
 | Check | Result |
@@ -258,24 +269,25 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 34 files, 331/331 passed |
-| Worker dry run | 971.63 KiB raw / 177.25 KiB gzip |
+| Workers integration tests | 35 files, 339/339 passed |
+| Worker dry run | 988.17 KiB raw / 180.00 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | existing configuration was preserved; no credential was read or supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 331 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 339 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
-`units.test.js`, `upbat.test.js`, `data.calcdelta.test.js` and 15 v1 client/API
-files are classified as fully `adapted`, 68 remain unresolved and two bridge files are
+`units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
+`websocket.shape-handling.test.js` and 15 v1 client/API files are classified as
+fully `adapted`, 67 remain unresolved and two bridge files are
 fixed-scope exclusions.
 Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `eaf8b72b-939d-43c6-827f-05014fa3bf9b` at 100%.
+Wrangler reports version `d997c600-edaf-40e4-ad53-78e8d2788a00` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -304,22 +316,28 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds server-originated root `dataUpdate` deltas and retains the
-existing transport. The current version repeated a fresh credential-free EIO4
-polling-open check. No credentialed remote mutation was attempted, so the new
-change delivery is proved by local integration contracts rather than claimed
-from the public tenant. The `/alarm` checks below remain historical evidence.
+This release adds locked client-originated root mutations and retains the
+existing server-originated `dataUpdate` transport. The current version repeated
+a fresh credential-free EIO4 polling-open check and exercised the read-only
+authorization boundary. No credentialed remote mutation was attempted, so
+successful write/change delivery is proved by local integration contracts
+rather than claimed from the public tenant. The `/alarm` checks below remain
+historical evidence.
 
 | Check | Result |
 | --- | --- |
 | Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
+| Current anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
+| Current read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
+| Local root write contract | six collections and all four events preserve locked validation/permission/ACK order, dedupe and ACK-before-delta behavior |
 | Local v1 SGV root update | an authorized live polling session receives the locked root `dataUpdate`; an unauthorized session remains silent |
 | Local API3 Treatment root update | root and `/storage` delivery share the successful API3 mutation path |
-| Local reconstruction | schema-v11 baseline survives a new service instance and classifies a Treatment change as `action:update` |
+| Local reconstruction | schema-v11 baseline and schema-v12 write/treatment-write authority survive service reconstruction; a Treatment change remains `action:update` |
 | Prior `/alarm` CONNECT | independent SIO5 namespace connection returned a namespace SID |
 | Prior `/alarm` anonymous web subscribe | ACK exactly `{success:true,message:"Subscribed for alarms",read:true,ack:false}` |
 
-Local tests additionally prove the exact locked `data.calcdelta` cases,
+Local tests additionally prove the exact locked `data.calcdelta` and
+`websocket.shape-handling` cases,
 non-empty-only root queueing, connection/read/live filtering, collection filtering/default order, the
 Settings-admin exception, persisted subscriptions across eviction, API3
 create/deduplicated update/PUT/PATCH/soft/permanent delete events, v1 exclusion,
@@ -332,8 +350,7 @@ Urgent-to-Warning snooze, eviction/Hibernation persistence, broken-recipient
 containment and idempotent v10 schema repair. HTTP v1/v2 and Socket ACK now
 share that tested durable transaction. The remote pass did not use a credential,
 publish a trusted notification or perform an alarm ACK. Neither layer proves
-polling upgrade, EIO3, client root write handlers, profile-switch/plugin
-preprocessing or the server-side plugin/notification
+polling upgrade, EIO3, profile-switch/plugin preprocessing or the server-side plugin/notification
 generation pipeline.
 
 ## Real-browser evidence
@@ -345,15 +362,15 @@ credential storage or submitting protected mutations:
   `bundle.app.js`; the
   public tenant has no Entries, so `---` is expected;
 - Admin Tools, Food Editor, Profile Editor and `clock-color` loaded from the
-  official bundle with their expected headings/forms. Without a credential,
-  Profile and Food correctly remained `Not loaded`; no protected read was
-  claimed;
+  official bundle with their expected headings/forms. Food reached `Database
+  loaded` and Profile reached `Values loaded.` in the unauthorized read-only
+  state; no protected Save was attempted;
 - the browser was restored to the homepage and retained there for the user.
 - console inspection across the exercised pages found no errors or warnings.
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace. This browser run reloaded Cloudflare version
-`eaf8b72b-939d-43c6-827f-05014fa3bf9b` after deployment. Wrangler reported no
+`d997c600-edaf-40e4-ad53-78e8d2788a00` after deployment. Wrangler reported no
 changed asset upload for the same 248 official browser assets.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -394,11 +411,13 @@ mutation, report generation or every other protected page workflow.
 - Cloudflare can strip `Content-Length` from some dynamic Status/finalhandler
   responses. This release's Entries GET/HEAD smoke retained its exact length;
   the remaining transport difference stays scoped and non-blocking.
-- Polling-to-WebSocket upgrade, EIO3 HTTP and client-originated root writes
-  remain missing. The main namespace now emits server-originated deltas for
-  implemented v1/v2/API3 changes from a schema-v11 persisted baseline, but
-  profile-switch status injection, server-plugin preprocessing and a pushed
-  official-page workflow remain incomplete. `/storage` and `/alarm` currently
+- Polling-to-WebSocket upgrade and EIO3 HTTP remain missing. The main namespace
+  now emits server-originated deltas from a schema-v11 persisted baseline and
+  implements the locked client root write shape contract with schema-v12
+  authority, but profile-switch status injection, server-plugin preprocessing
+  and a pushed official-page workflow remain incomplete. Broader Mongo/BSON
+  numeric, object-ID and mixed-type behavior is not implied by the named write
+  contract. `/storage` and `/alarm` currently
   support EIO4/SIO5 polling and direct WebSocket only. Direct WebSocket retains
   a named at-most-once crash window between durable dequeue and `send()`.
   `/alarm` is only a live transport/auth/ACK outlet: inherited v1/v2 HTTP ACK
@@ -430,10 +449,11 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 
 ## Rollback
 
-The immediately preceding and current known-good rollback version is
-`ea1a004c-eb45-48d4-a9d7-70224f753d9a`. It contains the complete prior
-property foundation and rolling-RPC fallback, but not schema-v11 root delta
-publication. The older failed property rollout
+The immediately preceding known-good rollback Worker version is
+`eaf8b72b-939d-43c6-827f-05014fa3bf9b`. It contains the schema-v11
+server-originated root-delta slice and all earlier work, but not the current
+client root write handlers or schema-v12 authority persistence. The older
+failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not
 be selected as a rollback target.
 

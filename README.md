@@ -67,9 +67,14 @@ for diagnosis, dosing, or medical decisions.
 - A transport-only polling shim for the upstream client's Socket.IO surface;
   it loads one aggregate data payload and emits the upstream `dataUpdate`.
 - A separately routed, tenant-local `/socket.io/` server slice for strict EIO4
-  HTTP polling and the read-only SIO5 root namespace. Sessions, heartbeat state,
-  authorization state and bounded outbound queues persist in the existing
-  `EntryStore` SQLite Durable Object across eviction.
+  HTTP polling and the SIO5 root namespace. Sessions, heartbeat state,
+  read/write/treatment-write authorization state and bounded outbound queues
+  persist in the existing `EntryStore` SQLite Durable Object across eviction.
+  The locked client-originated `dbAdd`, `dbUpdate`, `dbUpdateUnset` and
+  `dbRemove` contracts are implemented for treatments, entries, device status,
+  profile, food and activity, including exact ACK/error ordering, upstream
+  treatment/device/AAPS-profile dedupe behavior and ACK-before-`dataUpdate`
+  delivery. Writes remain bounded to 100 documents per event.
 - A direct EIO4 WebSocket transport accepted by the same Durable Object through
   WebSocket Hibernation. It persists protocol authority in SQLite and restores
   tagged socket attachments after eviction. It does not implement an
@@ -379,30 +384,32 @@ directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
-`data.calcdelta.test.js` and 15 v1 client/API files are classified as fully
-`adapted`.
+`data.calcdelta.test.js`, `websocket.shape-handling.test.js` and 15 v1
+client/API files are classified as fully `adapted`.
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 68 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 67 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`f5aaa5d94c44db9d5af3741743cb74744cc182c2`. After rebuilding the locked
-official UI, its 34-file Workers-runtime suite passes 331/331 tests and both
+`4bbc75e24fc7f2eed76697afcab67cca1b7d5f90`. After rebuilding the locked
+official UI, its 35-file Workers-runtime suite passes 339/339 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 971.63 KiB raw / 177.25 KiB gzip and exposes only `ENTRY_STORE` and
+reports 988.17 KiB raw / 180.00 KiB gzip and exposes only `ENTRY_STORE` and
 `ASSETS`. This deployed increment adds the complete named
-`data.calcdelta.test.js` contract and schema-v11 tenant root baseline. Successful
-implemented v1/v2 and API3 mutations now derive and enqueue the official root
-`dataUpdate` delta for authorized live polling sessions; the same persisted
-queue/flush path serves direct Hibernatable WebSockets. It retains the prior
-property, API, authorization, `/storage` and `/alarm` slices. This does not make the whole
-Nightscout port or the complete v1/v2 API compatible.
+`websocket.shape-handling.test.js` contract and schema-v12 persisted root-write
+authority on top of the schema-v11 delta baseline. Authorized client root
+writes now mutate the shared six-collection repository and enqueue the locked
+subsequent `dataUpdate` through polling or direct Hibernatable WebSocket. It
+retains the prior property, API, authorization, `/storage` and `/alarm` slices.
+This does not make the whole Nightscout port or the complete v1/v2 API
+compatible.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
-type/nested/array semantics, safe-attribute DOMPurify byte parity, EIO3, client
-root writes, polling-to-WebSocket upgrade and the server-side notification/plugin
-engine, including plugin-derived summary state, remain missing. No deployed
+type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
+byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
+notification/plugin engine, including profile-switch preprocessing and
+plugin-derived summary state, remain missing. No deployed
 credential was read or supplied to remote smoke requests, and no credential
 value is stored or quoted in this repository.
 Entries migration remains intentionally
@@ -432,9 +439,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `eaf8b72b-939d-43c6-827f-05014fa3bf9b` was made current by
-deployment `c79cda69-5d96-4ac3-aef4-3b4596e2eca9` at
-`2026-07-19T21:53:25.858703Z`, with a reported 25 ms startup. No asset bytes
+Cloudflare version `d997c600-edaf-40e4-ad53-78e8d2788a00` was made current by
+deployment `6eee8448-8796-434f-8cd0-81db74334ed4` at
+`2026-07-19T22:40:12.221625Z`, with a reported 24 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, a bounded v1 Entries
 read, selected v2 properties, v2 summary, API3 version and EIO4 polling. The public
@@ -442,6 +449,10 @@ tenant had no recent SGV rows, so the deployed property response correctly used
 its empty `bgnow` shape and the official `upbat` `?%` empty state; non-empty
 official calculations are covered by the local contracts. Missing-token API3
 Entries returned the expected 401. No deployed credential was read or sent.
+An anonymous/readable root session authorized as `read:true`, `write:false` and
+`write_treatment:false`; its attempted Food `dbAdd` received the exact
+`Not permitted` ACK and a follow-up read confirmed that no row was written.
+Successful credentialed root mutation remains local contract evidence only.
 
 The first attempted plugin deployment exposed Cloudflare rolling-upgrade
 behavior: an already-live Durable Object temporarily lacked the newly added
@@ -453,9 +464,10 @@ then returned 200 immediately; real storage/parser failures are still surfaced.
 A real browser run reloaded the current deployment and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
-official controls. Without a credential the Food and Profile editors correctly
-remained in `Not loaded`; no protected read or write was claimed. Browser console
-inspection found no errors or warnings. The
+official controls. The Food Editor reached `Database loaded` and the Profile
+Editor reached `Values loaded.` in their unauthorized read-only state; no
+protected Save was attempted. Browser console inspection found no errors or
+warnings. The
 browser was returned to the homepage. The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
