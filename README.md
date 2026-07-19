@@ -357,7 +357,7 @@ The deployed code candidate and Git HEAD used by Wrangler are commit
 `94c3816ef58931362f2f576b181891f7188ae430`. After rebuilding the locked
 official UI, its 24-file Workers-runtime suite passes 258/258 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 912.70 KiB raw / 163.93 KiB gzip and exposes only `ENTRY_STORE` and
+reports 912.74 KiB raw / 163.95 KiB gzip and exposes only `ENTRY_STORE` and
 `ASSETS`. This deployed increment adds the locked v1/v2 Treatments POST
 `preBolus` fan-out and its ordered/retransmission/error contracts while
 retaining notification ACK, the API v3 `/alarm` and `/storage` slices, six

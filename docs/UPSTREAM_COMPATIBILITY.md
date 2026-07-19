@@ -37,8 +37,8 @@ declaration audit finds 883 active
 `it(...)` cases plus one skipped case. Those sets are not directly comparable,
 and the local suite does not prove full compatibility.
 
-The final Wrangler dry-run reports 248 official assets, 912.70 KiB raw /
-163.93 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The final Wrangler dry-run reports 248 official assets, 912.74 KiB raw /
+163.95 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
@@ -298,9 +298,9 @@ entries/treatments/device-status/profile/food/settings plus `/storage` and
 the locked v1/v2 Treatments `preBolus` fan-out. Cloudflare version
 `59bac3ab-c448-4c9b-a360-db2179e62f74` was reported as the Current Version by
 the direct Wrangler deployment, which reported a 26 ms startup. Wrangler
-processed 248 unchanged official asset entries; deployment reported 912.74 KiB
-raw / 163.95 KiB gzip and the final dry run reported 912.70 KiB raw /
-163.93 KiB gzip with only `ENTRY_STORE` and `ASSETS`.
+processed 248 unchanged official asset entries; deployment and the final dry
+run both reported 912.74 KiB raw / 163.95 KiB gzip, with only `ENTRY_STORE` and
+`ASSETS` in the dry run.
 Deployment used `--keep-vars`, tag
 `git-94c3816ef589` and a matching Git message. Wrangler did not print a separate
 creation/activation timestamp or Deployment ID, so none is inferred here.

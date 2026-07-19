@@ -175,7 +175,7 @@ The table below records the exact local gate completed before deployment.
 | TypeScript | `tsc --noEmit` passed |
 | Workers integration tests | 24 files, 258/258 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 912.70 KiB raw / 163.93 KiB gzip |
+| Worker dry run | 912.74 KiB raw / 163.95 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 

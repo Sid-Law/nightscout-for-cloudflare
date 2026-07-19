@@ -100,9 +100,9 @@ Integration commit and Git HEAD used by Wrangler
 and direct Hibernatable EIO4 WebSocket slices. Cloudflare Worker version
 `59bac3ab-c448-4c9b-a360-db2179e62f74` was reported as the Current Version by
 the direct deployment, with a 26 ms startup. Wrangler processed 248 official
-asset entries with no asset-byte uploads; deployment reported 912.74 KiB raw /
-163.95 KiB gzip, while the final dry run reported 912.70 KiB raw /
-163.93 KiB gzip and exposed only `ENTRY_STORE` plus `ASSETS`. Deployment used
+asset entries with no asset-byte uploads; both deployment and the final dry run
+reported 912.74 KiB raw / 163.95 KiB gzip, and the dry run exposed only
+`ENTRY_STORE` plus `ASSETS`. Deployment used
 `--keep-vars` and version tag `git-94c3816ef589`; no deployed credential was
 supplied to remote smoke requests. The 24-file Workers-runtime suite passed 258/258,
 both audit suites passed 20/20, the dependency audit reported zero known

@@ -11,8 +11,8 @@ system is a compatible subset, not a full server.
 `59bac3ab-c448-4c9b-a360-db2179e62f74`, reported as the Current Version by
 direct deploy. Its 24-file Workers-runtime suite passes 258/258
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries; deployment reported 912.74 KiB raw / 163.95 KiB gzip and the dry run
-reported 912.70 KiB raw / 163.93 KiB gzip with only the `ENTRY_STORE` Durable
+entries; deployment and the final dry run both reported 912.74 KiB raw /
+163.95 KiB gzip, with the dry run declaring only the `ENTRY_STORE` Durable
 Object and `ASSETS` product bindings. Cloudflare reported a 26 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
