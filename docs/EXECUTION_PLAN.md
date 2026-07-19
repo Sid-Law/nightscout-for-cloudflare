@@ -46,11 +46,11 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. Protected Profile Save was not attempted in this release; add that regression plus the remaining mutation/report and pushed-live-update workflows. |
-| 3. SQLite collection compatibility | In progress | Entries, treatments, device status and profile share the generic API3 repository. Extend it to food/settings, close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
+| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, loaded Profile Values, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The current Food Editor reached `Database loaded` anonymously without console errors. Protected mutation/report and pushed-live-update workflows remain. |
+| 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food now shares its identity/history and older Food rows receive idempotent metadata repair. Close Mongo mixed-type/nested parity and replace the unbounded snapshot journal with a tested, bounded short-lived outbox. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress | Entries now adapts ordered batch-prefix failure, preview and idempotent conservative recursive sanitization, single/array/extended-urlencoded uploads, non-ObjectId uploader identity, a bounded numeric/string query-and-sort subset with controlled SQL-limit errors, current/model/ID reads, JSON/plain/CSV/TSV, runtime-SGV/result IMS, validators and HEAD. Bounded Entries echo plus direct SQLite count for entries/treatments/device status are deployed; Activity CRUD is implemented. Complete times/echo, times, slice, non-Entries echo, bounded aggregation-pipeline parity, exact DOMPurify output, the wider Mongo query/document surface and the remaining routes. |
 | 5. API v2 | Partial | JWT issuance/refresh and strict v2 Status are implemented; complete summary, notifications and full ddata/properties behavior. Ddata/realtime entry reads use a separate two-day window, while v1 Entries keeps the locked four-day default. |
-| 6. API v3 | Partial four-collection slice | Public `/version`, JWT-protected `/status`, the generic routes for entries/treatments/device-status/profile and four-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add food and settings plus large-response resource controls and broader mixed-type query parity. |
+| 6. API v3 | Partial six-collection slice | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. Add large-response resource controls, broader mixed-type/nested query parity and whole upstream API3 test execution. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
 | 8. Engine.IO/Socket.IO | Partial read-only polling + direct WebSocket | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT, read-only authorize ACK/dataUpdate, loadRetro and clients-count events. One derived alarm survives eviction. Complete the official-page switch only after `/alarm` and tenant propagation; close the direct-send at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP, `/storage`, root writes and change broadcasts. |
 | 9. Real-time storage updates | Storage foundation only | Implemented generic mutations persist atomic change snapshots, but no transport consumes them; define bounded outbox retention, cursors and reconnect/eviction tests before broadcasting. |
@@ -94,18 +94,16 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 Integration commit and Git HEAD used by Wrangler
-`50ce2459306a04eb6be21a7398e381b92451517a` combine the adapted v1/v2 Entries
-count/echo utilities and uploader/query/read-protocol slice with the prior
-strict Status, authorization, direct Hibernatable EIO4 WebSocket and four
-generic API v3
-collections. Cloudflare Worker version
-`184448f5-bc5e-4766-b0a3-78405ddd3a54` was created at
-2026-07-19T03:01:49.897Z and reported as the Current Version by the direct
-deployment, with a 22 ms startup. Wrangler processed 248 official asset entries
-with no asset-byte uploads, reported 882.25 KiB raw / 158.48 KiB gzip, and the
+`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a` combine API v3 Food/Settings and
+six-collection storage/lastModified behavior with the prior Entries, Status,
+authorization and direct Hibernatable EIO4 WebSocket slices. Cloudflare Worker
+version `7385728f-b498-4360-93f5-dbcdac5131c2` was reported as the Current
+Version by the direct deployment, with a 23 ms startup. Wrangler processed 248
+official asset entries with no asset-byte uploads, reported 884.71 KiB raw /
+158.92 KiB gzip, and the
 dry run exposed only `ENTRY_STORE` plus `ASSETS`. Deployment used `--keep-vars`
-and version tag `git-50ce245`; no credential was supplied to tests or remote
-smoke requests. The 20-file Workers-runtime suite passed 234/234,
+and version tag `git-b1e7e31`; no deployed credential was supplied to remote
+smoke requests. The 21-file Workers-runtime suite passed 239/239,
 both audit suites passed 20/20, the dependency audit reported zero known
 vulnerabilities, and TypeScript plus the official UI build completed before
 deployment. A plaintext API credential can be rendered by metadata tooling;
@@ -113,13 +111,17 @@ the lab credential must be rotated and converted to a Worker Secret before
 non-lab use. Its value is absent from repository documentation. These remain
 subset facts, not a full-port claim.
 
-This increment adds the upstream-shaped Entries query debugger for the bounded
-Entries filter subset and `/count/:storage/where` for entries, treatments and
-device status. Count executes `COUNT(*)` inside SQLite, preserves the locked
-empty/group response, unknown-storage fallback, ignored result-count/sort and
-HEAD behavior, and does not materialize matching documents across DO RPC.
-Client-controlled Mongo aggregation pipelines are rejected rather than treated
-as executable SQLite input. It retains the audited uploader edges: every
+This increment adds all eight generic API v3 routes for Food and Settings,
+extends `lastModified` to all six official collections and moves v1 Food writes
+onto the same repository/history contract. Food uses the locked
+`created_at`-only fallback; Settings has no fallback identity, and its search/
+history permission is the locked admin exception while resource read remains
+read-protected. Activation repairs older Food metadata/fallback/history
+idempotently across eviction without rewriting document bodies. It retains the
+upstream-shaped Entries query debugger and direct SQLite count from the prior
+release. Client-controlled Mongo aggregation pipelines remain rejected rather
+than treated as executable SQLite input. It also retains the audited uploader
+edges: every
 non-ObjectId client `_id` is retained as `identifier` when the supplied
 identifier is falsy;
 recursive string adaptation is idempotent; extended URL-encoded nested/array
@@ -171,11 +173,12 @@ generation and can approach the Workers Free CPU/memory boundary. This
 extreme-request hardening is explicitly deferred; it is not counted as a
 normal-family blocker and is not claimed solved.
 
-The new aggregate count is separate from that result cap: a one-year indexed
+The aggregate count is separate from that result cap: a one-year indexed
 range can be counted without returning roughly 105,000 five-minute SGV rows.
 Ordinary detail reads still cap one response at 10,000 and therefore require
 date-partitioned requests for long exports. Transparent partitioning and the
-locked `times/echo`, `times` and `slice` routes remain next work.
+locked `times/echo`, `times` and `slice` routes remain deliberately deferred
+behind ordinary-family and closed-loop-critical work.
 
 The deployed increment includes:
 
@@ -190,8 +193,8 @@ The deployed increment includes:
   device status, inherited by API v2;
 - tenant-persisted eight-hour HS256 JWTs, live subject/role lookup, exact
   `shiro-trie` matching, `verifyauth`, API v3 `/version` and JWT-only `/status`;
-- all eight generic API v3 routes for entries, treatments, device status and
-  profile,
+- all eight generic API v3 routes for entries, treatments, device status,
+  profile, food and settings,
   including branch-sensitive permissions, ordered search, conditional read,
   history, collection-specific legacy fallback/deduplication, lastModified,
   tombstones, permanent delete and atomic rollback; JSON/CSV/XML rendering uses
@@ -202,21 +205,21 @@ The deployed increment includes:
   Durable Object alarm survives eviction and drives ping, pong timeout,
   session/lease expiry, closure retry and client-count updates.
 
-Final credential-free remote smoke returned HTTP 200 for health, v15.0.7,
-empty Entries, an empty future-range count and the v2 Entries echo envelope. A
-custom count pipeline returned controlled HTTP 400. The wider unchanged
-Entries format/validator/query smokes remain evidence from the immediately
-preceding code version rather than being relabeled as current. EIO4
+Final credential-free remote smoke returned HTTP 200 for health, v15.0.7 and
+the empty v1 Food collection. Missing JWTs on API v3 Food and Settings returned
+the locked HTTP 401 envelope. Full protected CRUD/history/renderer/permission
+behavior remains locally tested because no deployed credential was used. EIO4
 polling/direct-WebSocket protocol smokes were not repeated because this commit
 does not change transport; their prior evidence remains historical.
 
-A real browser run rendered the official homepage/chart and observed repeated
-15-second REST-shim updates without a homepage warning/error. Profile evidence
-remains historical from the preceding version; no credentialed Profile Save or
-other protected write was attempted, so those workflows remain unproven.
+A real browser run rendered the official homepage and empty chart state without
+warning/error across a REST-shim polling interval. The official Food Editor
+then reached `Database loaded` and showed its anonymous read-only state. No
+credentialed Food/Profile write was attempted, so protected workflows remain
+unproven.
 
-The code is still not a full port: API v3 food and settings,
-Entries times/echo/times/slice and non-Entries echo, large-response CSV/XML
+The code is still not a full port: Entries times/echo/times/slice and
+non-Entries echo, large-response CSV/XML
 resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, `/storage` and `/alarm`, root writes, persisted
 change broadcasts, the shared background-task scheduler, server plugins,
@@ -281,11 +284,11 @@ Token-bearing authorization paths are redacted from adapter error logs.
 
 1. Finish v1 entries and document routes from Express registration and Swagger.
 2. Finish v2 properties, ddata, summary, notifications and authorization.
-3. **Complete for the named entries, treatments, device-status and profile slices:**
-   generic search/create/read/update/patch/delete/history, four-collection
-   lastModified and byte-compatible JSON/CSV/XML rendering. Extend the same
-   upstream contract to food and settings, including bounded
-   large-response handling.
+3. **Complete for the named six-collection vertical slices:** generic
+   search/create/read/update/patch/delete/history, six-collection lastModified
+   and byte-compatible small/medium JSON/CSV/XML rendering. Complete bounded
+   large-response handling, broader Mongo mixed-type/nested semantics and
+   whole-file upstream API3 execution before calling API v3 complete.
 4. Port upstream API tests in module order and record any fixed-scope exclusion.
 
 ### Milestone D — real-time transport

@@ -7,14 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`50ce2459306a04eb6be21a7398e381b92451517a`. It produced Cloudflare version
-`184448f5-bc5e-4766-b0a3-78405ddd3a54`, created at
-2026-07-19T03:01:49.897Z and reported as the Current Version by direct deploy.
-Its 20-file Workers-runtime suite passes 234/234
+`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`. It produced Cloudflare version
+`7385728f-b498-4360-93f5-dbcdac5131c2`, reported as the Current Version by
+direct deploy. Its 21-file Workers-runtime suite passes 239/239
 plus 20/20 audit tests. Wrangler processed 248 unchanged official asset
-entries, reported 882.25 KiB raw / 158.48 KiB gzip, and the dry run declared
+entries, reported 884.71 KiB raw / 158.92 KiB gzip, and the dry run declared
 only the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Cloudflare
-reported a 22 ms startup. These are release facts for the named subset, not evidence of a
+reported a 23 ms startup. These are release facts for the named subset, not evidence of a
 complete port.
 
 ## Current request and data flow
@@ -157,9 +156,9 @@ credentials, and an invalid/oversized array returns 401 and records the
 failure. Two other differences remain named: the Workers request boundary caps
 the actually enforced delay at 60 seconds, and a failed attempt does not yet
 emit the upstream admin notification. Most current GET routes remain public.
-API v3 `/status`, `/lastModified` and all entries, treatments, device-status
-and profile routes accept only a verified Bearer JWT; API secrets and query
-tokens are not API v3 credentials.
+API v3 `/status`, `/lastModified` and all entries, treatments, device-status,
+profile, food and settings routes accept only a verified Bearer JWT; API
+secrets and query tokens are not API v3 credentials.
 
 The Worker is otherwise stateless. An optional `tenant` query parameter is
 validated and passed to `ENTRY_STORE.getByName()`. The default is `demo`. A
@@ -309,8 +308,9 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`50ce2459306a04eb6be21a7398e381b92451517a` implements four generic vertical
-slices—entries, treatments, device status and profile—in the tenant
+`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a` implements all six official generic
+vertical slices—entries, treatments, device status, profile, food and
+settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
 with `identifier`, `identifier_present`, `srv_created`, `srv_modified`,
 `is_valid`, `fallback_key`, `revision` and `srv_metadata_version`; adds
@@ -332,6 +332,20 @@ records the migration snapshot once across repeated Durable Object eviction.
 The locked `{startDate:-1,_id:-1}` current-Profile order is shared by v1
 `/profile/current`, Status settings and the realtime dataloader; the latter
 returns one Profile just like upstream `ctx.profile.last()`.
+
+Food uses the locked API v3 `created_at`-only fallback identity. V1 Food create
+forces a new server `created_at` like upstream, while save preserves an existing
+value or supplies one when absent; both now use the generic repository so v1
+and API v3 observe the same `_id`, metadata and change history. Activation
+repairs older Food metadata, fallback keys and missing migration snapshots once
+without rewriting preserved JSON bodies, and repeated activation/DO eviction is
+idempotent.
+
+Settings deliberately has no legacy fallback identity and does not synthesize a
+virtual `created_at` for generic reads. Its collection search and both history
+forms use the locked `api:settings:admin` permission, while single-resource read
+uses `api:settings:read`. Settings `lastModified` therefore comes only from a
+real persisted `srvModified`, matching the upstream no-fallback setup.
 
 The v4 migration runs in `DurableObjectStorage.transactionSync()`. It leaves the
 legacy `body` and `_id` untouched, derives indexed metadata and snapshots each
@@ -450,14 +464,16 @@ This transaction guarantee is per document. V1 Entries deliberately uses one
 such transaction per ordered batch item, so a later error does not roll back a
 successful prefix.
 
-### Deployed generic slice: API v3 entries, treatments, device-status and profile
+### Deployed generic slice: all six official API v3 collections
 
 The deployed adapter exposes exactly the eight locked generic routes for each
-of entries, treatments, device status and profile: GET/POST on the collection,
-GET on both history forms, and GET/PUT/PATCH/DELETE on an identifier. GET
-`/api/v3/lastModified` reports all four collections independently when the
-subject can read it. Unmatched API v3 routes use the locked `{status,message}`
-404 envelope rather than falling into the older adapter error shape.
+of entries, treatments, device status, profile, food and settings: GET/POST on
+the collection, GET on both history forms, and GET/PUT/PATCH/DELETE on an
+identifier. GET `/api/v3/lastModified` evaluates all six collections
+independently when the subject has the required read permission; Settings is
+omitted when that permission is absent. Unmatched API v3 routes use the locked
+`{status,message}` 404 envelope rather than falling into the older adapter
+error shape.
 
 The public request still accepts only one `sort` or `sort$desc` value. Internally
 it preserves the locked ordered chain—requested field, `identifier`,
@@ -509,14 +525,14 @@ Other deliberate or unresolved platform differences are explicit:
   integer binding;
 - SQLite/Mongo comparison and ordering across mixed JSON types, nested
   projection behavior and array semantics are not yet claimed compatible;
-- entries, treatments, device status and profile are represented by API v3
-  `lastModified`; food and settings remain unimplemented there.
+- all six official generic collections are represented by API v3
+  `lastModified`, subject to each collection's read permission.
 
 The locked history projection quirk is retained: when `fields` excludes
 `srvModified`, the response body excludes it and Last-Modified/ETag are derived
 from the always-projected collection `created_at` fallback. Legacy documents
 can be read with virtual srv fields but do not match raw srv filters or HISTORY.
-These are four generic collection vertical slices, not completion of API v3 or
+These are six generic collection vertical slices, not completion of API v3 or
 of any whole upstream `api3.*` test file. CSV/XML currently serialize an entire
 bounded result in memory; large-result CPU and 128 MB memory adaptation remains
 open even though byte-level small/medium contracts are green.
@@ -616,7 +632,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket are live in Cloudflare version
-`184448f5-bc5e-4766-b0a3-78405ddd3a54`. This release changes no transport
+`7385728f-b498-4360-93f5-dbcdac5131c2`. This release changes no transport
 code, so EIO4 polling/direct-WebSocket protocol smokes were not repeated; their
 prior credential-free open/root-CONNECT/clients/authorize/`dataUpdate`/ACK
 evidence remains historical. The at-most-once dequeue/send crash window

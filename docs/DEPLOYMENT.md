@@ -12,21 +12,22 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `50ce2459306a04eb6be21a7398e381b92451517a`
-- Git HEAD used by Wrangler: `50ce2459306a04eb6be21a7398e381b92451517a`
-- Cloudflare Version ID: `184448f5-bc5e-4766-b0a3-78405ddd3a54`
-- Version tag/message: `git-50ce245` /
-  `git 50ce245 entries count echo adapters`
-- Version creation time: 2026-07-19T03:01:49.897Z
+- Deployed code candidate: `b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`
+- Git HEAD used by Wrangler: `b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`
+- Cloudflare Version ID: `7385728f-b498-4360-93f5-dbcdac5131c2`
+- Version tag/message: `git-b1e7e31` /
+  `git b1e7e31 api3 food settings collections`
+- Version creation time: not printed by this Wrangler deployment; none is
+  inferred
 - Activation: direct `wrangler deploy` reported this as the Current Version;
   no separate activation timestamp was printed
-- Worker startup: 22 ms
+- Worker startup: 23 ms
 - Deployment ID: not printed by this Wrangler deployment; none is inferred
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 882.25 KiB raw / 158.48 KiB gzip
+- Upload: 884.71 KiB raw / 158.92 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only; the preserved `API_SECRET` application credential is not another
   storage/product binding
@@ -72,8 +73,13 @@ This increment deploys:
 - strict v1/v2 Status contracts;
 - derived subject credentials, body/query/header credential precedence and a
   persisted authorization-failure delay with a named 60-second Workers cap;
-- generic API v3 entries, treatments, device-status and profile verticals,
-  including JSON/CSV/XML rendering and four-collection `lastModified`;
+- generic API v3 entries, treatments, device-status, profile, food and settings
+  verticals, including JSON/CSV/XML rendering and six-collection
+  `lastModified`;
+- v1/API3 shared Food identity and history, the locked `created_at`-only Food
+  fallback, idempotent repair of pre-slice Food metadata across eviction, and
+  the Settings no-fallback rule. Settings search/history require admin while
+  single-resource read retains read permission;
 - v1/API3 shared Profile identity, AAPS create/retry/new-version behavior,
   idempotent legacy metadata repair and common current-profile ordering;
 - an HTML response-boundary correction for official secondary pages. Split
@@ -126,10 +132,11 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`50ce2459306a04eb6be21a7398e381b92451517a`. It adds the adapted v1/v2 Entries
-count/echo utility slice and retains the prior uploader/query/read protocol,
-API v3 Profile, v1/API3 shared storage and official-page work. The table below
-records the exact local gate completed before deployment.
+`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`. It adds API v3 Food and Settings,
+six-collection `lastModified`, v1/API3 shared Food storage and idempotent Food
+metadata repair while retaining the prior Entries, Profile, transport and
+official-page work. The table below records the exact local gate completed
+before deployment.
 
 | Check | Result |
 | --- | --- |
@@ -140,20 +147,20 @@ records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 20 files, 234/234 passed |
+| Workers integration tests | 21 files, 239/239 passed |
 | Dependency audit | 0 known vulnerabilities after using fixed `qs 6.15.3` |
-| Worker dry run | 882.25 KiB raw / 158.48 KiB gzip |
+| Worker dry run | 884.71 KiB raw / 158.92 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | successful command used `--keep-vars`; no credential was supplied to tests or smoke requests |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 234 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 239 Workers
 tests cover the implemented adapter subset; no whole upstream test file is
 claimed green. Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `184448f5-bc5e-4766-b0a3-78405ddd3a54` as the Current
+Wrangler reports version `7385728f-b498-4360-93f5-dbcdac5131c2` as the Current
 Version. These credential-free checks verified response content and protocol
 markers, not only Wrangler command success.
 
@@ -161,19 +168,16 @@ markers, not only Wrangler command success.
 | --- | --- |
 | `/healthz` | HTTP 200 |
 | `/api/v3/version` | HTTP 200; locked Nightscout version `15.0.7` |
-| `/api/v1/entries.json?count=1` | HTTP 200 `[]`; JSON type, `Vary: Accept`, 2-byte length and weak ETag |
-| `/api/v1/count/entries/where` with a future indexed date | HTTP 200 `[]`, the locked zero-match aggregate shape |
-| `/api/v2/echo/entries/sgv` | HTTP 200 with the expected `query`, `input`, `params` and `storage` envelope |
-| count with `pipeline[0][$limit]` | HTTP 400 `unsupported_query_pipeline`, not arbitrary aggregation execution |
+| `/api/v3/food` without JWT | HTTP 401 with the locked missing/bad-token envelope |
+| `/api/v3/settings` without JWT | HTTP 401 with the locked missing/bad-token envelope |
+| `/api/v1/food/regular.json` | HTTP 200 `[]`; v1 Food read remains public under default permissions |
 
-No credentialed write was attempted. Local JWT, permission, API v3 CRUD/history,
-Entries upload/batch/query/Last-Modified, rollback, expiry, tamper, eviction and
-cross-tenant cases remain covered by the Workers/SQLite test gate. The empty
-public Entries collection cannot prove a nonzero remote count, so the local
-SQLite test covers 12 matching Entries, zero matches, v1/v2 inheritance,
-unknown-storage fallback and a treatment selected by ObjectId. The wider
-format/validator/query smokes from the immediately preceding code version are
-historical unchanged-path evidence and were not relabeled as current.
+No credentialed write was attempted. Local tests cover all eight generic routes
+for both new collections, Food JSON/CSV/XML, PUT/PATCH/delete/history,
+lastModified, v1/v3 visibility and created-at fallback dedupe, plus the Settings
+admin search/history exception, XML, resource read/update/delete and idempotent
+Food repair across eviction. Prior Entries/JWT/transport evidence remains green
+in the full suite but is not relabeled as a new remote smoke.
 
 ## Post-deployment real-time evidence
 
@@ -196,12 +200,16 @@ upgrade, EIO3, namespaces, writes or change broadcasts.
 A real browser session exercised the deployed official UI without reading
 credential storage or submitting protected mutations:
 
-- the homepage rendered the official Nightscout chart and received repeated
-  15-second REST-shim `dataUpdate` events without a warning/error.
+- the homepage rendered the official empty chart state and remained free of
+  warning/error logs across a REST-shim polling interval; the public tenant has
+  no Entries, so the displayed `---` is expected;
+- the official Food Editor changed from `Not loaded` to `Database loaded`,
+  populated its empty database controls and showed the expected anonymous
+  read-only authentication state.
 
 Profile load/Save-control and its inherited chartless-page warning remain
-historical evidence from the immediately preceding version; no Profile
-navigation or authenticated Save was attempted in this release.
+historical evidence from an earlier version; no authenticated Food/Profile
+write was attempted in this release.
 
 This does not prove longer-running stability, Profile Save, Food/Admin
 mutation, report generation or every other protected page workflow.
@@ -212,9 +220,9 @@ mutation, report generation or every other protected page workflow.
   it in the new instance must not migrate to this release.
 - This remains a simulated-data lab. It must not be connected to a real CGM
   uploader, pump or closed-loop client.
-- API v1 and v2 remain subsets. The deployed API v3 has version, JWT status and
-  the generic entries/treatments/device-status/profile verticals. Food,
-  settings and broad large-response resource parity remain missing.
+- API v1 and v2 remain subsets. API v3 now routes all six official generic
+  collections, but broad large-response resource handling, Mongo mixed-type/
+  nested semantics and whole upstream API v3 test execution remain incomplete.
 - Entries `times/echo`, `times` and `slice` remain missing. Echo supports
   Entries storage only; count rejects client-supplied aggregation pipelines;
   exact DOMPurify output, wider Mongo query/mixed-type behavior and the locked
@@ -250,9 +258,9 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediate prior Cloudflare version is
-`be7b9bee-7c9a-43d2-a26c-66b58ed196ad` (deployed code commit
-`a732524271e9a282ad50d7b86817a10ad8a250a3`). It contains the prior Entries
-uploader/query/read fixes but not the count/echo utility increment.
+`184448f5-bc5e-4766-b0a3-78405ddd3a54` (deployed code commit
+`50ce2459306a04eb6be21a7398e381b92451517a`). It contains the prior Entries
+count/echo increment but not the API v3 Food/Settings verticals.
 
 Wrangler version rollback can restore Worker code and assets. Neither rollback
 nor redeployment clears or rolls back SQLite Durable Object data, and rollback

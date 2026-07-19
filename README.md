@@ -39,16 +39,19 @@ for diagnosis, dosing, or medical decisions.
   delay, locked `shiro-trie` permission matching and corrected `verifyauth`
   behavior. The enforced delay is deliberately capped at 60 seconds; failed
   authentication does not yet generate the upstream admin notification.
-- The public API v3 version envelope, JWT-protected status endpoint and four
-  generic collection verticals for entries, treatments, device status and
-  profile:
-  collection
-  search/create, resource read/replace/patch/delete, both history forms and
-  collection-aware `lastModified` in the locked JSON, CSV and XML formats.
-- A shared SQLite repository for entries, treatments, device status and profile
+- The public API v3 version envelope, JWT-protected status endpoint and all six
+  official generic collection verticals: entries, treatments, device status,
+  profile, food and settings. Each has collection search/create, resource
+  read/replace/patch/delete, both history forms and collection-aware
+  `lastModified` in the locked JSON, CSV and XML formats. The locked Settings
+  exception is retained: collection search and history require admin while a
+  single-resource read uses read permission.
+- A shared SQLite repository for all six generic collections, covering
   legacy/API3 identity, collection-specific fallback dedupe, ordered search,
   branch-sensitive mutation permissions, server timestamps,
-  tombstones/history and atomic change snapshots.
+  tombstones/history and atomic change snapshots. V1 Food writes use the same
+  repository and history as API v3; Settings deliberately has no legacy
+  fallback identity.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -85,9 +88,9 @@ for diagnosis, dosing, or medical decisions.
 ## What is not complete
 
 This is not yet a drop-in Nightscout server. Important missing work includes
-the complete v1/v2/v3 route and error surface, the two remaining API v3
-generic collections (food and settings), large-response CSV/XML resource
-adaptation, failed-auth
+the complete v1/v2/v3 route and error surface, large-response CSV/XML resource
+adaptation and broader generic API v3 mixed-type/nested/query parity,
+failed-auth
 admin notifications, Mongo query/collection parity beyond the tested safe
 subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
 the direct-WebSocket at-most-once crash window, `/storage` and `/alarm`
@@ -192,8 +195,8 @@ The public deployment is a simulated-data lab, not a personal Nightscout
 deployment. The contracts described below are live in the current Cloudflare
 version, but they remain only a tested compatibility subset.
 Current v1/v2 writes require a Nightscout-compatible API-secret digest or an
-authorized subject credential; API v3 entries, treatments, device-status and
-profile operations require a Bearer JWT.
+authorized subject credential; API v3 operations for all six official generic
+collections require a Bearer JWT.
 The tenant selector provides storage routing, not authorization. Missing or
 shorter-than-12-character `API_SECRET` configuration
 fails closed with HTTP 503 for API-secret writes. A request must carry the
@@ -241,8 +244,9 @@ replaced with a Secret before any non-lab use.
 
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
 into an issue. Most current GET endpoints remain publicly readable. API v3
-`/status`, `/lastModified` and every entries/treatments/device-status/profile
-operation require a valid Bearer JWT.
+`/status`, `/lastModified` and every generic collection operation (entries,
+treatments, device status, profile, food and settings) require a valid Bearer
+JWT.
 
 If Nightscout says `Wrong API secret`, verify that the Worker setting has no
 leading/trailing spaces, save it, wait for the deployment to finish, then enter
@@ -287,10 +291,11 @@ preview, numeric filter coercion, sort-before-limit, conditional GET/HEAD and
 v2 inheritance, plus activity conditional
 requests, JWT issue/verify/expiry/tamper/cross-tenant behavior, Shiro permission
 matching, `verifyauth`, and the API v3 version/status envelopes. It also covers
-fresh-only Entries schema repair, v1/API3 entries/treatments/device-status/profile
-identity and time separation, UUID/ObjectId query handling, API3
+fresh-only Entries schema repair, v1/API3 identity and time separation across
+entries, treatments, device status, profile, food and settings; UUID/ObjectId
+query handling, API3
 materialization and rollback, safe regular-expression compilation,
-JSON/CSV/XML workflows for all four implemented generic collections, and the
+JSON/CSV/XML workflows for all six official generic collections, and the
 EIO4 polling/direct-Hibernatable-WebSocket boundary: packet ordering, root
 authorization, alarm-driven heartbeat/expiry, eviction, overlap,
 body/session/queue caps, cursor-bounded initial/retro snapshots,
@@ -302,19 +307,19 @@ directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`50ce2459306a04eb6be21a7398e381b92451517a`. After rebuilding the locked
-official UI, its 20-file Workers-runtime suite passes 234/234 tests and both
+`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a`. After rebuilding the locked
+official UI, its 21-file Workers-runtime suite passes 239/239 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 882.25 KiB raw / 158.48 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds v1/v2 Entries `echo` for the bounded
-query subset and direct SQLite `count` aggregation for entries, treatments and
-device status, including the locked empty/group response shape, ignored
-result-count/sort options, storage fallback and HEAD. Arbitrary aggregation
-pipelines remain rejected. It does not add `times/echo`, `times`, `slice` or
-`/storage` realtime broadcasts and is not closed-loop completion. Deployment
-used `--keep-vars`; no credential was supplied to remote smoke requests, and
-no credential value is stored or quoted in this repository. Entries migration
-remains intentionally
+reports 884.71 KiB raw / 158.92 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds the complete eight-route generic API v3
+verticals for Food and Settings, extends `lastModified` to all six official
+collections, shares v1/API3 Food identity and history, and repairs older Food
+metadata idempotently across Durable Object eviction. It retains the prior
+bounded Entries echo/count slice, but does not add `times/echo`, `times`,
+`slice` or `/storage` realtime broadcasts and is not closed-loop completion.
+Deployment used `--keep-vars`; no deployed credential was supplied to remote
+smoke requests, and no credential value is stored or quoted in this repository.
+Entries migration remains intentionally
 fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
 being imported, while canonical documents and other collections such as
 profile are preserved. A read-only check found zero Entries and one profile in
@@ -341,23 +346,24 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `184448f5-bc5e-4766-b0a3-78405ddd3a54` was created at
-2026-07-19T03:01:49.897Z and made current by the direct Wrangler deployment,
-with a reported 22 ms startup. Version tag `git-50ce245` and its deployment
-message record the Git mapping. No asset bytes
+Cloudflare version `7385728f-b498-4360-93f5-dbcdac5131c2` was made current by
+the direct Wrangler deployment, with a reported 23 ms startup. Version tag
+`git-b1e7e31` and its deployment message record the Git mapping. Wrangler did
+not print a separate creation/activation timestamp. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Final credential-free remote smoke returned HTTP 200 for health, v15.0.7
-version, empty Entries, empty direct SQLite count and the v2 Entries echo
-shape. A supplied count pipeline returned controlled HTTP 400. The wider
-Entries format/validator and controlled-query evidence from the immediately
-preceding version remains historical because those paths did not change. No
+version and the empty v1 Food collection. Missing JWTs on the new API v3 Food
+and Settings routes returned the locked HTTP 401 envelope. Their full
+CRUD/history/renderer/dedupe/permission contracts passed locally; no
 credentialed remote upload or protected mutation was attempted.
 
-A real browser run rendered the official homepage chart and observed repeated
-15-second REST-shim data updates without a homepage warning/error. Profile
-Editor evidence from the preceding version remains historical; no
-credentialed Save was attempted in this release. These checks do not prove
-every protected mutation, report, plugin or realtime workflow.
+A real browser run rendered the official homepage and its empty chart state,
+then remained warning/error-free across a REST-shim polling interval. The
+public tenant currently has no Entries, so `---` is the expected empty-data
+display. The official Food Editor changed from `Not loaded` to `Database loaded`
+and showed the expected anonymous read-only state without submitting a write.
+These checks do not prove every protected mutation, report, plugin or realtime
+workflow.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

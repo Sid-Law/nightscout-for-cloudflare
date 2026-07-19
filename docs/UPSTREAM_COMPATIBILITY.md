@@ -18,21 +18,22 @@ storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
 Deployed integration commit and Git HEAD used by Wrangler
-`50ce2459306a04eb6be21a7398e381b92451517a` pass 234/234 tests across 20
+`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a` pass 239/239 tests across 21
 Workers-runtime files plus 20/20 audit tests. The suite includes focused
 EIO4 polling/direct-Hibernatable-WebSocket protocol, persisted session,
 HTTP-boundary, eviction, authorization, tenant-isolation and resource-cap
 contracts in addition to strict v1/v2 Status, API v3
-entries/treatments/device-status/profile, storage and official-page tests. This
+entries/treatments/device-status/profile/food/settings, storage and
+official-page tests. This
 is not full-port evidence. The code is deployed as Cloudflare version
-`184448f5-bc5e-4766-b0a3-78405ddd3a54`; exact release evidence is recorded in
+`7385728f-b498-4360-93f5-dbcdac5131c2`; exact release evidence is recorded in
 `DEPLOYMENT.md`. The locked
 upstream has 111 `*.test.js` files; a static declaration audit finds 883 active
 `it(...)` cases plus one skipped case. Those sets are not directly comparable,
 and the local suite does not prove full compatibility.
 
-The final Wrangler dry-run reports 248 official assets, 882.25 KiB raw /
-158.48 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The final Wrangler dry-run reports 248 official assets, 884.71 KiB raw /
+158.92 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
@@ -122,8 +123,8 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | --- | --- | --- | --- |
 | Upstream identity and UI bytes | `package.json`, `webpack/webpack.config.js`, `views/**`, `static/**`, `translations/**` | **Compatible for built assets.** v15.0.7 is pinned; official pages and bundle are served without a replacement UI. | Rebuild from clean vendor snapshot; byte/provenance assertions; browser rendering on every deploy. |
 | Express boot model | `lib/server/server.js`, `lib/server/app.js`, `lib/server/bootevent.js` | **Partial.** Routes are currently hand-dispatched by `src/index.ts`; upstream Express boot is not running. | Decide router-by-router reuse versus adapter; contract-test middleware order, content negotiation and error handling. |
-| Collections and indexes | `lib/storage/mongo-storage.js`, server storage modules | **Partial.** SQLite generic documents cover entries, treatments, device status and profile with indexed collection metadata, an API3 allocation clock and atomic change snapshots. Profile v1 writes share the repository and older rows receive idempotent metadata/fallback repair. Entries has date/dateString/type indexes plus a narrow compatibility shadow. Its v6 probe resets only an incompatible pre-1.0 shadow and preserves canonical documents/profile; it is deliberately not a legacy importer. Healthy activation is a read-only probe. This does not import an external Nightscout/MongoDB database. | Extend the repository to food/settings and prove in-place activation from every supported NSCF schema while preserving canonical data. Keep external Nightscout/MongoDB history import as separately scoped future work; make no first-release import claim. |
-| ObjectId, UUID and dedupe | `lib/server/query.js`, `lib/server/treatments.js`, `lib/api3/storage/mongoCollection/utils.js` | **Partial four-collection slice.** Generated IDs are random 24-hex strings. V1 Entries now matches locked default `UUID_HANDLING` behavior: every non-ObjectId string `_id` is copied to `identifier` when the supplied identifier is missing/null/empty, then removed before server allocation; a non-empty identifier wins. Valid ObjectIds are retained and an ordered batch commits only the successful prefix before duplicate/immutable-ID failure. Treatments/profile and API3 retain their tested collection selectors; IDs are not BSON ObjectIds. | Extend duplicate/partial-failure fixtures to every collection; the atomic two-document `preBolus` fan-out remains unported and carbs are retained until it exists. The 4,096-character identity and 100-item v1 batch caps are Free-plan controls. |
+| Collections and indexes | `lib/storage/mongo-storage.js`, server storage modules | **Partial.** SQLite generic documents cover all six official collections with indexed metadata, an API3 allocation clock and atomic change snapshots. Profile and Food v1 writes share the repository; older Profile/Food rows receive idempotent metadata/fallback repair. Settings preserves the upstream no-fallback rule. Entries has date/dateString/type indexes plus a narrow compatibility shadow. Its v6 probe resets only an incompatible pre-1.0 shadow and preserves canonical documents/profile; it is deliberately not a legacy importer. Healthy activation is a read-only probe. This does not import an external Nightscout/MongoDB database. | Prove in-place activation from every supported NSCF schema while preserving canonical data, and complete mixed-type/index/query differential behavior. Keep external Nightscout/MongoDB history import as separately scoped future work; make no first-release import claim. |
+| ObjectId, UUID and dedupe | `lib/server/query.js`, `lib/server/treatments.js`, `lib/api3/storage/mongoCollection/utils.js` | **Partial six-collection slice.** Generated IDs are random 24-hex strings. V1 Entries now matches locked default `UUID_HANDLING` behavior: every non-ObjectId string `_id` is copied to `identifier` when the supplied identifier is missing/null/empty, then removed before server allocation; a non-empty identifier wins. Valid ObjectIds are retained and an ordered batch commits only the successful prefix before duplicate/immutable-ID failure. Treatments/profile/food and API3 retain their tested collection selectors; Food uses `created_at` only and Settings has no fallback. IDs are not BSON ObjectIds. | Extend duplicate/partial-failure fixtures to every collection; the atomic two-document `preBolus` fan-out remains unported and carbs are retained until it exists. The 4,096-character identity and 100-item v1 batch caps are Free-plan controls. |
 | Mongo query behavior | `lib/server/query.js`, `lib/api3/storage/mongoCollection/**` | **Partial.** V1 Entries supports equality/comparison for numeric date/SGV/filter/RSSI/noise/MBG fields and bounded string ID/dateString/device/direction/identifier/sysTime fields, supported-field sort-before-limit and final time ordering; it keeps the four-day default and distinct string `dateString`. Legal shapes that exceed SQLite binding/statement limits now fail as controlled 400 rather than internal 500. V1 treatments retain their named subset. API3 implemented collections support locked scalar operators, safe nested/unknown fields, projection/paging, ordered sort chains and a bounded case-sensitive `$re` subset compiled to GLOB. SQLite/Mongo operators, mixed types, arrays, projections and collation remain incomplete. | Add `$in`/`$nin`/regex/exists and nested/array/mixed-type differential coverage before widening the v1 allowlist or calling generic search compatible. Other v1 collections still use limited filtering. |
 | API v1 entries | `lib/api/entries/index.js`, `lib/server/entries.js` | **Substantial adapted partial slice.** Create/list/current/model/ID/delete now include single/array/extended-urlencoded uploads, preview, server-owned/uploader-sync identity, ordered-prefix failures, idempotent fail-closed sanitization, the bounded query/sort subset, four-day reads, JSON/plain/CSV/TSV, result plus exact base-route runtime-SGV Last-Modified/IMS, weak ETag/INM and HEAD. Entries `echo` exposes a bounded query-debug envelope, and `count/:storage/where` performs direct SQLite aggregation for entries, treatments and device status; V2 inherits both. `times/echo`, `times`, `slice`, non-Entries echo, arbitrary aggregation pipelines, exact DOMPurify output, large-detail materialization control, wider Mongo/document semantics and some historical errors remain incomplete. | Port the remaining Entries utilities and whole-file shape/error contracts; retain the explicit Free-plan and sanitizer adaptations and the fresh-only pre-1.0 reset. |
 | API v1 document CRUD | food/profile/treatments/devicestatus modules | **Partial.** Page-used JSON CRUD exists with bounded filters. Treatments keep legacy materialization and mutation rules: `isValid:false` remains visible, `srv*` is not synthesized, read-only flags do not block v1 PUT/DELETE, numeric values, conditional GET and empty-array POST follow the locked shapes, and `/api/v2/ddata` keeps its raw legacy body. | Port every remaining route, content type, batch, validation and error variant; implement the atomic `preBolus` fan-out. |
@@ -134,14 +135,14 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v2 authorization | `lib/authorization/**`, `lib/api/verifyauth.js` | **Core adapted with named differences/hardening.** Role/subject CRUD, per-tenant signing keys, eight-hour HS256 issuance/refresh, derived access tokens and prefix matching, body/query/header precedence, signature/expiry verification, live role lookup, persisted per-IP failure delay, Shiro 0.4.10 and `verifyauth` are implemented. Enforced delay is capped at 60 seconds, a failed attempt does not yet emit the upstream admin notification, and repeated/bracket `secret` arrays are safely resolved or rejected instead of reproducing the locked unhandled rejection. | Add admin-notify emission/cleanup contracts; preserve the 60-second platform cap and array hardening as explicit differences and repeat remote auth smoke. |
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/api2/notifications-v2.js` | **Missing.** | Reuse upstream processors without adding medical logic; add notification acknowledgement/persistence tests. |
 | API v3 version/status | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.basic.test.js` | **Compatible named subset.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. | Local valid/missing/bad/eviction/cross-tenant JWT contracts plus remote missing/bad-token smoke; do not infer generic API support from this endpoint. |
-| API v3 generic collections/lastModified/history | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js` | **Partial four-collection vertical.** Entries and Profile join the 16 treatments/device-status routes, and all four contribute independently to `/lastModified`. JWT auth, conditional headers, transactional permission selection, collection-specific dedupe, soft/permanent delete, ordered sort, both history cursors and locked JSON/CSV/XML are wired. Profile also covers the locked AAPS create/retry/new-version contract and v1 current ordering. Entries supplies controlled 10,000-candidate/128-delete bounds and the safe `$re` subset. | Add food and settings; implement large-result CPU/memory adaptation, broader mixed-type/nested/regex parity and whole-file upstream API3 execution. Do not mark any complete `api3.*` test file adapted from this named slice alone. |
+| API v3 generic collections/lastModified/history | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js` | **Partial six-collection vertical.** All eight generic routes are wired for entries, treatments, device status, profile, food and settings, and all six participate independently in `/lastModified`. JWT auth, conditional headers, transactional permission selection, collection-specific dedupe, soft/permanent delete, ordered sort, both history cursors and locked JSON/CSV/XML are wired. Profile covers AAPS create/retry/new-version; Food shares v1 identity/history and `created_at` fallback; Settings has no fallback and retains admin-only search/history versus read-protected resource GET. Entries supplies controlled 10,000-candidate/128-delete bounds and the safe `$re` subset. | Implement large-result CPU/memory adaptation, broader mixed-type/nested/regex parity and whole-file upstream API3 execution. Do not mark any complete `api3.*` test file adapted from these named verticals alone. |
 | Main Socket.IO namespace | `lib/server/websocket.js` | **Partial read-only EIO4 polling + direct WebSocket slice.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted sessions/queues, heartbeat, SIO5 root CONNECT, `clients`, read-only authorize/dataUpdate/ACK and loadRetro are tested across polling, direct Hibernatable WebSocket, eviction and tenant boundaries. A SQL-derived alarm persists ping/pong/session/poll/POST/closure deadlines. The official page still loads the REST shim; polling upgrade is not implemented, and a crash between durable dequeue and direct `send()` can lose one frame. | Switch the page only after safe tenant propagation and `/alarm`; close the at-most-once crash window, then add polling-to-WebSocket upgrade, EIO3 HTTP if retained, root writes, persisted-change broadcasts and browser workflows. |
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Missing.** | Namespace authorization, room subscription, create/update/delete events and alarm lifecycle tests. |
 | Real-time database updates | `lib/server/bootevent.js:271-330`, websocket and API3 storage socket | **Partial persistence only.** Each implemented document mutation persists `document_changes` atomically with its current document, including rollback-on-change-failure coverage. V1 Entries ordered batches intentionally commit successful per-document prefixes. No transport consumes or broadcasts those rows; the browser still polls. | Define cursors/retention and broadcast only after commit; test eviction, reconnect and multi-client delivery. |
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js` | **Missing server execution.** Official client plugins/calculations are bundled, but server plugin properties/notifications are not computed. | Run official modules through a platform context; port upstream plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/adminnotifies.js`, push modules | **Missing persistence and processing.** | SQLite state model, alarm/ack/snooze tests, eviction tests and scope review for external push providers. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current browser pass rendered the homepage through repeated REST-shim updates and loaded Profile Values/Save without authenticating or writing. Homepage logs had no warning/error; the locked bundle emitted its inherited `Unable to find element for #chartContainer` warning on chartless Profile, with no browser error. Mutations/report generation and pushed live updates are not complete. | Re-run authenticated Profile Save on the current deployment when a credential is explicitly supplied, then add profile delete, food/admin mutations, report generation and pushed live updates with console/network assertions. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** An earlier deployed increment provided authenticated Profile Save/close regression evidence. The current browser pass rendered the homepage empty chart state across a polling interval without warning/error, then loaded the official Food Editor to `Database loaded` with the expected anonymous read-only state. The public tenant has no Entries, so `---` is expected. Mutations/report generation and pushed live updates are not complete. | Re-run authenticated Profile Save/Food mutation when a credential is explicitly supplied, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
 | Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; compatibility unresolved.** All 111 files are tracked with a strict status/reason and heuristic candidate route associations, but no whole upstream file is yet claimed green against the DO adapter. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
@@ -265,8 +266,9 @@ deliberate differences are:
 - `srvModified` allocation is strictly monotonic across same-millisecond writes
   and DO eviction, an intentional platform enhancement over upstream's direct
   clock value;
-- `/lastModified` exposes entries, treatments, device status and profile; food
-  and settings are not implemented through generic API v3.
+- `/lastModified` evaluates all six official generic collections; Settings is
+  included only when its read permission is present and uses no created-at
+  fallback.
 
 Extension middleware is not collapsed into renderer support. The adapter uses
 the locked `mime` 2.6.0 table: malformed JSON fails before extension handling;
@@ -281,18 +283,18 @@ controls, not upstream claims.
 ## Current deployed integration evidence
 
 Code candidate and Git HEAD used by Wrangler
-`50ce2459306a04eb6be21a7398e381b92451517a` pass 234/234 tests in 20
+`b1e7e31a0f4548b3d908e506ad9b87b78b4d4a9a` pass 239/239 tests in 21
 Workers-runtime files plus 20/20 audit tests. They combine the adapted v1/v2
 Entries count/echo and uploader/query/read-protocol slices with strict Status,
 authorization, direct Hibernatable EIO4 WebSocket and API v3
-entries/treatments/device-status/profile slices. Cloudflare version
-`184448f5-bc5e-4766-b0a3-78405ddd3a54` was created at
-2026-07-19T03:01:49.897Z and reported as the Current Version by the direct
-Wrangler deployment, which reported a 22 ms startup. Wrangler processed 248
-unchanged official asset entries, reported 882.25 KiB raw / 158.48 KiB gzip,
+entries/treatments/device-status/profile/food/settings slices. Cloudflare
+version `7385728f-b498-4360-93f5-dbcdac5131c2` was reported as the Current
+Version by the direct Wrangler deployment, which reported a 23 ms startup.
+Wrangler processed 248 unchanged official asset entries, reported 884.71 KiB
+raw / 158.92 KiB gzip,
 and listed only `ENTRY_STORE` and `ASSETS`. Deployment used `--keep-vars`, tag
-`git-50ce245` and a matching Git message. Wrangler did not print a separate
-activation timestamp or Deployment ID, so neither is inferred here.
+`git-b1e7e31` and a matching Git message. Wrangler did not print a separate
+creation/activation timestamp or Deployment ID, so none is inferred here.
 
 No credential was supplied to local tests, remote API smoke or browser smoke,
 and no credential value is stored in the repository or these documents.
@@ -360,24 +362,22 @@ homepage REST shim. Their current bounds and named differences are:
 
 
 Final credential-free remote checks returned HTTP 200 for health, API v3
-version and empty v1 Entries JSON. A future-date
-`/api/v1/count/entries/where` returned the locked zero-match `[]` shape;
-`/api/v2/echo/entries/sgv` returned the expected bounded query envelope; and a
-client-supplied count pipeline returned controlled HTTP 400
-`unsupported_query_pipeline`. Nonzero aggregate behavior, ignored count/sort,
-storage selection/fallback and HEAD are covered locally because the public
-Entries collection is empty. No protected remote mutation or credentialed
-Entries upload was attempted.
+version and empty v1 Food JSON. API v3 Food and Settings both returned the
+locked HTTP 401 missing/bad-token envelope without a JWT. Their protected
+CRUD/history/rendering, Food fallback/v1 identity and Settings permission
+exception are covered locally. No protected remote mutation or credentialed
+upload was attempted.
 
 EIO4 polling/direct-WebSocket smokes were not repeated because this increment
 changes no transport code. Their earlier open/root-CONNECT/clients/authorize,
 `dataUpdate` and ACK sequences remain historical evidence, not evidence of a
 homepage transport switch.
 
-A real browser run rendered the official homepage chart and observed the
-initial update plus a 15-second REST-shim refresh without a warning/error.
-This release did not navigate to Profile and did not attempt an authenticated
-Save or protected mutation.
+A real browser run rendered the official homepage and empty chart state across
+a REST-shim polling interval without warning/error. It then loaded the official
+Food Editor to `Database loaded` with the expected anonymous read-only state.
+The public tenant has no Entries, so the homepage's `---` value is expected. No
+authenticated Save or protected mutation was attempted.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing
