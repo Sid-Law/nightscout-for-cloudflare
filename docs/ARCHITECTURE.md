@@ -7,24 +7,17 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`fb8c7a20a15584da6a5f89032e11503dcde3de46`, the same runtime source, and
-Cloudflare version `a5a33a30-1d79-4831-a512-3553c2a5fe8c`, reported as 100%
-active. The candidate's 44-file Workers-runtime suite passes 504/504 plus
+`914247f2d9f5bb40c603e8db0c51012471513fe1`, the same runtime source, and
+Cloudflare version `7d633773-090e-483b-8bbd-24beabfd0b9e`, reported as 100%
+active. The candidate's 45-file Workers-runtime suite passes 510/510 plus
 20/20 audit tests.
 Wrangler processed 248 unchanged official
 asset entries; its dry run reported 1021.31 KiB raw / 186.89 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 53
-reported a 29 ms startup and passed credential-free API, EIO4 and real-browser
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 54
+reported a 25 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
-
-Next runtime candidate `914247f2d9f5bb40c603e8db0c51012471513fe1`
-adds the request-local official plugin Sandbox and passes 510/510 tests across
-45 Workers-runtime files plus 20/20 audits. Its official UI build and dry run
-pass with 248 assets, 1021.31 KiB raw / 186.89 KiB gzip and only the existing
-two product bindings. It remains pre-deployment evidence until its remote and
-browser gates complete.
 
 ## Current request and data flow
 
@@ -925,7 +918,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`a5a33a30-1d79-4831-a512-3553c2a5fe8c`. Current credential-free remote smoke
+`7d633773-090e-483b-8bbd-24beabfd0b9e`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version and an EIO4 polling open packet;

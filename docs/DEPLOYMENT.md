@@ -12,19 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed evidence candidate: `fb8c7a20a15584da6a5f89032e11503dcde3de46`
-- Runtime source candidate: `fb8c7a20a15584da6a5f89032e11503dcde3de46`
-- Next runtime candidate: `914247f2d9f5bb40c603e8db0c51012471513fe1`
-- Git HEAD used by Wrangler: `e247f274a286dd09d112dbfcf933201df33140a6`
-- Cloudflare Version ID: `a5a33a30-1d79-4831-a512-3553c2a5fe8c`
-- Cloudflare ordinal version number: `53`
+- Deployed evidence candidate: `914247f2d9f5bb40c603e8db0c51012471513fe1`
+- Runtime source candidate: `914247f2d9f5bb40c603e8db0c51012471513fe1`
+- Git HEAD used by Wrangler: `6b47f7911ae03f04640504874fe55e2f64254495`
+- Cloudflare Version ID: `7d633773-090e-483b-8bbd-24beabfd0b9e`
+- Cloudflare ordinal version number: `54`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T02:27:01.996755Z`
-- Activation: deployment `b7726484-f054-4ae3-9c02-5b92c655d30d` created
-  `2026-07-20T02:27:02.89612Z`; Wrangler reports
+- Version creation time: `2026-07-20T03:00:46.278157Z`
+- Activation: deployment `df1b9fba-3b34-40ca-bc64-2646ce09f377` created
+  `2026-07-20T03:00:47.145332Z`; Wrangler reports
   this version at 100%
-- Worker startup: 29 ms
-- Deployment ID: `b7726484-f054-4ae3-9c02-5b92c655d30d`
+- Worker startup: 25 ms
+- Deployment ID: `df1b9fba-3b34-40ca-bc64-2646ce09f377`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -58,7 +57,7 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
 
-The next runtime candidate adds the complete locked Sandbox module contract:
+The current deployed increment adds the complete locked Sandbox module contract:
 
 - all five named `sandbox.test.js` cases pass in both the locked original suite
   and the Workers runtime mapping, with one extra helper-surface/isolation case;
@@ -69,7 +68,7 @@ The next runtime candidate adds the complete locked Sandbox module contract:
   `require` and module-global state. The general plugin registry, data loader,
   notification runner and alarm-backed schedule remain incomplete.
 
-The current deployed increment adds the complete locked Settings module contract:
+The immediately preceding deployed increment added the complete locked Settings module contract:
 
 - all 13 named `settings.test.js` cases pass in both the locked original suite
   and the Workers runtime mapping;
@@ -80,7 +79,7 @@ The current deployed increment adds the complete locked Settings module contract
   request/tenant boundary. Broader `lib/server/env.js` process/filesystem and
   extended-settings discovery remain incomplete.
 
-The immediately preceding deployed increment added the complete locked Loop
+The earlier deployed increment added the complete locked Loop
 plugin contract:
 
 - all five named `loop.test.js` cases pass in the Workers runtime as well as in
@@ -313,7 +312,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The next runtime candidate is
+The deployed evidence candidate is
 `914247f2d9f5bb40c603e8db0c51012471513fe1`. It adds the complete five-case
 Sandbox module mapping and remaining public helper surface while retaining the
 13-case Settings module, five-case Loop plugin, 13-case concurrent uploader and
@@ -351,13 +350,9 @@ tests cover the implemented adapter subset; all 16 API3 files,
 52 remain unresolved and two bridge files are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
-This candidate has not yet replaced Cloudflare version 53. The remote API,
-Engine.IO and browser evidence below still describes the active deployed
-version until the next deployment and post-deployment gates succeed.
-
 ## Post-deployment remote API evidence
 
-Wrangler reports version `a5a33a30-1d79-4831-a512-3553c2a5fe8c` at 100%.
+Wrangler reports version `7d633773-090e-483b-8bbd-24beabfd0b9e` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -392,8 +387,8 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds the complete request-local Settings contract and retains the
-Loop property calculation, concurrent uploader, Profile, Loop client and
+This release adds the complete request-local Sandbox contract and retains the
+Settings, Loop property calculation, concurrent uploader, Profile, Loop client and
 client/server root transport runtime. The current version repeated a fresh
 credential-free EIO4 polling-open check. Because the Worker has no
 `API_SECRET`, no credentialed remote mutation could be attempted; successful
@@ -404,6 +399,7 @@ remain evidence from the immediately preceding compatible version.
 | Check | Result |
 | --- | --- |
 | Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
+| Local Sandbox contract | five locked client/server/LOW-HIGH/message cases plus helper-surface and request-isolation coverage |
 | Local Settings contract | 13 locked defaults/accessor/feature/alarm/threshold/snooze cases plus request isolation and recursive secure filtering |
 | Local Loop property contract | five locked enacted/error/received/stale-alert/assistant cases, including six forecast points and opt-in property dispatch |
 | Prior-version anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
@@ -436,7 +432,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 53's official UI without reading
+A real Chromium session exercised Cloudflare version 54's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -460,8 +456,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`a5a33a30-1d79-4831-a512-3553c2a5fe8c`. It reused the same 248 unchanged
-official assets. Version 53 has therefore passed credential-free remote API,
+`7d633773-090e-483b-8bbd-24beabfd0b9e`. It reused the same 248 unchanged
+official assets. Version 54 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -541,9 +537,9 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`719c2b34-95a9-49d4-b22e-147092eee4fc` (version 52). It has its own remote API,
+`a5a33a30-1d79-4831-a512-3553c2a5fe8c` (version 53). It has its own remote API,
 Engine.IO and browser acceptance and lacks only this release's request-local
-Settings module adapter. Version 51 (`f4909749-a807-4f10-9794-5eaa471da4d9`)
+Sandbox module adapter. Version 52 (`719c2b34-95a9-49d4-b22e-147092eee4fc`)
 remains an older compatible fallback.
 The older
 failed property rollout
