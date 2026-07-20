@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "0a4b59a447515956a4dcd5a641cb4581ebe0216d58d22bbdde586cd7f58bcc77",
+  "inputs_sha256": "86adc37fc687417a8a23730576f02d74ca3ef4183fbad3ea487246e137cd51a3",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 52,
+      "adapted": 53,
       "excluded-fixed-scope": 2,
-      "unresolved": 57
+      "unresolved": 56
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8391,8 +8391,8 @@
     },
     {
       "file": "vendor/nightscout/tests/profile.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all 24 named Workers-runtime assertions in test/profile-functions-contract.test.ts and wired into the API v2 Summary profile path: empty/missing data, legacy scalar conversion/reload, DIA, carb absorption, carb ratio, sensitivity, low/high targets, units, timezone-aware basal/sensitivity/carb schedules, reverse-chronological multi-record selection and current-profile lookup. src/profile-functions.ts preserves the locked selection/coercion rules while replacing lodash, memory-cache and moment-timezone mechanics with Workers-native arrays, Map and Intl.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

@@ -402,6 +402,10 @@
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime Profile contract in test/api-v1-collections-contract.test.ts: POST/PUT/query/delete workflows, single and multi-profile Loop/NightscoutKit shapes, empty-array success, valid/generated/invalid IDs, existing and missing-ID replacement, atomic mixed-ID rejection and exact legacy error envelopes."
     },
+    "vendor/nightscout/tests/profile.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all 24 named Workers-runtime assertions in test/profile-functions-contract.test.ts and wired into the API v2 Summary profile path: empty/missing data, legacy scalar conversion/reload, DIA, carb absorption, carb ratio, sensitivity, low/high targets, units, timezone-aware basal/sensitivity/carb schedules, reverse-chronological multi-record selection and current-profile lookup. src/profile-functions.ts preserves the locked selection/coercion rules while replacing lodash, memory-cache and moment-timezone mechanics with Workers-native arrays, Map and Intl."
+    },
     "vendor/nightscout/tests/api.shape-handling.test.js": {
       "status": "adapted",
       "reason": "Represented across test/api-v1-collections-contract.test.ts, test/api-v1-entries-contract.test.ts, test/api-v1-treatments-contract.test.ts and test/worker.test.ts: every locked Entries, Treatments, DeviceStatus and Profile single/array/ten-item/empty response shape, mixed SGV/MBG and treatment types, nested Loop fixtures, syncIdentifier preservation, and legacy Food/Activity PUT-by-ID behavior."

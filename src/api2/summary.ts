@@ -1,5 +1,6 @@
 import type { RealtimeDocument } from "../realtime/ddata-snapshot";
 import type { RealtimeSnapshot } from "../realtime/session-service";
+import { createNightscoutProfileFunctions } from "../profile-functions";
 
 export interface NightscoutSummary {
   sgvs: RealtimeDocument[];
@@ -228,54 +229,14 @@ function currentSummaryProfile(
   treatments: RealtimeDocument[],
   now: number,
 ): RealtimeDocument {
-  const record = profiles[0];
-  if (record === undefined) return {};
-  if (
-    typeof record.defaultProfile !== "string" ||
-    typeof record.store !== "object" ||
-    record.store === null ||
-    Array.isArray(record.store)
-  ) {
-    const converted = cloneDocument(record);
-    delete converted._id;
-    delete converted.startDate;
-    delete converted.created_at;
-    removeProperties(converted, new Set(["timeAsSeconds"]));
-    return converted;
-  }
-
-  const store = record.store as Record<string, unknown>;
-  const profileStart = new Date(String(record.startDate ?? "1980-01-01")).getTime();
-  let selectedName = record.defaultProfile;
-  const switches = treatments
-    .filter((treatment) =>
-      treatment.eventType === "Profile Switch" &&
-      numericMills(treatment) >= profileStart &&
-      numericMills(treatment) <= now &&
-      (Number(treatment.duration || 0) === 0 ||
-        now < numericMills(treatment) + Number(treatment.duration || 0) * 60_000),
-    )
-    .sort((left, right) => numericMills(left) - numericMills(right));
-  const activeSwitch = switches.at(-1);
-  if (activeSwitch !== undefined && typeof activeSwitch.profile === "string") {
-    selectedName = activeSwitch.profile;
-  }
-
-  let selected = store[selectedName];
-  if (
-    (typeof selected !== "object" || selected === null || Array.isArray(selected)) &&
-    activeSwitch !== undefined &&
-    typeof activeSwitch.profileJson === "string"
-  ) {
-    try {
-      selected = JSON.parse(activeSwitch.profileJson) as unknown;
-    } catch {
-      selected = undefined;
-    }
-  }
-  const profile = typeof selected === "object" && selected !== null && !Array.isArray(selected)
-    ? cloneDocument(selected as RealtimeDocument)
-    : {};
+  const calculator = createNightscoutProfileFunctions(profiles.map(cloneDocument));
+  calculator.updateTreatments(
+    treatments
+      .filter((treatment) => treatment.eventType === "Profile Switch")
+      .map(cloneDocument),
+    [],
+  );
+  const profile = cloneDocument(calculator.getCurrentProfile(now));
   removeProperties(profile, new Set(["timeAsSeconds"]));
   return profile;
 }
