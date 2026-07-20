@@ -88,6 +88,8 @@ import {
   type NightscoutStatusSettingsOverrides,
 } from "./status";
 import { calculateSimpleAlarmRequest } from "./plugins/simplealarms";
+import { calculateTreatmentNotificationEvaluation } from "./plugins/treatmentnotify";
+import { calculateTimeAgoNotificationEvaluation } from "./plugins/timeago";
 import { nightscoutTimes } from "./runtime/times";
 
 export type DocumentCollection =
@@ -206,6 +208,26 @@ interface PluginPropertyContext {
   dbstats: Record<string, unknown>;
 }
 
+interface AutomaticNotificationRuntime {
+  settings: Record<string, unknown>;
+  extendedSettings: Record<string, unknown>;
+  simpleAlarms: boolean;
+  treatmentNotify: boolean;
+  timeAgo: boolean;
+}
+
+interface AutomaticNotificationData {
+  sgvs: RealtimeDocument[];
+  mbgs: RealtimeDocument[];
+  treatments: RealtimeDocument[];
+}
+
+interface AutomaticNotificationEvaluation {
+  notifications: RealtimeDocument[];
+  snoozes: RealtimeDocument[];
+  nextDueAt: number | null;
+}
+
 type RealtimeWebSocketCloseResult = "inactive" | "closed" | "failed";
 
 function randomObjectId(): string {
@@ -281,6 +303,12 @@ function tryDocument(row: DbDocument): JsonDocument | null {
   } catch {
     return null;
   }
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 function publicAuthorizationSubject(subject: JsonDocument): JsonDocument {
@@ -941,23 +969,27 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return new SqliteBackgroundTaskRepository(this.ctx.storage);
   }
 
-  private automaticSimpleAlarmsEnabled(): boolean {
-    const overrides = deriveTenantStatusSettings(this.env);
-    return overrides.enable === undefined
-      ? overrides.simpleAlarms === true
-      : overrides.enable.includes("simplealarms");
-  }
-
-  private resolvedNotificationSettings(now: number): Record<string, unknown> {
+  private resolvedAutomaticNotificationRuntime(now: number): AutomaticNotificationRuntime {
     const status = nightscoutStatus(
       new Date(now),
       this.env.AUTH_DEFAULT_ROLES ?? "readable",
       this.tenantStatusSettings(),
     );
-    const settings = status.settings;
-    return typeof settings === "object" && settings !== null && !Array.isArray(settings)
-      ? settings as Record<string, unknown>
-      : {};
+    const settings = recordValue(status.settings);
+    const extendedSettings = recordValue(status.extendedSettings);
+    const enabled = new Set(
+      Array.isArray(settings.enable)
+        ? settings.enable.filter((feature): feature is string => typeof feature === "string")
+        : [],
+    );
+    const timeAgoPreferences = recordValue(extendedSettings.timeago);
+    return {
+      settings,
+      extendedSettings,
+      simpleAlarms: enabled.has("simplealarms"),
+      treatmentNotify: enabled.has("treatmentnotify"),
+      timeAgo: enabled.has("timeago") && Boolean(timeAgoPreferences.enableAlerts),
+    };
   }
 
   private notificationHeartbeatMs(settings: Record<string, unknown>): number {
@@ -975,11 +1007,17 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   private recordDataMutationInTransaction(collection: string): void {
     const tasks = this.backgroundTasks();
     const hasRunningNotificationTask = tasks.has(PLUGIN_NOTIFICATIONS_TASK);
-    if (
-      !hasRunningNotificationTask
-      && (collection !== "entries" || !this.automaticSimpleAlarmsEnabled())
-    ) return;
     const now = Date.now();
+    if (!hasRunningNotificationTask) {
+      const runtime = this.resolvedAutomaticNotificationRuntime(now);
+      const anyEnabled = runtime.simpleAlarms || runtime.treatmentNotify || runtime.timeAgo;
+      const inputChanged = collection === "profile"
+        ? anyEnabled
+        : collection === "entries"
+          ? anyEnabled
+          : collection === "treatments" && runtime.treatmentNotify;
+      if (!inputChanged) return;
+    }
     tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
   }
 
@@ -994,83 +1032,189 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return null;
   }
 
-  private automaticSimpleAlarmSgvs(now: number): RealtimeDocument[] {
-    const result: { sgvs: RealtimeDocument[] } = { sgvs: [] };
-    const budget = new RealtimeJsonBudget(result);
-    for (const row of this.ctx.storage.sql.exec<DbDocument>(
-      `SELECT id, body, sort_time
-       FROM documents
-       WHERE collection = 'entries'
-         AND sort_time >= ?
-         AND ${realtimeNumericMeasurementSql("$.sgv")}
-         AND NOT ${realtimeJsonTruthySql("$.mbg")}
-       ORDER BY sort_time DESC, id ASC
-       LIMIT 64`,
-      now - REALTIME_ENTRY_WINDOW_MS,
-    )) {
-      const entry = toPublicEntry(toDocument(row));
-      const raw = entry as PublicEntry & Record<string, unknown>;
-      if (raw.mbg) continue;
-      const mgdl = realtimeMeasurement(raw.sgv);
-      if (mgdl === null) continue;
-      const sgv = {
-        _id: entry._id,
-        mgdl,
-        mills: entry.date,
-        device: entry.device,
-        direction: entry.direction,
-        filtered: raw.filtered,
-        unfiltered: raw.unfiltered,
-        noise: raw.noise,
-        rssi: raw.rssi,
-        type: "sgv",
-      };
-      if (!budget.reserveArrayItem(sgv, result.sgvs.length)) break;
-      result.sgvs.push(sgv);
+  private earliestFutureEntryAt(
+    entries: RealtimeDocument[],
+    now: number,
+  ): number | null {
+    let earliest: number | null = null;
+    for (const entry of entries) {
+      const mills = Number(entry.mills);
+      if (!Number.isFinite(mills) || mills <= now) continue;
+      earliest = earliest === null ? mills : Math.min(earliest, mills);
     }
-    result.sgvs.reverse();
-    return result.sgvs;
+    return earliest;
   }
 
-  private automaticSimpleAlarmEvaluation(now: number): {
-    notifications: Record<string, unknown>[];
-    nextDueAt: number | null;
-  } {
-    if (!this.automaticSimpleAlarmsEnabled()) {
-      return { notifications: [], nextDueAt: null };
+  private automaticNotificationData(
+    now: number,
+    runtime: AutomaticNotificationRuntime,
+  ): AutomaticNotificationData {
+    const result: AutomaticNotificationData = { sgvs: [], mbgs: [], treatments: [] };
+    const budget = new RealtimeJsonBudget(result);
+    if (runtime.simpleAlarms || runtime.timeAgo) {
+      for (const row of this.ctx.storage.sql.exec<DbDocument>(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = 'entries'
+           AND sort_time >= ?
+           AND ${realtimeNumericMeasurementSql("$.sgv")}
+           AND NOT ${realtimeJsonTruthySql("$.mbg")}
+         ORDER BY sort_time DESC, id ASC
+         LIMIT 64`,
+        now - REALTIME_ENTRY_WINDOW_MS,
+      )) {
+        const entry = toPublicEntry(toDocument(row));
+        const raw = entry as PublicEntry & Record<string, unknown>;
+        if (raw.mbg) continue;
+        const mgdl = realtimeMeasurement(raw.sgv);
+        if (mgdl === null) continue;
+        const sgv = {
+          _id: entry._id,
+          mgdl,
+          mills: entry.date,
+          device: entry.device,
+          direction: entry.direction,
+          filtered: raw.filtered,
+          unfiltered: raw.unfiltered,
+          noise: raw.noise,
+          rssi: raw.rssi,
+          type: "sgv",
+        };
+        if (!budget.reserveArrayItem(sgv, result.sgvs.length)) break;
+        result.sgvs.push(sgv);
+      }
+      result.sgvs.reverse();
     }
-    const settings = this.resolvedNotificationSettings(now);
-    const sgvs = this.automaticSimpleAlarmSgvs(now);
-    const request = calculateSimpleAlarmRequest(sgvs, now, settings);
-    if (request === null) return { notifications: [], nextDueAt: null };
-    const latest = this.latestSgvAtOrBefore(sgvs, now);
-    if (latest === null) return { notifications: [request], nextDueAt: null };
-    const expiresAt = Number(latest.mills) + nightscoutTimes.mins(10).msecs;
-    return {
-      notifications: [request],
-      nextDueAt: Math.min(now + this.notificationHeartbeatMs(settings), expiresAt),
+
+    if (runtime.treatmentNotify) {
+      for (const row of this.ctx.storage.sql.exec<DbDocument>(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = 'entries'
+           AND sort_time >= ?
+           AND ${realtimeNumericMeasurementSql("$.mbg")}
+         ORDER BY sort_time DESC, id ASC
+         LIMIT 10`,
+        now - REALTIME_ENTRY_WINDOW_MS,
+      )) {
+        const entry = toPublicEntry(toDocument(row));
+        const raw = entry as PublicEntry & Record<string, unknown>;
+        const mgdl = realtimeMeasurement(raw.mbg);
+        if (mgdl === null) continue;
+        const mbg = {
+          _id: entry._id,
+          mgdl,
+          mills: entry.date,
+          device: entry.device,
+          type: "mbg",
+        };
+        if (!budget.reserveArrayItem(mbg, result.mbgs.length)) break;
+        result.mbgs.push(mbg);
+      }
+      result.mbgs.reverse();
+      result.treatments = this.realtimeDocuments(
+        `SELECT id, body, sort_time
+         FROM (
+           SELECT id, body, sort_time, updated_at
+           FROM documents
+           WHERE collection = 'treatments'
+             AND sort_time >= ?
+           ORDER BY sort_time DESC, updated_at DESC, id ASC
+           LIMIT 1000
+         )
+         ORDER BY sort_time ASC, id ASC`,
+        [now - RUNTIME_TREATMENT_WINDOW_MS],
+        budget,
+        normalizeRealtimeDocument,
+      );
+    }
+    return result;
+  }
+
+  private automaticPluginNotificationEvaluation(
+    now: number,
+    runtime = this.resolvedAutomaticNotificationRuntime(now),
+  ): AutomaticNotificationEvaluation {
+    const notifications: RealtimeDocument[] = [];
+    const snoozes: RealtimeDocument[] = [];
+    let nextDueAt: number | null = null;
+    const schedule = (deadline: number | null): void => {
+      if (deadline === null || !Number.isFinite(deadline)) return;
+      const normalized = Math.max(now, Math.trunc(deadline));
+      nextDueAt = nextDueAt === null ? normalized : Math.min(nextDueAt, normalized);
     };
+    const heartbeatMs = this.notificationHeartbeatMs(runtime.settings);
+    const data = this.automaticNotificationData(now, runtime);
+
+    // Preserve the locked server plugin order: simplealarms, then
+    // treatmentnotify, then timeago. The shared engine can therefore apply a
+    // treatment snooze to the default Simple Alarm in the same plugin pass.
+    if (runtime.simpleAlarms) {
+      schedule(this.earliestFutureEntryAt(data.sgvs, now));
+      const request = calculateSimpleAlarmRequest(data.sgvs, now, runtime.settings);
+      if (request !== null) {
+        notifications.push(request);
+        const latest = this.latestSgvAtOrBefore(data.sgvs, now);
+        if (latest !== null) {
+          const expiresAt = Number(latest.mills) + nightscoutTimes.mins(10).msecs;
+          schedule(Math.min(now + heartbeatMs, expiresAt));
+        }
+      }
+    }
+
+    if (runtime.treatmentNotify) {
+      const treatment = calculateTreatmentNotificationEvaluation(
+        data.treatments,
+        data.mbgs,
+        now,
+        recordValue(runtime.extendedSettings.treatmentnotify),
+        runtime.settings,
+      );
+      notifications.push(...treatment.notifications);
+      snoozes.push(...treatment.snoozes);
+      schedule(treatment.activatesAt);
+      if (
+        treatment.expiresAt !== null
+        && (treatment.notifications.length > 0 || treatment.snoozes.length > 0)
+      ) {
+        schedule(Math.min(now + heartbeatMs, treatment.expiresAt));
+      }
+    }
+
+    if (runtime.timeAgo) {
+      const timeAgo = calculateTimeAgoNotificationEvaluation(
+        data.sgvs,
+        now,
+        runtime.settings,
+        recordValue(runtime.extendedSettings.timeago),
+        heartbeatMs,
+      );
+      if (timeAgo.notification !== null) notifications.push(timeAgo.notification);
+      schedule(timeAgo.nextDueAt);
+    }
+    return { notifications, snoozes, nextDueAt };
   }
 
   private seedAutomaticNotificationTask(now: number): void {
     const tasks = this.backgroundTasks();
+    const runtime = this.resolvedAutomaticNotificationRuntime(now);
+    const anyEnabled = runtime.simpleAlarms || runtime.treatmentNotify || runtime.timeAgo;
     if (tasks.has(PLUGIN_NOTIFICATIONS_TASK)) {
-      if (!this.automaticSimpleAlarmsEnabled()) {
-        tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
-      }
+      if (!anyEnabled) tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
       return;
     }
-    if (!this.automaticSimpleAlarmsEnabled()) return;
-    if (this.automaticSimpleAlarmEvaluation(now).notifications.length > 0) {
-      tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
-    }
+    if (!anyEnabled) return;
+    const evaluation = this.automaticPluginNotificationEvaluation(now, runtime);
+    const hasRequests = evaluation.notifications.length > 0 || evaluation.snoozes.length > 0;
+    const deadline = hasRequests ? now : evaluation.nextDueAt;
+    if (deadline !== null) tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, deadline, now);
   }
 
   private processPluginNotificationTask(task: BackgroundTaskRow, now: number): void {
-    const evaluation = this.automaticSimpleAlarmEvaluation(now);
+    const evaluation = this.automaticPluginNotificationEvaluation(now);
     this.realtime.processAlarmNotificationRequests(
       evaluation.notifications,
-      [],
+      evaluation.snoozes,
       now,
       () => {
         this.backgroundTasks().complete(

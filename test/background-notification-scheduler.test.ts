@@ -68,10 +68,42 @@ async function openAlarm(name: string): Promise<{
 
 function enableSimpleAlarms(instance: EntryStore): void {
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: undefined,
+    DISABLE: undefined,
     BG_HIGH: "200",
     BG_TARGET_TOP: "180",
     BG_TARGET_BOTTOM: "80",
     BG_LOW: "55",
+    HEARTBEAT: "60",
+  });
+}
+
+function enableTreatmentNotify(instance: EntryStore, simpleAlarms = false): void {
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "careportal",
+    DISABLE: simpleAlarms ? "timeago" : "simplealarms timeago",
+    BG_HIGH: simpleAlarms ? "200" : undefined,
+    BG_TARGET_TOP: simpleAlarms ? "180" : undefined,
+    BG_TARGET_BOTTOM: simpleAlarms ? "80" : undefined,
+    BG_LOW: simpleAlarms ? "55" : undefined,
+    TIMEAGO_ENABLE_ALERTS: undefined,
+    HEARTBEAT: "60",
+  });
+}
+
+function enableTimeAgo(instance: EntryStore): void {
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "timeago",
+    DISABLE: "simplealarms treatmentnotify",
+    BG_HIGH: undefined,
+    BG_TARGET_TOP: undefined,
+    BG_TARGET_BOTTOM: undefined,
+    BG_LOW: undefined,
+    TIMEAGO_ENABLE_ALERTS: "true",
+    ALARM_TIMEAGO_WARN: "true",
+    ALARM_TIMEAGO_WARN_MINS: "1",
+    ALARM_TIMEAGO_URGENT: "true",
+    ALARM_TIMEAGO_URGENT_MINS: "2",
     HEARTBEAT: "60",
   });
 }
@@ -170,6 +202,224 @@ describe("SQLite Durable Object background notification scheduler", () => {
         title: "All Clear",
         message: "Auto ack'd alarm(s)",
         group: "default",
+      }],
+    }]);
+  });
+
+  it("automatically emits and expires a recent manual Treatment Notify request", async () => {
+    const name = tenant("background-treatment-notify");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const treatmentAt = Date.now() - 1_000;
+
+    const scheduled = await runInDurableObject(stub, async (instance, state) => {
+      enableTreatmentNotify(instance);
+      await instance.createDocuments("treatments", JSON.stringify([{
+        eventType: "Carb Correction",
+        carbs: 15,
+        enteredBy: "scheduler-test",
+        created_at: new Date(treatmentAt).toISOString(),
+      }]));
+      return state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+    });
+
+    expect(scheduled.kind).toBe(PLUGIN_NOTIFICATIONS_TASK);
+    expect(scheduled.due_at).toBeGreaterThan(Date.now());
+    expect(scheduled.due_at).toBeLessThanOrEqual(treatmentAt + 10 * 60_000);
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["notification", expect.objectContaining({
+        level: 0,
+        title: "Carb Correction",
+        group: "default",
+        notifyhash: expect.stringMatching(/^[0-9a-f]{40}$/),
+        plugin: expect.objectContaining({ name: "treatmentnotify" }),
+      })],
+    }]);
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableTreatmentNotify(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        treatmentAt + 10 * 60_000,
+      );
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_tasks",
+      ).one().count).toBe(0);
+    });
+  });
+
+  it("lets a recent manual treatment snooze an active Simple Alarm in one plugin pass", async () => {
+    const name = tenant("background-treatment-snooze");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const highAt = Date.now() - 1_000;
+
+    await runInDurableObject(stub, async (instance) => {
+      enableTreatmentNotify(instance, true);
+      await instance.putEntries(parseEntryPayload([{
+        sgv: 250,
+        date: highAt,
+        dateString: new Date(highAt).toISOString(),
+        direction: "Flat",
+        device: "simulator://scheduler",
+        type: "sgv",
+      }]));
+    });
+    expect(await socket.poll()).toEqual([expect.objectContaining({
+      type: "event",
+      namespace: "/alarm",
+      data: ["urgent_alarm", expect.objectContaining({ title: "Urgent HIGH" })],
+    })]);
+
+    await runInDurableObject(stub, async (instance) => {
+      enableTreatmentNotify(instance, true);
+      await instance.createDocuments("treatments", JSON.stringify([{
+        eventType: "Meal Bolus",
+        carbs: 20,
+        insulin: 1,
+        enteredBy: "scheduler-test",
+        created_at: new Date(Date.now() - 500).toISOString(),
+      }]));
+    });
+    expect(await socket.poll()).toEqual([
+      {
+        type: "event",
+        namespace: "/alarm",
+        data: ["clear_alarm", expect.objectContaining({
+          clear: true,
+          group: "default",
+        })],
+      },
+      {
+        type: "event",
+        namespace: "/alarm",
+        data: ["notification", expect.objectContaining({
+          title: "Meal Bolus",
+          plugin: expect.objectContaining({ name: "treatmentnotify" }),
+        })],
+      },
+    ]);
+  });
+
+  it("does not retain a task for an automated OpenAPS treatment", async () => {
+    const stub = store(tenant("background-treatment-filter"));
+    await runInDurableObject(stub, async (instance, state) => {
+      enableTreatmentNotify(instance);
+      await instance.createDocuments("treatments", JSON.stringify([{
+        eventType: "Temp Basal",
+        absolute: 0.5,
+        duration: 30,
+        enteredBy: "openaps://scheduler-test",
+        created_at: new Date().toISOString(),
+      }]));
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_tasks",
+      ).one().count).toBe(0);
+    });
+  });
+
+  it("retains a future manual treatment as an exact logical activation deadline", async () => {
+    const stub = store(tenant("background-treatment-future"));
+    const futureAt = Date.now() + 5 * 60_000;
+    await runInDurableObject(stub, async (instance, state) => {
+      enableTreatmentNotify(instance);
+      await instance.createDocuments("treatments", JSON.stringify([{
+        eventType: "Carb Correction",
+        carbs: 10,
+        enteredBy: "scheduler-test",
+        created_at: new Date(futureAt).toISOString(),
+      }]));
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      expect(task.due_at).toBe(futureAt);
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        futureAt,
+      );
+      expect(state.storage.sql.exec<{ last_emit_at: number | null }>(
+        `SELECT last_emit_at FROM realtime_alarm_silences
+         WHERE level = 0 AND alarm_group = 'default'`,
+      ).one().last_emit_at).toBe(futureAt);
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(futureAt + 60_000);
+    });
+  });
+
+  it("schedules the exact Timeago transition and clears it when a fresh SGV arrives", async () => {
+    const name = tenant("background-timeago");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const firstAt = Date.now() - 1_000;
+
+    const transition = await runInDurableObject(stub, async (instance, state) => {
+      enableTimeAgo(instance);
+      await instance.putEntries(parseEntryPayload([{
+        sgv: 120,
+        date: firstAt,
+        dateString: new Date(firstAt).toISOString(),
+        direction: "Flat",
+        device: "simulator://scheduler",
+        type: "sgv",
+      }]));
+      return state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+    });
+    expect(transition.due_at).toBe(firstAt + 60_001);
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableTimeAgo(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        firstAt + 60_001,
+      );
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expect.objectContaining({
+        level: 1,
+        eventName: "timeago",
+        group: "Time Ago",
+        plugin: expect.objectContaining({ name: "timeago" }),
+      })],
+    }]);
+
+    const freshAt = Date.now();
+    await runInDurableObject(stub, async (instance, state) => {
+      enableTimeAgo(instance);
+      await instance.putEntries(parseEntryPayload([{
+        sgv: 121,
+        date: freshAt,
+        dateString: new Date(freshAt).toISOString(),
+        direction: "Flat",
+        device: "simulator://scheduler",
+        type: "sgv",
+      }]));
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(freshAt + 60_001);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["clear_alarm", {
+        clear: true,
+        title: "All Clear",
+        message: "Auto ack'd alarm(s)",
+        group: "Time Ago",
       }],
     }]);
   });

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { RealtimeDocument } from "../realtime/ddata-snapshot";
 import { INFO, URGENT, WARN, isAlarmLevel, levelToDisplay } from "../runtime/levels";
 import { nightscoutTimes } from "../runtime/times";
@@ -35,6 +36,11 @@ export interface TreatmentNotificationRequests {
   snoozes: RealtimeDocument[];
 }
 
+export interface TreatmentNotificationEvaluation extends TreatmentNotificationRequests {
+  expiresAt: number | null;
+  activatesAt: number | null;
+}
+
 function document(value: unknown): value is RealtimeDocument {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -52,6 +58,19 @@ function isCurrent(entry: RealtimeDocument | undefined, now: number): boolean {
   const mills = Number(entry.mills);
   const ago = mills <= now ? now - mills : -1;
   return ago !== -1 && ago < nightscoutTimes.mins(10).msecs;
+}
+
+function firstFutureEntryAt(
+  entries: RealtimeDocument[],
+  now: number,
+): number | null {
+  let earliest: number | null = null;
+  for (const entry of entries) {
+    const mills = Number(entry.mills);
+    if (!Number.isFinite(mills) || mills <= now) continue;
+    earliest = earliest === null ? mills : Math.min(earliest, mills);
+  }
+  return earliest;
 }
 
 function filterTreatments(
@@ -148,11 +167,12 @@ function buildTreatmentMessage(treatment: RealtimeDocument): string {
     (treatment.notes ? `\nNotes: ${String(treatment.notes)}` : "");
 }
 
-async function sha1(value: string): Promise<string> {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest("SHA-1", new TextEncoder().encode(value)),
-  );
-  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+function sha1(value: string): string {
+  // Locked Nightscout uses createHash synchronously. Workers supports the
+  // complete node:crypto hashing surface under the configured nodejs_compat
+  // flag, which also keeps the Durable Object scheduler free of an otherwise
+  // unnecessary asynchronous interleaving point.
+  return createHash("sha1").update(value).digest("hex");
 }
 
 function addNotification(
@@ -176,23 +196,39 @@ function addSnooze(
 
 /**
  * Request-local Workers port of locked treatmentnotify.checkNotifications().
- * Web Crypto replaces Node's synchronous crypto module; all selection,
- * snooze and payload semantics remain upstream-compatible.
+ * The expiry is platform scheduling metadata; notification, snooze and hash
+ * payloads retain the locked upstream contract.
  */
-export async function calculateTreatmentNotificationRequests(
+export function calculateTreatmentNotificationEvaluation(
   treatments: RealtimeDocument[],
   mbgs: RealtimeDocument[],
   now: number,
   preferences: TreatmentNotifyPreferences = {},
   settings: TreatmentNotifySettings = {},
-): Promise<TreatmentNotificationRequests> {
+): TreatmentNotificationEvaluation {
   const requests: TreatmentNotificationRequests = { notifications: [], snoozes: [] };
   const filtered = filterTreatments(treatments, preferences);
   const lastMbg = lastEntry(mbgs, now);
   const lastTreatment = lastEntry(filtered, now);
   const mbgCurrent = isCurrent(lastMbg, now);
   const treatmentCurrent = isCurrent(lastTreatment, now);
-  if (!mbgCurrent && !treatmentCurrent) return requests;
+  const futureCandidates = [
+    firstFutureEntryAt(mbgs, now),
+    firstFutureEntryAt(filtered, now),
+  ].filter((deadline): deadline is number => deadline !== null);
+  const activatesAt = futureCandidates.length === 0 ? null : Math.min(...futureCandidates);
+  const currentExpiryCandidates = [
+    ...(mbgCurrent && lastMbg !== undefined
+      ? [Number(lastMbg.mills) + nightscoutTimes.mins(10).msecs]
+      : []),
+    ...(treatmentCurrent && lastTreatment !== undefined
+      ? [Number(lastTreatment.mills) + nightscoutTimes.mins(10).msecs]
+      : []),
+  ].filter(Number.isFinite);
+  const expiresAt = currentExpiryCandidates.length === 0
+    ? null
+    : Math.max(...currentExpiryCandidates);
+  if (!mbgCurrent && !treatmentCurrent) return { ...requests, expiresAt, activatesAt };
 
   const mbgMessage = mbgCurrent && lastMbg !== undefined
     ? `Meter BG ${String(scaleEntry(lastMbg, settings))} ${unitsLabel(settings)}`
@@ -252,7 +288,7 @@ export async function calculateTreatmentNotificationRequests(
       if (!eventType && lastTreatment.insulin) eventType = "Correcton Bolus";
       if (!eventType) eventType = "Note";
       const timestamp = lastTreatment.timestamp;
-      const notifyhash = await sha1(JSON.stringify({ eventType, timestamp }));
+      const notifyhash = sha1(JSON.stringify({ eventType, timestamp }));
       addNotification(requests, {
         level: INFO,
         title: String(eventType),
@@ -264,5 +300,23 @@ export async function calculateTreatmentNotificationRequests(
     }
   }
 
-  return requests;
+  return { ...requests, expiresAt, activatesAt };
+}
+
+/** Existing pure plugin contract, kept asynchronous for caller compatibility. */
+export async function calculateTreatmentNotificationRequests(
+  treatments: RealtimeDocument[],
+  mbgs: RealtimeDocument[],
+  now: number,
+  preferences: TreatmentNotifyPreferences = {},
+  settings: TreatmentNotifySettings = {},
+): Promise<TreatmentNotificationRequests> {
+  const { notifications, snoozes } = calculateTreatmentNotificationEvaluation(
+    treatments,
+    mbgs,
+    now,
+    preferences,
+    settings,
+  );
+  return { notifications, snoozes };
 }

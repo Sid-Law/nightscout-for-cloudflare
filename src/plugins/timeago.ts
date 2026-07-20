@@ -20,6 +20,11 @@ export interface TimeAgoPreferences extends Record<string, unknown> {
   enableAlerts?: unknown;
 }
 
+export interface TimeAgoNotificationEvaluation {
+  notification: RealtimeDocument | null;
+  nextDueAt: number | null;
+}
+
 export interface TimeAgoClientRuntimeState {
   lastChecked: number;
   lastRecoveryTimeFromSuspend: number;
@@ -86,6 +91,19 @@ function lastSgvAtOrBefore(
   return undefined;
 }
 
+function firstFutureSgvAt(
+  sgvs: RealtimeDocument[],
+  now: number,
+): number | null {
+  let earliest: number | null = null;
+  for (const entry of sgvs) {
+    const mills = numeric(entry.mills);
+    if (!Number.isFinite(mills) || mills <= now) continue;
+    earliest = earliest === null ? mills : Math.min(earliest, mills);
+  }
+  return earliest;
+}
+
 export function createTimeAgoClientRuntimeState(): TimeAgoClientRuntimeState {
   return {
     lastChecked: Date.now(),
@@ -150,6 +168,71 @@ export function timeAgoNotification(
     group: "Time Ago",
     pushoverSound: "echo",
     debug: display,
+  };
+}
+
+function staleTransitionAt(
+  last: RealtimeDocument,
+  enabled: unknown,
+  configuredMinutes: unknown,
+  fallbackMinutes: number,
+): number | null {
+  if (!enabled) return null;
+  const minutes = configuredMinutes || fallbackMinutes;
+  const duration = nightscoutTimes.mins(numeric(minutes)).msecs;
+  const mills = numeric(last.mills);
+  if (!Number.isFinite(duration) || !Number.isFinite(mills)) return null;
+  // Locked checkStatus uses a strict `>` comparison. With integer-millisecond
+  // alarms, the first observable stale instant is threshold + 1 ms.
+  return Math.trunc(mills + duration + 1);
+}
+
+/**
+ * Adds only the timing metadata needed to replace Node's perpetual heartbeat
+ * with a Durable Object alarm. The notification itself is produced by the
+ * locked pure adapter above.
+ */
+export function calculateTimeAgoNotificationEvaluation(
+  sgvs: RealtimeDocument[],
+  now: number,
+  settings: TimeAgoSettings,
+  preferences: TimeAgoPreferences,
+  heartbeatMs: number,
+  defaultLines?: readonly string[],
+): TimeAgoNotificationEvaluation {
+  if (!preferences.enableAlerts) return { notification: null, nextDueAt: null };
+  const last = lastSgvAtOrBefore(sgvs, now);
+  const futureSgvAt = firstFutureSgvAt(sgvs, now);
+  if (last === undefined) return { notification: null, nextDueAt: futureSgvAt };
+
+  const notification = timeAgoNotification(
+    sgvs,
+    now,
+    settings,
+    preferences,
+    defaultLines,
+  );
+  const transitions = [
+    futureSgvAt,
+    staleTransitionAt(
+      last,
+      settings.alarmTimeagoWarn,
+      settings.alarmTimeagoWarnMins,
+      15,
+    ),
+    staleTransitionAt(
+      last,
+      settings.alarmTimeagoUrgent,
+      settings.alarmTimeagoUrgentMins,
+      30,
+    ),
+  ].filter((deadline): deadline is number => deadline !== null && deadline > now);
+  if (notification !== null && Number.isFinite(heartbeatMs) && heartbeatMs > 0) {
+    transitions.push(Math.trunc(now + heartbeatMs));
+  }
+  return {
+    notification,
+    nextDueAt: transitions.length === 0 ? null : Math.min(...transitions),
   };
 }
 
