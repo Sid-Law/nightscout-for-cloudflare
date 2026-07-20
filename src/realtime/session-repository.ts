@@ -97,6 +97,15 @@ interface AlarmSilenceRow {
   [key: string]: SqlStorageValue;
   last_ack_at: number;
   silence_time: number;
+  last_emit_at: number | null;
+}
+
+export interface RealtimeAlarmState {
+  level: number;
+  group: string;
+  lastAckAt: number;
+  silenceTime: number;
+  lastEmitAt: number | null;
 }
 
 interface RootDataStateRow {
@@ -233,6 +242,7 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
   migrateRealtimeAlarmNamespaceV10(storage);
   migrateRealtimeRootUpdatesV11(storage);
   migrateRealtimeWriteAuthorityV12(storage);
+  migrateRealtimeNotificationStateV13(storage);
 }
 
 interface SchemaRow {
@@ -394,6 +404,7 @@ export function migrateRealtimeAlarmNamespaceV10(storage: DurableObjectStorage):
       alarm_group TEXT NOT NULL,
       last_ack_at INTEGER NOT NULL,
       silence_time INTEGER NOT NULL,
+      last_emit_at INTEGER,
       PRIMARY KEY (level, alarm_group)
     );
   `);
@@ -439,6 +450,27 @@ export function migrateRealtimeWriteAuthorityV12(storage: DurableObjectStorage):
       `ALTER TABLE realtime_sessions
        ADD COLUMN treatment_write_allowed INTEGER NOT NULL DEFAULT 0
        CHECK (treatment_write_allowed IN (0, 1))`,
+    );
+  }
+}
+
+/**
+ * The Node notification engine keeps lastEmitTime in a process-global Alarm
+ * object. Workers can be evicted between evaluation and all-clear processing,
+ * so v13 persists that single field beside the existing ACK/silence state.
+ */
+export function migrateRealtimeNotificationStateV13(
+  storage: DurableObjectStorage,
+): void {
+  const columns = new Set(
+    storage.sql
+      .exec<TableInfoRow>("PRAGMA table_info(realtime_alarm_silences)")
+      .toArray()
+      .map((row) => row.name),
+  );
+  if (!columns.has("last_emit_at")) {
+    storage.sql.exec(
+      "ALTER TABLE realtime_alarm_silences ADD COLUMN last_emit_at INTEGER",
     );
   }
 }
@@ -695,6 +727,54 @@ export class SqliteRealtimeSessionRepository {
       .map((row) => row.sid);
   }
 
+  alarmState(level: number, group: string): RealtimeAlarmState {
+    const row = this.storage.sql
+      .exec<AlarmSilenceRow>(
+        `SELECT last_ack_at, silence_time, last_emit_at
+         FROM realtime_alarm_silences
+         WHERE level = ? AND alarm_group = ? LIMIT 1`,
+        level,
+        group,
+      )
+      .toArray()[0];
+    return {
+      level,
+      group,
+      lastAckAt: row?.last_ack_at ?? 0,
+      silenceTime: row?.silence_time ?? 30 * 60 * 1_000,
+      lastEmitAt: row?.last_emit_at ?? null,
+    };
+  }
+
+  alarmGroups(): string[] {
+    return this.storage.sql
+      .exec<{ alarm_group: string }>(
+        `SELECT DISTINCT alarm_group
+         FROM realtime_alarm_silences
+         ORDER BY alarm_group
+         LIMIT ?`,
+        REALTIME_MAX_ALARM_GROUPS,
+      )
+      .toArray()
+      .map((row) => row.alarm_group);
+  }
+
+  markAlarmEmitted(level: number, group: string, lastUpdated: number): boolean {
+    if (!this.alarmGroupCanBeCreated(group)) return false;
+    this.storage.sql.exec(
+      `INSERT INTO realtime_alarm_silences
+         (level, alarm_group, last_ack_at, silence_time, last_emit_at)
+       VALUES (?, ?, 0, ?, ?)
+       ON CONFLICT(level, alarm_group) DO UPDATE SET
+         last_emit_at = excluded.last_emit_at`,
+      level,
+      group,
+      30 * 60 * 1_000,
+      lastUpdated,
+    );
+    return true;
+  }
+
   ackAlarm(level: number, group: string, silenceTime: number, now: number): boolean {
     const accepted = this.ackAlarmLevel(level, group, silenceTime, now);
     if (!accepted) return false;
@@ -722,35 +802,36 @@ export class SqliteRealtimeSessionRepository {
     if (current !== undefined && now < current.last_ack_at + current.silence_time) {
       return false;
     }
-    if (current === undefined) {
-      const groupExists = this.storage.sql.exec<CountRow>(
-        `SELECT EXISTS(
-           SELECT 1 FROM realtime_alarm_silences WHERE alarm_group = ?
-         ) AS count`,
-        group,
-      ).one().count === 1;
-      if (!groupExists) {
-        const groupCount = this.storage.sql
-          .exec<CountRow>(
-            "SELECT COUNT(DISTINCT alarm_group) AS count FROM realtime_alarm_silences",
-          )
-          .one().count;
-        if (groupCount >= REALTIME_MAX_ALARM_GROUPS) return false;
-      }
-    }
+    if (current === undefined && !this.alarmGroupCanBeCreated(group)) return false;
     this.storage.sql.exec(
       `INSERT INTO realtime_alarm_silences
-         (level, alarm_group, last_ack_at, silence_time)
-       VALUES (?, ?, ?, ?)
+         (level, alarm_group, last_ack_at, silence_time, last_emit_at)
+       VALUES (?, ?, ?, ?, NULL)
        ON CONFLICT(level, alarm_group) DO UPDATE SET
          last_ack_at = excluded.last_ack_at,
-         silence_time = excluded.silence_time`,
+         silence_time = excluded.silence_time,
+         last_emit_at = NULL`,
       level,
       group,
       now,
       silenceTime,
     );
     return true;
+  }
+
+  private alarmGroupCanBeCreated(group: string): boolean {
+    const groupExists = this.storage.sql.exec<CountRow>(
+      `SELECT EXISTS(
+         SELECT 1 FROM realtime_alarm_silences WHERE alarm_group = ?
+       ) AS count`,
+      group,
+    ).one().count === 1;
+    if (groupExists) return true;
+    return this.storage.sql
+      .exec<CountRow>(
+        "SELECT COUNT(DISTINCT alarm_group) AS count FROM realtime_alarm_silences",
+      )
+      .one().count < REALTIME_MAX_ALARM_GROUPS;
   }
 
   cleanupOpportunity(

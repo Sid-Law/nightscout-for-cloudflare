@@ -466,6 +466,14 @@
       "status": "adapted",
       "reason": "Represented by all six named Workers-runtime cases in test/basal-treatmentnotify-plugin-contract.test.ts: recent/old Treatment and calibration behavior, exact auto-snooze, informational notification, urgent and non-error Announcement payloads, announcement snooze bypass and Web-Crypto SHA-1 notify hashes. The bounded property context now includes meter BGs, and TREATMENTNOTIFY_* settings plus the Care Portal enable dependency are normalized. Request calculation is complete; persisted scheduling and delivery remain separate work."
     },
+    "vendor/nightscout/tests/simplealarms.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all five named Workers-runtime cases plus two platform-boundary cases in test/simplealarms-plugin-contract.test.ts: in-range silence, warning/urgent high and low comparisons, exact BG/delta message, event/title/sound/debug payloads, non-future ten-minute freshness and invalid-sensor suppression, and configured-threshold selection of simplealarms instead of ar2. src/plugins/simplealarms.ts preserves the locked strict threshold comparisons and produces the official request object; the adapted core notification processor can persist/arbitrate/deliver that object when invoked, while periodic plugin evaluation through a DO alarm remains separate work."
+    },
+    "vendor/nightscout/tests/notifications.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all eight named Workers-runtime cases plus three Durable Object integration/migration cases in test/notifications-engine-contract.test.ts: request reset, urgent-before-warning selection, informational delivery, one-time automatic all-clear, longest eligible snooze, warning-versus-urgent snooze precedence and exact clear payloads. src/notifications.ts keeps request arrays local while schema v13 persists ACK, silence and last-emission state; the bounded internal RPC processes them transactionally and publishes selected objects through the existing live-only /alarm namespace across eviction. Periodic plugin evaluation and external push providers remain separate work."
+    },
     "vendor/nightscout/tests/settings.test.js": {
       "status": "adapted",
       "reason": "Represented by all 13 named Workers-runtime cases in test/settings-contract.test.ts and wired into the HTTP/Socket.IO status settings snapshot: locked defaults, environment/camel accessors, default disablement, custom snooze arrays, threshold and alarm-type selection/correction, scalar/array feature checks and the upstream method surface. src/settings.ts is request-local and removes secure keys recursively before status serialization; the extra isolation case verifies that one tenant/request cannot mutate another settings instance."

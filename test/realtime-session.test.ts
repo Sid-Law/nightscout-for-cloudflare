@@ -255,10 +255,10 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       expect(
         state.storage.sql
           .exec<{ id: number }>(
-            "SELECT id FROM _sql_schema_migrations WHERE id = 12",
+            "SELECT id FROM _sql_schema_migrations WHERE id = 13",
           )
           .one().id,
-      ).toBe(12);
+      ).toBe(13);
       const columns = state.storage.sql
         .exec<{ name: string }>("PRAGMA table_info(realtime_sessions)")
         .toArray()

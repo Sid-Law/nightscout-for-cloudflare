@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "d51a028ce553100451e16f0a82135646a2a6abc799baaccb206e4ad34b626da0",
+  "inputs_sha256": "d1eaf325bc950b35df70880c5515fdb36cfe0e5d3e61598c7013d07ee1cbe04d",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 1,
-      "adapted": 71,
+      "adapted": 73,
       "excluded-fixed-scope": 2,
-      "unresolved": 37
+      "unresolved": 35
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8305,8 +8305,8 @@
     },
     {
       "file": "vendor/nightscout/tests/notifications.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all eight named Workers-runtime cases plus three Durable Object integration/migration cases in test/notifications-engine-contract.test.ts: request reset, urgent-before-warning selection, informational delivery, one-time automatic all-clear, longest eligible snooze, warning-versus-urgent snooze precedence and exact clear payloads. src/notifications.ts keeps request arrays local while schema v13 persists ACK, silence and last-emission state; the bounded internal RPC processes them transactionally and publishes selected objects through the existing live-only /alarm namespace across eviction. Periodic plugin evaluation and external push providers remain separate work.",
       "workstream": "7-background-and-integrations",
       "depends_on": [
         "1-storage-foundation",
@@ -8582,8 +8582,8 @@
     },
     {
       "file": "vendor/nightscout/tests/simplealarms.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all five named Workers-runtime cases plus two platform-boundary cases in test/simplealarms-plugin-contract.test.ts: in-range silence, warning/urgent high and low comparisons, exact BG/delta message, event/title/sound/debug payloads, non-future ten-minute freshness and invalid-sensor suppression, and configured-threshold selection of simplealarms instead of ar2. src/plugins/simplealarms.ts preserves the locked strict threshold comparisons and produces the official request object; the adapted core notification processor can persist/arbitrate/deliver that object when invoked, while periodic plugin evaluation through a DO alarm remains separate work.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

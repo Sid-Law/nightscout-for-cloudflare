@@ -17,6 +17,10 @@ import type {
   Api3RealtimeMutationEvent,
 } from "../document-repository";
 import {
+  NightscoutNotificationEngine,
+  type NotificationProcessResult,
+} from "../notifications";
+import {
   calculateRealtimeDelta,
   type RealtimeDeltaDocument,
   type RealtimeDeltaState,
@@ -80,6 +84,10 @@ export type RealtimeRootWriteRequest =
 export interface RealtimeRootWriteResult {
   acknowledgement: unknown;
   changed: boolean;
+}
+
+export interface RealtimeNotificationProcessResult extends NotificationProcessResult {
+  delivered: number;
 }
 
 export type RealtimeAlarmAuthorization =
@@ -936,6 +944,56 @@ export class RealtimeSessionService {
     });
     for (const sid of result.wakeTargets) this.wake(sid);
     return result.delivered;
+  }
+
+  /**
+   * Runs the locked notification arbitration against durable ACK/silence/
+   * last-emission state, then publishes every selected object through the
+   * existing live-only `/alarm` namespace in the same SQLite transaction.
+   */
+  processAlarmNotificationRequests(
+    notifications: Record<string, unknown>[],
+    snoozes: Record<string, unknown>[],
+    lastUpdated: number,
+  ): RealtimeNotificationProcessResult {
+    const now = this.now();
+    const result = this.storage.transactionSync(() => {
+      const engine = new NightscoutNotificationEngine(
+        this.repository,
+        () => undefined,
+        () => now,
+      );
+      for (const notification of notifications) engine.requestNotify(notification);
+      for (const snooze of snoozes) engine.requestSnooze(snooze);
+      const processed = engine.process(lastUpdated);
+      const wakeTargets = new Set<string>();
+      let delivered = 0;
+      for (const notification of processed.emitted) {
+        try {
+          const frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+            type: "event",
+            namespace: "/alarm",
+            data: [alarmEventName(notification), notification],
+          }));
+          delivered += this.enqueueAlarmFrameInTransaction(frame, now, wakeTargets);
+        } catch {
+          // Notification state remains authoritative even when one oversized
+          // live-only representation cannot fit the bounded transport.
+        }
+      }
+      return {
+        ...processed,
+        delivered,
+        wakeTargets: [...wakeTargets],
+      };
+    });
+    for (const sid of result.wakeTargets) this.wake(sid);
+    return {
+      acceptedNotifications: result.acceptedNotifications,
+      acceptedSnoozes: result.acceptedSnoozes,
+      emitted: result.emitted,
+      delivered: result.delivered,
+    };
   }
 
   acknowledgeAlarm(level: number, group: string, rawSilenceTime: number): boolean {

@@ -19,6 +19,8 @@ const files = [
   "./tests/pump.test.js",
   "./tests/basalprofileplugin.test.js",
   "./tests/treatmentnotify.test.js",
+  "./tests/simplealarms.test.js",
+  "./tests/notifications.test.js",
 ];
 
 const result = spawnSync(
@@ -34,4 +36,4 @@ const result = spawnSync(
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
 
-console.log("Thirteen locked upstream server/data-plugin files passed unchanged (77 tests).");
+console.log("Fifteen locked upstream server/data-plugin files passed unchanged (90 tests).");

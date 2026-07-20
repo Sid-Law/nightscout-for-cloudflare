@@ -41,6 +41,7 @@ import {
   migrateRealtimeRootUpdatesV11,
   migrateRealtimeStorageNamespaceV9,
   migrateRealtimeTransportsV7,
+  migrateRealtimeNotificationStateV13,
   migrateRealtimeWriteAuthorityV12,
 } from "./realtime/session-repository";
 import {
@@ -155,6 +156,7 @@ const REALTIME_ENTRY_WINDOW_MS = 2 * 24 * 60 * 60 * 1_000;
 const AGE_TREATMENT_WINDOW_MS = 62 * 24 * 60 * 60 * 1_000;
 const RUNTIME_TREATMENT_WINDOW_MS = Math.round(2.5 * 24 * 60 * 60 * 1_000);
 const PROFILE_SWITCH_WINDOW_MS = 31 * 12 * 24 * 60 * 60 * 1_000;
+const NOTIFICATION_REQUEST_BATCH_LIMIT = 128;
 const AGE_TREATMENT_EVENT_TYPES = [
   "Sensor Start",
   "Sensor Change",
@@ -585,6 +587,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       migrateRealtimeWriteAuthorityV12(this.ctx.storage);
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (12)",
+      );
+
+      migrateRealtimeNotificationStateV13(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (13)",
       );
 
       // This named, idempotent auth state is intentionally independent of the
@@ -1938,6 +1945,45 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     this.flushRealtimeWebSockets();
     await this.synchronizeRealtimeAlarm();
     return delivered;
+  }
+
+  async processAlarmNotificationRequests(
+    requestsJson: string,
+    lastUpdated: number,
+  ): Promise<string> {
+    if (
+      requestsJson.length > REALTIME_MAX_PAYLOAD_BYTES
+      || !Number.isSafeInteger(lastUpdated)
+    ) return JSON.stringify({ ok: false, error: "invalid_notification_requests" });
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(requestsJson) as unknown;
+    } catch {
+      return JSON.stringify({ ok: false, error: "invalid_notification_requests" });
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return JSON.stringify({ ok: false, error: "invalid_notification_requests" });
+    }
+    const record = parsed as Record<string, unknown>;
+    const notifications = record.notifications;
+    const snoozes = record.snoozes;
+    const validArray = (value: unknown): value is Record<string, unknown>[] =>
+      Array.isArray(value)
+      && value.length <= NOTIFICATION_REQUEST_BATCH_LIMIT
+      && value.every((item) =>
+        typeof item === "object" && item !== null && !Array.isArray(item)
+      );
+    if (!validArray(notifications) || !validArray(snoozes)) {
+      return JSON.stringify({ ok: false, error: "invalid_notification_requests" });
+    }
+    const result = this.realtime.processAlarmNotificationRequests(
+      notifications,
+      snoozes,
+      lastUpdated,
+    );
+    this.flushRealtimeWebSockets();
+    await this.synchronizeRealtimeAlarm();
+    return JSON.stringify({ ok: true, ...result });
   }
 
   async acknowledgeAlarmNotification(
