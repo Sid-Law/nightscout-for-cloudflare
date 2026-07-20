@@ -92,6 +92,11 @@ for diagnosis, dosing, or medical decisions.
   profile-selection rules. The Workers adapter replaces only Node-specific
   lodash/memory-cache/moment-timezone mechanics with native arrays, `Map` and
   `Intl`, and the API v2 Summary path uses this adapter.
+- The complete 13-case `concurrent-writes.test.js` uploader contract. Five-way
+  scalar and batch writes across Treatments, DeviceStatus and Entries retain
+  every response/document; generated ObjectIds stay unique; 50 AAPS SMB, 100
+  AndroidAPS SGV and 30 cross-collection offline-recovery requests complete
+  through one tenant SQLite Durable Object without loss.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -416,7 +421,7 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
 `data.calcdelta.test.js`, `websocket.shape-handling.test.js`,
-`profile.test.js` and 25 v1 client/API files are classified as fully
+`profile.test.js`, `concurrent-writes.test.js` and 25 v1 client/API files are classified as fully
 `adapted`.
 The latest four v1 additions are `gap-treat-012.test.js`,
 `carb-dose-upload.test.js`, `objectid-cache.test.js` and
@@ -425,16 +430,18 @@ The latest four v1 additions are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 56 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 55 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed code candidate is commit
-`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. Its 41-file Workers-runtime
-suite passes 472/472 tests and both
+The next deployment evidence candidate is commit
+`7630e8aec2dc09f15aa6436cbf904705f7fd737e`; it does not change the deployed
+runtime source from `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. Its 42-file
+Workers-runtime suite passes 485/485 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
 reports 1005.41 KiB raw / 183.59 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This release adds the complete Profile calculation contract while
-retaining the four Loop client files and three Treatment identity contracts,
+`ASSETS`. This evidence batch adds the complete concurrent uploader contract
+while retaining the Profile calculation, four Loop client files and three
+Treatment identity contracts,
 exact `UUID_HANDLING` behavior, legacy raw-UUID repair and the MongoDB 5
 delete-result shape. It retains the legacy uploader edge and
 DeviceStatus prediction adapters, schema-v12 root-write authority, server-originated deltas,

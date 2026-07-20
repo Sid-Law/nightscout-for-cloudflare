@@ -15,6 +15,10 @@ asset entries; its dry run reported 1005.41 KiB raw / 183.59 KiB gzip and only
 the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 50
 reported a 23 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
+The next evidence-only candidate
+`7630e8aec2dc09f15aa6436cbf904705f7fd737e` leaves runtime source unchanged
+and passes 485/485 tests across 42 Workers-runtime files plus the same 20/20
+audits; its post-deployment gates remain pending.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -482,6 +486,15 @@ partial-failure test files. Entries uniqueness remains `sysTime` plus `type`;
 Treatments use `identifier`/`_id` first and then `created_at` plus `eventType`.
 The adapter does not turn descriptive fixture fields such as `pump`, `sync` or
 generic `id` into unique indexes that upstream never created.
+
+The complete locked `concurrent-writes.test.js` file drives actual `SELF.fetch`
+requests through the Worker boundary into one tenant Durable Object. Its 13
+cases cover five simultaneous scalar and two-item batch writes for Treatments,
+DeviceStatus and Entries, ten staggered Treatment writes in 100 ms, generated
+ObjectId uniqueness, response cardinality, concurrent collection batches, 50
+AAPS SMB recovery writes, 100 AndroidAPS SGV recovery writes and 30 mixed
+collection requests. The passing contract is evidence for this bounded upload
+shape, not a claim of unrestricted load capacity or MongoDB-scale throughput.
 
 Treatment identity is controlled by the same locked `UUID_HANDLING` flag as
 Nightscout v15.0.7. Missing, non-string and values other than case-insensitive
