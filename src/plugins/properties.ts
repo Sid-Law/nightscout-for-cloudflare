@@ -6,6 +6,12 @@ import {
 import { calculateDirectionProperty } from "./direction";
 import { calculateLoopProperty } from "./loop";
 import { calculateRawBgProperty } from "./rawbg";
+import {
+  createDefaultPluginCatalogs,
+  createNightscoutPluginRegistry,
+  type NightscoutPlugin,
+  type PluginExecutionSandbox,
+} from "./registry";
 import { calculateUploaderBatteryProperty } from "./upbat";
 
 export interface PluginPropertyContext {
@@ -62,23 +68,45 @@ export function calculatePluginProperties(
   enabled: ReadonlySet<string>,
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
-  if (enabled.has("bgnow")) {
-    Object.assign(properties, calculateBgnowProperties(context.sgvs, now, units));
-  }
-  if (enabled.has("rawbg")) {
-    properties.rawbg = calculateRawBgProperty(context.sgvs, context.cals, now, units);
-  }
-  if (enabled.has("direction")) {
-    const latest = [...context.sgvs].reverse()
-      .find((entry) => Number(entry.mills) <= now);
-    const direction = calculateDirectionProperty(latest, now);
-    if (direction !== undefined) properties.direction = direction;
-  }
-  if (enabled.has("upbat")) {
-    properties.upbat = calculateUploaderBatteryProperty(context.devicestatus, now);
-  }
-  if (enabled.has("loop")) {
-    properties.loop = calculateLoopProperty(context.devicestatus, now);
-  }
+  const server: Record<string, Partial<NightscoutPlugin>> = {
+    bgnow: {
+      setProperties: () => {
+        Object.assign(properties, calculateBgnowProperties(context.sgvs, now, units));
+      },
+    },
+    rawbg: {
+      setProperties: () => {
+        properties.rawbg = calculateRawBgProperty(context.sgvs, context.cals, now, units);
+      },
+    },
+    direction: {
+      setProperties: () => {
+        const latest = [...context.sgvs].reverse()
+          .find((entry) => Number(entry.mills) <= now);
+        const direction = calculateDirectionProperty(latest, now);
+        if (direction !== undefined) properties.direction = direction;
+      },
+    },
+    upbat: {
+      setProperties: () => {
+        properties.upbat = calculateUploaderBatteryProperty(context.devicestatus, now);
+      },
+    },
+    loop: {
+      setProperties: () => {
+        properties.loop = calculateLoopProperty(context.devicestatus, now);
+      },
+    },
+  };
+  const registry = createNightscoutPluginRegistry(
+    { settings: { enable: [...enabled] } },
+    createDefaultPluginCatalogs({ server }),
+  ).registerServerDefaults();
+  const sandbox = {
+    withExtendedSettings(): PluginExecutionSandbox {
+      return sandbox;
+    },
+  } satisfies PluginExecutionSandbox;
+  registry.setProperties(sandbox);
   return properties;
 }

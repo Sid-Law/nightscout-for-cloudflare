@@ -176,13 +176,13 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.equal(first.routes.length, 161);
   assert.equal(first.tests.length, 111);
   assert.equal(serializeManifest(first), serializeManifest(second));
-  assert.equal(first.tests.filter((item) => item.status === "pass").length, 0);
-  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 57);
+  assert.equal(first.tests.filter((item) => item.status === "pass").length, 1);
+  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 58);
   assert.deepEqual(first.statistics.tests_by_status, {
-    pass: 0,
-    adapted: 57,
+    pass: 1,
+    adapted: 58,
     "excluded-fixed-scope": 2,
-    unresolved: 52,
+    unresolved: 50,
   });
   for (const file of [
     "vendor/nightscout/tests/api.aaps-client.test.js",
@@ -202,6 +202,7 @@ test("the locked repository manifest is stable and validates all 111 test files"
     "vendor/nightscout/tests/loop.test.js",
     "vendor/nightscout/tests/settings.test.js",
     "vendor/nightscout/tests/sandbox.test.js",
+    "vendor/nightscout/tests/plugins.test.js",
     "vendor/nightscout/tests/api.root.test.js",
     "vendor/nightscout/tests/api.shape-handling.test.js",
     "vendor/nightscout/tests/api.status.test.js",
@@ -242,6 +243,10 @@ test("the locked repository manifest is stable and validates all 111 test files"
   ]) {
     assert.equal(first.tests.find((item) => item.file === file)?.status, "adapted", file);
   }
+  assert.equal(
+    first.tests.find((item) => item.file === "vendor/nightscout/tests/pluginbase.test.js")?.status,
+    "pass",
+  );
   assert.deepEqual(
     first.tests
       .filter((item) => item.status === "excluded-fixed-scope")

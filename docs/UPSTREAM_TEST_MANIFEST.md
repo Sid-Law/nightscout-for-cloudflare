@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 57, excluded-fixed-scope: 2, unresolved: 52
-- Input fingerprint: `f697d6050b80841bd4059d1ce1660716e20f514a1d4850c08555153873aaf8b6`
+- Statuses: pass: 1, adapted: 58, excluded-fixed-scope: 2, unresolved: 50
+- Input fingerprint: `c2d9183966e34a32c7717cceefe1eed4eac3e15b13417b1f4f5c4ba8e04a1173`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -22,7 +22,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 1-storage-foundation | none | 15 | 7 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 5 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
-| 4-plugins-and-calculations | 1-storage-foundation | 40 | 26 | 0 |
+| 4-plugins-and-calculations | 1-storage-foundation | 40 | 24 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
@@ -122,8 +122,8 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/loop.test.js` | adapted | 0 | Represented by all five named Workers-runtime cases in test/loop-plugin-contract.test.ts and wired into the enabled /api/v2/properties dispatcher: exact enacted pill text and six forecast points, failure display, enacted.received=false handling, the urgent stuck-Loop notification request, both virtual-assistant intents and their locked English responses. src/plugins/loop.ts ports the upstream analysis, visualization, status-level and notification-request calculations without adding a dosing algorithm; the general persisted notification/background runner remains separately unresolved. |
 | `vendor/nightscout/tests/openaps.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/pebble.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/pluginbase.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/plugins.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/pluginbase.test.js` | pass | 0 | The complete locked upstream test file runs unchanged through scripts/run-upstream-client-contracts.mjs. Before Mocha starts, the gate proves that NSCF public/bundle/js/bundle.app.js is byte-identical to the locked upstream-built bundle loaded by the test; the named headless DOM pill case then passes against that exact client code. This is direct official-client evidence and does not imply that unresolved server plugin algorithms are implemented. |
+| `vendor/nightscout/tests/plugins.test.js` | adapted | 0 | Represented by both named Workers-runtime cases in test/plugin-registry-contract.test.ts plus request-isolation and public-dispatcher coverage: the exact client/server default catalogs and order, cross-side exclusions, enable flags, lookup behavior, shown-plugin/type gates, hook ordering, per-plugin error containment, event-type aggregation, iterators and client extended-settings projection. src/plugins/registry.ts replaces Node dynamic require with locked static metadata, and the live API v2 property dispatcher now executes its implemented server property adapters through that registry. This is registry compatibility; algorithms for still-unported plugins remain separately unresolved. |
 | `vendor/nightscout/tests/profile.test.js` | adapted | 0 | Represented by all 24 named Workers-runtime assertions in test/profile-functions-contract.test.ts and wired into the API v2 Summary profile path: empty/missing data, legacy scalar conversion/reload, DIA, carb absorption, carb ratio, sensitivity, low/high targets, units, timezone-aware basal/sensitivity/carb schedules, reverse-chronological multi-record selection and current-profile lookup. src/profile-functions.ts preserves the locked selection/coercion rules while replacing lodash, memory-cache and moment-timezone mechanics with Workers-native arrays, Map and Intl. |
 | `vendor/nightscout/tests/pump.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/rawbg.test.js` | adapted | 0 | Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts: the locked calibration formula returns 113 mg/dl and Clean, the raw property/display line is exact, the single MetricNow intent is retained, and its English assistant title/response match. The property dispatcher honors the official enabled-plugin gate and uses a bounded SGV/calibration DO projection. |

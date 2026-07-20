@@ -422,6 +422,14 @@
       "status": "adapted",
       "reason": "Represented by all five named Workers-runtime cases in test/sandbox-contract.test.ts plus one complete helper-surface case: client/server initialization, safe notification projection, LOW/HIGH display sentinels, BG Now/default messages, immutable first-writer properties, historical SGV selection, unit/insulin/BG display conversion and plugin-specific extended settings. src/sandbox.ts replaces only Node dynamic require/module-global state with the existing request-local Profile, units and times adapters."
     },
+    "vendor/nightscout/tests/plugins.test.js": {
+      "status": "adapted",
+      "reason": "Represented by both named Workers-runtime cases in test/plugin-registry-contract.test.ts plus request-isolation and public-dispatcher coverage: the exact client/server default catalogs and order, cross-side exclusions, enable flags, lookup behavior, shown-plugin/type gates, hook ordering, per-plugin error containment, event-type aggregation, iterators and client extended-settings projection. src/plugins/registry.ts replaces Node dynamic require with locked static metadata, and the live API v2 property dispatcher now executes its implemented server property adapters through that registry. This is registry compatibility; algorithms for still-unported plugins remain separately unresolved."
+    },
+    "vendor/nightscout/tests/pluginbase.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream test file runs unchanged through scripts/run-upstream-client-contracts.mjs. Before Mocha starts, the gate proves that NSCF public/bundle/js/bundle.app.js is byte-identical to the locked upstream-built bundle loaded by the test; the named headless DOM pill case then passes against that exact client code. This is direct official-client evidence and does not imply that unresolved server plugin algorithms are implemented."
+    },
     "vendor/nightscout/tests/api.shape-handling.test.js": {
       "status": "adapted",
       "reason": "Represented across test/api-v1-collections-contract.test.ts, test/api-v1-entries-contract.test.ts, test/api-v1-treatments-contract.test.ts and test/worker.test.ts: every locked Entries, Treatments, DeviceStatus and Profile single/array/ten-item/empty response shape, mixed SGV/MBG and treatment types, nested Loop fixtures, syncIdentifier preservation, and legacy Food/Activity PUT-by-ID behavior."
