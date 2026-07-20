@@ -185,6 +185,7 @@ interface RealtimeWebSocketAttachment {
 
 interface PluginPropertyContext {
   sgvs: RealtimeDocument[];
+  mbgs: RealtimeDocument[];
   cals: RealtimeDocument[];
   devicestatus: RealtimeDocument[];
   treatments: RealtimeDocument[];
@@ -1358,6 +1359,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   private pluginPropertyContext(now: number): PluginPropertyContext {
     const context: PluginPropertyContext = {
       sgvs: [],
+      mbgs: [],
       cals: [],
       devicestatus: [],
       treatments: [],
@@ -1405,6 +1407,36 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
        FROM documents
        WHERE collection = 'entries'
          AND sort_time >= ?
+         AND ${realtimeNumericMeasurementSql("$.mbg")}
+       ORDER BY sort_time DESC, id ASC
+       LIMIT 10`,
+      now - REALTIME_ENTRY_WINDOW_MS,
+    )) {
+      const entry = toPublicEntry(toDocument(row));
+      const raw = entry as PublicEntry & Record<string, unknown>;
+      const mgdl = realtimeMeasurement(raw.mbg);
+      if (mgdl === null) continue;
+      const mbg = {
+        _id: entry._id,
+        mgdl,
+        mills: entry.date,
+        device: entry.device,
+        type: "mbg",
+      };
+      if (!budget.reserveArrayItem(mbg, context.mbgs.length)) break;
+      context.mbgs.push(mbg);
+    }
+    context.mbgs.reverse();
+    budget = new RealtimeJsonBudget(
+      context,
+      context.sgvs.length + context.mbgs.length,
+    );
+
+    for (const row of this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'entries'
+         AND sort_time >= ?
          AND json_extract(body, '$.type') = 'cal'
          AND NOT ${realtimeJsonTruthySql("$.mbg")}
          AND NOT ${realtimeJsonTruthySql("$.sgv")}
@@ -1429,13 +1461,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     }
     budget = new RealtimeJsonBudget(
       context,
-      context.sgvs.length + context.cals.length,
+      context.sgvs.length + context.mbgs.length + context.cals.length,
     );
     const rawDeviceStatus = this.realtimeRawDeviceStatus(now, budget);
     context.devicestatus = selectRealtimeRecentDeviceStatus(rawDeviceStatus, now);
     budget = new RealtimeJsonBudget(
       context,
-      context.sgvs.length + context.cals.length + context.devicestatus.length,
+      context.sgvs.length + context.mbgs.length + context.cals.length +
+        context.devicestatus.length,
     );
 
     // Locked dataloader supplies the latest Profile to request-local plugin
@@ -1452,8 +1485,8 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     );
     budget = new RealtimeJsonBudget(
       context,
-      context.sgvs.length + context.cals.length + context.devicestatus.length +
-        context.profiles.length,
+      context.sgvs.length + context.mbgs.length + context.cals.length +
+        context.devicestatus.length + context.profiles.length,
     );
 
     const seenTreatments = new Set<string>();

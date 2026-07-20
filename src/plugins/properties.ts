@@ -32,9 +32,11 @@ import {
   type PluginExecutionSandbox,
 } from "./registry";
 import { calculateUploaderBatteryProperty } from "./upbat";
+import { calculateBasalProperty } from "./basal";
 
 export interface PluginPropertyContext {
   sgvs: RealtimeDocument[];
+  mbgs?: RealtimeDocument[];
   cals: RealtimeDocument[];
   devicestatus: RealtimeDocument[];
   treatments?: RealtimeDocument[];
@@ -118,6 +120,7 @@ function parsePluginPropertyContext(json: string, now: number): PluginPropertyCo
   const value = JSON.parse(json) as Partial<PluginPropertyContext>;
   return {
     sgvs: Array.isArray(value.sgvs) ? value.sgvs : [],
+    mbgs: Array.isArray(value.mbgs) ? value.mbgs : [],
     cals: Array.isArray(value.cals) ? value.cals : [],
     devicestatus: Array.isArray(value.devicestatus) ? value.devicestatus : [],
     treatments: parsePluginTreatments(value.treatments, now),
@@ -171,15 +174,68 @@ export function calculatePluginProperties(
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   let profile: NightscoutProfileFunctions | undefined;
+  const processDurations = (
+    documents: RealtimeDocument[],
+    keepZeroDuration: boolean,
+  ): RealtimeDocument[] => {
+    const seenMills = new Set<unknown>();
+    const treatments = documents
+      .filter((document) => {
+        if (seenMills.has(document.mills)) return false;
+        seenMills.add(document.mills);
+        return true;
+      })
+      .map((document) => JSON.parse(JSON.stringify(document)) as RealtimeDocument);
+    const endEvents = treatments.filter((treatment) => !treatment.duration);
+    const cutIfInInterval = (
+      base: RealtimeDocument,
+      end: RealtimeDocument,
+    ): void => {
+      const baseMills = Number(base.mills);
+      const endMills = Number(end.mills);
+      if (
+        baseMills < endMills &&
+        baseMills + Number(base.duration) * 60_000 > endMills
+      ) {
+        base.duration = (endMills - baseMills) / 60_000;
+        if (end.profile) {
+          base.cuttedby = end.profile;
+          end.cutting = base.profile;
+        }
+      }
+    };
+    for (const treatment of treatments) {
+      if (!treatment.duration) continue;
+      for (const end of endEvents) cutIfInInterval(treatment, end);
+    }
+    for (const treatment of treatments) {
+      if (!treatment.duration) continue;
+      for (const end of treatments) cutIfInInterval(treatment, end);
+    }
+    return keepZeroDuration
+      ? treatments
+      : treatments.filter((treatment) => Boolean(treatment.duration));
+  };
   const pluginProfile = (): NightscoutProfileFunctions => {
     if (profile !== undefined) return profile;
     const profiles = JSON.parse(JSON.stringify(context.profiles ?? [])) as RealtimeDocument[];
     profile = createNightscoutProfileFunctions(profiles);
+    const treatments = context.treatments ?? [];
     profile.updateTreatments(
-      (context.treatments ?? [])
-        .filter((treatment) => treatment.eventType === "Profile Switch")
+      processDurations(
+        treatments.filter((treatment) => treatment.eventType === "Profile Switch"),
+        true,
+      ),
+      processDurations(
+        treatments.filter((treatment) =>
+          typeof treatment.eventType === "string" &&
+          treatment.eventType.includes("Temp Basal")
+        ),
+        false,
+      ),
+      treatments
+        .filter((treatment) => treatment.eventType === "Combo Bolus")
         .map((treatment) => JSON.parse(JSON.stringify(treatment)) as RealtimeDocument),
-      [],
     );
     return profile;
   };
@@ -292,6 +348,12 @@ export function calculatePluginProperties(
           now,
           agePreferences(pluginSandbox),
         );
+      },
+    },
+    basal: {
+      setProperties: () => {
+        const basal = calculateBasalProperty(pluginProfile(), now);
+        if (basal !== undefined) properties.basal = basal;
       },
     },
     dbsize: {

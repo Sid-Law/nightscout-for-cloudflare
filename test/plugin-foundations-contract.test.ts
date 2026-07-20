@@ -235,6 +235,7 @@ describe("enabled plugin property adapter", () => {
     };
     expect(await loadPluginPropertyContext(source, 1)).toEqual({
       sgvs: [{ mills: 1, mgdl: 100 }],
+      mbgs: [],
       cals: [{ mills: 1, slope: 1 }],
       devicestatus: [{ mills: 1, uploader: { battery: 20 } }],
       treatments: [],

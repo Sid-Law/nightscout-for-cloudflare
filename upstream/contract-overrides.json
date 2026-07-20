@@ -458,6 +458,14 @@
       "status": "adapted",
       "reason": "Represented by all ten named Workers-runtime cases in test/openaps-pump-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: newest pump-clock selection, reservoir pill and display override, normal/low/empty reservoir severity, voltage warning/urgent thresholds, profile-timezone quiet-night suppression, OpenAPS Offline suppression and all four virtual-assistant intents. The adapter normalizes the official PUMP_* settings, keeps the locked warnOnSuspend shadowing quirk, and only displays uploader-provided pump state; persisted notification scheduling remains separate work."
     },
+    "vendor/nightscout/tests/basalprofileplugin.test.js": {
+      "status": "adapted",
+      "reason": "Represented by both named Workers-runtime cases in test/basal-treatmentnotify-plugin-contract.test.ts and wired into the default-enabled /api/v2/properties dispatcher: exact current-basal pill text, virtual-assistant title/response/priority, Profile schedule selection and active Temp Basal context. The adapter reuses the locked Profile functions and 2.5-day bounded Treatment projection, including Profile Switch, Temp Basal and Combo Bolus grouping, without introducing a dose calculation or recommendation."
+    },
+    "vendor/nightscout/tests/treatmentnotify.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all six named Workers-runtime cases in test/basal-treatmentnotify-plugin-contract.test.ts: recent/old Treatment and calibration behavior, exact auto-snooze, informational notification, urgent and non-error Announcement payloads, announcement snooze bypass and Web-Crypto SHA-1 notify hashes. The bounded property context now includes meter BGs, and TREATMENTNOTIFY_* settings plus the Care Portal enable dependency are normalized. Request calculation is complete; persisted scheduling and delivery remain separate work."
+    },
     "vendor/nightscout/tests/settings.test.js": {
       "status": "adapted",
       "reason": "Represented by all 13 named Workers-runtime cases in test/settings-contract.test.ts and wired into the HTTP/Socket.IO status settings snapshot: locked defaults, environment/camel accessors, default disablement, custom snooze arrays, threshold and alarm-type selection/correction, scalar/array feature checks and the upstream method surface. src/settings.ts is request-local and removes secure keys recursively before status serialization; the extra isolation case verifies that one tenant/request cannot mutate another settings instance."

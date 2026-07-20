@@ -68,6 +68,8 @@ export interface NightscoutStatusEnvironment {
   PUMP_WARN_BATT_V?: string;
   PUMP_URGENT_BATT_V?: string;
   PUMP_WARN_BATT_QUIET_NIGHT?: string;
+  TREATMENTNOTIFY_SNOOZE_MINS?: string;
+  TREATMENTNOTIFY_INCLUDE_BOLUSES_OVER?: string;
 }
 
 function configuredFeatureNames(value: string | undefined): string[] {
@@ -88,6 +90,10 @@ function configuredEnable(
 ): string[] | undefined {
   if (environment.ENABLE === undefined && environment.DISABLE === undefined) return undefined;
   const enabled = configuredFeatureNames(environment.ENABLE);
+  if (
+    ["careportal", "pushover", "maker"].some((feature) => enabled.includes(feature)) &&
+    !enabled.includes("treatmentnotify")
+  ) enabled.push("treatmentnotify");
   for (const feature of DEFAULT_FEATURES) {
     if (!enabled.includes(feature)) enabled.push(feature);
   }
@@ -204,6 +210,10 @@ function platformExtendedSettings(
     ["warnBattV", environment.PUMP_WARN_BATT_V],
     ["urgentBattV", environment.PUMP_URGENT_BATT_V],
     ["warnBattQuietNight", environment.PUMP_WARN_BATT_QUIET_NIGHT],
+  ]);
+  addPlugin("treatmentnotify", [
+    ["snoozeMins", environment.TREATMENTNOTIFY_SNOOZE_MINS],
+    ["includeBolusesOver", environment.TREATMENTNOTIFY_INCLUDE_BOLUSES_OVER],
   ]);
   return extended;
 }

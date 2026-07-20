@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 1, adapted: 69, excluded-fixed-scope: 2, unresolved: 39
-- Input fingerprint: `01ddcf7e251c5dd77ceb3eb9642c681b49eed43800d4ddf3b33bba43dac3e5f3`
+- Statuses: pass: 1, adapted: 71, excluded-fixed-scope: 2, unresolved: 37
+- Input fingerprint: `d51a028ce553100451e16f0a82135646a2a6abc799baaccb206e4ad34b626da0`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -22,7 +22,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 1-storage-foundation | none | 15 | 7 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 5 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
-| 4-plugins-and-calculations | 1-storage-foundation | 40 | 13 | 0 |
+| 4-plugins-and-calculations | 1-storage-foundation | 40 | 11 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
@@ -100,7 +100,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/adminnotifies.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/admintools.test.js` | unresolved | 14 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/ar2.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/basalprofileplugin.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/basalprofileplugin.test.js` | adapted | 0 | Represented by both named Workers-runtime cases in test/basal-treatmentnotify-plugin-contract.test.ts and wired into the default-enabled /api/v2/properties dispatcher: exact current-basal pill text, virtual-assistant title/response/priority, Profile schedule selection and active Temp Basal context. The adapter reuses the locked Profile functions and 2.5-day bounded Treatment projection, including Profile Switch, Temp Basal and Combo Bolus grouping, without introducing a dose calculation or recommendation. |
 | `vendor/nightscout/tests/bgnow.test.js` | adapted | 0 | Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: exact 5-minute buckets, ordinary and eleven-minute interpolated deltas, mg/dl and mmol scaling/rounding, bucket placement, and locked visualization info payloads. |
 | `vendor/nightscout/tests/boluswizardpreview.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/cannulaage.test.js` | adapted | 0 | Represented by all three named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: latest non-future Site Change selection, exact hour/day display, notes pill shape, 48-hour warning request and official CAGE_* normalization. The Durable Object supplies only the latest bounded age-event rows rather than materializing the Treatment collection; persisted notification scheduling remains separate work. |
@@ -132,7 +132,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/simplealarms.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/timeago.test.js` | adapted | 0 | Represented by all five named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts: current/future suppression, exact 16-minute warning and 31-minute urgent request/message shapes, every asserted display boundary, explicit request-local client hibernation state and official TIMEAGO/ALARM_TIMEAGO_* normalization. The official browser bundle continues to run its unchanged client plugin; the server adapter is ready for, but not yet driven by, the persisted notification scheduler. |
 | `vendor/nightscout/tests/times.test.js` | adapted | 0 | Represented by the complete named Workers-runtime foundation contract in test/plugin-foundations-contract.test.ts: hour/three-hour, minute/two-minute, and second/fifteen-second conversions preserve every asserted minutes, seconds, and milliseconds value. |
-| `vendor/nightscout/tests/treatmentnotify.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/treatmentnotify.test.js` | adapted | 0 | Represented by all six named Workers-runtime cases in test/basal-treatmentnotify-plugin-contract.test.ts: recent/old Treatment and calibration behavior, exact auto-snooze, informational notification, urgent and non-error Announcement payloads, announcement snooze bypass and Web-Crypto SHA-1 notify hashes. The bounded property context now includes meter BGs, and TREATMENTNOTIFY_* settings plus the Care Portal enable dependency are normalized. Request calculation is complete; persisted scheduling and delivery remain separate work. |
 | `vendor/nightscout/tests/units.test.js` | adapted | 0 | Represented by the complete named Workers-runtime foundation contract in test/plugin-foundations-contract.test.ts: 99/180 mg/dl and 5.5/10.0 mmol conversions plus both locked round trips preserve exact number-versus-string output. |
 | `vendor/nightscout/tests/upbat.test.js` | adapted | 0 | Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts and the live DO route contract in test/api-v2-data-contract.test.ts: exact 20% urgent/minimum analysis, pill classes, missing/-1 hiding, both assistant intents and responses, official enable gating, and /api/v2/properties output from bounded recent device status. |
 | `vendor/nightscout/tests/utils.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
