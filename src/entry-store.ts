@@ -88,8 +88,10 @@ import {
   type NightscoutStatusSettingsOverrides,
 } from "./status";
 import { calculateSimpleAlarmRequest } from "./plugins/simplealarms";
+import { calculateClosedLoopNotificationEvaluation } from "./plugins/closed-loop-notifications";
 import { calculateTreatmentNotificationEvaluation } from "./plugins/treatmentnotify";
 import { calculateTimeAgoNotificationEvaluation } from "./plugins/timeago";
+import { createNightscoutProfileFunctions } from "./profile-functions";
 import { nightscoutTimes } from "./runtime/times";
 
 export type DocumentCollection =
@@ -212,6 +214,9 @@ interface AutomaticNotificationRuntime {
   settings: Record<string, unknown>;
   extendedSettings: Record<string, unknown>;
   simpleAlarms: boolean;
+  pump: boolean;
+  openAps: boolean;
+  loop: boolean;
   treatmentNotify: boolean;
   timeAgo: boolean;
 }
@@ -219,6 +224,8 @@ interface AutomaticNotificationRuntime {
 interface AutomaticNotificationData {
   sgvs: RealtimeDocument[];
   mbgs: RealtimeDocument[];
+  devicestatus: RealtimeDocument[];
+  profiles: RealtimeDocument[];
   treatments: RealtimeDocument[];
 }
 
@@ -983,10 +990,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         : [],
     );
     const timeAgoPreferences = recordValue(extendedSettings.timeago);
+    const pumpPreferences = recordValue(extendedSettings.pump);
+    const openApsPreferences = recordValue(extendedSettings.openaps);
+    const loopPreferences = recordValue(extendedSettings.loop);
     return {
       settings,
       extendedSettings,
       simpleAlarms: enabled.has("simplealarms"),
+      pump: enabled.has("pump") && Boolean(pumpPreferences.enableAlerts),
+      openAps: enabled.has("openaps") && Boolean(openApsPreferences.enableAlerts),
+      loop: enabled.has("loop") && Boolean(loopPreferences.enableAlerts),
       treatmentNotify: enabled.has("treatmentnotify"),
       timeAgo: enabled.has("timeago") && Boolean(timeAgoPreferences.enableAlerts),
     };
@@ -1006,18 +1019,18 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
   private recordDataMutationInTransaction(collection: string): void {
     const tasks = this.backgroundTasks();
-    const hasRunningNotificationTask = tasks.has(PLUGIN_NOTIFICATIONS_TASK);
     const now = Date.now();
-    if (!hasRunningNotificationTask) {
-      const runtime = this.resolvedAutomaticNotificationRuntime(now);
-      const anyEnabled = runtime.simpleAlarms || runtime.treatmentNotify || runtime.timeAgo;
-      const inputChanged = collection === "profile"
-        ? anyEnabled
-        : collection === "entries"
-          ? anyEnabled
-          : collection === "treatments" && runtime.treatmentNotify;
-      if (!inputChanged) return;
-    }
+    const runtime = this.resolvedAutomaticNotificationRuntime(now);
+    const anyEnabled = runtime.simpleAlarms || runtime.pump || runtime.openAps
+      || runtime.loop || runtime.treatmentNotify || runtime.timeAgo;
+    const inputChanged = collection === "profile"
+      ? anyEnabled
+      : collection === "entries"
+        ? runtime.simpleAlarms || runtime.treatmentNotify || runtime.timeAgo
+        : collection === "treatments"
+          ? runtime.treatmentNotify || runtime.pump || runtime.openAps
+          : collection === "devicestatus" && (runtime.pump || runtime.openAps || runtime.loop);
+    if (!inputChanged) return;
     tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
   }
 
@@ -1049,7 +1062,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     now: number,
     runtime: AutomaticNotificationRuntime,
   ): AutomaticNotificationData {
-    const result: AutomaticNotificationData = { sgvs: [], mbgs: [], treatments: [] };
+    const result: AutomaticNotificationData = {
+      sgvs: [],
+      mbgs: [],
+      devicestatus: [],
+      profiles: [],
+      treatments: [],
+    };
     const budget = new RealtimeJsonBudget(result);
     if (runtime.simpleAlarms || runtime.timeAgo) {
       for (const row of this.ctx.storage.sql.exec<DbDocument>(
@@ -1112,6 +1131,57 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         result.mbgs.push(mbg);
       }
       result.mbgs.reverse();
+    }
+
+    if (runtime.pump || runtime.openAps || runtime.loop) {
+      const enabledFields = [
+        runtime.pump ? "json_type(body, '$.pump') IS NOT NULL" : null,
+        runtime.openAps ? "json_type(body, '$.openaps') IS NOT NULL" : null,
+        runtime.loop ? "json_type(body, '$.loop') IS NOT NULL" : null,
+      ].filter((predicate): predicate is string => predicate !== null).join(" OR ");
+      const safeFields = `CASE WHEN json_valid(body) THEN (${enabledFields}) ELSE 0 END`;
+      result.devicestatus = this.realtimeDocuments(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = 'devicestatus'
+           AND sort_time >= ?
+           AND sort_time <= ?
+           AND ${safeFields}
+         ORDER BY sort_time DESC, updated_at DESC, id ASC
+         LIMIT 1000`,
+        [now - REALTIME_DEVICE_STATUS_WINDOW_MS, now],
+        budget,
+        normalizeRealtimeDeviceStatus,
+      );
+      const future = this.realtimeDocuments(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = 'devicestatus'
+           AND sort_time > ?
+           AND ${safeFields}
+         ORDER BY sort_time ASC, updated_at DESC, id ASC
+         LIMIT 1`,
+        [now],
+        budget,
+        normalizeRealtimeDeviceStatus,
+      );
+      result.devicestatus.push(...future);
+    }
+
+    if (runtime.pump) {
+      result.profiles = this.realtimeDocuments(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = 'profile'
+         ORDER BY ${PROFILE_CURRENT_ORDER_BY}
+         LIMIT 1`,
+        [],
+        budget,
+        normalizeRealtimeDocument,
+      );
+    }
+
+    if (runtime.treatmentNotify || runtime.pump || runtime.openAps) {
       result.treatments = this.realtimeDocuments(
         `SELECT id, body, sort_time
          FROM (
@@ -1146,9 +1216,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const heartbeatMs = this.notificationHeartbeatMs(runtime.settings);
     const data = this.automaticNotificationData(now, runtime);
 
-    // Preserve the locked server plugin order: simplealarms, then
-    // treatmentnotify, then timeago. The shared engine can therefore apply a
-    // treatment snooze to the default Simple Alarm in the same plugin pass.
+    // Preserve the locked server plugin order for every implemented producer:
+    // simplealarms, pump, openaps, loop, treatmentnotify, then timeago. The
+    // shared engine can therefore arbitrate identical requests and treatment
+    // snoozes in the same order as the Node server.
     if (runtime.simpleAlarms) {
       schedule(this.earliestFutureEntryAt(data.sgvs, now));
       const request = calculateSimpleAlarmRequest(data.sgvs, now, runtime.settings);
@@ -1160,6 +1231,39 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           schedule(Math.min(now + heartbeatMs, expiresAt));
         }
       }
+    }
+
+    if (runtime.pump || runtime.openAps || runtime.loop) {
+      const profile = runtime.pump
+        ? createNightscoutProfileFunctions(
+          data.profiles.map((document) => structuredClone(document)),
+        )
+        : undefined;
+      const closedLoop = calculateClosedLoopNotificationEvaluation(
+        data.devicestatus,
+        data.treatments,
+        profile,
+        now,
+        heartbeatMs,
+        {
+          ...(runtime.pump
+            ? {
+              pump: {
+                preferences: recordValue(runtime.extendedSettings.pump),
+                settings: runtime.settings,
+              },
+            }
+            : {}),
+          ...(runtime.openAps
+            ? { openaps: { preferences: recordValue(runtime.extendedSettings.openaps) } }
+            : {}),
+          ...(runtime.loop
+            ? { loop: { preferences: recordValue(runtime.extendedSettings.loop) } }
+            : {}),
+        },
+      );
+      notifications.push(...closedLoop.notifications);
+      schedule(closedLoop.nextDueAt);
     }
 
     if (runtime.treatmentNotify) {
@@ -1198,7 +1302,8 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   private seedAutomaticNotificationTask(now: number): void {
     const tasks = this.backgroundTasks();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
-    const anyEnabled = runtime.simpleAlarms || runtime.treatmentNotify || runtime.timeAgo;
+    const anyEnabled = runtime.simpleAlarms || runtime.pump || runtime.openAps
+      || runtime.loop || runtime.treatmentNotify || runtime.timeAgo;
     if (tasks.has(PLUGIN_NOTIFICATIONS_TASK)) {
       if (!anyEnabled) tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
       return;

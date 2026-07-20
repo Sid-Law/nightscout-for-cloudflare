@@ -11,6 +11,7 @@ import {
 } from "../src/plugins/loop";
 import { calculatePluginProperties } from "../src/plugins/properties";
 import { URGENT } from "../src/runtime/levels";
+import { tenantStatusSettings } from "../src/status";
 
 const statuses: RealtimeDocument[] = [
   {
@@ -168,5 +169,22 @@ describe("locked Nightscout loop.test.js", () => {
       title: "Last Loop",
       response: "The last successful loop was a few seconds ago",
     });
+  });
+});
+
+describe("Workers Loop platform adapter", () => {
+  it("maps the locked Loop alert environment only while the plugin is enabled", () => {
+    expect(tenantStatusSettings({
+      ENABLE: "loop",
+      LOOP_ENABLE_ALERTS: "true",
+      LOOP_WARN: "20",
+      LOOP_URGENT: "40",
+    }).extendedSettings).toMatchObject({
+      loop: { enableAlerts: true, warn: 20, urgent: 40 },
+    });
+    expect(tenantStatusSettings({
+      LOOP_ENABLE_ALERTS: "true",
+      LOOP_WARN: "20",
+    }).extendedSettings).not.toHaveProperty("loop");
   });
 });

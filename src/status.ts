@@ -68,6 +68,9 @@ export interface NightscoutStatusEnvironment {
   PUMP_WARN_BATT_V?: string;
   PUMP_URGENT_BATT_V?: string;
   PUMP_WARN_BATT_QUIET_NIGHT?: string;
+  LOOP_ENABLE_ALERTS?: string;
+  LOOP_WARN?: string;
+  LOOP_URGENT?: string;
   TREATMENTNOTIFY_SNOOZE_MINS?: string;
   TREATMENTNOTIFY_INCLUDE_BOLUSES_OVER?: string;
   HEARTBEAT?: string;
@@ -211,6 +214,11 @@ function platformExtendedSettings(
     ["warnBattV", environment.PUMP_WARN_BATT_V],
     ["urgentBattV", environment.PUMP_URGENT_BATT_V],
     ["warnBattQuietNight", environment.PUMP_WARN_BATT_QUIET_NIGHT],
+  ]);
+  addPlugin("loop", [
+    ["enableAlerts", environment.LOOP_ENABLE_ALERTS],
+    ["warn", environment.LOOP_WARN],
+    ["urgent", environment.LOOP_URGENT],
   ]);
   addPlugin("treatmentnotify", [
     ["snoozeMins", environment.TREATMENTNOTIFY_SNOOZE_MINS],

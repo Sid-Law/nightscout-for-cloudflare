@@ -108,6 +108,61 @@ function enableTimeAgo(instance: EntryStore): void {
   });
 }
 
+function enableLoopNotifications(instance: EntryStore): void {
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "loop",
+    DISABLE: "simplealarms treatmentnotify timeago pump openaps",
+    BG_HIGH: undefined,
+    BG_TARGET_TOP: undefined,
+    BG_TARGET_BOTTOM: undefined,
+    BG_LOW: undefined,
+    LOOP_ENABLE_ALERTS: "true",
+    LOOP_WARN: "1",
+    LOOP_URGENT: "2",
+    OPENAPS_ENABLE_ALERTS: undefined,
+    PUMP_ENABLE_ALERTS: undefined,
+    TIMEAGO_ENABLE_ALERTS: undefined,
+    HEARTBEAT: "60",
+  });
+}
+
+function enableOpenApsNotifications(instance: EntryStore): void {
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "openaps",
+    DISABLE: "simplealarms treatmentnotify timeago pump loop",
+    BG_HIGH: undefined,
+    BG_TARGET_TOP: undefined,
+    BG_TARGET_BOTTOM: undefined,
+    BG_LOW: undefined,
+    LOOP_ENABLE_ALERTS: undefined,
+    OPENAPS_ENABLE_ALERTS: "true",
+    OPENAPS_WARN: "1",
+    OPENAPS_URGENT: "4",
+    PUMP_ENABLE_ALERTS: undefined,
+    TIMEAGO_ENABLE_ALERTS: undefined,
+    HEARTBEAT: "60",
+  });
+}
+
+function enablePumpNotifications(instance: EntryStore): void {
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "pump",
+    DISABLE: "simplealarms treatmentnotify timeago openaps loop",
+    BG_HIGH: undefined,
+    BG_TARGET_TOP: undefined,
+    BG_TARGET_BOTTOM: undefined,
+    BG_LOW: undefined,
+    LOOP_ENABLE_ALERTS: undefined,
+    OPENAPS_ENABLE_ALERTS: undefined,
+    PUMP_ENABLE_ALERTS: "true",
+    PUMP_WARN_CLOCK: "1",
+    PUMP_URGENT_CLOCK: "2",
+    PUMP_WARN_BATT_QUIET_NIGHT: undefined,
+    TIMEAGO_ENABLE_ALERTS: undefined,
+    HEARTBEAT: "60",
+  });
+}
+
 describe("SQLite Durable Object background notification scheduler", () => {
   it("automatically emits, multiplexes, avoids early replay, and auto-clears Simple Alarms", async () => {
     const name = tenant("background-simple-alarm");
@@ -421,6 +476,172 @@ describe("SQLite Durable Object background notification scheduler", () => {
         message: "Auto ack'd alarm(s)",
         group: "Time Ago",
       }],
+    }]);
+  });
+
+  it("schedules and emits the exact locked Loop stale transition", async () => {
+    const name = tenant("background-loop");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const loopAt = Date.now();
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableLoopNotifications(instance);
+      await instance.createDocuments("devicestatus", JSON.stringify([{
+        created_at: new Date(loopAt).toISOString(),
+        device: "loop://simulator-phone",
+        loop: {
+          timestamp: new Date(loopAt).toISOString(),
+          enacted: {
+            timestamp: new Date(loopAt).toISOString(),
+            received: true,
+            rate: 0.5,
+            duration: 30,
+          },
+          name: "Loop",
+        },
+      }]));
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(loopAt + 60_001);
+    });
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableLoopNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        loopAt + 60_001,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(loopAt + 120_001);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expect.objectContaining({
+        level: 1,
+        title: "Loop isn't looping",
+        group: "Loop",
+        plugin: expect.objectContaining({ name: "loop" }),
+      })],
+    }]);
+  });
+
+  it("honors exact OpenAPS Offline activation and inclusive expiry boundaries", async () => {
+    const name = tenant("background-openaps-offline");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const loopAt = Date.now();
+    const offlineAt = loopAt + 30_000;
+    const offlineEndsAt = offlineAt + 60_000;
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableOpenApsNotifications(instance);
+      await instance.createDocuments("devicestatus", JSON.stringify([{
+        created_at: new Date(loopAt).toISOString(),
+        device: "openaps://simulator-rig",
+        openaps: {
+          suggested: {
+            timestamp: new Date(loopAt).toISOString(),
+            mills: loopAt,
+            bg: 120,
+            eventualBG: 120,
+          },
+        },
+      }]));
+      await instance.createDocuments("treatments", JSON.stringify([{
+        eventType: "OpenAPS Offline",
+        enteredBy: "simulator-test",
+        created_at: new Date(offlineAt).toISOString(),
+        duration: 1,
+      }]));
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(offlineAt);
+    });
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableOpenApsNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        offlineAt,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(offlineEndsAt + 1);
+    });
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableOpenApsNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        offlineEndsAt + 1,
+      );
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expect.objectContaining({
+        level: 1,
+        title: "OpenAPS isn't looping",
+        group: "OpenAPS",
+        plugin: expect.objectContaining({ name: "openaps" }),
+      })],
+    }]);
+  });
+
+  it("schedules and emits the exact locked Pump stale-clock transition", async () => {
+    const name = tenant("background-pump");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const pumpAt = Date.now();
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enablePumpNotifications(instance);
+      await instance.createDocuments("devicestatus", JSON.stringify([{
+        created_at: new Date(pumpAt).toISOString(),
+        device: "openaps://simulator-pump",
+        pump: {
+          clock: new Date(pumpAt).toISOString(),
+          reservoir: 50,
+          battery: { percent: 80 },
+          status: { status: "normal", bolusing: false, suspended: false },
+        },
+      }]));
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(pumpAt + 60_001);
+    });
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enablePumpNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        pumpAt + 60_001,
+      );
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expect.objectContaining({
+        level: 1,
+        title: "Warning, Pump data stale",
+        group: "Pump",
+        plugin: expect.objectContaining({ name: "pump" }),
+      })],
     }]);
   });
 
