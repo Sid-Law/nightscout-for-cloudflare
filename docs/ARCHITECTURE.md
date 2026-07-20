@@ -7,25 +7,23 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`914247f2d9f5bb40c603e8db0c51012471513fe1`, the same runtime source, and
-Cloudflare version `7d633773-090e-483b-8bbd-24beabfd0b9e`, reported as 100%
+`cc6c0b603701c28e133608be29cdf0f184d57be7`, Worker runtime source
+`914247f2d9f5bb40c603e8db0c51012471513fe1`, and Cloudflare version
+`5d4e9153-99c2-483c-8f8f-b91c498ecfcb`, reported as 100%
 active. The candidate's 45-file Workers-runtime suite passes 510/510 plus
-20/20 audit tests.
+21/21 audit tests.
 Wrangler processed 248 unchanged official
 asset entries; its dry run reported 1021.31 KiB raw / 186.89 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 54
-reported a 25 ms startup and passed credential-free API, EIO4 and real-browser
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 55
+reported a 26 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
 
-Next platform candidate `cc6c0b603701c28e133608be29cdf0f184d57be7`
-sets Wrangler `keep_vars: true` so a dashboard-managed lab variable survives
-later code deployments. A Node configuration audit locks that behavior while
+The deployed platform configuration sets Wrangler `keep_vars: true` so a
+dashboard-managed lab variable survives later code deployments. A Node audit locks that behavior while
 rejecting checked-in plaintext vars and prohibited product bindings. The
-Workers runtime is unchanged; 510/510 Workers tests, 21/21 audit tests,
-TypeScript, official UI build and dry-run all pass. It remains pre-deployment
-evidence until the next Cloudflare and remote/browser gates complete.
+Workers runtime is otherwise unchanged.
 
 ## Current request and data flow
 
@@ -926,7 +924,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`7d633773-090e-483b-8bbd-24beabfd0b9e`. Current credential-free remote smoke
+`5d4e9153-99c2-483c-8f8f-b91c498ecfcb`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version and an EIO4 polling open packet;

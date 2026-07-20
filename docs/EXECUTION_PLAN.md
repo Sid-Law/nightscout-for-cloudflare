@@ -46,12 +46,12 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | Version 54's credential-free Chromium pass rendered the homepage/chart and loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded`, Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone, and the empty-data clock rendered `-?-`. No page had a JavaScript error or failed request. Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. The Settings form stayed closed for a three-second observation; earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 54. Protected mutation/report and pushed-live-update workflows remain. |
+| 2. Official browser assets/pages | Partial | Version 55's credential-free Chromium pass rendered the homepage/chart and loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded`, Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone, and the empty-data clock rendered `-?-`. No page had a JavaScript error or failed request. Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. The Settings form stayed closed for a three-second observation; earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 55. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. The complete 13-case concurrent-write contract now proves five-way scalar/batch writes, unique IDs and 50-SMB/100-SGV/30-cross-collection offline recovery through one tenant DO. `/storage` atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 25 locked files adapted | Entries adapts its complete locked upstream file plus deduplication, Entries UUID and partial-failure contracts. Treatments additionally adapts complete UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, Loop carb/dose and ObjectIdCache files: exact flag parsing, UUID promotion/repair, ordered responses, cached-ID update/delete and descriptive `syncIdentifier` behavior. The complete Loop SGV/DeviceStatus file now locks directions, device metadata, replay behavior and nested Loop/pump payloads; DeviceStatus also retains official prediction trimming. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are mapped. Status now consumes the request-local 13-case official Settings module adapter. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, wider Mongo query/document behavior and remaining v1 routes/test files. |
 | 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary now uses the complete 24-assertion `profile.test.js` adapter for legacy/store profiles, schedule/timezone calculation and historical selection. The complete locked `ddata`, `bgnow`, `direction`, `rawbg`, `upbat` and five-case `loop` files are adapted; `/properties` uses official buckets/interpolation/mmol/direction logic, exposes default-enabled uploader battery and opt-in Loop state from a bounded property projection. Raw BG and Loop retain their official enabled-plugin gates. Remaining plugin properties and summary state (IOB/COB/BWP/ages/battery), summary persistence, the persisted Loop notification runner and v2-only `/notifications/loop` delivery remain; ddata uses a bounded two-day SGV window. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
-| 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The next platform candidate preserves dashboard variables across Wrangler deploys and audits that no plaintext credential is committed; encrypted Secrets remain preferred. The current public lab still has no API_SECRET binding, so protected remote writes fail closed. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
+| 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The deployed platform configuration preserves dashboard variables across Wrangler deploys and audits that no plaintext credential is committed; encrypted Secrets remain preferred. The current public lab still has no API_SECRET binding, so protected remote writes fail closed. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
 | 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket; root write shape contract adapted | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read/write/treatment-write authorization, initial/retro data, server-originated deltas and the locked `dbAdd`/`dbUpdate`/`dbUpdateUnset`/`dbRemove` events, plus API3 `/storage` and `/alarm`. `/alarm` has locked subscription/auth/ACK behavior and a trusted notification outlet, but the server-side notification engine is missing. Add profile-switch/plugin preprocessing, close the direct-send at-most-once crash window, then add polling upgrade/EIO3 and the official-page switch. |
 | 9. Real-time storage updates | Root server/client mutations plus API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. Add pushed browser/credentialed remote workflows and profile/plugin preprocessing; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Realtime/auth plus notification-ACK foundation | The DO's single Cloudflare alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Stale already-due platform alarms are replaced so a queued delivery cannot erase the only SQL wakeup. Socket.IO and inherited v1/v2 HTTP ACK share the same durable group/level transaction. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share the scheduler. |
@@ -94,9 +94,10 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 The deployed evidence candidate
-`914247f2d9f5bb40c603e8db0c51012471513fe1` adds the complete five-case
-`sandbox.test.js` adapter and remaining public helper surface while retaining
-the 13-case Settings adapter, five-case Loop plugin, 13-case concurrent
+`cc6c0b603701c28e133608be29cdf0f184d57be7` enables Wrangler `keep_vars` and
+the Cloudflare configuration audit. Worker runtime source
+`914247f2d9f5bb40c603e8db0c51012471513fe1` retains the complete five-case
+Sandbox surface, 13-case Settings adapter, five-case Loop plugin, 13-case concurrent
 uploader, 24-assertion Profile, Loop client and Treatment identity contracts.
 The Treatment adapter follows exact true-by-default `UUID_HANDLING` parsing,
 enabled/disabled promotion and query/delete semantics, legacy raw-UUID
@@ -106,33 +107,25 @@ Cloudflare's precise missing-method error; explicit false fails closed during
 that rolling boundary. All prior
 root-write/delta, property, API3 `/storage`, `/alarm`, authorization and
 notification-ACK contracts remain green. Cloudflare Worker version
-`7d633773-090e-483b-8bbd-24beabfd0b9e` is active at 100%; deployment
-`df1b9fba-3b34-40ca-bc64-2646ce09f377` was created at
-`2026-07-20T03:00:47.145332Z` and Wrangler reported a 25 ms startup. It
+`5d4e9153-99c2-483c-8f8f-b91c498ecfcb` is active at 100%; deployment
+`fbeb3286-b3d0-4f40-8936-b64c6a591ba7` was created at
+`2026-07-20T03:30:46.408181Z` and Wrangler reported a 26 ms startup. It
 processed 248 unchanged official asset entries. The candidate's dry run
 reports 1021.31 KiB raw / 186.89 KiB gzip and exposes only `ENTRY_STORE` plus
 `ASSETS`. No deployed credential was read or supplied to remote smoke. The
 candidate's 45-file Workers-runtime suite passes 510/510,
-both audit suites pass 20/20 and TypeScript passes. The manifest records 57
+all three audit suites pass 21/21 and TypeScript passes. The manifest records 57
 adapted, 52 unresolved and two fixed-scope excluded files. The official UI
-build and dry run pass; version 54's credential-free remote API/Engine.IO smoke
+build and dry run pass; version 55's credential-free remote API/Engine.IO smoke
 and real-browser acceptance also passed across the official homepage, Admin,
 Food, Profile and `clock-color` pages without JavaScript errors or protected
 writes. The official Settings form opened and stayed closed for a three-second
 observation without a Save. The locked missing-`#chartContainer` warnings on
 non-chart pages remain recorded rather than hidden. These remain subset facts,
-not a full-port claim. All version 54 post-deployment gates passed.
-
-Next platform candidate `cc6c0b603701c28e133608be29cdf0f184d57be7`
-sets Wrangler `keep_vars: true` and adds a configuration audit that rejects
-stored plaintext vars, D1, R2, KV, Queues and custom routes while locking the
-existing `ENTRY_STORE` plus `ASSETS` footprint. This prevents a dashboard text
-variable from being overwritten by the next code deployment; encrypted
-Secrets were already preserved by Cloudflare. The 45-file Workers suite remains
-510/510, the three audit suites pass 21/21, TypeScript and official UI build
-pass, and dry-run remains 248 assets at 1021.31 KiB raw / 186.89 KiB gzip. The
-public lab still has no credential, and none was created, recovered or read.
-Deployment and post-deployment gates remain pending.
+not a full-port claim. All version 55 post-deployment gates passed. The
+configuration guard prevents future dashboard text variables from being
+overwritten but cannot restore the currently absent credential; none was
+created, recovered or read.
 
 Current remote reads, API3 version and EIO4 polling pass. The public Worker has
 no `API_SECRET` Secret binding: a simulated Treatment write returned the
@@ -296,18 +289,17 @@ The deployed increment includes:
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
-Version 54 credential-free remote smoke returned HTTP 200 for health, bounded v1
+Version 55 credential-free remote smoke returned HTTP 200 for health, bounded v1
 Entries and Treatments reads, fresh-tenant Profile/current and v2 Summary,
 matching v1/v2 filtered Settings snapshots, API3 version, opt-in-disabled Loop
 property and EIO4 polling; missing-token API3 Entries returned the expected 401.
 A simulated Treatment write returned
 the expected 503 because no `API_SECRET` is configured, and the follow-up read
-remained empty. No deployed credential was read or sent. The same version 54
+remained empty. No deployed credential was read or sent. The same version 55
 Chromium pass loaded the official homepage, Admin, Food, Profile and
 `clock-color` without protected writes. Food reached `Database loaded`,
 Profile reached `Values loaded.` and retained the stored simulated profile plus
-`Asia/Shanghai` timezone, while the empty-data clock rendered `-?-` with `No
-data found in DB`. Console inspection found no JavaScript errors; homepage and
+`Asia/Shanghai` timezone, while the empty-data clock rendered `-?-`. Console inspection found no JavaScript errors; homepage and
 clock had no warnings, while the three non-chart pages emitted the locked
 missing-`#chartContainer` warning. The isolated browser process was closed;
 this pass did not claim a protected Save. The Settings form opened and stayed

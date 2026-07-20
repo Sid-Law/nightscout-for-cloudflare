@@ -12,19 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed evidence candidate: `914247f2d9f5bb40c603e8db0c51012471513fe1`
+- Deployed evidence candidate: `cc6c0b603701c28e133608be29cdf0f184d57be7`
 - Runtime source candidate: `914247f2d9f5bb40c603e8db0c51012471513fe1`
-- Next platform candidate: `cc6c0b603701c28e133608be29cdf0f184d57be7`
-- Git HEAD used by Wrangler: `6b47f7911ae03f04640504874fe55e2f64254495`
-- Cloudflare Version ID: `7d633773-090e-483b-8bbd-24beabfd0b9e`
-- Cloudflare ordinal version number: `54`
+- Git HEAD used by Wrangler: `6f447bfe4a3fbf423fb294bc9b9d244a0dea96f1`
+- Cloudflare Version ID: `5d4e9153-99c2-483c-8f8f-b91c498ecfcb`
+- Cloudflare ordinal version number: `55`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T03:00:46.278157Z`
-- Activation: deployment `df1b9fba-3b34-40ca-bc64-2646ce09f377` created
-  `2026-07-20T03:00:47.145332Z`; Wrangler reports
+- Version creation time: `2026-07-20T03:30:45.299768Z`
+- Activation: deployment `fbeb3286-b3d0-4f40-8936-b64c6a591ba7` created
+  `2026-07-20T03:30:46.408181Z`; Wrangler reports
   this version at 100%
-- Worker startup: 25 ms
-- Deployment ID: `df1b9fba-3b34-40ca-bc64-2646ce09f377`
+- Worker startup: 26 ms
+- Deployment ID: `fbeb3286-b3d0-4f40-8936-b64c6a591ba7`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -45,8 +44,8 @@ family credential. Post-deployment documentation changes are not part of the
 already active Worker version.
 Cloudflare's current Wrangler documentation states that dashboard text
 variables are overwritten by a normal deployment unless `keep_vars` is true,
-while encrypted Secrets are not deleted by ordinary deployments. The next
-candidate adds that preservation guard. It cannot restore the currently absent
+while encrypted Secrets are not deleted by ordinary deployments. The current
+deployment includes that preservation guard. It cannot restore the currently absent
 value; an operator must still configure it once before writable acceptance.
 
 ## Cloudflare footprint
@@ -63,7 +62,7 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
 
-The next platform candidate hardens deployment configuration without changing
+The current deployed increment hardens deployment configuration without changing
 Nightscout runtime formulas or routes:
 
 - `keep_vars: true` preserves dashboard-managed text variables across later
@@ -74,7 +73,7 @@ Nightscout runtime formulas or routes:
 - encrypted Secrets remain preferred and are independently preserved by
   Cloudflare. No credential was created, recovered, read or printed.
 
-The current deployed increment adds the complete locked Sandbox module contract:
+The immediately preceding deployed increment added the complete locked Sandbox module contract:
 
 - all five named `sandbox.test.js` cases pass in both the locked original suite
   and the Workers runtime mapping, with one extra helper-surface/isolation case;
@@ -85,7 +84,7 @@ The current deployed increment adds the complete locked Sandbox module contract:
   `require` and module-global state. The general plugin registry, data loader,
   notification runner and alarm-backed schedule remain incomplete.
 
-The immediately preceding deployed increment added the complete locked Settings module contract:
+The earlier deployed increment added the complete locked Settings module contract:
 
 - all 13 named `settings.test.js` cases pass in both the locked original suite
   and the Workers runtime mapping;
@@ -330,8 +329,10 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed evidence candidate is
-`914247f2d9f5bb40c603e8db0c51012471513fe1`. It adds the complete five-case
-Sandbox module mapping and remaining public helper surface while retaining the
+`cc6c0b603701c28e133608be29cdf0f184d57be7`. It adds the Wrangler variable
+preservation/configuration audit while retaining Worker runtime source
+`914247f2d9f5bb40c603e8db0c51012471513fe1`, the complete five-case Sandbox
+module mapping and remaining public helper surface, the
 13-case Settings module, five-case Loop plugin, 13-case concurrent uploader and
 24-assertion Profile calculation mappings, as well as
 GAP-TREAT-012, Loop carb/dose, ObjectIdCache, SGV/DeviceStatus,
@@ -349,6 +350,7 @@ The table below records the exact local gate completed before deployment.
 | Upstream route/test audit | 161 registrations and 111 test files; generated outputs deterministic |
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
+| Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | TypeScript | `tsc --noEmit` passed |
 | Workers integration tests | 45 files, 510/510 passed |
 | Worker dry run | 1021.31 KiB raw / 186.89 KiB gzip |
@@ -367,17 +369,9 @@ tests cover the implemented adapter subset; all 16 API3 files,
 52 remain unresolved and two bridge files are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
-Next platform candidate `cc6c0b603701c28e133608be29cdf0f184d57be7`
-passes the same 510/510 Workers tests, 14/14 upstream-audit tests, 6/6 auth-audit
-tests and its new 1/1 Cloudflare-config audit. TypeScript, the official UI
-build and dry-run pass; the dry-run still reports 248 assets, 1021.31 KiB raw /
-186.89 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. It has not yet replaced
-version 54, so the post-deployment evidence below remains attributed to that
-active version.
-
 ## Post-deployment remote API evidence
 
-Wrangler reports version `7d633773-090e-483b-8bbd-24beabfd0b9e` at 100%.
+Wrangler reports version `5d4e9153-99c2-483c-8f8f-b91c498ecfcb` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -412,9 +406,10 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds the complete request-local Sandbox contract and retains the
-Settings, Loop property calculation, concurrent uploader, Profile, Loop client and
-client/server root transport runtime. The current version repeated a fresh
+This release adds the deployment-variable preservation/configuration audit and
+retains the complete request-local Sandbox contract, Settings, Loop property
+calculation, concurrent uploader, Profile, Loop client and client/server root
+transport runtime. The current version repeated a fresh
 credential-free EIO4 polling-open check. Because the Worker has no
 `API_SECRET`, no credentialed remote mutation could be attempted; successful
 write/change delivery is proved by local integration contracts rather than
@@ -424,6 +419,7 @@ remain evidence from the immediately preceding compatible version.
 | Check | Result |
 | --- | --- |
 | Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
+| Local Cloudflare configuration contract | `keep_vars` is true; no plaintext vars, D1, R2, KV, Queues or custom routes are checked in; only `ENTRY_STORE` and `ASSETS` are bound |
 | Local Sandbox contract | five locked client/server/LOW-HIGH/message cases plus helper-surface and request-isolation coverage |
 | Local Settings contract | 13 locked defaults/accessor/feature/alarm/threshold/snooze cases plus request isolation and recursive secure filtering |
 | Local Loop property contract | five locked enacted/error/received/stale-alert/assistant cases, including six forecast points and opt-in property dispatch |
@@ -457,7 +453,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 54's official UI without reading
+A real Chromium session exercised Cloudflare version 55's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -481,8 +477,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`7d633773-090e-483b-8bbd-24beabfd0b9e`. It reused the same 248 unchanged
-official assets. Version 54 has therefore passed credential-free remote API,
+`5d4e9153-99c2-483c-8f8f-b91c498ecfcb`. It reused the same 248 unchanged
+official assets. Version 55 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -562,10 +558,11 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`a5a33a30-1d79-4831-a512-3553c2a5fe8c` (version 53). It has its own remote API,
-Engine.IO and browser acceptance and lacks only this release's request-local
-Sandbox module adapter. Version 52 (`719c2b34-95a9-49d4-b22e-147092eee4fc`)
-remains an older compatible fallback.
+`7d633773-090e-483b-8bbd-24beabfd0b9e` (version 54). It has its own remote API,
+Engine.IO and browser acceptance and lacks only this release's persistent
+Wrangler variable-preservation/configuration guard. Version 53
+(`a5a33a30-1d79-4831-a512-3553c2a5fe8c`) remains an older compatible fallback
+without the request-local Sandbox module adapter.
 The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not
