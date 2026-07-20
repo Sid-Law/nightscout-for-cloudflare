@@ -6,6 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
+  "keep_vars": true,
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
