@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "0439dd262e772a760b01609802d7846e3b676329e0189529d71b56b9ad1e6cff",
+  "inputs_sha256": "d49273fe62fe9c8c62c0aecb444bd01bf10dd9bc80fe36142daf0bbdbb6437f5",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 1,
-      "adapted": 60,
+      "adapted": 64,
       "excluded-fixed-scope": 2,
-      "unresolved": 48
+      "unresolved": 44
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7905,8 +7905,8 @@
     },
     {
       "file": "vendor/nightscout/tests/cannulaage.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all three named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: latest non-future Site Change selection, exact hour/day display, notes pill shape, 48-hour warning request and official CAGE_* normalization. The Durable Object supplies only the latest bounded age-event rows rather than materializing the Treatment collection; persisted notification scheduling remains separate work.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -8164,8 +8164,8 @@
     },
     {
       "file": "vendor/nightscout/tests/insulinage.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all three named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: latest non-future Insulin Change selection, exact day/hour display, notes pill shape, 48-hour warning request and official IAGE_* normalization. The adapter deliberately retains the locked v15.0.7 urgent-comparison behavior instead of silently correcting upstream logic; persisted notification scheduling remains separate work.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -8542,8 +8542,8 @@
     },
     {
       "file": "vendor/nightscout/tests/sensorage.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all six named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: Sensor Start/Change ordering, insertion supersession, short/long duration and notes pill payloads, exact 6-day-22-hour urgent request and one-hour-later non-repeat behavior, plus official SAGE_* normalization. The DO projection retains one latest row per locked age event within 62 days; persisted notification scheduling remains separate work.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -8602,8 +8602,8 @@
     },
     {
       "file": "vendor/nightscout/tests/timeago.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all five named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts: current/future suppression, exact 16-minute warning and 31-minute urgent request/message shapes, every asserted display boundary, explicit request-local client hibernation state and official TIMEAGO/ALARM_TIMEAGO_* normalization. The official browser bundle continues to run its unchanged client plugin; the server adapter is ready for, but not yet driven by, the persisted notification scheduler.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

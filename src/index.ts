@@ -2769,8 +2769,9 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     );
     const tenant = resolveTenant(request, url);
     // The upstream sandbox derives enabled plugin properties from ddata. Use a
-    // bounded DO projection containing only SGVs, calibrations, and device
-    // status rather than materializing unrelated treatment/food collections.
+    // bounded DO projection containing SGVs, calibrations, recent device
+    // status, database stats and one latest row per age-event type rather than
+    // materializing unrelated treatment/food collections.
     const store = env.ENTRY_STORE.getByName(tenant);
     const now = Date.now();
     const [context, status] = await Promise.all([

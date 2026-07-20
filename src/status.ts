@@ -24,6 +24,24 @@ export interface NightscoutStatusEnvironment {
   DBSIZE_URGENT_PERCENTAGE?: string;
   DBSIZE_ENABLE_ALERTS?: string;
   DBSIZE_IN_MIB?: string;
+  TIMEAGO_ENABLE_ALERTS?: string;
+  ALARM_TIMEAGO_WARN?: string;
+  ALARM_TIMEAGO_WARN_MINS?: string;
+  ALARM_TIMEAGO_URGENT?: string;
+  ALARM_TIMEAGO_URGENT_MINS?: string;
+  CAGE_INFO?: string;
+  CAGE_WARN?: string;
+  CAGE_URGENT?: string;
+  CAGE_DISPLAY?: string;
+  CAGE_ENABLE_ALERTS?: string;
+  SAGE_INFO?: string;
+  SAGE_WARN?: string;
+  SAGE_URGENT?: string;
+  SAGE_ENABLE_ALERTS?: string;
+  IAGE_INFO?: string;
+  IAGE_WARN?: string;
+  IAGE_URGENT?: string;
+  IAGE_ENABLE_ALERTS?: string;
 }
 
 function configuredFeatureNames(value: string | undefined): string[] {
@@ -67,6 +85,8 @@ export interface NightscoutStatusSettingsOverrides {
   simpleAlarms?: boolean;
   /** Request-local client/server plugin settings after platform adaptation. */
   extendedSettings?: Record<string, unknown>;
+  /** Raw named settings env values consumed by the locked settings mappers. */
+  settingEnvironment?: Record<string, unknown>;
 }
 
 function normalizeExtendedSetting(value: string | undefined): unknown {
@@ -80,6 +100,7 @@ function normalizeExtendedSetting(value: string | undefined): unknown {
 
 function platformExtendedSettings(
   environment: NightscoutStatusEnvironment,
+  enabled: ReadonlySet<string>,
 ): Record<string, unknown> {
   const dbsize: Record<string, unknown> = {
     // Cloudflare documents a 1 GB per-object ceiling on Workers Free, while
@@ -97,7 +118,40 @@ function platformExtendedSettings(
     const value = normalizeExtendedSetting(raw);
     if (value !== undefined) dbsize[key] = value;
   }
-  return { dbsize };
+  const extended: Record<string, unknown> = { dbsize };
+  function addPlugin(
+    name: string,
+    configured: readonly (readonly [string, string | undefined])[],
+  ): void {
+    if (!enabled.has(name)) return;
+    const settings: Record<string, unknown> = {};
+    for (const [key, raw] of configured) {
+      const value = normalizeExtendedSetting(raw);
+      if (value !== undefined) settings[key] = value;
+    }
+    if (Object.keys(settings).length > 0) extended[name] = settings;
+  }
+  addPlugin("timeago", [["enableAlerts", environment.TIMEAGO_ENABLE_ALERTS]]);
+  addPlugin("cage", [
+    ["info", environment.CAGE_INFO],
+    ["warn", environment.CAGE_WARN],
+    ["urgent", environment.CAGE_URGENT],
+    ["display", environment.CAGE_DISPLAY],
+    ["enableAlerts", environment.CAGE_ENABLE_ALERTS],
+  ]);
+  addPlugin("sage", [
+    ["info", environment.SAGE_INFO],
+    ["warn", environment.SAGE_WARN],
+    ["urgent", environment.SAGE_URGENT],
+    ["enableAlerts", environment.SAGE_ENABLE_ALERTS],
+  ]);
+  addPlugin("iage", [
+    ["info", environment.IAGE_INFO],
+    ["warn", environment.IAGE_WARN],
+    ["urgent", environment.IAGE_URGENT],
+    ["enableAlerts", environment.IAGE_ENABLE_ALERTS],
+  ]);
+  return extended;
 }
 
 /**
@@ -226,9 +280,23 @@ export function tenantStatusSettings(
     simpleAlarms: thresholds !== undefined,
   };
   const enable = configuredEnable(environment, base.simpleAlarms);
+  const effectiveEnabled = new Set(enable ?? [
+    ...DEFAULT_FEATURES,
+    base.simpleAlarms ? "simplealarms" : "ar2",
+  ]);
+  const settingEnvironment: Record<string, unknown> = {};
+  for (const [name, value] of [
+    ["ALARM_TIMEAGO_WARN", environment.ALARM_TIMEAGO_WARN],
+    ["ALARM_TIMEAGO_WARN_MINS", environment.ALARM_TIMEAGO_WARN_MINS],
+    ["ALARM_TIMEAGO_URGENT", environment.ALARM_TIMEAGO_URGENT],
+    ["ALARM_TIMEAGO_URGENT_MINS", environment.ALARM_TIMEAGO_URGENT_MINS],
+  ] as const) {
+    if (value !== undefined) settingEnvironment[name] = value;
+  }
   return {
     ...base,
-    extendedSettings: platformExtendedSettings(environment),
+    extendedSettings: platformExtendedSettings(environment, effectiveEnabled),
+    ...(Object.keys(settingEnvironment).length === 0 ? {} : { settingEnvironment }),
     ...(thresholds === undefined ? {} : { thresholds }),
     ...(enable === undefined ? {} : { enable }),
   };
@@ -244,6 +312,8 @@ function nightscoutSettings(
     if (name === "UNITS") return overrides.units ?? "mg/dl";
     if (name === "AUTH_FAIL_DELAY") return overrides.authFailDelay ?? 5000;
     if (name === "ALARM_TYPES") return overrides.simpleAlarms === true ? "simple" : "predict";
+    const configuredSetting = overrides.settingEnvironment?.[name];
+    if (configuredSetting !== undefined) return configuredSetting;
     if (thresholds === undefined) return undefined;
     if (name === "BG_HIGH") return thresholds.bgHigh;
     if (name === "BG_TARGET_TOP") return thresholds.bgTargetTop;

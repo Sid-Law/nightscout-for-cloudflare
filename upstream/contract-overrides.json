@@ -418,6 +418,22 @@
       "status": "adapted",
       "reason": "Represented by all 11 named Workers-runtime cases in test/dbsize-plugin-contract.test.ts and wired into the default-enabled /api/v2/properties dispatcher: exact current/warn/urgent percentages, configurable thresholds, MiB display, hidden empty state, warning/urgent notification text and levels, pill payload, and virtual-assistant response. The production property consumes the real SQLite Durable Object byte count supplied by the dataloader adapter; the broader persisted notification/background runner and environment-wide extended-settings importer remain separate compatibility work."
     },
+    "vendor/nightscout/tests/cannulaage.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all three named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: latest non-future Site Change selection, exact hour/day display, notes pill shape, 48-hour warning request and official CAGE_* normalization. The Durable Object supplies only the latest bounded age-event rows rather than materializing the Treatment collection; persisted notification scheduling remains separate work."
+    },
+    "vendor/nightscout/tests/insulinage.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all three named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: latest non-future Insulin Change selection, exact day/hour display, notes pill shape, 48-hour warning request and official IAGE_* normalization. The adapter deliberately retains the locked v15.0.7 urgent-comparison behavior instead of silently correcting upstream logic; persisted notification scheduling remains separate work."
+    },
+    "vendor/nightscout/tests/sensorage.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all six named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: Sensor Start/Change ordering, insertion supersession, short/long duration and notes pill payloads, exact 6-day-22-hour urgent request and one-hour-later non-repeat behavior, plus official SAGE_* normalization. The DO projection retains one latest row per locked age event within 62 days; persisted notification scheduling remains separate work."
+    },
+    "vendor/nightscout/tests/timeago.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all five named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts: current/future suppression, exact 16-minute warning and 31-minute urgent request/message shapes, every asserted display boundary, explicit request-local client hibernation state and official TIMEAGO/ALARM_TIMEAGO_* normalization. The official browser bundle continues to run its unchanged client plugin; the server adapter is ready for, but not yet driven by, the persisted notification scheduler."
+    },
     "vendor/nightscout/tests/loop.test.js": {
       "status": "adapted",
       "reason": "Represented by all five named Workers-runtime cases in test/loop-plugin-contract.test.ts and wired into the enabled /api/v2/properties dispatcher: exact enacted pill text and six forecast points, failure display, enacted.received=false handling, the urgent stuck-Loop notification request, both virtual-assistant intents and their locked English responses. src/plugins/loop.ts ports the upstream analysis, visualization, status-level and notification-request calculations without adding a dosing algorithm; the general persisted notification/background runner remains separately unresolved."

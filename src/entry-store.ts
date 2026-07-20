@@ -152,6 +152,15 @@ const REALTIME_WEBSOCKET_ATTACHMENT_VERSION = 1;
 const REALTIME_WEBSOCKET_EVENT_TIMEOUT_MS = 15_000;
 const REALTIME_SID = /^[A-Za-z0-9_-]{20}$/;
 const REALTIME_ENTRY_WINDOW_MS = 2 * 24 * 60 * 60 * 1_000;
+const AGE_TREATMENT_WINDOW_MS = 62 * 24 * 60 * 60 * 1_000;
+const AGE_TREATMENT_EVENT_TYPES = [
+  "Sensor Start",
+  "Sensor Change",
+  "Sensor Stop",
+  "Site Change",
+  "Insulin Change",
+  "Pump Battery Change",
+] as const;
 const API3_STORAGE_COLLECTIONS: readonly Api3CollectionName[] = [
   "devicestatus",
   "entries",
@@ -176,6 +185,7 @@ interface PluginPropertyContext {
   sgvs: RealtimeDocument[];
   cals: RealtimeDocument[];
   devicestatus: RealtimeDocument[];
+  treatments: RealtimeDocument[];
   dbstats: Record<string, unknown>;
 }
 
@@ -1347,6 +1357,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       sgvs: [],
       cals: [],
       devicestatus: [],
+      treatments: [],
       dbstats: sqliteNightscoutDatabaseStats(this.ctx.storage.sql.databaseSize),
     };
     let budget = new RealtimeJsonBudget(context);
@@ -1418,6 +1429,29 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     );
     const rawDeviceStatus = this.realtimeRawDeviceStatus(now, budget);
     context.devicestatus = selectRealtimeRecentDeviceStatus(rawDeviceStatus, now);
+    budget = new RealtimeJsonBudget(
+      context,
+      context.sgvs.length + context.cals.length + context.devicestatus.length,
+    );
+    // Locked dataloader loads one latest row for each age-related event within
+    // 62 days. Keep the same tiny projection instead of deserializing the
+    // complete Treatment collection on every v2 property poll.
+    for (const eventType of AGE_TREATMENT_EVENT_TYPES) {
+      const [latest] = this.realtimeDocuments(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = 'treatments'
+           AND json_extract(body, '$.eventType') = ?
+           AND sort_time >= ?
+           AND sort_time <= ?
+         ORDER BY sort_time DESC, updated_at DESC, id ASC
+         LIMIT 1`,
+        [eventType, now - AGE_TREATMENT_WINDOW_MS, now],
+        budget,
+        normalizeRealtimeDocument,
+      );
+      if (latest !== undefined) context.treatments.push(latest);
+    }
     return context;
   }
 
