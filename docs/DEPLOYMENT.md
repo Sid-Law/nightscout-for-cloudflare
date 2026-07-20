@@ -12,17 +12,17 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `4fcc81f17d866588fd41f85fa0607e5d908dfcda`
-- Git HEAD used by Wrangler: `4fcc81f17d866588fd41f85fa0607e5d908dfcda`
-- Cloudflare Version ID: `4add590a-c3d0-4c76-be75-2056e06b670b`
-- Cloudflare ordinal version number: `47`
+- Deployed code candidate: `4675ba2ae38f96e8e117e38d23e543ab5bbc3126`
+- Git HEAD used by Wrangler: `4675ba2ae38f96e8e117e38d23e543ab5bbc3126`
+- Cloudflare Version ID: `b835ef23-3e10-49cf-8f70-87c783034b24`
+- Cloudflare ordinal version number: `48`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-19T23:18:20.572365Z`
-- Activation: deployment `8f992d4e-2d72-44ff-9279-3001e847c386` created
-  `2026-07-19T23:18:21.329743Z`; Wrangler reports
+- Version creation time: `2026-07-19T23:59:31.253016Z`
+- Activation: deployment `6aaef3f7-0bd5-4008-845e-01163da1c0a3` created
+  `2026-07-19T23:59:32.40656Z`; Wrangler reports
   this version at 100%
-- Worker startup: 26 ms
-- Deployment ID: `8f992d4e-2d72-44ff-9279-3001e847c386`
+- Worker startup: 23 ms
+- Deployment ID: `6aaef3f7-0bd5-4008-845e-01163da1c0a3`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -30,7 +30,7 @@ is not counted as API, plugin or real-time compatibility.
   authority columns
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 989.89 KiB raw / 180.41 KiB gzip
+- Upload: 993.49 KiB raw / 181.09 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -57,20 +57,23 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 ## Release content
 
 The current deployed build contains the prior adapted slices plus this
-increment's legacy uploader edge work:
+increment's Treatment identity work:
 
 - complete named Workers-runtime mapping for locked
-  `api.deduplication.test.js`, `api.entries.uuid.test.js` and
-  `api.partial-failures.test.js`, adding 32 passing contracts;
-- collection-specific upstream selectors: Entries `sysTime` plus `type`;
-  Treatments `identifier`/`_id` first, then `created_at` plus `eventType`.
-  Descriptive fixture fields such as `pump`, `sync` and generic `id` are not
-  invented as unique indexes;
-- legacy v1/v2 DeviceStatus prediction trimming that clones the upload and
-  truncates only IOB/COB/UAM/ZT arrays under suggested/enacted `predBGs`, using
-  the upstream default 288, a positive `PREDICTIONS_MAX_SIZE` override, or `0`
-  to disable this trim. Existing 512 KiB body and document/array bounds remain
-  separate Workers Free controls.
+  `uuid-handling.test.js`, `issue-6923-legacy-uuid.test.js` and
+  `identity-matrix.test.js`, adding 30 passing contracts;
+- exact true-by-default `UUID_HANDLING` parsing and enabled/disabled
+  promotion, GET, PUT, dedupe and DELETE behavior. Modern identifier rows and
+  pre-fix raw UUID `_id` rows are both handled when enabled; issue-6923 PUT
+  updates in place without duplication;
+- the locked MongoDB 5.9 Treatment delete response
+  `{acknowledged:true,deletedCount:N}`. A versioned UUID-aware DO RPC permits
+  default-true rolling fallback only for Cloudflare's exact missing-method
+  error; explicit false fails closed rather than silently applying true.
+
+The immediately preceding legacy-uploader increment remains deployed and
+includes the complete `api.deduplication`, Entries UUID and partial-failure
+files, collection-specific selectors, and DeviceStatus prediction trimming.
 
 The immediately preceding main-namespace increment remains deployed and
 includes the complete named `websocket.shape-handling.test.js` mapping,
@@ -256,9 +259,9 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed candidate is
-`4fcc81f17d866588fd41f85fa0607e5d908dfcda`. It adds the complete named
-deduplication, Entries UUID and partial-failure mappings plus legacy
-DeviceStatus prediction trimming while retaining schema-v12 root-write
+`4675ba2ae38f96e8e117e38d23e543ab5bbc3126`. It adds the complete named
+UUID-handling, issue-6923 legacy-UUID and client identity-matrix mappings while
+retaining the legacy uploader/DeviceStatus work, schema-v12 root-write
 authority and all prior property, v1, API3, authorization, realtime,
 notification ACK and official-page work.
 The table below records the exact local gate completed before deployment.
@@ -272,25 +275,25 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 38 files, 371/371 passed |
-| Worker dry run | 989.89 KiB raw / 180.41 KiB gzip |
+| Workers integration tests | 39 files, 401/401 passed |
+| Worker dry run | 993.49 KiB raw / 181.09 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 371 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 401 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
-`websocket.shape-handling.test.js` and 18 v1 client/API files are classified as
-fully `adapted`, 64 remain unresolved and two bridge files are
+`websocket.shape-handling.test.js` and 21 v1 client/API files are classified as
+fully `adapted`, 61 remain unresolved and two bridge files are
 fixed-scope exclusions.
 Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `4add590a-c3d0-4c76-be75-2056e06b670b` at 100%.
+Wrangler reports version `b835ef23-3e10-49cf-8f70-87c783034b24` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -299,8 +302,8 @@ not only Wrangler command success.
 | GET `/api/v3/version` | HTTP 200 with Nightscout `15.0.7`, API3 `3.0.3-alpha` and SQLite Durable Object marker |
 | GET `/api/v3/entries?limit=1` without JWT | Expected HTTP 401 `Missing or bad access token or JWT` |
 | GET `/healthz` and `/api/v1/entries.json?count=1` | HTTP 200; healthy SQLite DO marker and empty simulated-data Entries array |
-| GET `/api/v1/devicestatus.json?count=1` | HTTP 200 with an empty simulated-data DeviceStatus array |
-| POST simulated DeviceStatus without a configured secret | Expected HTTP 503 `api_secret_not_configured`; follow-up GET remained empty |
+| GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
+| POST simulated UUID Treatment without a configured secret | Expected HTTP 503 `api_secret_not_configured`; follow-up GET remained empty |
 
 No deployed credential was read or sent. The failed write was deliberately
 credential-free and could not mutate storage. Every checked API response
@@ -321,7 +324,7 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release changes legacy uploader edge behavior and retains the existing
+This release changes Treatment identity behavior and retains the existing
 client/server root transports. The current version repeated a fresh
 credential-free EIO4 polling-open check. Because the Worker has no
 `API_SECRET`, no credentialed remote mutation could be attempted; successful
@@ -334,7 +337,7 @@ remain evidence from the immediately preceding compatible version.
 | Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
 | Prior-version anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
 | Prior-version read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
-| Local uploader edge contract | locked DeviceStatus prediction trimming plus Entries/Treatments UUID, dedupe and ordered partial-failure behavior |
+| Local Treatment identity contract | 30 locked UUID flag, legacy issue-6923 and client identity cases, including MongoDB 5 delete results |
 | Local root write contract | six collections and all four events preserve locked validation/permission/ACK order, dedupe and ACK-before-delta behavior |
 | Local v1 SGV root update | an authorized live polling session receives the locked root `dataUpdate`; an unauthorized session remains silent |
 | Local API3 Treatment root update | root and `/storage` delivery share the successful API3 mutation path |
@@ -361,7 +364,8 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real browser session exercised the deployed official UI without reading
+A real browser session exercised the immediately preceding compatible version's
+official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -376,9 +380,10 @@ credential storage or submitting protected mutations:
 - console inspection across the exercised pages found no errors or warnings.
 
 This pass asserted rendered DOM, status text, official-script presence and a
-fresh console trace. This browser run reloaded Cloudflare version
-`4add590a-c3d0-4c76-be75-2056e06b670b` after deployment. Wrangler reported no
-changed asset upload for the same 248 official browser assets.
+fresh console trace for Cloudflare version
+`4add590a-c3d0-4c76-be75-2056e06b670b`. Version 48 reused the same 248
+unchanged official assets, but its post-deploy browser acceptance is still
+pending and is not inferred from the API smoke.
 
 Authenticated Profile Save remains historical evidence from an earlier
 version; the current load is recorded above, but no authenticated Food/Profile

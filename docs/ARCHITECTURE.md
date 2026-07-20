@@ -7,13 +7,13 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`4fcc81f17d866588fd41f85fa0607e5d908dfcda`. It produced Cloudflare version
-`4add590a-c3d0-4c76-be75-2056e06b670b`, reported as 100% active by direct
-deploy. Its 38-file Workers-runtime suite passes 371/371 plus 20/20 audit
+`4675ba2ae38f96e8e117e38d23e543ab5bbc3126`. It produced Cloudflare version
+`b835ef23-3e10-49cf-8f70-87c783034b24`, reported as 100% active by direct
+deploy. Its 39-file Workers-runtime suite passes 401/401 plus 20/20 audit
 tests. Wrangler processed 248 unchanged official asset entries; deployment and
-the final dry run both reported 989.89 KiB raw / 180.41 KiB gzip, with the dry
+the final dry run both reported 993.49 KiB raw / 181.09 KiB gzip, with the dry
 run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
-bindings. Cloudflare reported a 26 ms startup.
+bindings. Cloudflare reported a 23 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -414,7 +414,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The deployed candidate
-`4fcc81f17d866588fd41f85fa0607e5d908dfcda` implements all six official generic
+`4675ba2ae38f96e8e117e38d23e543ab5bbc3126` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -469,6 +469,27 @@ partial-failure test files. Entries uniqueness remains `sysTime` plus `type`;
 Treatments use `identifier`/`_id` first and then `created_at` plus `eventType`.
 The adapter does not turn descriptive fixture fields such as `pump`, `sync` or
 generic `id` into unique indexes that upstream never created.
+
+Treatment identity is controlled by the same locked `UUID_HANDLING` flag as
+Nightscout v15.0.7. Missing, non-string and values other than case-insensitive
+`on`/`true`/`off`/`false` use the upstream default `true`; whitespace is not
+trimmed. When enabled, every non-ObjectId string `_id` is removed from the
+replacement and copied to a missing/falsy `identifier`, while GET/DELETE by a
+valid UUID searches both `identifier` and a pre-fix raw UUID storage ID. PUT
+prefers `identifier`, then the matching raw legacy ID, then
+`created_at + eventType`, so issue-6923 rows update in place. When disabled,
+the invalid `_id` is still stripped but is not promoted, identifier upserts do
+not fall back to raw IDs, and UUID GET/DELETE addresses only a genuinely raw
+storage ID. Treatment delete responses use MongoDB 5.9's
+`{acknowledged:true,deletedCount:N}` shape rather than the older
+`{n:N,ok:1}` result.
+
+The Worker-to-DO call is versioned for rolling deployment. Default-true
+requests may fall back to the previous RPC only when Cloudflare reports the
+exact missing-new-method error. Explicit false cannot be represented by the
+old method, so it fails closed with a bounded 503 while an old isolate drains
+instead of silently executing true semantics. All other RPC/storage errors
+remain errors.
 
 Settings deliberately has no legacy fallback identity and does not synthesize a
 virtual `created_at` for generic reads. Its collection search and both history
@@ -828,11 +849,11 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`4add590a-c3d0-4c76-be75-2056e06b670b`. Current credential-free remote smoke
-returned 200 for health, bounded v1 Entries and DeviceStatus reads, API3 version
+`b835ef23-3e10-49cf-8f70-87c783034b24`. Current credential-free remote smoke
+returned 200 for health, bounded v1 Entries and Treatments reads, API3 version
 and an EIO4 polling open packet; API3 Entries without a token returned the
 expected 401. The current public Worker has no `API_SECRET` Secret binding, so
-a simulated DeviceStatus POST returned the expected 503
+a simulated Treatment POST returned the expected 503
 `api_secret_not_configured` and a follow-up read remained empty. Successful
 protected uploader and realtime mutation behavior remains covered locally
 rather than by a credentialed remote mutation. The at-most-once dequeue/send

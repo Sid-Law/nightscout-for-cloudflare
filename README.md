@@ -69,6 +69,14 @@ for diagnosis, dosing, or medical decisions.
   retains upstream's empty-string child field. PUT remains the upstream
   one-record save path. Both POST records are committed in one SQLite
   transaction and retransmissions deduplicate both fallback identities.
+- The complete locked Treatment identity files `uuid-handling.test.js`,
+  `issue-6923-legacy-uuid.test.js` and `identity-matrix.test.js`.
+  `UUID_HANDLING` keeps upstream's exact true-by-default `on/true/off/false`
+  parsing. Enabled mode promotes non-ObjectId uploader IDs and resolves both
+  modern `identifier` rows and pre-fix raw UUID `_id` rows; disabled mode
+  strips the uploader ID without promotion and uses raw-ID lookup only. Legacy
+  PUT updates a raw UUID row in place. Treatment deletes return the MongoDB
+  5.9 response shape `{acknowledged,deletedCount}`.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -392,24 +400,25 @@ directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
-`data.calcdelta.test.js`, `websocket.shape-handling.test.js` and 15 v1
-client/API files, plus `api.deduplication.test.js`,
-`api.entries.uuid.test.js` and `api.partial-failures.test.js`, are classified as
-fully `adapted`.
+`data.calcdelta.test.js`, `websocket.shape-handling.test.js` and 21 v1
+client/API files are classified as fully `adapted`.
+The latest three v1 additions are `uuid-handling.test.js`,
+`issue-6923-legacy-uuid.test.js` and `identity-matrix.test.js`.
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 64 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 61 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed code candidate and Git HEAD used by Wrangler are commit
-`4fcc81f17d866588fd41f85fa0607e5d908dfcda`. After rebuilding the locked
-official UI, its 38-file Workers-runtime suite passes 371/371 tests and both
+`4675ba2ae38f96e8e117e38d23e543ab5bbc3126`. After rebuilding the locked
+official UI, its 39-file Workers-runtime suite passes 401/401 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 989.89 KiB raw / 180.41 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds the three complete legacy uploader edge
-contracts above and the official bounded DeviceStatus prediction trimming
-adapter. It retains schema-v12 root-write authority, server-originated deltas,
+reports 993.49 KiB raw / 181.09 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This deployed increment adds the three complete Treatment identity
+contracts above, exact `UUID_HANDLING` behavior, legacy raw-UUID repair and the
+MongoDB 5 delete-result shape. It retains the legacy uploader edge and
+DeviceStatus prediction adapters, schema-v12 root-write authority, server-originated deltas,
 the prior property, API, authorization, `/storage` and `/alarm` slices.
 This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
@@ -447,18 +456,18 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `4add590a-c3d0-4c76-be75-2056e06b670b` was made current by
-deployment `8f992d4e-2d72-44ff-9279-3001e847c386` at
-`2026-07-19T23:18:21.329743Z`, with a reported 26 ms startup. No asset bytes
+Cloudflare version `b835ef23-3e10-49cf-8f70-87c783034b24` was made current by
+deployment `6aaef3f7-0bd5-4008-845e-01163da1c0a3` at
+`2026-07-19T23:59:32.40656Z`, with a reported 23 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
-and DeviceStatus reads, API3 version and EIO4 polling; missing-token API3 Entries
+and Treatments reads, API3 version and EIO4 polling; missing-token API3 Entries
 returned the expected 401. A deliberately unauthenticated simulated
-DeviceStatus POST returned the expected 503 `api_secret_not_configured`, and a
+Treatment POST returned the expected 503 `api_secret_not_configured`, and a
 follow-up read confirmed no mutation. The current public lab has no
 `API_SECRET` Secret binding, so all API-secret write paths are disabled until an
 operator configures one; no secret value was read, generated or printed.
-Successful uploader mutation and prediction trimming are therefore current
+Successful UUID identity mutation and legacy-row repair are therefore current
 local contract evidence, not a claim about a credentialed remote write.
 
 The first attempted plugin deployment exposed Cloudflare rolling-upgrade
@@ -468,13 +477,15 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real browser run reloaded the current deployment and rendered the official
+A real browser run reloaded the immediately preceding version 47 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
 Editor reached `Values loaded.` in their unauthorized read-only state; no
 protected Save was attempted. Browser console inspection found no errors or
-warnings. The agent-created verification tab was closed after the pass. The
+warnings. The agent-created verification tab was closed after the pass.
+Version 48's browser acceptance remains pending and is not inferred from its
+successful API/protocol smoke. The
 public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
