@@ -7,15 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`b38139adf51ca01d62b6b69a17959707c6d3ec1b` and Cloudflare version
-`c14ae3c9-b108-4fcd-9fa8-bdbd16e1dd69`, reported as 100% active. The
-candidate's 55-file Workers-runtime suite passes 626/626 plus 21/21 audit tests,
+`1378b05dcb8a3442135b318911fb62b55ccdc92a` and Cloudflare version
+`de66cb8c-f9b6-464e-8741-8aed362d7955`, reported as 100% active. The
+candidate's 55-file Workers-runtime suite passes 631/631 plus 21/21 audit tests,
 one unchanged direct upstream client test and 90/90 unchanged tests across fifteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1119.37 KiB raw / 206.18 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 63
-reported a 24 ms startup and passed credential-free API, EIO4 and real-browser
+asset entries; its dry run reported 1136.77 KiB raw / 209.71 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 64
+reported a 25 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -32,13 +32,15 @@ implemented v2 property plugins execute through this registry. The current runti
 `src/plugins/basal.ts` and `src/plugins/treatmentnotify.ts`: Basal preserves
 the current scheduled/temporary/Combo Bolus contribution, pill, visualization
 and assistant behavior; Treatment Notify preserves the locked recent-treatment
-filtering, snooze, request classification and Web Crypto SHA-1 hash; Simple
+filtering, snooze, request classification and synchronous `node:crypto` SHA-1
+hash; Simple
 Alarms preserves the strict threshold cases and notification metadata. The
 notification processor preserves priority, snooze and automatic all-clear,
 with schema-v13 state and atomic live `/alarm` publication. Schema v14 adds a
-generic persisted task scheduler and automatically evaluates Simple Alarms;
-automatic task sources for the remaining notification plugins and external
-delivery remain missing.
+generic persisted task scheduler. One `plugin-notifications` task automatically
+evaluates Simple Alarms, officially enabled Treatment Notify and opt-in Timeago
+alerts in upstream order; task sources for the remaining notification plugins
+and external delivery remain missing.
 The prior OpenAPS/Pump adapters remain behind the same registry.
 `src/plugins/iob.ts`, `src/plugins/cob.ts` and
 `src/data/treatment-to-curve.ts` use official request-local
@@ -49,9 +51,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 official client `pluginbase.test.js` runs unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 55 Workers files / 626 tests, 21/21 audits, one direct upstream
+evidence is 55 Workers files / 631 tests, 21/21 audits, one direct upstream
 client file and fifteen direct upstream server/data-plugin files / 90 tests; the
-dry run is 1119.37 KiB raw / 206.18 KiB gzip with the same 248 assets and two bindings.
+dry run is 1136.77 KiB raw / 209.71 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -181,16 +183,20 @@ Combo Bolus treatment components and returns the locked property, pill,
 visualization and assistant shape. Treatment Notify examines only the locked
 recent ten-minute Treatment/MBG window, distinguishes manual and automatic
 records, and returns the official snooze/calibration/treatment/temporary-target/
-announcement notification request with a Web Crypto SHA-1 hash. It does not
-schedule or deliver that request automatically. `simplealarms.ts` evaluates
+announcement notification request with a synchronous `node:crypto` SHA-1 hash.
+When the official enable gate includes `treatmentnotify`, canonical mutations
+and the persisted task evaluate it automatically. `simplealarms.ts` evaluates
 the locked nonfuture/recent SGV boundary, strict warning/urgent high/low
 thresholds, titles, event names, sounds and exact default message.
-Canonical document mutations schedule a schema-v14 Simple Alarm task. The
-originating write request evaluates the due leading edge from a bounded
-64-SGV projection; an ordinary in-range result completes the task without a
-periodic wake. An active high/low request is reevaluated at the configured
-heartbeat (60 seconds by default) until the source SGV reaches its exact
-ten-minute expiry.
+`timeago.ts` calculates its next transition explicitly; strict upstream `>`
+boundaries wake at threshold plus one millisecond, and a future SGV wakes when
+it becomes current. Canonical document mutations schedule one schema-v14
+`plugin-notifications` task. The originating request evaluates the leading edge
+from a bounded 64-SGV, 10-MBG and newest-1,000-Treatment context. Active
+requests repeat at the configured heartbeat, while expiry and future
+activation deadlines are retained exactly. An ordinary inactive result leaves
+no periodic wake. Timeago scheduling additionally requires truthy
+`TIMEAGO_ENABLE_ALERTS`; the public upstream-default settings keep it dormant.
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
 opt-in; `loop` is likewise exposed only when configured in `ENABLE`, while
@@ -1004,9 +1010,10 @@ The current server boundary is explicit:
   all currently connected tenant-local `/alarm` sockets, subscribed or not.
   Broken/overflow recipients are dropped independently and disconnected
   clients receive no replay. The bounded notification processor can persist and
-  publish upstream request arrays through this outlet. Schema-v14 tasks now
-  compute and publish Simple Alarms automatically; automatic task adapters for
-  the remaining notification plugins remain missing;
+  publish upstream request arrays through this outlet. A schema-v14 task now
+  computes and publishes Simple Alarms, officially enabled Treatment Notify and
+  opt-in Timeago alerts automatically; adapters for the remaining notification
+  plugins remain missing;
 - root `subscribe` has no handler or ACK, matching the locked root. The four
   locked client-originated mutation events validate collection, authority,
   required `_id` and bounded payloads in upstream order, then return the exact
@@ -1046,18 +1053,17 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`c14ae3c9-b108-4fcd-9fa8-bdbd16e1dd69`. Current credential-free remote smoke
+`de66cb8c-f9b6-464e-8741-8aed362d7955`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled
 Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE property gates, null disabled IOB/COB Summary
 state, absence of property-only timeago and an EIO4 polling open packet;
 API3 Entries without a token returned the
-expected 401. The current public Worker has no `API_SECRET` Secret binding, so
-a simulated Treatment POST returned the expected 503
-`api_secret_not_configured` and a follow-up read remained empty. Successful
-protected uploader and realtime mutation behavior remains covered locally
-rather than by a credentialed remote mutation. The at-most-once dequeue/send
+expected 401. The acceptance run sent no API secret, did not inspect dashboard
+credential state and performed no protected mutation. Successful protected
+uploader and realtime mutation behavior remains covered locally rather than by
+a credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
 intentionally still uses the REST polling shim. The inherited local transport
 contracts and the prior public EIO4 smoke prove only the separate server slice,
@@ -1089,9 +1095,9 @@ Cloudflare's finite automatic retries does not silently discard the logical
 task. `HEARTBEAT` is accepted only inside the platform-bounded 15-second to
 24-hour interval.
 The remaining transport work is profile-switch status/plugin preprocessing,
-EIO3, polling upgrade
-and the direct-send replay/acknowledgement boundary; automatic task adapters for
-non-Simple server-plugin notifications remain background work.
+EIO3, polling upgrade and the direct-send replay/acknowledgement boundary;
+automatic producers for CAGE/SAGE/IAGE/OpenAPS/Pump/Loop/BWP/DBSize/admin
+notifications remain background work.
 
 ### Background work and server plugins
 
@@ -1102,7 +1108,8 @@ generic SQLite task table containing `kind`, `due_at`, `attempt_count` and
 them transactionally and derives the next wake from storage. This follows
 Cloudflare's one-alarm model: multiple logical events are stored and
 multiplexed through the one Durable Object alarm. The generic substrate is
-deployed; only the Simple Alarm notification task kind is connected today.
+deployed; one unified notification task connects Simple Alarms, Treatment
+Notify and Timeago with their official enable gates today.
 
 Official plugin formulas and medical calculations are not rewritten. The
 build-time registry lists the locked server plugins so bundling is deterministic;
@@ -1117,15 +1124,16 @@ and `treatmentnotify` adapters plus the core notification processor,
 together with the request-local Sandbox, are reusable server
 calculation/property slices dispatched by the registry rather than a background
 plugin engine. Basal exposes official recorded Profile/Treatment state and
-Treatment Notify produces locked request objects at request time. OpenAPS/Pump
+Treatment Notify produces locked request objects from the persisted task
+context when officially enabled. OpenAPS/Pump
 expose locked uploader state at request time;
 IOB/COB use the locked official formulas and can populate
 request-time Summary state when enabled; they do not recommend insulin.
-Treatment Notify and Simple Alarms request objects can be arbitrated, persisted
-and delivered to live `/alarm` clients when the internal processor is invoked.
-Simple Alarms is additionally evaluated automatically on entry mutations and,
-while active, by the schema-v14 alarm scheduler. Treatment Notify and the
-remaining BWP/plugin state and automatic notification outputs still need task
+Treatment Notify, Simple Alarms and Timeago request objects are arbitrated,
+persisted and delivered to live `/alarm` clients by the same internal engine.
+Mutations evaluate the leading edge and the schema-v14 scheduler retains only
+the earliest logical activation, heartbeat or expiry deadline. CAGE/SAGE/IAGE,
+OpenAPS/Pump/Loop, BWP/DBSize, admin and remaining automatic outputs still need
 adapters around locked upstream modules rather than downstream formulas.
 
 ## Why no D1 or R2
