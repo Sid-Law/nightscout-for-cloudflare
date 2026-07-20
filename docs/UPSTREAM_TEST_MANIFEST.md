@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 48, excluded-fixed-scope: 2, unresolved: 61
-- Input fingerprint: `a7cf891e9f76de620d0a154adda58b8e055d704e5c92acbd6cd2e9620ad29631`
+- Statuses: pass: 0, adapted: 52, excluded-fixed-scope: 2, unresolved: 57
+- Input fingerprint: `0a4b59a447515956a4dcd5a641cb4581ebe0216d58d22bbdde586cd7f58bcc77`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -19,10 +19,10 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
-| 1-storage-foundation | none | 15 | 9 | 0 |
+| 1-storage-foundation | none | 15 | 8 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 5 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
-| 4-plugins-and-calculations | 1-storage-foundation | 40 | 31 | 0 |
+| 4-plugins-and-calculations | 1-storage-foundation | 40 | 28 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
@@ -56,7 +56,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/mongo-pool-config.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/mongo-storage.retry.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/mongo-storage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/objectid-cache.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/objectid-cache.test.js` | adapted | 8 | Represented by all seven named Workers-runtime ObjectIdCache cases in test/api-v1-loop-client-contract.test.ts: POST-response cache mapping, cached-ID PUT and DELETE, cache-miss and app-restart duplicate behavior with fresh timestamps, ordered batch identity mapping, temp-basal update, and pump-event hexadecimal syncIdentifier preservation. The contract retains upstream behavior that syncIdentifier is descriptive rather than a server uniqueness key. |
 | `vendor/nightscout/tests/query.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/reportstorage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/storage.shape-handling.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
@@ -104,7 +104,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/bgnow.test.js` | adapted | 0 | Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: exact 5-minute buckets, ordinary and eleven-minute interpolated deltas, mg/dl and mmol scaling/rounding, bucket placement, and locked visualization info payloads. |
 | `vendor/nightscout/tests/boluswizardpreview.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/cannulaage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/carb-dose-upload.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/carb-dose-upload.test.js` | adapted | 8 | Represented by all thirteen named Workers-runtime Loop upload cases in test/api-v1-loop-client-contract.test.ts: carb absorption/fat/protein fields, supplied and cached ObjectIds, PUT/DELETE cache workflows, bolus/meal/temp-basal/suspend payloads, exact long and short hexadecimal syncIdentifier preservation, and ordered mixed-dose batch responses. |
 | `vendor/nightscout/tests/cob.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/data.calcdelta.test.js` | adapted | 0 | Represented by the complete named Workers-runtime contract in test/realtime-calcdelta-contract.test.ts: unchanged state returns the original frame, new/changed SGVs produce one-item deltas, treatment/MBG/calibration changes are detected without an SGV change, and profile replacement is included. The production root namespace persists its previous bounded ddata frame in DO SQLite and applies this adapter for authorized polling and direct-WebSocket receivers across isolate reconstruction. |
 | `vendor/nightscout/tests/data.treatmenttocurve.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
@@ -115,7 +115,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/errorcodes.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/expressextensions.test.js` | unresolved | 5 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/fail.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/gap-treat-012.test.js` | unresolved | 8 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/gap-treat-012.test.js` | adapted | 8 | Represented by all twelve named Workers-runtime GAP-TREAT-012 cases in test/api-v1-loop-client-contract.test.ts: UUID _id promotion, indefinite and remote overrides, lookup/delete/update/re-POST by promoted identifier, ordered UUID and mixed batches, upper/lower-case UUID preservation, and valid ObjectId non-promotion. |
 | `vendor/nightscout/tests/insulinage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/iob.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/levels.test.js` | adapted | 0 | Represented by the complete named Workers-runtime foundation contract in test/plugin-foundations-contract.test.ts: all six numeric levels, every asserted English display and lowercase label, and both unknown-level cases. The same adapter drives uploader-battery severity and pill classes. |
@@ -128,7 +128,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/pump.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/rawbg.test.js` | adapted | 0 | Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts: the locked calibration formula returns 113 mg/dl and Clean, the raw property/display line is exact, the single MetricNow intent is retained, and its English assistant title/response match. The property dispatcher honors the official enabled-plugin gate and uses a bounded SGV/calibration DO projection. |
 | `vendor/nightscout/tests/sensorage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/sgv-devicestatus.test.js` | unresolved | 4 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/sgv-devicestatus.test.js` | adapted | 4 | Represented by all fifteen named Workers-runtime Loop SGV/device-status cases in test/api-v1-loop-client-contract.test.ts: SGV fields and directions, Loop/Dexcom device metadata, locked sysTime+type replay behavior, distinct entries, MBG, nested IOB/COB/predictions/enacted data, pump and Omnipod fields, overrides, and the complete Loop deviceStatus payload. |
 | `vendor/nightscout/tests/simplealarms.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/timeago.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/times.test.js` | adapted | 0 | Represented by the complete named Workers-runtime foundation contract in test/plugin-foundations-contract.test.ts: hour/three-hour, minute/two-minute, and second/fifteen-second conversions preserve every asserted minutes, seconds, and milliseconds value. |

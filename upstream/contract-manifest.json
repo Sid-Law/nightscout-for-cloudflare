@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "a7cf891e9f76de620d0a154adda58b8e055d704e5c92acbd6cd2e9620ad29631",
+  "inputs_sha256": "0a4b59a447515956a4dcd5a641cb4581ebe0216d58d22bbdde586cd7f58bcc77",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 48,
+      "adapted": 52,
       "excluded-fixed-scope": 2,
-      "unresolved": 61
+      "unresolved": 57
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7916,8 +7916,8 @@
     },
     {
       "file": "vendor/nightscout/tests/carb-dose-upload.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all thirteen named Workers-runtime Loop upload cases in test/api-v1-loop-client-contract.test.ts: carb absorption/fat/protein fields, supplied and cached ObjectIds, PUT/DELETE cache workflows, bolus/meal/temp-basal/suspend payloads, exact long and short hexadecimal syncIdentifier preservation, and ordered mixed-dose batch responses.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -8119,8 +8119,8 @@
     },
     {
       "file": "vendor/nightscout/tests/gap-treat-012.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all twelve named Workers-runtime GAP-TREAT-012 cases in test/api-v1-loop-client-contract.test.ts: UUID _id promotion, indefinite and remote overrides, lookup/delete/update/re-POST by promoted identifier, ordered UUID and mixed batches, upper/lower-case UUID preservation, and valid ObjectId non-promotion.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -8317,8 +8317,8 @@
     },
     {
       "file": "vendor/nightscout/tests/objectid-cache.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all seven named Workers-runtime ObjectIdCache cases in test/api-v1-loop-client-contract.test.ts: POST-response cache mapping, cached-ID PUT and DELETE, cache-miss and app-restart duplicate behavior with fresh timestamps, ordered batch identity mapping, temp-basal update, and pump-event hexadecimal syncIdentifier preservation. The contract retains upstream behavior that syncIdentifier is descriptive rather than a server uniqueness key.",
       "workstream": "1-storage-foundation",
       "depends_on": [],
       "related_routes": [
@@ -8566,8 +8566,8 @@
     },
     {
       "file": "vendor/nightscout/tests/sgv-devicestatus.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all fifteen named Workers-runtime Loop SGV/device-status cases in test/api-v1-loop-client-contract.test.ts: SGV fields and directions, Loop/Dexcom device metadata, locked sysTime+type replay behavior, distinct entries, MBG, nested IOB/COB/predictions/enacted data, pump and Omnipod fields, overrides, and the complete Loop deviceStatus payload.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
