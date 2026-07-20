@@ -428,12 +428,12 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 56 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The next deployment candidate is commit
+The deployed code candidate is commit
 `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. Its 41-file Workers-runtime
 suite passes 472/472 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
 reports 1005.41 KiB raw / 183.59 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This candidate adds the complete Profile calculation contract while
+`ASSETS`. This release adds the complete Profile calculation contract while
 retaining the four Loop client files and three Treatment identity contracts,
 exact `UUID_HANDLING` behavior, legacy raw-UUID repair and the MongoDB 5
 delete-result shape. It retains the legacy uploader edge and
@@ -475,13 +475,14 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `de8ab414-79e8-4938-8e09-e86c7f4cf0cf` was made current by
-deployment `28487aec-6adc-4ca8-b64c-bb9de9006d2d` at
-`2026-07-20T00:35:19.306944Z`, with a reported 22 ms startup. No asset bytes
+Cloudflare version `4f89e2fc-ac35-499b-ac39-ffbd61f18e66` was made current by
+deployment `f53e60ea-4bab-4730-9164-680e67f1f00d` at
+`2026-07-20T01:04:00.535961Z`, with a reported 23 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
-and Treatments reads, API3 version and EIO4 polling; missing-token API3 Entries
-returned the expected 401. A deliberately unauthenticated simulated
+and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
+version and EIO4 polling; missing-token API3 Entries returned the expected 401.
+A deliberately unauthenticated simulated
 Treatment POST returned the expected 503 `api_secret_not_configured`, and a
 follow-up read confirmed no mutation. The current public lab has no
 `API_SECRET` Secret binding, so all API-secret write paths are disabled until an
@@ -496,19 +497,22 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real browser run reloaded Cloudflare version 49 and rendered the official
+A real Chromium run reloaded Cloudflare version 50 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
 Editor reached `Values loaded.` in their unauthorized read-only state. The
 stored simulated profile and its `Asia/Shanghai` timezone were present, while
-the empty-data clock rendered `-?-`; no protected Save was attempted. Browser
-console inspection found no errors or warnings. The agent-created verification
-tab was closed after the pass.
+the empty-data clock rendered `-?-` with `No data found in DB`; no protected
+Save was attempted. Browser console inspection found zero JavaScript errors.
+The homepage and clock had no warnings; Admin, Food and Profile repeatedly
+logged the locked official-bundle warning `Unable to find element for
+#chartContainer` on pages that do not contain a chart. The isolated browser
+session was closed after the pass.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 49 has therefore passed its credential-free remote API, Engine.IO and
+Version 50 has therefore passed its credential-free remote API, Engine.IO and
 real-browser acceptance gates.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes

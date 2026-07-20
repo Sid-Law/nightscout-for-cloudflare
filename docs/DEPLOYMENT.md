@@ -12,18 +12,17 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `947dc1403c8a07ecc053457386a97d5b4bd18571`
-- Next locally accepted candidate: `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`
-- Git HEAD used by Wrangler: `895bd3ffdd483ee831000b7fa54587de35cb6551`
-- Cloudflare Version ID: `de8ab414-79e8-4938-8e09-e86c7f4cf0cf`
-- Cloudflare ordinal version number: `49`
+- Deployed code candidate: `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`
+- Git HEAD used by Wrangler: `317d6f03cad9833df305263a2b929284e9ca9c41`
+- Cloudflare Version ID: `4f89e2fc-ac35-499b-ac39-ffbd61f18e66`
+- Cloudflare ordinal version number: `50`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T00:35:18.12158Z`
-- Activation: deployment `28487aec-6adc-4ca8-b64c-bb9de9006d2d` created
-  `2026-07-20T00:35:19.306944Z`; Wrangler reports
+- Version creation time: `2026-07-20T01:03:59.34848Z`
+- Activation: deployment `f53e60ea-4bab-4730-9164-680e67f1f00d` created
+  `2026-07-20T01:04:00.535961Z`; Wrangler reports
   this version at 100%
-- Worker startup: 22 ms
-- Deployment ID: `28487aec-6adc-4ca8-b64c-bb9de9006d2d`
+- Worker startup: 23 ms
+- Deployment ID: `f53e60ea-4bab-4730-9164-680e67f1f00d`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -31,7 +30,7 @@ is not counted as API, plugin or real-time compatibility.
   authority columns
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 993.49 KiB raw / 181.09 KiB gzip
+- Upload: 1005.41 KiB raw / 183.59 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -259,7 +258,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The next code candidate is
+The deployed code candidate is
 `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. It adds the complete 24-assertion
 Profile calculation mapping and wires it into API v2 Summary while retaining
 GAP-TREAT-012, Loop carb/dose, ObjectIdCache, SGV/DeviceStatus,
@@ -296,7 +295,7 @@ Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `de8ab414-79e8-4938-8e09-e86c7f4cf0cf` at 100%.
+Wrangler reports version `4f89e2fc-ac35-499b-ac39-ffbd61f18e66` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -306,6 +305,8 @@ not only Wrangler command success.
 | GET `/api/v3/entries?limit=1` without JWT | Expected HTTP 401 `Missing or bad access token or JWT` |
 | GET `/healthz` and `/api/v1/entries.json?count=1` | HTTP 200; healthy SQLite DO marker and empty simulated-data Entries array |
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
+| GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
+| GET `/api/v2/summary/?hours=6` | HTTP 200 with empty SGV/treatment arrays, `{}` Profile and the locked null plugin-state fields |
 | POST simulated UUID Treatment without a configured secret | Expected HTTP 503 `api_secret_not_configured`; follow-up GET remained empty |
 
 No deployed credential was read or sent. The failed write was deliberately
@@ -327,8 +328,8 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds complete Loop client contract evidence and retains the
-existing client/server root transports. The current version repeated a fresh
+This release adds the complete Profile calculation contract and retains the
+existing Loop client and client/server root transport evidence. The current version repeated a fresh
 credential-free EIO4 polling-open check. Because the Worker has no
 `API_SECRET`, no credentialed remote mutation could be attempted; successful
 write/change delivery is proved by local integration contracts rather than
@@ -368,7 +369,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real browser session exercised Cloudflare version 49's official UI without reading
+A real Chromium session exercised Cloudflare version 50's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -380,13 +381,17 @@ credential storage or submitting protected mutations:
   state. The stored simulated profile and `Asia/Shanghai` timezone were present,
   and the empty-data clock rendered `-?-`; no protected Save was attempted;
 - the agent-created verification tab was closed without disturbing the user's
-  existing tabs;
-- console inspection across the exercised pages found no errors or warnings.
+  existing tabs, and the isolated browser process was closed;
+- console inspection found zero JavaScript errors. The homepage and clock had
+  no warnings. Admin, Food and Profile repeatedly emitted the locked
+  `bundle.app.js` warning `Unable to find element for #chartContainer` because
+  those official non-chart pages have no chart container. This nonfatal warning
+  is now tracked explicitly and is not misreported as a zero-warning pass.
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`de8ab414-79e8-4938-8e09-e86c7f4cf0cf`. It reused the same 248 unchanged
-official assets. Version 49 has therefore passed credential-free remote API,
+`4f89e2fc-ac35-499b-ac39-ffbd61f18e66`. It reused the same 248 unchanged
+official assets. Version 50 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -466,10 +471,10 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`b835ef23-3e10-49cf-8f70-87c783034b24`. Version 49 adds test-manifest and
-documentation evidence only, so version 48 contains the same deployed runtime
-adapter; version 49 itself now also has remote API plus real-browser acceptance.
-The older
+`de8ab414-79e8-4938-8e09-e86c7f4cf0cf` (version 49). It has its own remote API,
+Engine.IO and browser acceptance and lacks only this release's Profile
+calculation adapter. Version 48 (`b835ef23-3e10-49cf-8f70-87c783034b24`)
+remains an older compatible fallback. The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not
 be selected as a rollback target.

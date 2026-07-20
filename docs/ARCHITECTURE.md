@@ -6,14 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes next adapter candidate
-`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`; the immediately preceding
-Cloudflare version `de8ab414-79e8-4938-8e09-e86c7f4cf0cf` remains 100% active
-until this candidate is deployed. The candidate's 41-file Workers-runtime suite
+“Current” below describes deployed adapter candidate
+`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8` and Cloudflare version
+`4f89e2fc-ac35-499b-ac39-ffbd61f18e66`, reported as 100% active. The
+candidate's 41-file Workers-runtime suite
 passes 472/472 plus 20/20 audit tests. Wrangler processed 248 unchanged official
 asset entries; its dry run reported 1005.41 KiB raw / 183.59 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 49
-reported a 22 ms startup; candidate startup and remote evidence remain pending.
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 50
+reported a 23 ms startup and passed credential-free API, EIO4 and real-browser
+gates.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -873,9 +874,10 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`de8ab414-79e8-4938-8e09-e86c7f4cf0cf`. Current credential-free remote smoke
-returned 200 for health, bounded v1 Entries and Treatments reads, API3 version
-and an EIO4 polling open packet; API3 Entries without a token returned the
+`4f89e2fc-ac35-499b-ac39-ffbd61f18e66`. Current credential-free remote smoke
+returned 200 for health, bounded v1 Entries and Treatments reads, fresh-tenant
+Profile/current and v2 Summary, API3 version and an EIO4 polling open packet;
+API3 Entries without a token returned the
 expected 401. The current public Worker has no `API_SECRET` Secret binding, so
 a simulated Treatment POST returned the expected 503
 `api_secret_not_configured` and a follow-up read remained empty. Successful
