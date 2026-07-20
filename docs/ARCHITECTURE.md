@@ -7,15 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`edde54d179d184a1589007014e6ca5ada0b95efc` and Cloudflare version
-`6e584a02-6d36-4900-a01d-b01ae7d157a9`, reported as 100% active. The
-candidate's 52-file Workers-runtime suite passes 605/605 plus 21/21 audit tests,
-one unchanged direct upstream client test and 77/77 unchanged tests across thirteen
+`b614a5509b7fb4b398bf7610427fa87b8293fcbd` and Cloudflare version
+`99984670-1693-4ea1-8dfe-c2d1bf7c59f7`, reported as 100% active. The
+candidate's 54-file Workers-runtime suite passes 623/623 plus 21/21 audit tests,
+one unchanged direct upstream client test and 90/90 unchanged tests across fifteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1095.86 KiB raw / 201.17 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 61
-reported a 22 ms startup and passed credential-free API, EIO4 and real-browser
+asset entries; its dry run reported 1105.34 KiB raw / 203.13 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 62
+reported a 23 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -27,13 +27,17 @@ current runtime retains `src/plugins/registry.ts`, a request-local static replac
 Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
-implemented v2 property plugins execute through this registry. Version 61 adds
+implemented v2 property plugins execute through this registry. Version 62 adds
+`src/plugins/simplealarms.ts` and `src/notifications.ts` on top of
 `src/plugins/basal.ts` and `src/plugins/treatmentnotify.ts`: Basal preserves
 the current scheduled/temporary/Combo Bolus contribution, pill, visualization
-and assistant behavior, while Treatment Notify preserves the locked recent-
-treatment filtering, snooze, request classification and Web Crypto SHA-1 hash.
-Both remain request-local; the notification result is not yet scheduled or
-delivered. The prior OpenAPS/Pump adapters remain behind the same registry.
+and assistant behavior; Treatment Notify preserves the locked recent-treatment
+filtering, snooze, request classification and Web Crypto SHA-1 hash; Simple
+Alarms preserves the strict threshold cases and notification metadata. The
+notification processor preserves priority, snooze and automatic all-clear,
+with schema-v13 state and atomic live `/alarm` publication when invoked.
+Automatic plugin evaluation/scheduling and external delivery remain missing.
+The prior OpenAPS/Pump adapters remain behind the same registry.
 `src/plugins/iob.ts`, `src/plugins/cob.ts` and
 `src/data/treatment-to-curve.ts` use official request-local
 formulas and bounded Treatment/Profile inputs, while API v2 ddata applies the
@@ -43,9 +47,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 official client `pluginbase.test.js` runs unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 52 Workers files / 605 tests, 21/21 audits, one direct upstream
-client file and thirteen direct upstream server/data-plugin files / 77 tests; the
-dry run is 1095.86 KiB raw / 201.17 KiB gzip with the same 248 assets and two bindings.
+evidence is 54 Workers files / 623 tests, 21/21 audits, one direct upstream
+client file and fifteen direct upstream server/data-plugin files / 90 tests; the
+dry run is 1105.34 KiB raw / 203.13 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -141,8 +145,8 @@ process-global `ctx.ddata`. `src/realtime/ddata-snapshot.ts` represents the
 locked ddata singleton's empty buckets, clone, runtime normalization and
 prefer-new merge operations as pure functions; tenant state remains inside the
 SQLite Durable Object. `src/plugins/bgnow.ts`, `direction.ts`, `rawbg.ts`,
-`upbat.ts`, `loop.ts`, `iob.ts`, `cob.ts`, `dbsize.ts`, `age.ts` and
-`timeago.ts`, supported by request-safe
+`upbat.ts`, `loop.ts`, `iob.ts`, `cob.ts`, `dbsize.ts`, `age.ts`,
+`timeago.ts` and `simplealarms.ts`, supported by request-safe
 `runtime/{times,units,levels}.ts`, are
 ports of their locked property modules. They build the same
 four five-minute buckets around the last non-future SGV, preserve the
@@ -175,7 +179,9 @@ visualization and assistant shape. Treatment Notify examines only the locked
 recent ten-minute Treatment/MBG window, distinguishes manual and automatic
 records, and returns the official snooze/calibration/treatment/temporary-target/
 announcement notification request with a Web Crypto SHA-1 hash. It does not
-persist, schedule or deliver that request yet.
+schedule or deliver that request automatically. `simplealarms.ts` evaluates
+the locked nonfuture/recent SGV boundary, strict warning/urgent high/low
+thresholds, titles, event names, sounds and exact default message.
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
 opt-in; `loop` is likewise exposed only when configured in `ENABLE`, while
@@ -328,14 +334,21 @@ read/ACK authority. Connection and accumulated ACK authority persist in SQLite.
 A trusted internal RPC accepts only an already-computed notification object,
 classifies it as `clear_alarm`, `alarm`, `urgent_alarm`, `announcement` or
 `notification`, and broadcasts it live to every current tenant-local `/alarm`
-connection; no disconnected replay is stored. Authorized `ack` events persist
+connection; no disconnected replay is stored. `src/notifications.ts` ports the
+request reset, first-urgent-then-warning selection, information/announcement
+handling, longest eligible snooze and automatic all-clear rules from
+`lib/notifications.js`. A bounded internal DO RPC accepts at most 128
+notification requests plus 128 snoozes in at most one MiB, runs that processor
+against SQLite state, records `last_emit_at` and queues the selected `/alarm`
+object in the same transaction. It is intentionally not exposed as a public
+HTTP API. Authorized `ack` events persist
 the group/level snooze, mirror Urgent to Warning and broadcast the exact
 all-clear object. The official v1 `/notifications/ack` route and its inherited
 v2 mount use the same SQLite transaction and live broadcast path, require
 `notifications:*:ack`, and return Express's exact `200 OK` text body. The
-adapter bounds state to 256 distinct group names of at most 256 characters. It
-does not yet run `lib/notifications.js` or server plugins, so ACK compatibility
-is not notification-generation readiness.
+adapter bounds state to 256 distinct group names of at most 256 characters.
+Server plugins are not yet evaluated automatically, so the core processor is
+not an alarm-backed notification runner by itself.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
 deadlines, bounded WebSocket close retries and stale authorization-failure
 cleanup are multiplexed through the DO's single persistent alarm. The handler
@@ -979,8 +992,9 @@ The current server boundary is explicit:
 - trusted alarm publication broadcasts one of the five locked event names to
   all currently connected tenant-local `/alarm` sockets, subscribed or not.
   Broken/overflow recipients are dropped independently and disconnected
-  clients receive no replay. Actual notification/plugin computation remains
-  missing;
+  clients receive no replay. The bounded notification processor can persist and
+  publish upstream request arrays through this outlet; automatic plugin
+  computation/scheduling remains missing;
 - root `subscribe` has no handler or ACK, matching the locked root. The four
   locked client-originated mutation events validate collection, authority,
   required `_id` and bounded payloads in upstream order, then return the exact
@@ -1017,7 +1031,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`6e584a02-6d36-4900-a01d-b01ae7d157a9`. Current credential-free remote smoke
+`99984670-1693-4ea1-8dfe-c2d1bf7c59f7`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled
@@ -1047,10 +1061,13 @@ delta baseline and the last full comparison snapshot come from schema v11;
 root write and treatment-write authority come from idempotently repaired schema
 v12. Pre-v12 live sessions default those new flags to false and must
 re-authorize after rollout, while their rows and data remain intact.
+Schema v13 adds nullable `last_emit_at` to the existing alarm-silence rows;
+activation repairs a v12 database idempotently without changing its groups,
+levels or snooze times.
 The remaining transport work is profile-switch status/plugin preprocessing,
 EIO3, polling upgrade
-and the direct-send replay/acknowledgement boundary; server-side notification
-generation remains background/plugin work.
+and the direct-send replay/acknowledgement boundary; automatic server-plugin
+evaluation remains background work.
 
 ### Background work and server plugins
 
@@ -1068,8 +1085,8 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`loop`/`openaps`/`pump`/`iob`/`cob`
-and `treatmentnotify` adapters,
+`bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`simplealarms`/`loop`/`openaps`/`pump`/`iob`/`cob`
+and `treatmentnotify` adapters plus the core notification processor,
 together with the request-local Sandbox, are reusable server
 calculation/property slices dispatched by the registry rather than a background
 plugin engine. Basal exposes official recorded Profile/Treatment state and
@@ -1077,10 +1094,11 @@ Treatment Notify produces locked request objects at request time. OpenAPS/Pump
 expose locked uploader state at request time;
 IOB/COB use the locked official formulas and can populate
 request-time Summary state when enabled; they do not recommend insulin.
-Treatment Notify request objects are not persisted or delivered. Remaining
-BWP/plugin state and persisted notification outputs must come from
-locked upstream modules through the future scheduler rather than downstream
-formulas.
+Treatment Notify and Simple Alarms request objects can be arbitrated, persisted
+and delivered to live `/alarm` clients when the internal processor is invoked.
+They are not evaluated on a schedule. Remaining BWP/plugin state and automatic
+notification outputs must come from locked upstream modules through the future
+scheduler rather than downstream formulas.
 
 ## Why no D1 or R2
 
@@ -1106,7 +1124,9 @@ object as well as every out-of-scope product binding.
 - EIO4 polling/direct-WebSocket payload controls: 1,000,000-byte advertised
   polling maximum, 128 queued packets and 256 persisted sessions per tenant.
 - `/alarm` silence state is bounded to 256 distinct group names, each at most
-  256 characters; it is durable ACK state, not a notification history queue.
+  256 characters; it is durable ACK/emission state, not a notification history
+  queue. One internal processing call is bounded to one MiB, 128 notification
+  requests and 128 snooze objects.
 - The narrow realtime shadow stores numeric SGV/MBG only in its historical
   20–600 columns; the canonical v1 document no longer rejects an upstream
   uploader value solely for falling outside that range.
