@@ -2815,6 +2815,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       now,
       enabled,
       status.extendedSettings ?? {},
+      status.settings ?? {},
     );
     let result = properties;
     const rawSelection = url.pathname
@@ -2869,6 +2870,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       now,
       enabled,
       status.extendedSettings ?? {},
+      status.settings ?? {},
     );
     const snapshot = JSON.parse(snapshotJson);
     const hours = url.searchParams.get("hours") || 6;

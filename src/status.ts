@@ -42,6 +42,32 @@ export interface NightscoutStatusEnvironment {
   IAGE_WARN?: string;
   IAGE_URGENT?: string;
   IAGE_ENABLE_ALERTS?: string;
+  DAY_START?: string;
+  DAY_END?: string;
+  OPENAPS_ENABLE_ALERTS?: string;
+  OPENAPS_WARN?: string;
+  OPENAPS_URGENT?: string;
+  OPENAPS_FIELDS?: string;
+  OPENAPS_RETRO_FIELDS?: string;
+  OPENAPS_PRED_IOB_COLOR?: string;
+  OPENAPS_PRED_COB_COLOR?: string;
+  OPENAPS_PRED_ACOB_COLOR?: string;
+  OPENAPS_PRED_ZT_COLOR?: string;
+  OPENAPS_PRED_UAM_COLOR?: string;
+  OPENAPS_COLOR_PREDICTION_LINES?: string;
+  PUMP_ENABLE_ALERTS?: string;
+  PUMP_WARN_ON_SUSPEND?: string;
+  PUMP_FIELDS?: string;
+  PUMP_RETRO_FIELDS?: string;
+  PUMP_WARN_CLOCK?: string;
+  PUMP_URGENT_CLOCK?: string;
+  PUMP_WARN_RES?: string;
+  PUMP_URGENT_RES?: string;
+  PUMP_WARN_BATT_P?: string;
+  PUMP_URGENT_BATT_P?: string;
+  PUMP_WARN_BATT_V?: string;
+  PUMP_URGENT_BATT_V?: string;
+  PUMP_WARN_BATT_QUIET_NIGHT?: string;
 }
 
 function configuredFeatureNames(value: string | undefined): string[] {
@@ -150,6 +176,34 @@ function platformExtendedSettings(
     ["warn", environment.IAGE_WARN],
     ["urgent", environment.IAGE_URGENT],
     ["enableAlerts", environment.IAGE_ENABLE_ALERTS],
+  ]);
+  addPlugin("openaps", [
+    ["enableAlerts", environment.OPENAPS_ENABLE_ALERTS],
+    ["warn", environment.OPENAPS_WARN],
+    ["urgent", environment.OPENAPS_URGENT],
+    ["fields", environment.OPENAPS_FIELDS],
+    ["retroFields", environment.OPENAPS_RETRO_FIELDS],
+    ["predIobColor", environment.OPENAPS_PRED_IOB_COLOR],
+    ["predCobColor", environment.OPENAPS_PRED_COB_COLOR],
+    ["predAcobColor", environment.OPENAPS_PRED_ACOB_COLOR],
+    ["predZtColor", environment.OPENAPS_PRED_ZT_COLOR],
+    ["predUamColor", environment.OPENAPS_PRED_UAM_COLOR],
+    ["colorPredictionLines", environment.OPENAPS_COLOR_PREDICTION_LINES],
+  ]);
+  addPlugin("pump", [
+    ["enableAlerts", environment.PUMP_ENABLE_ALERTS],
+    ["warnOnSuspend", environment.PUMP_WARN_ON_SUSPEND],
+    ["fields", environment.PUMP_FIELDS],
+    ["retroFields", environment.PUMP_RETRO_FIELDS],
+    ["warnClock", environment.PUMP_WARN_CLOCK],
+    ["urgentClock", environment.PUMP_URGENT_CLOCK],
+    ["warnRes", environment.PUMP_WARN_RES],
+    ["urgentRes", environment.PUMP_URGENT_RES],
+    ["warnBattP", environment.PUMP_WARN_BATT_P],
+    ["urgentBattP", environment.PUMP_URGENT_BATT_P],
+    ["warnBattV", environment.PUMP_WARN_BATT_V],
+    ["urgentBattV", environment.PUMP_URGENT_BATT_V],
+    ["warnBattQuietNight", environment.PUMP_WARN_BATT_QUIET_NIGHT],
   ]);
   return extended;
 }
@@ -290,6 +344,8 @@ export function tenantStatusSettings(
     ["ALARM_TIMEAGO_WARN_MINS", environment.ALARM_TIMEAGO_WARN_MINS],
     ["ALARM_TIMEAGO_URGENT", environment.ALARM_TIMEAGO_URGENT],
     ["ALARM_TIMEAGO_URGENT_MINS", environment.ALARM_TIMEAGO_URGENT_MINS],
+    ["DAY_START", environment.DAY_START],
+    ["DAY_END", environment.DAY_END],
   ] as const) {
     if (value !== undefined) settingEnvironment[name] = value;
   }

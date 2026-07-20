@@ -450,6 +450,14 @@
       "status": "adapted",
       "reason": "Represented by all five named Workers-runtime cases in test/loop-plugin-contract.test.ts and wired into the enabled /api/v2/properties dispatcher: exact enacted pill text and six forecast points, failure display, enacted.received=false handling, the urgent stuck-Loop notification request, both virtual-assistant intents and their locked English responses. src/plugins/loop.ts ports the upstream analysis, visualization, status-level and notification-request calculations without adding a dosing algorithm; the general persisted notification/background runner remains separately unresolved."
     },
+    "vendor/nightscout/tests/openaps.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all six named Workers-runtime cases in test/openaps-pump-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: enacted/not-enacted/waiting device state, exact official pill details, mmol conversion, all twelve colored IOB/aCOB/COB forecast points, stuck-loop urgent request, OpenAPS Offline suppression and both virtual-assistant responses. The adapter normalizes the official OPENAPS_* environment settings and retains uploader-supplied loop calculations without inventing dose advice; the general persisted notification/background runner remains separately unresolved."
+    },
+    "vendor/nightscout/tests/pump.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all ten named Workers-runtime cases in test/openaps-pump-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: newest pump-clock selection, reservoir pill and display override, normal/low/empty reservoir severity, voltage warning/urgent thresholds, profile-timezone quiet-night suppression, OpenAPS Offline suppression and all four virtual-assistant intents. The adapter normalizes the official PUMP_* settings, keeps the locked warnOnSuspend shadowing quirk, and only displays uploader-provided pump state; persisted notification scheduling remains separate work."
+    },
     "vendor/nightscout/tests/settings.test.js": {
       "status": "adapted",
       "reason": "Represented by all 13 named Workers-runtime cases in test/settings-contract.test.ts and wired into the HTTP/Socket.IO status settings snapshot: locked defaults, environment/camel accessors, default disablement, custom snooze arrays, threshold and alarm-type selection/correction, scalar/array feature checks and the upstream method surface. src/settings.ts is request-local and removes secure keys recursively before status serialization; the extra isolation case verifies that one tenant/request cannot mutate another settings instance."

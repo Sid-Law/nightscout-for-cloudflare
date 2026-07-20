@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "972f0b72992f1a0344754c406a4e2cf0927831deed9e9a6e0552ab5de06d0a16",
+  "inputs_sha256": "01ddcf7e251c5dd77ceb3eb9642c681b49eed43800d4ddf3b33bba43dac3e5f3",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 1,
-      "adapted": 67,
+      "adapted": 69,
       "excluded-fixed-scope": 2,
-      "unresolved": 41
+      "unresolved": 39
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8335,8 +8335,8 @@
     },
     {
       "file": "vendor/nightscout/tests/openaps.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all six named Workers-runtime cases in test/openaps-pump-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: enacted/not-enacted/waiting device state, exact official pill details, mmol conversion, all twelve colored IOB/aCOB/COB forecast points, stuck-loop urgent request, OpenAPS Offline suppression and both virtual-assistant responses. The adapter normalizes the official OPENAPS_* environment settings and retains uploader-supplied loop calculations without inventing dose advice; the general persisted notification/background runner remains separately unresolved.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -8420,8 +8420,8 @@
     },
     {
       "file": "vendor/nightscout/tests/pump.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all ten named Workers-runtime cases in test/openaps-pump-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: newest pump-clock selection, reservoir pill and display override, normal/low/empty reservoir severity, voltage warning/urgent thresholds, profile-timezone quiet-night suppression, OpenAPS Offline suppression and all four virtual-assistant intents. The adapter normalizes the official PUMP_* settings, keeps the locked warnOnSuspend shadowing quirk, and only displays uploader-provided pump state; persisted notification scheduling remains separate work.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

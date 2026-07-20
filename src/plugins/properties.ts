@@ -12,6 +12,12 @@ import {
   type AgePreferences,
 } from "./age";
 import { calculateLoopProperty } from "./loop";
+import { calculateOpenApsProperty, type OpenApsPreferences } from "./openaps";
+import {
+  calculatePumpProperty,
+  type PumpCoreSettings,
+  type PumpPreferences,
+} from "./pump";
 import { calculateIobTotal } from "./iob";
 import { calculateCobTotal } from "./cob";
 import { calculateRawBgProperty } from "./rawbg";
@@ -161,6 +167,7 @@ export function calculatePluginProperties(
   now: number,
   enabled: ReadonlySet<string>,
   extendedSettings: Record<string, unknown> = {},
+  settings: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   let profile: NightscoutProfileFunctions | undefined;
@@ -182,6 +189,14 @@ export function calculatePluginProperties(
         && !Array.isArray(pluginSandbox.extendedSettings)
       ? pluginSandbox.extendedSettings as AgePreferences
       : {};
+  const pluginPreferences = <T extends Record<string, unknown>>(
+    pluginSandbox: PluginExecutionSandbox,
+  ): T =>
+    typeof pluginSandbox.extendedSettings === "object"
+        && pluginSandbox.extendedSettings !== null
+        && !Array.isArray(pluginSandbox.extendedSettings)
+      ? pluginSandbox.extendedSettings as T
+      : {} as T;
   const server: Record<string, Partial<NightscoutPlugin>> = {
     bgnow: {
       setProperties: () => {
@@ -209,6 +224,27 @@ export function calculatePluginProperties(
     loop: {
       setProperties: () => {
         properties.loop = calculateLoopProperty(context.devicestatus, now);
+      },
+    },
+    openaps: {
+      setProperties: (pluginSandbox) => {
+        properties.openaps = calculateOpenApsProperty(
+          context.devicestatus,
+          now,
+          pluginPreferences<OpenApsPreferences>(pluginSandbox),
+        );
+      },
+    },
+    pump: {
+      setProperties: (pluginSandbox) => {
+        properties.pump = calculatePumpProperty(
+          context.devicestatus,
+          context.treatments ?? [],
+          pluginProfile(),
+          now,
+          pluginPreferences<PumpPreferences>(pluginSandbox),
+          settings as PumpCoreSettings,
+        );
       },
     },
     iob: {
