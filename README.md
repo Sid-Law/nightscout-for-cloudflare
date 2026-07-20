@@ -477,16 +477,14 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real browser run reloaded the immediately preceding version 47 and rendered the official
+A real browser run reloaded Cloudflare version 48 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
 Editor reached `Values loaded.` in their unauthorized read-only state; no
 protected Save was attempted. Browser console inspection found no errors or
 warnings. The agent-created verification tab was closed after the pass.
-Version 48's browser acceptance remains pending and is not inferred from its
-successful API/protocol smoke. The
-public tenant currently has no
+The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
 

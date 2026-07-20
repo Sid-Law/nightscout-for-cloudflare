@@ -46,7 +46,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | The deployed version has homepage polling, stable Settings close, prior authenticated Profile Save evidence, Admin/Food/Report/clock/Swagger renders and a real Split/multiframe HTML check. The latest completed credential-free browser pass (version 47) rendered homepage, Admin, Food, Profile and `clock-color`; Food reached `Database loaded` and Profile reached `Values loaded.` in unauthorized read-only mode. Version 48 API/protocol smoke is complete and its browser acceptance remains pending; no protected Save was attempted. Protected mutation/report and pushed-live-update workflows remain. |
+| 2. Official browser assets/pages | Partial | Version 48's credential-free browser pass rendered the homepage/chart and loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded` and Profile reached `Values loaded.`, with no console error/warning. Stable Settings close, earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 48. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. `/storage` now atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 21 locked files adapted | Entries adapts its complete locked upstream file plus deduplication, Entries UUID and partial-failure contracts. Treatments now additionally adapts the complete `uuid-handling`, issue-6923 legacy-UUID and client identity-matrix files: exact true-by-default flag parsing, enabled/disabled promotion and lookup, raw UUID repair, in-place PUT and MongoDB 5 delete responses. DeviceStatus retains official prediction trimming. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are mapped. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, wider Mongo query/document behavior and remaining v1 routes/test files. |
 | 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. The complete locked `ddata`, `bgnow`, `direction`, `rawbg` and `upbat` test files are adapted; `/properties` uses official buckets/interpolation/mmol/direction logic and now exposes default-enabled uploader battery from a bounded property projection. Raw BG retains the official enabled-plugin gate. Remaining plugin properties and summary state (IOB/COB/BWP/ages/battery), summary persistence and v2-only `/notifications/loop` remain; ddata uses a bounded two-day SGV window. |
@@ -281,13 +281,13 @@ Version 48 credential-free remote smoke returned HTTP 200 for health, bounded v1
 Entries and Treatments reads, API3 version and EIO4 polling; missing-token
 API3 Entries returned the expected 401. A simulated UUID Treatment write returned
 the expected 503 because no `API_SECRET` is configured, and the follow-up read
-remained empty. No deployed credential was read or sent. The latest completed
-real-browser pass remains version 47: it
+remained empty. No deployed credential was read or sent. The version 48
+real-browser pass
 loaded the official homepage, Admin, Food, Profile and `clock-color` without
 protected writes. Food reached `Database loaded` and Profile reached
 `Values loaded.` in unauthorized read-only mode; this pass did not claim a
 protected Save. Console inspection found no errors or warnings, and the
-agent-created tab was closed. Version 48 browser acceptance remains pending.
+agent-created tab was closed.
 The immediately preceding compatible version's
 root protocol returned `{read:true,write:false,write_treatment:false}` to a
 fresh anonymous-readable session, rejected Food `dbAdd` with `Not permitted`,

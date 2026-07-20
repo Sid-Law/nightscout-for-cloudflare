@@ -364,8 +364,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real browser session exercised the immediately preceding compatible version's
-official UI without reading
+A real browser session exercised Cloudflare version 48's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -381,9 +380,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`4add590a-c3d0-4c76-be75-2056e06b670b`. Version 48 reused the same 248
-unchanged official assets, but its post-deploy browser acceptance is still
-pending and is not inferred from the API smoke.
+`b835ef23-3e10-49cf-8f70-87c783034b24`. It reused the same 248 unchanged
+official assets.
 
 Authenticated Profile Save remains historical evidence from an earlier
 version; the current load is recorded above, but no authenticated Food/Profile
