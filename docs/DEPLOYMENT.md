@@ -258,10 +258,11 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed candidate is
-`4675ba2ae38f96e8e117e38d23e543ab5bbc3126`. It adds the complete named
-UUID-handling, issue-6923 legacy-UUID and client identity-matrix mappings while
-retaining the legacy uploader/DeviceStatus work, schema-v12 root-write
+The next deployment candidate is
+`947dc1403c8a07ecc053457386a97d5b4bd18571`. It adds the complete named
+GAP-TREAT-012, Loop carb/dose, ObjectIdCache and SGV/DeviceStatus mappings while
+retaining UUID-handling, issue-6923, identity-matrix, legacy uploader/
+DeviceStatus work, schema-v12 root-write
 authority and all prior property, v1, API3, authorization, realtime,
 notification ACK and official-page work.
 The table below records the exact local gate completed before deployment.
@@ -275,19 +276,19 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 39 files, 401/401 passed |
+| Workers integration tests | 40 files, 448/448 passed |
 | Worker dry run | 993.49 KiB raw / 181.09 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 401 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 448 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
-`websocket.shape-handling.test.js` and 21 v1 client/API files are classified as
-fully `adapted`, 61 remain unresolved and two bridge files are
+`websocket.shape-handling.test.js` and 25 v1 client/API files are classified as
+fully `adapted`, 57 remain unresolved and two bridge files are
 fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -338,6 +339,7 @@ remain evidence from the immediately preceding compatible version.
 | Prior-version anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
 | Prior-version read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
 | Local Treatment identity contract | 30 locked UUID flag, legacy issue-6923 and client identity cases, including MongoDB 5 delete results |
+| Local Loop client upload contract | 47 locked GAP-TREAT-012, carb/dose, ObjectIdCache and SGV/DeviceStatus cases, including ordered server-ID mapping and client-cache-miss duplicate behavior |
 | Local root write contract | six collections and all four events preserve locked validation/permission/ACK order, dedupe and ACK-before-delta behavior |
 | Local v1 SGV root update | an authorized live polling session receives the locked root `dataUpdate`; an unauthorized session remains silent |
 | Local API3 Treatment root update | root and `/storage` delivery share the successful API3 mutation path |

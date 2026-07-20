@@ -77,6 +77,15 @@ for diagnosis, dosing, or medical decisions.
   strips the uploader ID without promotion and uses raw-ID lookup only. Legacy
   PUT updates a raw UUID row in place. Treatment deletes return the MongoDB
   5.9 response shape `{acknowledged,deletedCount}`.
+- The complete locked Loop client files `gap-treat-012.test.js`,
+  `carb-dose-upload.test.js`, `objectid-cache.test.js` and
+  `sgv-devicestatus.test.js`, represented by 47 named Workers-runtime
+  contracts. Loop override UUID promotion/update/delete, carb and dose
+  ObjectId-cache workflows, ordered upload responses, SGV direction/device
+  payloads and nested Loop/pump DeviceStatus values are preserved.
+  `syncIdentifier` remains descriptive rather than an invented uniqueness
+  index: a cache miss with a new timestamp can create the same duplicate that
+  makes Loop's client-side ObjectId cache necessary.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -400,24 +409,27 @@ directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
-`data.calcdelta.test.js`, `websocket.shape-handling.test.js` and 21 v1
+`data.calcdelta.test.js`, `websocket.shape-handling.test.js` and 25 v1
 client/API files are classified as fully `adapted`.
-The latest three v1 additions are `uuid-handling.test.js`,
+The latest four v1 additions are `gap-treat-012.test.js`,
+`carb-dose-upload.test.js`, `objectid-cache.test.js` and
+`sgv-devicestatus.test.js`; the preceding three are `uuid-handling.test.js`,
 `issue-6923-legacy-uuid.test.js` and `identity-matrix.test.js`.
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 61 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 57 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed code candidate and Git HEAD used by Wrangler are commit
-`4675ba2ae38f96e8e117e38d23e543ab5bbc3126`. After rebuilding the locked
-official UI, its 39-file Workers-runtime suite passes 401/401 tests and both
+The next deployment candidate is commit
+`947dc1403c8a07ecc053457386a97d5b4bd18571`. Its 40-file Workers-runtime
+suite passes 448/448 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
 reports 993.49 KiB raw / 181.09 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployed increment adds the three complete Treatment identity
-contracts above, exact `UUID_HANDLING` behavior, legacy raw-UUID repair and the
-MongoDB 5 delete-result shape. It retains the legacy uploader edge and
+`ASSETS`. This candidate adds complete contract evidence for the four Loop
+client files above while retaining the three Treatment identity contracts,
+exact `UUID_HANDLING` behavior, legacy raw-UUID repair and the MongoDB 5
+delete-result shape. It retains the legacy uploader edge and
 DeviceStatus prediction adapters, schema-v12 root-write authority, server-originated deltas,
 the prior property, API, authorization, `/storage` and `/alarm` slices.
 This does not make the whole Nightscout port or the complete v1/v2 API
@@ -469,6 +481,8 @@ follow-up read confirmed no mutation. The current public lab has no
 operator configures one; no secret value was read, generated or printed.
 Successful UUID identity mutation and legacy-row repair are therefore current
 local contract evidence, not a claim about a credentialed remote write.
+This version remains the active deployment while candidate
+`947dc1403c8a07ecc053457386a97d5b4bd18571` completes its pre-deployment gate.
 
 The first attempted plugin deployment exposed Cloudflare rolling-upgrade
 behavior: an already-live Durable Object temporarily lacked the newly added

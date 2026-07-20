@@ -6,10 +6,10 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes the deployed code candidate and Git HEAD used by Wrangler,
-`4675ba2ae38f96e8e117e38d23e543ab5bbc3126`. It produced Cloudflare version
+“Current” below describes candidate
+`947dc1403c8a07ecc053457386a97d5b4bd18571`; the preceding runtime produced Cloudflare version
 `b835ef23-3e10-49cf-8f70-87c783034b24`, reported as 100% active by direct
-deploy. Its 39-file Workers-runtime suite passes 401/401 plus 20/20 audit
+deploy. The candidate's 40-file Workers-runtime suite passes 448/448 plus 20/20 audit
 tests. Wrangler processed 248 unchanged official asset entries; deployment and
 the final dry run both reported 993.49 KiB raw / 181.09 KiB gzip, with the dry
 run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
@@ -413,8 +413,8 @@ JSON. Required behavior includes:
 SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
-The deployed candidate
-`4675ba2ae38f96e8e117e38d23e543ab5bbc3126` implements all six official generic
+The runtime adapter represented by candidate
+`947dc1403c8a07ecc053457386a97d5b4bd18571` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -483,6 +483,18 @@ not fall back to raw IDs, and UUID GET/DELETE addresses only a genuinely raw
 storage ID. Treatment delete responses use MongoDB 5.9's
 `{acknowledged:true,deletedCount:N}` shape rather than the older
 `{n:N,ok:1}` result.
+
+The Loop ObjectId cache contract remains client-driven. A successful Treatment
+POST returns a server-owned 24-hex `_id` in the same order as the uploaded
+batch; later PUT and DELETE use that cached ID. `syncIdentifier` is preserved
+byte-for-byte, including hexadecimal pump-event values, but is not promoted to
+a database uniqueness key. Re-uploading it with a different `created_at`
+therefore creates a second Treatment, matching the locked upstream cache-miss
+and app-restart behavior. Loop SGV writes keep direction and device metadata
+and use the same locked Entries `sysTime + type` selector. DeviceStatus remains
+a general nested JSON document, so Loop IOB/COB, predictions, enacted temp
+basals, overrides and pump/Omnipod fields pass through unchanged subject to the
+separate official prediction-array limit.
 
 The Worker-to-DO call is versioned for rolling deployment. Default-true
 requests may fall back to the previous RPC only when Cloudflare reports the
