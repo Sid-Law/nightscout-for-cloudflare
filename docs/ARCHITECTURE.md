@@ -7,15 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`94b64e3e417806ddfa5243834ee8ce7eb9bc2f41` and Cloudflare version
-`1ed7fda2-c6bc-4137-9f53-25fcc16d8f40`, reported as 100% active. The
-candidate's 50-file Workers-runtime suite passes 577/577 plus 21/21 audit tests,
-one unchanged direct upstream client test and 53/53 unchanged tests across nine
+`1379a3975e48872339f97b946c4039dc8547c09f` and Cloudflare version
+`18757f14-fdf9-4535-81cb-d8e8ebac4430`, reported as 100% active. The
+candidate's 51-file Workers-runtime suite passes 595/595 plus 21/21 audit tests,
+one unchanged direct upstream client test and 69/69 unchanged tests across eleven
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1070.53 KiB raw / 196.22 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 59
-reported a 31 ms startup and passed credential-free API, EIO4 and real-browser
+asset entries; its dry run reported 1092.11 KiB raw / 200.47 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 60
+reported a 25 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -27,9 +27,14 @@ current runtime retains `src/plugins/registry.ts`, a request-local static replac
 Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
-implemented v2 property plugins execute through this registry. Version 59 adds
+implemented v2 property plugins execute through this registry. Version 60 adds
+`src/plugins/openaps.ts` and `src/plugins/pump.ts`: their request-local adapters
+retain the 16 locked state, visualization, notification-suppression and
+assistant cases while consuming only uploaded DeviceStatus/Treatment/Profile
+state. Official OpenAPS/Pump and day-boundary environment settings flow through
+the existing Status and registry boundary. The prior
 `src/plugins/iob.ts`, `src/plugins/cob.ts` and
-`src/data/treatment-to-curve.ts`: IOB/COB now use official request-local
+`src/data/treatment-to-curve.ts` use official request-local
 formulas and bounded Treatment/Profile inputs, while API v2 ddata applies the
 official treatment-marker curve placement. It retains the age/timeago,
 `src/data-loader.ts` and
@@ -37,9 +42,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 official client `pluginbase.test.js` runs unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 50 Workers files / 577 tests, 21/21 audits, one direct upstream
-client file and nine direct upstream server/data-plugin files / 53 tests; the
-dry run is 1070.53 KiB raw / 196.22 KiB gzip with the same 248 assets and two bindings.
+evidence is 51 Workers files / 595 tests, 21/21 audits, one direct upstream
+client file and eleven direct upstream server/data-plugin files / 69 tests; the
+dry run is 1092.11 KiB raw / 200.47 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -156,11 +161,18 @@ display and assistant behavior. COB preserves OpenAPS/Loop extraction, the
 official carb-absorption calculation, IOB-activity interaction, freshness,
 display and assistant behavior. Both describe already-recorded state; neither
 recommends a dose.
+OpenAPS preserves the six-hour per-device state analysis, both historical
+`recieved` and corrected `received` flags, prediction series/colors, mmol
+display, Offline marker suppression, stale-loop request shape and assistant
+responses. Pump preserves newest pump-clock selection, reservoir/battery
+display and warning thresholds, display overrides, profile-timezone quiet
+night, Offline suppression and all four assistant intents. Both modules display
+uploader-provided closed-loop state and introduce no dosing calculation.
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
 opt-in; `loop` is likewise exposed only when configured in `ENABLE`, while
-`dbsize` remains enabled by the locked default feature set. IOB, COB, CAGE,
-SAGE and IAGE remain opt-in exactly as upstream; timeago is a
+`dbsize` remains enabled by the locked default feature set. OpenAPS, Pump, IOB,
+COB, CAGE, SAGE and IAGE remain opt-in exactly as upstream; timeago is a
 client/notification plugin and is not fabricated as a v2 property.
 `/api/v2/properties` applies those values plus the upstream comma
 picker and truthy `pretty` serialization.
@@ -995,11 +1007,11 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`1ed7fda2-c6bc-4137-9f53-25fcc16d8f40`. Current credential-free remote smoke
+`18757f14-fdf9-4535-81cb-d8e8ebac4430`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the opt-in-disabled
-Loop/IOB/COB/CAGE/SAGE/IAGE property gates, null disabled IOB/COB Summary
+Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE property gates, null disabled IOB/COB Summary
 state, absence of property-only timeago and an EIO4 polling open packet;
 API3 Entries without a token returned the
 expected 401. The current public Worker has no `API_SECRET` Secret binding, so
@@ -1046,10 +1058,11 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat`/`loop`/`iob`/`cob` adapters,
+`bgnow`/`direction`/`rawbg`/`upbat`/`loop`/`openaps`/`pump`/`iob`/`cob` adapters,
 together with the request-local Sandbox, are reusable server
 calculation/property slices dispatched by the registry rather than a background
-plugin engine. IOB/COB use the locked official formulas and can populate
+plugin engine. OpenAPS/Pump expose locked uploader state at request time;
+IOB/COB use the locked official formulas and can populate
 request-time Summary state when enabled; they do not recommend insulin.
 Remaining BWP/plugin state and persisted notification outputs must come from
 locked upstream modules through the future scheduler rather than downstream

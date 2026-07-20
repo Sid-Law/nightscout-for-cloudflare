@@ -85,6 +85,10 @@ const insulinCarbResponse = await request("/api/v2/properties/iob,cob");
 checked(insulinCarbResponse.status === 200, "IOB/COB property status");
 const insulinCarbProperties = await insulinCarbResponse.json();
 
+const openApsPumpResponse = await request("/api/v2/properties/openaps,pump");
+checked(openApsPumpResponse.status === 200, "OpenAPS/Pump property status");
+const openApsPumpProperties = await openApsPumpResponse.json();
+
 const ageResponse = await request("/api/v2/properties/cage,sage,iage,timeago");
 checked(ageResponse.status === 200, "age property status");
 const ageProperties = await ageResponse.json();
@@ -94,6 +98,12 @@ const enabledPlugins = Array.isArray(statusV1.settings?.enable)
 for (const plugin of ["iob", "cob"]) {
   checked(
     Object.hasOwn(insulinCarbProperties, plugin) === enabledPlugins.includes(plugin),
+    `${plugin} enabled gate`,
+  );
+}
+for (const plugin of ["openaps", "pump"]) {
+  checked(
+    Object.hasOwn(openApsPumpProperties, plugin) === enabledPlugins.includes(plugin),
     `${plugin} enabled gate`,
   );
 }

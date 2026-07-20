@@ -18,5 +18,9 @@ export default defineConfig({
   ],
   test: {
     include: ["test/**/*.test.ts"],
+    // The API3 contract files intentionally exercise many Durable Object
+    // transactions. Under full-suite worker contention they can exceed
+    // Vitest's five-second default despite passing quickly in isolation.
+    testTimeout: 15_000,
   },
 });
