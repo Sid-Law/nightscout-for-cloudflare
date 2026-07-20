@@ -4,6 +4,7 @@ import {
   type NightscoutGlucoseUnits,
 } from "./bgnow";
 import { calculateDirectionProperty } from "./direction";
+import { calculateLoopProperty } from "./loop";
 import { calculateRawBgProperty } from "./rawbg";
 import { calculateUploaderBatteryProperty } from "./upbat";
 
@@ -75,6 +76,9 @@ export function calculatePluginProperties(
   }
   if (enabled.has("upbat")) {
     properties.upbat = calculateUploaderBatteryProperty(context.devicestatus, now);
+  }
+  if (enabled.has("loop")) {
+    properties.loop = calculateLoopProperty(context.devicestatus, now);
   }
   return properties;
 }

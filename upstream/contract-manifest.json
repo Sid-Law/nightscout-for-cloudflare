@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "aff0562f3ba638d9ccbca51b71897f31d7b6527b918a57307fd4084cf7450c9e",
+  "inputs_sha256": "ea584124d5ec4f3759f1b7ea91868e6966bd41a7819110645b561f234d597142",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 54,
+      "adapted": 55,
       "excluded-fixed-scope": 2,
-      "unresolved": 55
+      "unresolved": 54
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8228,8 +8228,8 @@
     },
     {
       "file": "vendor/nightscout/tests/loop.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all five named Workers-runtime cases in test/loop-plugin-contract.test.ts and wired into the enabled /api/v2/properties dispatcher: exact enacted pill text and six forecast points, failure display, enacted.received=false handling, the urgent stuck-Loop notification request, both virtual-assistant intents and their locked English responses. src/plugins/loop.ts ports the upstream analysis, visualization, status-level and notification-request calculations without adding a dosing algorithm; the general persisted notification/background runner remains separately unresolved.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
