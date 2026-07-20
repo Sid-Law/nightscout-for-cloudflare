@@ -414,6 +414,10 @@
       "status": "adapted",
       "reason": "Represented by all five named Workers-runtime cases in test/loop-plugin-contract.test.ts and wired into the enabled /api/v2/properties dispatcher: exact enacted pill text and six forecast points, failure display, enacted.received=false handling, the urgent stuck-Loop notification request, both virtual-assistant intents and their locked English responses. src/plugins/loop.ts ports the upstream analysis, visualization, status-level and notification-request calculations without adding a dosing algorithm; the general persisted notification/background runner remains separately unresolved."
     },
+    "vendor/nightscout/tests/settings.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all 13 named Workers-runtime cases in test/settings-contract.test.ts and wired into the HTTP/Socket.IO status settings snapshot: locked defaults, environment/camel accessors, default disablement, custom snooze arrays, threshold and alarm-type selection/correction, scalar/array feature checks and the upstream method surface. src/settings.ts is request-local and removes secure keys recursively before status serialization; the extra isolation case verifies that one tenant/request cannot mutate another settings instance."
+    },
     "vendor/nightscout/tests/api.shape-handling.test.js": {
       "status": "adapted",
       "reason": "Represented across test/api-v1-collections-contract.test.ts, test/api-v1-entries-contract.test.ts, test/api-v1-treatments-contract.test.ts and test/worker.test.ts: every locked Entries, Treatments, DeviceStatus and Profile single/array/ten-item/empty response shape, mixed SGV/MBG and treatment types, nested Loop fixtures, syncIdentifier preservation, and legacy Food/Activity PUT-by-ID behavior."

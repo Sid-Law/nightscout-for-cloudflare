@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "ea584124d5ec4f3759f1b7ea91868e6966bd41a7819110645b561f234d597142",
+  "inputs_sha256": "fe95a1c503537f46a7c06f4b6cb5f2f9f48b6df08d4f8aa71e89faea48f44d4c",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 55,
+      "adapted": 56,
       "excluded-fixed-scope": 2,
-      "unresolved": 54
+      "unresolved": 53
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8553,8 +8553,8 @@
     },
     {
       "file": "vendor/nightscout/tests/settings.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all 13 named Workers-runtime cases in test/settings-contract.test.ts and wired into the HTTP/Socket.IO status settings snapshot: locked defaults, environment/camel accessors, default disablement, custom snooze arrays, threshold and alarm-type selection/correction, scalar/array feature checks and the upstream method surface. src/settings.ts is request-local and removes secure keys recursively before status serialization; the extra isolation case verifies that one tenant/request cannot mutate another settings instance.",
       "workstream": "8-ui-and-process-boundaries",
       "depends_on": [
         "3-api-v1-v2",

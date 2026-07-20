@@ -1,25 +1,9 @@
-const DEFAULT_FEATURES = [
-  "bgnow",
-  "delta",
-  "direction",
-  "timeago",
-  "devicestatus",
-  "upbat",
-  "errorcodes",
-  "profile",
-  "bolus",
-  "dbsize",
-  "runtimestate",
-  "basal",
-  "careportal",
-] as const;
+import {
+  createNightscoutSettings,
+  NIGHTSCOUT_DEFAULT_FEATURES as DEFAULT_FEATURES,
+  NIGHTSCOUT_DEFAULT_THRESHOLDS as DEFAULT_THRESHOLDS,
+} from "./settings";
 
-const DEFAULT_THRESHOLDS = {
-  bgHigh: 260,
-  bgTargetTop: 180,
-  bgTargetBottom: 80,
-  bgLow: 55,
-};
 const MMOL_TO_MGDL = 18.01559;
 const MAX_AUTH_FAIL_DELAY_MS = 60_000;
 
@@ -214,77 +198,30 @@ function nightscoutSettings(
   authDefaultRoles: string,
   overrides: NightscoutStatusSettingsOverrides,
 ): Record<string, unknown> {
-  const simpleAlarms = overrides.simpleAlarms === true;
-  // This is the JSON-visible result of locked v15.0.7
-  // env.settings.filteredSettings(env.settings) with the reviewed settings
-  // overrides. Keep it explicit so functions and secure settings cannot leak.
-  return {
-    units: overrides.units ?? "mg/dl",
-    timeFormat: 12,
-    dayStart: 7,
-    dayEnd: 21,
-    nightMode: false,
-    editMode: true,
-    showRawbg: "never",
-    customTitle: "Nightscout",
-    theme: "default",
-    alarmUrgentHigh: true,
-    alarmUrgentHighMins: [30, 60, 90, 120],
-    alarmHigh: true,
-    alarmHighMins: [30, 60, 90, 120],
-    alarmLow: true,
-    alarmLowMins: [15, 30, 45, 60],
-    alarmUrgentLow: true,
-    alarmUrgentLowMins: [15, 30, 45],
-    alarmUrgentMins: [30, 60, 90, 120],
-    alarmWarnMins: [30, 60, 90, 120],
-    alarmTimeagoWarn: true,
-    alarmTimeagoWarnMins: 15,
-    alarmTimeagoUrgent: true,
-    alarmTimeagoUrgentMins: 30,
-    alarmPumpBatteryLow: false,
-    language: "en",
-    scaleY: "log",
-    showPlugins: "dbsize delta direction upbat",
-    showForecast: "ar2",
-    focusHours: 3,
-    heartbeat: 60,
-    baseURL: "",
-    authDefaultRoles,
-    thresholds: overrides.thresholds ?? { ...DEFAULT_THRESHOLDS },
-    insecureUseHttp: false,
-    secureHstsHeader: true,
-    secureHstsHeaderIncludeSubdomains: false,
-    secureHstsHeaderPreload: false,
-    secureCsp: false,
-    deNormalizeDates: false,
-    showClockDelta: false,
-    showClockLastTime: false,
-    frameUrl1: "",
-    frameUrl2: "",
-    frameUrl3: "",
-    frameUrl4: "",
-    frameUrl5: "",
-    frameUrl6: "",
-    frameUrl7: "",
-    frameUrl8: "",
-    frameName1: "",
-    frameName2: "",
-    frameName3: "",
-    frameName4: "",
-    frameName5: "",
-    frameName6: "",
-    frameName7: "",
-    frameName8: "",
-    authFailDelay: overrides.authFailDelay ?? 5000,
-    adminNotifiesEnabled: true,
-    authenticationPromptOnLoad: false,
-    DEFAULT_FEATURES: [...DEFAULT_FEATURES],
-    alarmTypes: [simpleAlarms ? "simple" : "predict"],
-    enable: overrides.enable === undefined
-      ? [...DEFAULT_FEATURES, simpleAlarms ? "simplealarms" : "ar2"]
-      : [...overrides.enable],
-  };
+  const settings = createNightscoutSettings();
+  const thresholds = overrides.thresholds;
+  settings.eachSettingAsEnv((name) => {
+    if (name === "UNITS") return overrides.units ?? "mg/dl";
+    if (name === "AUTH_FAIL_DELAY") return overrides.authFailDelay ?? 5000;
+    if (name === "ALARM_TYPES") return overrides.simpleAlarms === true ? "simple" : "predict";
+    if (thresholds === undefined) return undefined;
+    if (name === "BG_HIGH") return thresholds.bgHigh;
+    if (name === "BG_TARGET_TOP") return thresholds.bgTargetTop;
+    if (name === "BG_TARGET_BOTTOM") return thresholds.bgTargetBottom;
+    if (name === "BG_LOW") return thresholds.bgLow;
+    return undefined;
+  });
+  settings.authDefaultRoles = authDefaultRoles;
+  if (overrides.enable !== undefined) settings.enable = [...overrides.enable];
+
+  // filteredSettings retains enumerable method functions exactly like the
+  // upstream module; Express JSON serialization omits those functions. Build
+  // the same request snapshot explicitly before returning it to Worker routes.
+  const filtered = settings.filteredSettings(settings);
+  if (typeof filtered !== "object" || filtered === null || Array.isArray(filtered)) return {};
+  return Object.fromEntries(
+    Object.entries(filtered).filter(([, value]) => typeof value !== "function"),
+  );
 }
 
 export function nightscoutStatus(
