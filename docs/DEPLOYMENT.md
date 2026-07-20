@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed evidence candidate: `55277d8967d0c33cdccab0bc77a6a503e4303524`
-- Runtime source candidate: `55277d8967d0c33cdccab0bc77a6a503e4303524`
-- Git HEAD used by Wrangler: `e214e94ea8d927023cdbfbdf7273eafed9986101`
-- Cloudflare Version ID: `ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba`
-- Cloudflare ordinal version number: `56`
+- Deployed evidence candidate: `8477cecd011989ba966f53416865df03849bbaef`
+- Runtime source candidate: `8477cecd011989ba966f53416865df03849bbaef`
+- Git HEAD used by Wrangler: `8477cecd011989ba966f53416865df03849bbaef`
+- Cloudflare Version ID: `3a95a34d-806a-4d2b-9dff-3db1d1051b9a`
+- Cloudflare ordinal version number: `57`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T03:57:52.353472Z`
-- Activation: deployment `476605d9-3d1c-43a7-920d-7d68fd1dc7b5` created
-  `2026-07-20T03:57:53.262026Z`; Wrangler reports
+- Version creation time: `2026-07-20T04:27:16.540002Z`
+- Activation: deployment `629f83a3-b1d7-4226-a851-ffc22911e3a2` created
+  `2026-07-20T04:27:17.543409Z`; Wrangler reports
   this version at 100%
-- Worker startup: 27 ms
-- Deployment ID: `476605d9-3d1c-43a7-920d-7d68fd1dc7b5`
+- Worker startup: 26 ms
+- Deployment ID: `629f83a3-b1d7-4226-a851-ffc22911e3a2`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -31,7 +31,7 @@ is not counted as API, plugin or real-time compatibility.
   authority columns
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 1030.64 KiB raw / 188.53 KiB gzip
+- Upload: 1035.12 KiB raw / 189.61 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -62,10 +62,24 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
 
-The current deployed increment adds the static plugin registry without
-rewriting Nightscout formulas:
+The current deployed increment adds the dataloader and database-size adapter
+without rewriting Nightscout formulas:
 
-- a request-local static registry replaces Node dynamic plugin `require` while
+- `ctx.storage.sql.databaseSize` supplies the real SQLite file total to v2
+  ddata and the property projection; it maps to upstream `dataSize` with
+  `indexSize:0` so the official plugin does not double-count indexes;
+- the Workers Free one-GB per-object ceiling is expressed in the plugin's MiB
+  unit as 953.67431640625, and all five upstream `DBSIZE_*` variables retain
+  their numeric/boolean normalization;
+- all 11 named `dbsize.test.js` cases and the complete Promise-based
+  `dataloader.test.js` case pass as Workers-runtime contracts; the live API and
+  official homepage consume the same byte count and maximum;
+- Cloudflare's official
+  [`databaseSize` documentation](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)
+  and [Durable Object limits](https://developers.cloudflare.com/durable-objects/platform/limits/)
+  define this platform substitution;
+- the prior request-local static registry remains in place and replaces Node
+  dynamic plugin `require` while
   preserving the locked client/server catalogs, order, enable/shown gates,
   hook/error behavior, event aggregation and client extended settings;
 - the implemented v2 server properties execute through that registry, while
@@ -94,8 +108,9 @@ The earlier deployed increment added the complete locked Sandbox module contract
   properties, historical SGV selection, LOW/HIGH and display/scaling helpers,
   default messages and plugin-specific extended settings remain request-local;
 - the existing locked Profile, units and times adapters replace Node dynamic
-  `require` and module-global state. The data loader, remaining plugin
-  algorithms, notification runner and alarm-backed schedule remain incomplete.
+  `require` and module-global state. The data loader and database-size plugin
+  were completed in version 57; remaining plugin algorithms, notification
+  runner and alarm-backed schedule remain incomplete.
 
 The earlier deployed increment added the complete locked Settings module contract:
 
@@ -342,8 +357,9 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed evidence candidate is
-`55277d8967d0c33cdccab0bc77a6a503e4303524`. It adds the request-local static
-plugin registry, routes implemented v2 property plugins through it and adds an
+`8477cecd011989ba966f53416865df03849bbaef`. It adds the request-local
+dataloader/database-size adapter, routes real SQLite bytes through ddata and
+the static plugin registry, and retains the
 unchanged official-client pluginbase gate while retaining the Wrangler
 variable-preservation audit, complete five-case Sandbox module mapping and
 remaining public helper surface, the
@@ -367,22 +383,23 @@ The table below records the exact local gate completed before deployment.
 | Authorization audit tests | 6/6 passed |
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 46 files, 515/515 passed |
-| Worker dry run | 1030.64 KiB raw / 188.53 KiB gzip |
+| Workers integration tests | 48 files, 532/532 passed |
+| Worker dry run | 1035.12 KiB raw / 189.61 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 515 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 532 Workers
 tests cover the implemented adapter subset; `pluginbase.test.js` additionally
 runs unchanged against the shipped official client bundle. All 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
+`dataloader.test.js`, `dbsize.test.js`,
 `websocket.shape-handling.test.js`, `profile.test.js`,
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js` and 25 v1 client/API files are classified
-as fully `adapted`; one is `pass`, 50 remain unresolved and two bridge files
+as fully `adapted`; one is `pass`, 48 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -391,7 +408,7 @@ real-browser gates below against the same active version.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba` at 100%.
+Wrangler reports version `3a95a34d-806a-4d2b-9dff-3db1d1051b9a` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -404,10 +421,13 @@ not only Wrangler command success.
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
 | GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and the locked null plugin-state fields |
+| GET `/api/v2/ddata/at` | HTTP 200 with real SQLite `dataSize:225280` bytes and `indexSize:0`; the total is not double-counted |
+| GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.21`, `display:"0%"` and `status:"current"` |
 | GET `/api/v2/properties/loop` | HTTP 200 with `{}` because Loop is opt-in and the deployed `ENABLE` setting does not enable it; no synthetic property was fabricated |
 | POST simulated Treatment without a configured secret | Expected HTTP 503 `api_secret_not_configured`; follow-up GET remained empty |
 
-The isolated tenant `smoke56-20260720-1201` passed 25 behavior/CORS assertions.
+The reusable `scripts/smoke-public.mjs` run used isolated tenant
+`public-smoke-1784521799590` and passed 51 behavior/CORS assertions.
 The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
 `pingTimeout:20000`.
 
@@ -430,7 +450,8 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds the request-local static plugin registry and retains the
+This release adds the request-local dataloader/database-size adapter and retains the
+static plugin registry,
 deployment-variable preservation/configuration audit, complete request-local
 Sandbox contract, Settings, Loop property
 calculation, concurrent uploader, Profile, Loop client and client/server root
@@ -443,7 +464,8 @@ remain evidence from the immediately preceding compatible version.
 
 | Check | Result |
 | --- | --- |
-| Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
+| Current EIO4 polling open | HTTP 200, a 20-character Engine.IO 4 SID, `pingInterval:25000` and `pingTimeout:20000` |
+| Live database stats/property | ddata published 225,280 SQLite bytes; the default-enabled registry property returned the same total and 953.67 MiB Free-plan maximum |
 | Local plugin registry contract | both named client/server cases plus order, enable/shown gates, hook/error behavior, event aggregation, iterators and settings projection |
 | Direct official client contract | complete locked `pluginbase.test.js` passed unchanged against the byte-identical shipped bundle |
 | Local Cloudflare configuration contract | `keep_vars` is true; no plaintext vars, D1, R2, KV, Queues or custom routes are checked in; only `ENTRY_STORE` and `ASSETS` are bound |
@@ -480,11 +502,11 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 56's official UI without reading
+A real Chromium session exercised Cloudflare version 57's official UI without reading
 credential storage or submitting protected mutations:
 
-- the homepage rendered its official chart region and loaded locked
-  `bundle.app.js`; the
+- the homepage rendered its official chart region, loaded locked
+  `bundle.app.js` and displayed the live database-size pill as `0%`; the
   public tenant has no Entries, so `---` is expected;
 - Admin Tools, Food Editor, Profile Editor and `clock-color` loaded from the
   official bundle with their expected headings/forms. Food reached `Database
@@ -504,8 +526,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba`. It reused the same 248 unchanged
-official assets. Version 56 has therefore passed credential-free remote API,
+`3a95a34d-806a-4d2b-9dff-3db1d1051b9a`. It reused the same 248 unchanged
+official assets. Version 57 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -569,7 +591,7 @@ mutation, report generation or every other protected page workflow.
   handled safely instead of reproducing the locked upstream unhandled
   rejection.
 - Server plugin jobs, notification generation/processing, remaining
-  plugin-derived properties, data-loader execution and summary state/persistence
+  plugin-derived properties and summary state/persistence
   and the general alarm-driven background scheduler remain incomplete. Alarm
   ACK/silence state itself is persisted in schema v10 and must be consumed by
   that future notification engine. The existing realtime/auth alarm scheduler
@@ -585,11 +607,11 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`5d4e9153-99c2-483c-8f8f-b91c498ecfcb` (version 55). It has its own remote API,
-Engine.IO and browser acceptance and lacks only this release's static plugin
-registry/direct-client gate. Version 54
-(`7d633773-090e-483b-8bbd-24beabfd0b9e`) remains an older compatible fallback
-without the persistent Wrangler variable-preservation/configuration guard.
+`ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba` (version 56). It has its own remote API,
+Engine.IO and browser acceptance and lacks only this release's
+dataloader/database-size adapter. Version 55
+(`5d4e9153-99c2-483c-8f8f-b91c498ecfcb`) remains an older compatible fallback
+without the static plugin registry/direct-client gate.
 The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not

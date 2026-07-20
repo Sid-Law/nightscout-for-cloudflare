@@ -7,14 +7,14 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`55277d8967d0c33cdccab0bc77a6a503e4303524` and Cloudflare version
-`ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba`, reported as 100% active. The
-candidate's 46-file Workers-runtime suite passes 515/515 plus 21/21 audit tests
+`8477cecd011989ba966f53416865df03849bbaef` and Cloudflare version
+`3a95a34d-806a-4d2b-9dff-3db1d1051b9a`, reported as 100% active. The
+candidate's 48-file Workers-runtime suite passes 532/532 plus 21/21 audit tests
 and one unchanged direct upstream client test.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1030.64 KiB raw / 188.53 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 56
-reported a 27 ms startup and passed credential-free API, EIO4 and real-browser
+asset entries; its dry run reported 1035.12 KiB raw / 189.61 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 57
+reported a 26 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -22,15 +22,17 @@ evidence of a complete port.
 The deployed platform configuration sets Wrangler `keep_vars: true` so a
 dashboard-managed lab variable survives later code deployments. A Node audit locks that behavior while
 rejecting checked-in plaintext vars and prohibited product bindings. The
-current runtime also adds `src/plugins/registry.ts`, a request-local static replacement for the
+current runtime retains `src/plugins/registry.ts`, a request-local static replacement for the
 Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
-implemented v2 property plugins now execute through this registry. The
+implemented v2 property plugins execute through this registry. Version 57 adds
+`src/data-loader.ts` and `src/plugins/dbsize.ts`: real SQLite file bytes now
+flow through ddata and the official database-size calculation. The
 official client `pluginbase.test.js` runs unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 46 Workers files / 515 tests, 21/21 audits and one direct upstream
-client test; the dry run is 1030.64 KiB raw / 188.53 KiB gzip with the same 248
+evidence is 48 Workers files / 532 tests, 21/21 audits and one direct upstream
+client test; the dry run is 1035.12 KiB raw / 189.61 KiB gzip with the same 248
 assets and two bindings. Remote API/EIO4 and real-browser gates passed against
 the same active version.
 
@@ -127,7 +129,7 @@ process-global `ctx.ddata`. `src/realtime/ddata-snapshot.ts` represents the
 locked ddata singleton's empty buckets, clone, runtime normalization and
 prefer-new merge operations as pure functions; tenant state remains inside the
 SQLite Durable Object. `src/plugins/bgnow.ts`, `direction.ts`, `rawbg.ts`,
-`upbat.ts` and `loop.ts`, supported by request-safe
+`upbat.ts`, `loop.ts` and `dbsize.ts`, supported by request-safe
 `runtime/{times,units,levels}.ts`, are
 ports of their locked property modules. They build the same
 four five-minute buckets around the last non-future SGV, preserve the
@@ -135,15 +137,18 @@ over-nine-minute interpolation rule and mmol rounding, expose the official
 direction character/entity only for current data, reproduce raw calibration
 and noise behavior, analyze recent per-uploader battery minima/severity, and
 interpret uploader-provided Loop status and forecasts without calculating a
-dose.
+dose, and preserve the locked database-size percentages, thresholds, pill,
+notification request and assistant response.
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
-opt-in; `loop` is likewise exposed only when configured in `ENABLE`.
+opt-in; `loop` is likewise exposed only when configured in `ENABLE`, while
+`dbsize` remains enabled by the locked default feature set.
 `/api/v2/properties` applies those values plus the upstream comma
 picker and truthy `pretty` serialization.
 
 Property polling uses `getPluginPropertyContextJson()`, a bounded DO projection
-of at most 64 SGVs, the newest calibration and recent device status. It avoids
+of at most 64 SGVs, the newest calibration, recent device status and one small
+database-stat object. It avoids
 materializing unrelated food, treatment and profile collections. Cloudflare
 can route a newly deployed Worker to an older still-live DO isolate during a
 rolling release. The first plugin deployment exposed this when the old isolate
@@ -152,6 +157,20 @@ precise missing-method error and temporarily uses the already-deployed
 `getDdataSnapshotJson()` RPC; all storage and parse failures still propagate.
 Once the DO isolate updates, requests automatically return to the small
 projection.
+
+Locked MongoDB exposes separate logical `dataSize` and `indexSize` values.
+Cloudflare instead exposes the complete SQLite file through
+[`ctx.storage.sql.databaseSize`](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/).
+`src/data-loader.ts` places that total in `dataSize` and zero in `indexSize`, so
+the unchanged upstream `dbsize` sum remains the real file total rather than
+counting indexes twice. Cloudflare's current
+[Durable Object limits](https://developers.cloudflare.com/durable-objects/platform/limits/)
+state that a SQLite object on Workers Free reaches `SQLITE_FULL` at 1 GB.
+Because the official plugin configures its maximum in binary MiB, the platform
+context exposes 1,000,000,000 bytes as 953.67431640625 MiB (displayed as
+953.67). `DBSIZE_MAX`, warning/urgent percentages, alert enablement and MiB
+display still use the upstream environment names and normalization. This is a
+storage/runtime adapter; the official plugin formulas and UI remain unchanged.
 
 `src/plugins/loop.ts` is a request-local port of the five locked Loop plugin
 contracts. It selects six hours of recent DeviceStatus, preserves enacted,
@@ -944,10 +963,10 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba`. Current credential-free remote smoke
+`3a95a34d-806a-4d2b-9dff-3db1d1051b9a`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
-version and an EIO4 polling open packet;
+version, real ddata/database-size values and an EIO4 polling open packet;
 API3 Entries without a token returned the
 expected 401. The current public Worker has no `API_SECRET` Secret binding, so
 a simulated Treatment POST returned the expected 503
