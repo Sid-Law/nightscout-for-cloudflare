@@ -25,6 +25,18 @@ dashboard-managed lab variable survives later code deployments. A Node audit loc
 rejecting checked-in plaintext vars and prohibited product bindings. The
 Workers runtime is otherwise unchanged.
 
+Next runtime candidate `55277d8967d0c33cdccab0bc77a6a503e4303524`
+adds `src/plugins/registry.ts`, a request-local static replacement for the
+Node-only dynamic plugin loader. Its locked client/server catalog membership
+and order, enable flags, shown-plugin gates, hook dispatch, error containment,
+event aggregation and extended-settings projection are contract-tested. The
+implemented v2 property plugins now execute through this registry. The
+official client `pluginbase.test.js` runs unchanged only after a byte-equality
+gate proves that the NSCF public bundle is the upstream-built bundle. Local
+evidence is 46 Workers files / 515 tests, 21/21 audits and one direct upstream
+client test; the dry run is 1030.64 KiB raw / 188.53 KiB gzip with the same 248
+assets and two bindings. This is pre-deployment evidence.
+
 ## Current request and data flow
 
 ```text
@@ -161,7 +173,18 @@ unit/display rounding, default message construction and plugin-specific
 extended settings. Server initialization substitutes only the existing locked
 Profile adapter for Node's dynamic `require`; there is no filesystem access or
 cross-request module-global tenant state. This closes the Sandbox foundation,
-but it does not itself register every plugin or schedule server evaluation.
+but it does not itself schedule server evaluation.
+
+`src/plugins/registry.ts` ports the public `lib/plugins/index.js` registry
+surface with static build-time catalogs in place of Node dynamic `require`.
+Each request gets new plugin objects and enable state. Client/server membership
+and order, shown-plugin/type filtering, hook/error behavior, event types and
+extended client settings retain the locked v15.0.7 behavior, including its
+documented lookup quirk; production enable gating uses exact-name registration.
+The current pure property modules are dispatched through that registry in
+server order. This supplies the registry layer only: descriptors for unported
+plugins do not fabricate their calculations, notifications or background
+work.
 
 `src/api2/summary.ts` is a direct stateless port
 of the locked SGV/treatment/profile and basal-data processors. It receives one
@@ -965,7 +988,7 @@ idempotency key. The alarm loads all due jobs, invokes the official server
 module through a tenant-scoped platform context, records results, and schedules
 the next due time.
 
-Official plugin formulas and medical calculations are not rewritten. A
+Official plugin formulas and medical calculations are not rewritten. The
 build-time registry lists the locked server plugins so bundling is deterministic;
 platform code supplies storage, time, settings, notifications and logging.
 Live external bridge/push delivery remains disabled in the simulated-data
@@ -975,7 +998,8 @@ multi-key contracts remain required.
 The deployed summary basal processor and pure
 `bgnow`/`direction`/`rawbg`/`upbat`/`loop` adapters, together with the deployed
 request-local Sandbox, are reusable server calculation/property
-slices rather than a background plugin engine. They do not calculate insulin
+slices now dispatched by the registry rather than a background plugin engine.
+They do not calculate insulin
 recommendations, IOB or COB. Future summary state
 must come from the locked plugin modules through the persisted scheduler above;
 platform code must not fill those fields with downstream formulas.

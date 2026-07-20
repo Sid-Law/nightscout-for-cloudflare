@@ -441,8 +441,10 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
 `data.calcdelta.test.js`, `websocket.shape-handling.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
-`settings.test.js`, `sandbox.test.js` and 25 v1 client/API files are classified as fully
-`adapted`.
+`settings.test.js`, `sandbox.test.js`, `plugins.test.js` and 25 v1 client/API
+files are classified as fully `adapted`. The complete locked
+`pluginbase.test.js` file runs unchanged against the byte-identical official
+client bundle and is classified as `pass`.
 The latest four v1 additions are `gap-treat-012.test.js`,
 `carb-dose-upload.test.js`, `objectid-cache.test.js` and
 `sgv-devicestatus.test.js`; the preceding three are `uuid-handling.test.js`,
@@ -450,7 +452,7 @@ The latest four v1 additions are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 52 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 50 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed evidence candidate is commit
@@ -477,6 +479,19 @@ This release also enables Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
 Its Node configuration audit rejects stored plaintext vars and prohibited
 D1/R2/KV/Queues/routes while locking the existing footprint.
+The next runtime candidate is
+`55277d8967d0c33cdccab0bc77a6a503e4303524`. It replaces the Node-only
+dynamic plugin registry with a request-local static Workers registry, routes
+the implemented v2 server property adapters through its official order and
+enable/error-isolation gates, and retains the exact client/server default
+catalog split. The unchanged official `pluginbase.test.js` client test is now a
+mandatory local gate after byte equality between the upstream-built and NSCF
+public bundles is proved. Local evidence is 46 Workers files / 515 tests,
+21/21 audit tests and that one direct upstream-client test; dry-run remains 248
+assets with only `ENTRY_STORE` and `ASSETS`, at 1030.64 KiB raw / 188.53 KiB
+gzip. The manifest records one direct pass, 58 adapted, 50 unresolved and two
+fixed-scope exclusions. This candidate is not deployed evidence until the
+Cloudflare, remote API and real-browser gates pass.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side

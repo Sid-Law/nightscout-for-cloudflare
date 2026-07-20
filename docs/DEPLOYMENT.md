@@ -73,6 +73,19 @@ Nightscout runtime formulas or routes:
 - encrypted Secrets remain preferred and are independently preserved by
   Cloudflare. No credential was created, recovered, read or printed.
 
+The next runtime candidate is
+`55277d8967d0c33cdccab0bc77a6a503e4303524`; it is not yet deployed evidence:
+
+- a request-local static registry replaces Node dynamic plugin `require` while
+  preserving the locked client/server catalogs, order, enable/shown gates,
+  hook/error behavior, event aggregation and client extended settings;
+- the implemented v2 server properties now execute through that registry, but
+  descriptors for unresolved plugins do not fabricate their algorithms;
+- both named `plugins.test.js` cases and the wider registry surface pass in the
+  Workers suite;
+- the complete official `pluginbase.test.js` runs unchanged only after its
+  upstream-built bundle and NSCF public bundle are proved byte-identical.
+
 The immediately preceding deployed increment added the complete locked Sandbox module contract:
 
 - all five named `sandbox.test.js` cases pass in both the locked original suite
@@ -328,11 +341,12 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed evidence candidate is
-`cc6c0b603701c28e133608be29cdf0f184d57be7`. It adds the Wrangler variable
-preservation/configuration audit while retaining Worker runtime source
-`914247f2d9f5bb40c603e8db0c51012471513fe1`, the complete five-case Sandbox
-module mapping and remaining public helper surface, the
+The pre-deployment evidence candidate is
+`55277d8967d0c33cdccab0bc77a6a503e4303524`. It adds the request-local static
+plugin registry, routes implemented v2 property plugins through it and adds an
+unchanged official-client pluginbase gate while retaining the Wrangler
+variable-preservation audit, complete five-case Sandbox module mapping and
+remaining public helper surface, the
 13-case Settings module, five-case Loop plugin, 13-case concurrent uploader and
 24-assertion Profile calculation mappings, as well as
 GAP-TREAT-012, Loop carb/dose, ObjectIdCache, SGV/DeviceStatus,
@@ -349,25 +363,32 @@ The table below records the exact local gate completed before deployment.
 | Static Assets | 248 official asset entries rebuilt |
 | Upstream route/test audit | 161 registrations and 111 test files; generated outputs deterministic |
 | Audit tool tests | 14/14 passed |
+| Direct upstream client test | complete locked `pluginbase.test.js` passed unchanged after public/upstream bundle byte equality |
 | Authorization audit tests | 6/6 passed |
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 45 files, 510/510 passed |
-| Worker dry run | 1021.31 KiB raw / 186.89 KiB gzip |
+| Workers integration tests | 46 files, 515/515 passed |
+| Worker dry run | 1030.64 KiB raw / 188.53 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 510 Workers
-tests cover the implemented adapter subset; all 16 API3 files,
+audit finds 883 active `it(...)` cases plus one skipped case. The 515 Workers
+tests cover the implemented adapter subset; `pluginbase.test.js` additionally
+runs unchanged against the shipped official client bundle. All 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
 `websocket.shape-handling.test.js`, `profile.test.js`,
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
-`sandbox.test.js` and 25 v1 client/API files are classified as fully `adapted`,
-52 remain unresolved and two bridge files are fixed-scope exclusions.
+`sandbox.test.js`, `plugins.test.js` and 25 v1 client/API files are classified
+as fully `adapted`; one is `pass`, 50 remain unresolved and two bridge files
+are fixed-scope exclusions.
 Neither count proves complete compatibility.
+
+These are local pre-deployment gates. The Post-deployment sections below still
+describe active Cloudflare version 55 until this candidate is deployed and
+reaccepted remotely.
 
 ## Post-deployment remote API evidence
 
