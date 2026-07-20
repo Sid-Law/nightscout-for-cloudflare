@@ -7,20 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`7630e8aec2dc09f15aa6436cbf904705f7fd737e`, unchanged runtime source
-`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8` and Cloudflare version
-`f4909749-a807-4f10-9794-5eaa471da4d9`, reported as 100% active. The
-candidate's 42-file Workers-runtime suite passes 485/485 plus 20/20 audit tests.
+`f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`, the same runtime source, and
+Cloudflare version `719c2b34-95a9-49d4-b22e-147092eee4fc`, reported as 100%
+active. The candidate's 43-file Workers-runtime suite passes 490/490 plus
+20/20 audit tests.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1005.41 KiB raw / 183.59 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 51
-reported a 33 ms startup and passed credential-free API, EIO4 and real-browser
+asset entries; its dry run reported 1010.05 KiB raw / 184.58 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 52
+reported a 24 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
-Next runtime candidate `f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`
-adds the opt-in locked Loop property adapter and passes 490/490 tests across 43
-Workers-runtime files plus the same 20/20 audits. It is not deployed evidence
-until the release gates complete. Its dry run reports 1010.05 KiB raw / 184.58
-KiB gzip, 248 assets and only the existing two product bindings.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -903,7 +898,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`f4909749-a807-4f10-9794-5eaa471da4d9`. Current credential-free remote smoke
+`719c2b34-95a9-49d4-b22e-147092eee4fc`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, fresh-tenant
 Profile/current and v2 Summary, API3 version and an EIO4 polling open packet;
 API3 Entries without a token returned the

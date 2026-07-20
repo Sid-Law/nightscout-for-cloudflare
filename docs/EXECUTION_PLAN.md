@@ -46,7 +46,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | Version 51's credential-free Chromium pass rendered the homepage/chart and loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded`, Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone, and the empty-data clock rendered `-?-` with `No data found in DB`. No page had a JavaScript error. Homepage/clock had no warnings; Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. Stable Settings close, earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 51. Protected mutation/report and pushed-live-update workflows remain. |
+| 2. Official browser assets/pages | Partial | Version 52's credential-free Chromium pass rendered the homepage/chart and loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded`, Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone, and the empty-data clock rendered `-?-` with `No data found in DB`. No page had a JavaScript error or failed request. Homepage/clock had no warnings; Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. Stable Settings close, earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 52. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. The complete 13-case concurrent-write contract now proves five-way scalar/batch writes, unique IDs and 50-SMB/100-SGV/30-cross-collection offline recovery through one tenant DO. `/storage` atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 25 locked files adapted | Entries adapts its complete locked upstream file plus deduplication, Entries UUID and partial-failure contracts. Treatments additionally adapts complete UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, Loop carb/dose and ObjectIdCache files: exact flag parsing, UUID promotion/repair, ordered responses, cached-ID update/delete and descriptive `syncIdentifier` behavior. The complete Loop SGV/DeviceStatus file now locks directions, device metadata, replay behavior and nested Loop/pump payloads; DeviceStatus also retains official prediction trimming. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are mapped. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, wider Mongo query/document behavior and remaining v1 routes/test files. |
 | 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary now uses the complete 24-assertion `profile.test.js` adapter for legacy/store profiles, schedule/timezone calculation and historical selection. The complete locked `ddata`, `bgnow`, `direction`, `rawbg`, `upbat` and five-case `loop` files are adapted; `/properties` uses official buckets/interpolation/mmol/direction logic, exposes default-enabled uploader battery and opt-in Loop state from a bounded property projection. Raw BG and Loop retain their official enabled-plugin gates. Remaining plugin properties and summary state (IOB/COB/BWP/ages/battery), summary persistence, the persisted Loop notification runner and v2-only `/notifications/loop` delivery remain; ddata uses a bounded two-day SGV window. |
@@ -94,12 +94,11 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 The deployed evidence candidate
-`7630e8aec2dc09f15aa6436cbf904705f7fd737e` adds the complete 13-case
-`concurrent-writes.test.js` mapping without changing runtime source
-`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. That runtime source adds the
-complete locked 24-assertion `profile.test.js` contract and wires it into API
-v2 Summary on top of the already adapted Loop client and Treatment identity
-contracts.
+`f78631cac0071f4f7fb4f4eb839c161e2f8aa73d` adds the complete five-case
+`loop.test.js` adapter and enabled `/api/v2/properties` dispatch while retaining
+the 13-case concurrent uploader, 24-assertion Profile, Loop client and
+Treatment identity contracts. It interprets uploader-provided Loop
+status/forecast data and adds no dosing formula.
 The Treatment adapter follows exact true-by-default `UUID_HANDLING` parsing,
 enabled/disabled promotion and query/delete semantics, legacy raw-UUID
 find/update/delete behavior and the MongoDB 5.9 delete-result shape. A
@@ -108,32 +107,21 @@ Cloudflare's precise missing-method error; explicit false fails closed during
 that rolling boundary. All prior
 root-write/delta, property, API3 `/storage`, `/alarm`, authorization and
 notification-ACK contracts remain green. Cloudflare Worker version
-`f4909749-a807-4f10-9794-5eaa471da4d9` is active at 100%; deployment
-`7f08480c-54e3-4a82-a68a-86c858f28c85` was created at
-`2026-07-20T01:26:29.175759Z` and Wrangler reported a 33 ms startup. It
+`719c2b34-95a9-49d4-b22e-147092eee4fc` is active at 100%; deployment
+`00d45bd3-52e3-4e20-840e-133d57884660` was created at
+`2026-07-20T01:56:52.173529Z` and Wrangler reported a 24 ms startup. It
 processed 248 unchanged official asset entries. The candidate's dry run
-reports 1005.41 KiB raw / 183.59 KiB gzip and exposes only `ENTRY_STORE` plus
+reports 1010.05 KiB raw / 184.58 KiB gzip and exposes only `ENTRY_STORE` plus
 `ASSETS`. No deployed credential was read or supplied to remote smoke. The
-candidate's 42-file Workers-runtime suite passes 485/485,
-both audit suites pass 20/20 and TypeScript passes. The version 51 evidence
-manifest recorded 54 adapted, 55 unresolved and two fixed-scope excluded
-files. The official UI
-build and dry run pass; version 51's credential-free remote API/Engine.IO smoke
+candidate's 43-file Workers-runtime suite passes 490/490,
+both audit suites pass 20/20 and TypeScript passes. The manifest records 55
+adapted, 54 unresolved and two fixed-scope excluded files. The official UI
+build and dry run pass; version 52's credential-free remote API/Engine.IO smoke
 and real-browser acceptance also passed across the official homepage, Admin,
 Food, Profile and `clock-color` pages without JavaScript errors or protected
 writes. The locked missing-`#chartContainer` warnings on non-chart pages remain
 recorded rather than hidden. These remain subset facts, not a full-port claim.
-All version 51 post-deployment gates for this evidence increment passed.
-
-Next runtime candidate `f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`
-adds the complete five-case `loop.test.js` adapter and its enabled
-`/api/v2/properties` dispatch. Both the locked original file and the Workers
-mapping pass 5/5; the complete local suite passes 490/490 across 43 files plus
-20/20 audits and TypeScript. The manifest records 55 adapted, 54 unresolved
-and two fixed-scope exclusions. The official UI build and Wrangler dry run pass
-with 248 assets, 1010.05 KiB raw / 184.58 KiB gzip and only `ENTRY_STORE` plus
-`ASSETS`. Deployment, remote API/Engine.IO and browser gates are pending and
-therefore are not attributed to version 51.
+All version 52 post-deployment gates for this evidence increment passed.
 
 Current remote reads, API3 version and EIO4 polling pass. The public Worker has
 no `API_SECRET` Secret binding: a simulated Treatment write returned the
@@ -297,12 +285,12 @@ The deployed increment includes:
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
-Version 51 credential-free remote smoke returned HTTP 200 for health, bounded v1
+Version 52 credential-free remote smoke returned HTTP 200 for health, bounded v1
 Entries and Treatments reads, fresh-tenant Profile/current and v2 Summary,
-API3 version and EIO4 polling; missing-token API3 Entries returned the expected
-401. A simulated UUID Treatment write returned
+API3 version, opt-in-disabled Loop property and EIO4 polling; missing-token API3
+Entries returned the expected 401. A simulated Treatment write returned
 the expected 503 because no `API_SECRET` is configured, and the follow-up read
-remained empty. No deployed credential was read or sent. The same version 51
+remained empty. No deployed credential was read or sent. The same version 52
 Chromium pass loaded the official homepage, Admin, Food, Profile and
 `clock-color` without protected writes. Food reached `Database loaded`,
 Profile reached `Values loaded.` and retained the stored simulated profile plus

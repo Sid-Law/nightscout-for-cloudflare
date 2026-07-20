@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed evidence candidate: `7630e8aec2dc09f15aa6436cbf904705f7fd737e`
-- Runtime source candidate: `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`
-- Git HEAD used by Wrangler: `e024dc70df88dff18a425abe28eddce00c47ea0d`
-- Cloudflare Version ID: `f4909749-a807-4f10-9794-5eaa471da4d9`
-- Cloudflare ordinal version number: `51`
+- Deployed evidence candidate: `f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`
+- Runtime source candidate: `f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`
+- Git HEAD used by Wrangler: `cd702a79ecd3d124ca97f916bfb2685eb87283ae`
+- Cloudflare Version ID: `719c2b34-95a9-49d4-b22e-147092eee4fc`
+- Cloudflare ordinal version number: `52`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T01:26:28.313964Z`
-- Activation: deployment `7f08480c-54e3-4a82-a68a-86c858f28c85` created
-  `2026-07-20T01:26:29.175759Z`; Wrangler reports
+- Version creation time: `2026-07-20T01:56:51.124251Z`
+- Activation: deployment `00d45bd3-52e3-4e20-840e-133d57884660` created
+  `2026-07-20T01:56:52.173529Z`; Wrangler reports
   this version at 100%
-- Worker startup: 33 ms
-- Deployment ID: `7f08480c-54e3-4a82-a68a-86c858f28c85`
+- Worker startup: 24 ms
+- Deployment ID: `00d45bd3-52e3-4e20-840e-133d57884660`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -31,7 +31,7 @@ is not counted as API, plugin or real-time compatibility.
   authority columns
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 1005.41 KiB raw / 183.59 KiB gzip
+- Upload: 1010.05 KiB raw / 184.58 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -57,8 +57,19 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
 
-The current deployed evidence increment adds the complete concurrent-uploader
-contract without changing Worker runtime source:
+The current deployed increment adds the complete locked Loop plugin contract:
+
+- all five named `loop.test.js` cases pass in the Workers runtime as well as in
+  the locked original suite;
+- enabled Loop DeviceStatus feeds `/api/v2/properties` with the official
+  enacted/error/`received=false` display, six-point forecast and stale-status
+  level, plus the locked notification-request and virtual-assistant outputs;
+- the adapter only interprets uploader-provided Loop data. It adds no dosing
+  calculation or medical recommendation, and the persisted background
+  notification runner remains incomplete.
+
+The immediately preceding evidence increment added the complete
+concurrent-uploader contract without changing its then-current Worker runtime:
 
 - all 13 locked `concurrent-writes.test.js` cases cross the Worker HTTP boundary
   into one tenant Durable Object;
@@ -68,8 +79,8 @@ contract without changing Worker runtime source:
 - bounded offline-recovery cases preserve 50 AAPS SMB records, 100 AndroidAPS
   SGVs and 30 mixed-collection records without lost writes.
 
-The unchanged deployed runtime source also includes the immediately preceding
-Profile calculation increment:
+The deployed runtime also includes the preceding Profile calculation
+increment:
 
 - all 24 locked `profile.test.js` assertions cover legacy/store conversion,
   schedules, units, timezone handling, profile switches and historical
@@ -279,11 +290,10 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed evidence candidate is
-`7630e8aec2dc09f15aa6436cbf904705f7fd737e`; it changes no Worker runtime
-source relative to deployed runtime candidate
-`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. It adds the complete 13-case
-concurrent uploader mapping while retaining the complete 24-assertion Profile
-calculation mapping already wired into API v2 Summary, as well as
+`f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`. It adds the complete five-case
+Loop plugin mapping and opt-in v2 property dispatch while retaining the
+complete 13-case concurrent uploader and 24-assertion Profile calculation
+mappings, as well as
 GAP-TREAT-012, Loop carb/dose, ObjectIdCache, SGV/DeviceStatus,
 UUID-handling, issue-6923, identity-matrix, legacy uploader/DeviceStatus work,
 schema-v12 root-write
@@ -300,26 +310,26 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 42 files, 485/485 passed |
-| Worker dry run | 1005.41 KiB raw / 183.59 KiB gzip |
+| Workers integration tests | 43 files, 490/490 passed |
+| Worker dry run | 1010.05 KiB raw / 184.58 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 485 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 490 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
 `websocket.shape-handling.test.js`, `profile.test.js`,
-`concurrent-writes.test.js` and 25 v1 client/API files are classified as fully
-`adapted`, 55 remain unresolved and two bridge files are
+`concurrent-writes.test.js`, `loop.test.js` and 25 v1 client/API files are
+classified as fully `adapted`, 54 remain unresolved and two bridge files are
 fixed-scope exclusions.
 Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `f4909749-a807-4f10-9794-5eaa471da4d9` at 100%.
+Wrangler reports version `719c2b34-95a9-49d4-b22e-147092eee4fc` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -331,7 +341,8 @@ not only Wrangler command success.
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
 | GET `/api/v2/summary/?hours=6` | HTTP 200 with empty SGV/treatment arrays, `{}` Profile and the locked null plugin-state fields |
-| POST simulated UUID Treatment without a configured secret | Expected HTTP 503 `api_secret_not_configured`; follow-up GET remained empty |
+| GET `/api/v2/properties/loop` | HTTP 200 with `{}` because Loop is opt-in and the deployed `ENABLE` setting does not enable it; no synthetic property was fabricated |
+| POST simulated Treatment without a configured secret | Expected HTTP 503 `api_secret_not_configured`; follow-up GET remained empty |
 
 No deployed credential was read or sent. The failed write was deliberately
 credential-free and could not mutate storage. Every checked API response
@@ -352,8 +363,8 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This evidence-only release adds the complete concurrent uploader contract and
-retains the unchanged Profile, Loop client and client/server root transport
+This release adds the complete Loop property calculation contract and retains
+the concurrent uploader, Profile, Loop client and client/server root transport
 runtime. The current version repeated a fresh
 credential-free EIO4 polling-open check. Because the Worker has no
 `API_SECRET`, no credentialed remote mutation could be attempted; successful
@@ -364,6 +375,7 @@ remain evidence from the immediately preceding compatible version.
 | Check | Result |
 | --- | --- |
 | Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
+| Local Loop property contract | five locked enacted/error/received/stale-alert/assistant cases, including six forecast points and opt-in property dispatch |
 | Prior-version anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
 | Prior-version read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
 | Local Treatment identity contract | 30 locked UUID flag, legacy issue-6923 and client identity cases, including MongoDB 5 delete results |
@@ -394,7 +406,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 51's official UI without reading
+A real Chromium session exercised Cloudflare version 52's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -415,8 +427,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`f4909749-a807-4f10-9794-5eaa471da4d9`. It reused the same 248 unchanged
-official assets. Version 51 has therefore passed credential-free remote API,
+`719c2b34-95a9-49d4-b22e-147092eee4fc`. It reused the same 248 unchanged
+official assets. Version 52 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -496,10 +508,10 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`4f89e2fc-ac35-499b-ac39-ffbd61f18e66` (version 50). It has its own remote API,
-Engine.IO and browser acceptance and the same runtime source; version 51 adds
-only concurrent uploader contract evidence. Version 49
-(`de8ab414-79e8-4938-8e09-e86c7f4cf0cf`) remains an older compatible fallback.
+`f4909749-a807-4f10-9794-5eaa471da4d9` (version 51). It has its own remote API,
+Engine.IO and browser acceptance and lacks only this release's Loop property
+adapter. Version 50 (`4f89e2fc-ac35-499b-ac39-ffbd61f18e66`) remains an older
+compatible fallback.
 The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not
