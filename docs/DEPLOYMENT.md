@@ -12,17 +12,17 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `4675ba2ae38f96e8e117e38d23e543ab5bbc3126`
-- Git HEAD used by Wrangler: `4675ba2ae38f96e8e117e38d23e543ab5bbc3126`
-- Cloudflare Version ID: `b835ef23-3e10-49cf-8f70-87c783034b24`
-- Cloudflare ordinal version number: `48`
+- Deployed code candidate: `947dc1403c8a07ecc053457386a97d5b4bd18571`
+- Git HEAD used by Wrangler: `895bd3ffdd483ee831000b7fa54587de35cb6551`
+- Cloudflare Version ID: `de8ab414-79e8-4938-8e09-e86c7f4cf0cf`
+- Cloudflare ordinal version number: `49`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-19T23:59:31.253016Z`
-- Activation: deployment `6aaef3f7-0bd5-4008-845e-01163da1c0a3` created
-  `2026-07-19T23:59:32.40656Z`; Wrangler reports
+- Version creation time: `2026-07-20T00:35:18.12158Z`
+- Activation: deployment `28487aec-6adc-4ca8-b64c-bb9de9006d2d` created
+  `2026-07-20T00:35:19.306944Z`; Wrangler reports
   this version at 100%
-- Worker startup: 23 ms
-- Deployment ID: `6aaef3f7-0bd5-4008-845e-01163da1c0a3`
+- Worker startup: 22 ms
+- Deployment ID: `28487aec-6adc-4ca8-b64c-bb9de9006d2d`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -258,7 +258,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The next deployment candidate is
+The deployed code candidate is
 `947dc1403c8a07ecc053457386a97d5b4bd18571`. It adds the complete named
 GAP-TREAT-012, Loop carb/dose, ObjectIdCache and SGV/DeviceStatus mappings while
 retaining UUID-handling, issue-6923, identity-matrix, legacy uploader/
@@ -294,7 +294,7 @@ Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `b835ef23-3e10-49cf-8f70-87c783034b24` at 100%.
+Wrangler reports version `de8ab414-79e8-4938-8e09-e86c7f4cf0cf` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -325,8 +325,8 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release changes Treatment identity behavior and retains the existing
-client/server root transports. The current version repeated a fresh
+This release adds complete Loop client contract evidence and retains the
+existing client/server root transports. The current version repeated a fresh
 credential-free EIO4 polling-open check. Because the Worker has no
 `API_SECRET`, no credentialed remote mutation could be attempted; successful
 write/change delivery is proved by local integration contracts rather than
@@ -366,7 +366,8 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real browser session exercised Cloudflare version 48's official UI without reading
+A real browser session exercised the immediately preceding Cloudflare version
+48 official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -384,6 +385,10 @@ This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
 `b835ef23-3e10-49cf-8f70-87c783034b24`. It reused the same 248 unchanged
 official assets.
+
+Cloudflare version 49 remote API and Engine.IO smoke has passed. Its
+post-deployment real-browser pass is still pending and is not claimed by this
+record yet.
 
 Authenticated Profile Save remains historical evidence from an earlier
 version; the current load is recorded above, but no authenticated Food/Profile
@@ -462,9 +467,9 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`d997c600-edaf-40e4-ad53-78e8d2788a00`. It contains the schema-v12
-client/server root mutation slice and all earlier work, but not the current
-legacy uploader edge contracts or DeviceStatus prediction trimming. The older
+`b835ef23-3e10-49cf-8f70-87c783034b24`. Version 49 adds test-manifest and
+documentation evidence only, so version 48 contains the same deployed runtime
+adapter and already has remote API plus real-browser acceptance. The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not
 be selected as a rollback target.

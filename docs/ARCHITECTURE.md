@@ -6,14 +6,14 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes candidate
-`947dc1403c8a07ecc053457386a97d5b4bd18571`; the preceding runtime produced Cloudflare version
-`b835ef23-3e10-49cf-8f70-87c783034b24`, reported as 100% active by direct
+“Current” below describes deployed candidate
+`947dc1403c8a07ecc053457386a97d5b4bd18571` and Cloudflare version
+`de8ab414-79e8-4938-8e09-e86c7f4cf0cf`, reported as 100% active by direct
 deploy. The candidate's 40-file Workers-runtime suite passes 448/448 plus 20/20 audit
 tests. Wrangler processed 248 unchanged official asset entries; deployment and
 the final dry run both reported 993.49 KiB raw / 181.09 KiB gzip, with the dry
 run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
-bindings. Cloudflare reported a 23 ms startup.
+bindings. Cloudflare reported a 22 ms startup.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -861,7 +861,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`b835ef23-3e10-49cf-8f70-87c783034b24`. Current credential-free remote smoke
+`de8ab414-79e8-4938-8e09-e86c7f4cf0cf`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, API3 version
 and an EIO4 polling open packet; API3 Entries without a token returned the
 expected 401. The current public Worker has no `API_SECRET` Secret binding, so

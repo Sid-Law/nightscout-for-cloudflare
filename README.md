@@ -421,12 +421,12 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 57 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The next deployment candidate is commit
+The deployed code candidate is commit
 `947dc1403c8a07ecc053457386a97d5b4bd18571`. Its 40-file Workers-runtime
 suite passes 448/448 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
 reports 993.49 KiB raw / 181.09 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This candidate adds complete contract evidence for the four Loop
+`ASSETS`. This deployment adds complete contract evidence for the four Loop
 client files above while retaining the three Treatment identity contracts,
 exact `UUID_HANDLING` behavior, legacy raw-UUID repair and the MongoDB 5
 delete-result shape. It retains the legacy uploader edge and
@@ -468,9 +468,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `b835ef23-3e10-49cf-8f70-87c783034b24` was made current by
-deployment `6aaef3f7-0bd5-4008-845e-01163da1c0a3` at
-`2026-07-19T23:59:32.40656Z`, with a reported 23 ms startup. No asset bytes
+Cloudflare version `de8ab414-79e8-4938-8e09-e86c7f4cf0cf` was made current by
+deployment `28487aec-6adc-4ca8-b64c-bb9de9006d2d` at
+`2026-07-20T00:35:19.306944Z`, with a reported 22 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, API3 version and EIO4 polling; missing-token API3 Entries
@@ -481,8 +481,6 @@ follow-up read confirmed no mutation. The current public lab has no
 operator configures one; no secret value was read, generated or printed.
 Successful UUID identity mutation and legacy-row repair are therefore current
 local contract evidence, not a claim about a credentialed remote write.
-This version remains the active deployment while candidate
-`947dc1403c8a07ecc053457386a97d5b4bd18571` completes its pre-deployment gate.
 
 The first attempted plugin deployment exposed Cloudflare rolling-upgrade
 behavior: an already-live Durable Object temporarily lacked the newly added
@@ -501,6 +499,8 @@ warnings. The agent-created verification tab was closed after the pass.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
+Version 49 has passed remote API and Engine.IO smoke; its real-browser rerun is
+still pending and is not yet claimed.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

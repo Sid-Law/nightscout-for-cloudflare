@@ -91,9 +91,9 @@ Mongo-to-SQLite, Express-to-Worker, process-lifecycle, Socket.IO,
 notification-state and browser adaptations remain required work and must not be
 relabeled as scope exclusions.
 
-## Current deployment and next candidate
+## Current deployed increment
 
-Next integration candidate
+Integration candidate
 `947dc1403c8a07ecc053457386a97d5b4bd18571` adds the complete locked
 `gap-treat-012`, `carb-dose-upload`, `objectid-cache` and
 `sgv-devicestatus` contracts on top of the already adapted
@@ -106,17 +106,17 @@ Cloudflare's precise missing-method error; explicit false fails closed during
 that rolling boundary. All prior
 root-write/delta, property, API3 `/storage`, `/alarm`, authorization and
 notification-ACK contracts remain green. Cloudflare Worker version
-`b835ef23-3e10-49cf-8f70-87c783034b24` is active at 100%; deployment
-`6aaef3f7-0bd5-4008-845e-01163da1c0a3` was created at
-`2026-07-19T23:59:32.40656Z` and Wrangler reported a 23 ms startup. It
+`de8ab414-79e8-4938-8e09-e86c7f4cf0cf` is active at 100%; deployment
+`28487aec-6adc-4ca8-b64c-bb9de9006d2d` was created at
+`2026-07-20T00:35:19.306944Z` and Wrangler reported a 22 ms startup. It
 processed 248 unchanged official asset entries; deployment and dry run
 reported 993.49 KiB raw / 181.09 KiB gzip, and the dry run exposed only
 `ENTRY_STORE` plus `ASSETS`. No deployed credential was read or supplied to
 remote smoke. The candidate's 40-file Workers-runtime suite passes 448/448,
 both audit suites pass 20/20 and TypeScript passes. The manifest now records
 52 adapted, 57 unresolved and two fixed-scope excluded files. The official UI
-build, dry run and post-deployment evidence are the remaining gates for this
-candidate; Cloudflare version 48 remains active until they finish. These remain
+build, dry run and credential-free remote API/Engine.IO smoke pass. Version 49
+real-browser acceptance is still pending and is not claimed yet. These remain
 subset facts, not a full-port claim.
 
 Current remote reads, API3 version and EIO4 polling pass. The public Worker has
@@ -281,17 +281,17 @@ The deployed increment includes:
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
-Version 48 credential-free remote smoke returned HTTP 200 for health, bounded v1
+Version 49 credential-free remote smoke returned HTTP 200 for health, bounded v1
 Entries and Treatments reads, API3 version and EIO4 polling; missing-token
 API3 Entries returned the expected 401. A simulated UUID Treatment write returned
 the expected 503 because no `API_SECRET` is configured, and the follow-up read
-remained empty. No deployed credential was read or sent. The version 48
-real-browser pass
+remained empty. No deployed credential was read or sent. The immediately
+preceding version 48 real-browser pass
 loaded the official homepage, Admin, Food, Profile and `clock-color` without
 protected writes. Food reached `Database loaded` and Profile reached
 `Values loaded.` in unauthorized read-only mode; this pass did not claim a
 protected Save. Console inspection found no errors or warnings, and the
-agent-created tab was closed.
+agent-created tab was closed. Version 49 browser acceptance remains pending.
 The immediately preceding compatible version's
 root protocol returned `{read:true,write:false,write_treatment:false}` to a
 fresh anonymous-readable session, rejected Food `dbAdd` with `Not permitted`,

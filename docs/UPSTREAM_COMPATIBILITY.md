@@ -17,7 +17,7 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-Current integration candidate
+Deployed integration candidate
 `947dc1403c8a07ecc053457386a97d5b4bd18571` passes 448/448 tests across 40
 Workers-runtime files plus 20/20 audit tests. The suite retains focused EIO4,
 API3 `/storage` and `/alarm`, authorization, v1/v2 Status, all 16 locked API3
@@ -30,8 +30,8 @@ files and 25 locked v1 client/API files, and now completely maps locked
 `issue-6923-legacy-uuid.test.js`, `identity-matrix.test.js`,
 `gap-treat-012.test.js`, `carb-dose-upload.test.js`,
 `objectid-cache.test.js` and `sgv-devicestatus.test.js`. This is not
-full-port evidence. The preceding code is deployed as Cloudflare version
-`b835ef23-3e10-49cf-8f70-87c783034b24`; exact release
+full-port evidence. The code is deployed as Cloudflare version
+`de8ab414-79e8-4938-8e09-e86c7f4cf0cf`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
@@ -296,9 +296,9 @@ controlled renderer 406. Negotiated responses and renderer-generated 406
 responses vary on `Accept`. The 512 KiB and query-limit errors are platform
 controls, not upstream claims.
 
-## Current deployment and next integration evidence
+## Current deployed integration evidence
 
-Next code candidate
+Code candidate
 `947dc1403c8a07ecc053457386a97d5b4bd18571` passes 448/448 tests in 40
 Workers-runtime files plus 20/20 audit tests. It adds the complete named
 GAP-TREAT-012, Loop carb/dose, ObjectIdCache and SGV/DeviceStatus mappings,
@@ -308,9 +308,9 @@ schema-v12 persisted root-write authority, the schema-v11 delta baseline and the
 ddata/summary slice, strict v1/v2 Status, Entries/Treatments,
 authorization, direct Hibernatable EIO4 WebSocket, all 16 locked API3 mappings,
 `/storage`, `/alarm` and inherited notification ACK slices. Cloudflare version
-`b835ef23-3e10-49cf-8f70-87c783034b24` is 100% active; deployment
-`6aaef3f7-0bd5-4008-845e-01163da1c0a3` was created at
-`2026-07-19T23:59:32.40656Z` and reported a 23 ms startup. Wrangler processed
+`de8ab414-79e8-4938-8e09-e86c7f4cf0cf` is 100% active; deployment
+`28487aec-6adc-4ca8-b64c-bb9de9006d2d` was created at
+`2026-07-20T00:35:19.306944Z` and reported a 22 ms startup. Wrangler processed
 248 unchanged official asset entries; deployment and final dry run both
 reported 993.49 KiB raw / 181.09 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
 in the dry run. This deployment had no explicit version annotation; none is
@@ -439,6 +439,9 @@ loaded.` through their permitted read paths; the public tenant has no Entries,
 so the homepage's `---` value and clock no-data marker are expected. The page
 console contained no errors or warnings. No authenticated Save or protected
 mutation was attempted, and the agent-created verification tab was closed.
+This remains immediately preceding-version evidence. Version 49 has passed
+remote API and Engine.IO smoke, but its real-browser rerun is still pending and
+is not claimed here.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing
