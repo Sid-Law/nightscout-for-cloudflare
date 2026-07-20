@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 56, excluded-fixed-scope: 2, unresolved: 53
-- Input fingerprint: `fe95a1c503537f46a7c06f4b6cb5f2f9f48b6df08d4f8aa71e89faea48f44d4c`
+- Statuses: pass: 0, adapted: 57, excluded-fixed-scope: 2, unresolved: 52
+- Input fingerprint: `f697d6050b80841bd4059d1ce1660716e20f514a1d4850c08555153873aaf8b6`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -26,7 +26,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
-| 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 7 | 0 |
+| 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 6 | 0 |
 
 Dispatch work in numeric order. Within a workstream, use each test's `related_routes` in `upstream/contract-manifest.json` only as heuristic candidate links for grouping implementation slices; confirm each link against upstream source before claiming coverage.
 
@@ -190,7 +190,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/language.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/profileeditor.test.js` | unresolved | 4 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/reports.test.js` | unresolved | 15 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/sandbox.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/sandbox.test.js` | adapted | 0 | Represented by all five named Workers-runtime cases in test/sandbox-contract.test.ts plus one complete helper-surface case: client/server initialization, safe notification projection, LOW/HIGH display sentinels, BG Now/default messages, immutable first-writer properties, historical SGV selection, unit/insulin/BG display conversion and plugin-specific extended settings. src/sandbox.ts replaces only Node dynamic require/module-global state with the existing request-local Profile, units and times adapters. |
 | `vendor/nightscout/tests/settings.test.js` | adapted | 0 | Represented by all 13 named Workers-runtime cases in test/settings-contract.test.ts and wired into the HTTP/Socket.IO status settings snapshot: locked defaults, environment/camel accessors, default disablement, custom snooze arrays, threshold and alarm-type selection/correction, scalar/array feature checks and the upstream method surface. src/settings.ts is request-local and removes secure keys recursively before status serialization; the extra isolation case verifies that one tenant/request cannot mutate another settings instance. |
 
 ## Commands
