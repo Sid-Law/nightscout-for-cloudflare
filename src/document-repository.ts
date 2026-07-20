@@ -1792,6 +1792,10 @@ export class SqliteDocumentRepository {
   constructor(
     private readonly storage: DurableObjectStorage,
     private readonly onApi3RealtimeMutation?: (event: Api3RealtimeMutationEvent) => void,
+    private readonly onDataMutation?: (
+      collection: StoredDocumentCollectionName,
+      document?: JsonDocument,
+    ) => void,
   ) {}
 
   private get sql(): SqlStorage {
@@ -2213,6 +2217,7 @@ export class SqliteDocumentRepository {
     if (existing !== undefined && oldIdentifier !== identifier && oldIdentifier !== null) {
       result.deduplicatedIdentifier = oldIdentifier;
     }
+    this.onDataMutation?.(collection, result.document);
     return result;
   }
 
@@ -2613,6 +2618,7 @@ export class SqliteDocumentRepository {
         );
         this.sql.exec("DELETE FROM entries WHERE id = ?", row.id);
       }
+      if (rows.length > 0) this.onDataMutation?.(ENTRIES);
       return rows.length;
     });
   }
@@ -3183,6 +3189,7 @@ export class SqliteDocumentRepository {
         if (emitRealtime && this.onApi3RealtimeMutation !== undefined) {
           this.onApi3RealtimeMutation({ type: "delete", collection, identifier: identity });
         }
+        this.onDataMutation?.(collection);
         return { deleted: true, permanent: true };
       }
       const document = materializeLegacy(existing);
@@ -3226,6 +3233,7 @@ export class SqliteDocumentRepository {
       this.sql.exec("DELETE FROM document_changes WHERE collection = ? AND id = ?", collection, id);
       this.sql.exec("DELETE FROM documents WHERE collection = ? AND id = ?", collection, id);
       if (collection === ENTRIES) this.sql.exec("DELETE FROM entries WHERE id = ?", id);
+      this.onDataMutation?.(collection);
       return true;
     });
   }
@@ -3254,6 +3262,7 @@ export class SqliteDocumentRepository {
         TREATMENTS,
         existing.id,
       );
+      this.onDataMutation?.(TREATMENTS);
       return true;
     });
   }

@@ -1,5 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 import {
+  migrateBackgroundTasksV14,
+  PLUGIN_NOTIFICATIONS_TASK,
+  SqliteBackgroundTaskRepository,
+  type BackgroundTaskRow,
+} from "./background-tasks";
+import {
   apiSecretDigestMatches,
   authorizationPermissionGroups,
   authorizationRoleNames,
@@ -81,6 +87,8 @@ import {
   type NightscoutStatusEnvironment,
   type NightscoutStatusSettingsOverrides,
 } from "./status";
+import { calculateSimpleAlarmRequest } from "./plugins/simplealarms";
+import { nightscoutTimes } from "./runtime/times";
 
 export type DocumentCollection =
   | "activity"
@@ -157,6 +165,9 @@ const AGE_TREATMENT_WINDOW_MS = 62 * 24 * 60 * 60 * 1_000;
 const RUNTIME_TREATMENT_WINDOW_MS = Math.round(2.5 * 24 * 60 * 60 * 1_000);
 const PROFILE_SWITCH_WINDOW_MS = 31 * 12 * 24 * 60 * 60 * 1_000;
 const NOTIFICATION_REQUEST_BATCH_LIMIT = 128;
+const BACKGROUND_TASK_BATCH_LIMIT = 4;
+const MIN_NOTIFICATION_HEARTBEAT_SECONDS = 15;
+const MAX_NOTIFICATION_HEARTBEAT_SECONDS = 24 * 60 * 60;
 const AGE_TREATMENT_EVENT_TYPES = [
   "Sensor Start",
   "Sensor Change",
@@ -466,6 +477,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     });
     ctx.blockConcurrencyWhile(async () => {
       this.migrate();
+      this.seedAutomaticNotificationTask(Date.now());
       await this.synchronizeRealtimeAlarm();
     });
   }
@@ -592,6 +604,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       migrateRealtimeNotificationStateV13(this.ctx.storage);
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (13)",
+      );
+
+      migrateBackgroundTasksV14(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (14)",
       );
 
       // This named, idempotent auth state is intentionally independent of the
@@ -916,7 +933,168 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return new SqliteDocumentRepository(
       this.ctx.storage,
       (event) => this.realtime.recordApi3StorageMutationInTransaction(event),
+      (collection) => this.recordDataMutationInTransaction(collection),
     );
+  }
+
+  private backgroundTasks(): SqliteBackgroundTaskRepository {
+    return new SqliteBackgroundTaskRepository(this.ctx.storage);
+  }
+
+  private automaticSimpleAlarmsEnabled(): boolean {
+    const overrides = deriveTenantStatusSettings(this.env);
+    return overrides.enable === undefined
+      ? overrides.simpleAlarms === true
+      : overrides.enable.includes("simplealarms");
+  }
+
+  private resolvedNotificationSettings(now: number): Record<string, unknown> {
+    const status = nightscoutStatus(
+      new Date(now),
+      this.env.AUTH_DEFAULT_ROLES ?? "readable",
+      this.tenantStatusSettings(),
+    );
+    const settings = status.settings;
+    return typeof settings === "object" && settings !== null && !Array.isArray(settings)
+      ? settings as Record<string, unknown>
+      : {};
+  }
+
+  private notificationHeartbeatMs(settings: Record<string, unknown>): number {
+    const configured = Number(settings.heartbeat);
+    const seconds = Number.isFinite(configured) && configured > 0 ? configured : 60;
+    // A zero/negative or extremely small Node interval can monopolize a Free
+    // Worker. Preserve ordinary upstream values while making that platform
+    // boundary explicit and bounded.
+    return Math.trunc(Math.max(
+      MIN_NOTIFICATION_HEARTBEAT_SECONDS,
+      Math.min(MAX_NOTIFICATION_HEARTBEAT_SECONDS, seconds),
+    ) * 1_000);
+  }
+
+  private recordDataMutationInTransaction(collection: string): void {
+    const tasks = this.backgroundTasks();
+    const hasRunningNotificationTask = tasks.has(PLUGIN_NOTIFICATIONS_TASK);
+    if (
+      !hasRunningNotificationTask
+      && (collection !== "entries" || !this.automaticSimpleAlarmsEnabled())
+    ) return;
+    const now = Date.now();
+    tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
+  }
+
+  private latestSgvAtOrBefore(
+    sgvs: RealtimeDocument[],
+    now: number,
+  ): RealtimeDocument | null {
+    for (let index = sgvs.length - 1; index >= 0; index -= 1) {
+      const entry = sgvs[index];
+      if (entry !== undefined && Number(entry.mills) <= now) return entry;
+    }
+    return null;
+  }
+
+  private automaticSimpleAlarmSgvs(now: number): RealtimeDocument[] {
+    const result: { sgvs: RealtimeDocument[] } = { sgvs: [] };
+    const budget = new RealtimeJsonBudget(result);
+    for (const row of this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'entries'
+         AND sort_time >= ?
+         AND ${realtimeNumericMeasurementSql("$.sgv")}
+         AND NOT ${realtimeJsonTruthySql("$.mbg")}
+       ORDER BY sort_time DESC, id ASC
+       LIMIT 64`,
+      now - REALTIME_ENTRY_WINDOW_MS,
+    )) {
+      const entry = toPublicEntry(toDocument(row));
+      const raw = entry as PublicEntry & Record<string, unknown>;
+      if (raw.mbg) continue;
+      const mgdl = realtimeMeasurement(raw.sgv);
+      if (mgdl === null) continue;
+      const sgv = {
+        _id: entry._id,
+        mgdl,
+        mills: entry.date,
+        device: entry.device,
+        direction: entry.direction,
+        filtered: raw.filtered,
+        unfiltered: raw.unfiltered,
+        noise: raw.noise,
+        rssi: raw.rssi,
+        type: "sgv",
+      };
+      if (!budget.reserveArrayItem(sgv, result.sgvs.length)) break;
+      result.sgvs.push(sgv);
+    }
+    result.sgvs.reverse();
+    return result.sgvs;
+  }
+
+  private automaticSimpleAlarmEvaluation(now: number): {
+    notifications: Record<string, unknown>[];
+    nextDueAt: number | null;
+  } {
+    if (!this.automaticSimpleAlarmsEnabled()) {
+      return { notifications: [], nextDueAt: null };
+    }
+    const settings = this.resolvedNotificationSettings(now);
+    const sgvs = this.automaticSimpleAlarmSgvs(now);
+    const request = calculateSimpleAlarmRequest(sgvs, now, settings);
+    if (request === null) return { notifications: [], nextDueAt: null };
+    const latest = this.latestSgvAtOrBefore(sgvs, now);
+    if (latest === null) return { notifications: [request], nextDueAt: null };
+    const expiresAt = Number(latest.mills) + nightscoutTimes.mins(10).msecs;
+    return {
+      notifications: [request],
+      nextDueAt: Math.min(now + this.notificationHeartbeatMs(settings), expiresAt),
+    };
+  }
+
+  private seedAutomaticNotificationTask(now: number): void {
+    const tasks = this.backgroundTasks();
+    if (tasks.has(PLUGIN_NOTIFICATIONS_TASK)) {
+      if (!this.automaticSimpleAlarmsEnabled()) {
+        tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
+      }
+      return;
+    }
+    if (!this.automaticSimpleAlarmsEnabled()) return;
+    if (this.automaticSimpleAlarmEvaluation(now).notifications.length > 0) {
+      tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
+    }
+  }
+
+  private processPluginNotificationTask(task: BackgroundTaskRow, now: number): void {
+    const evaluation = this.automaticSimpleAlarmEvaluation(now);
+    this.realtime.processAlarmNotificationRequests(
+      evaluation.notifications,
+      [],
+      now,
+      () => {
+        this.backgroundTasks().complete(
+          task.kind,
+          evaluation.nextDueAt,
+          now,
+        );
+      },
+    );
+  }
+
+  private processDueBackgroundTasks(now: number): void {
+    const tasks = this.backgroundTasks();
+    for (const task of tasks.due(now, BACKGROUND_TASK_BATCH_LIMIT)) {
+      try {
+        if (task.kind === PLUGIN_NOTIFICATIONS_TASK) {
+          this.processPluginNotificationTask(task, now);
+        } else {
+          this.ctx.storage.transactionSync(() => tasks.complete(task.kind, null, now));
+        }
+      } catch {
+        this.ctx.storage.transactionSync(() => tasks.fail(task.kind, now));
+      }
+    }
   }
 
   private configuredApiSecret(): string | null {
@@ -1998,8 +2176,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private async flushRealtimeMutation(): Promise<void> {
-    if (this.realtime.flushApplicationWakes() === 0) return;
-    this.flushRealtimeWebSockets();
+    // Upstream's data-received listener evaluates plugins on the leading edge.
+    // Do the same in the originating request so ordinary in-range uploads do
+    // not consume a second Worker invocation merely to remove a due task.
+    this.processDueBackgroundTasks(Date.now());
+    if (this.realtime.flushApplicationWakes() > 0) this.flushRealtimeWebSockets();
     await this.synchronizeRealtimeAlarm();
   }
 
@@ -2016,11 +2197,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     // state authoritative.
     const realtimeDeadline = this.realtime.nextDeadline();
     const authorizationDeadline = this.authorizationFailureCleanupDeadline();
-    const nextDeadline = realtimeDeadline === null
-      ? authorizationDeadline
-      : authorizationDeadline === null
-        ? realtimeDeadline
-        : Math.min(realtimeDeadline, authorizationDeadline);
+    const backgroundDeadline = this.backgroundTasks().nextDeadline();
+    const deadlines = [realtimeDeadline, authorizationDeadline, backgroundDeadline]
+      .filter((deadline): deadline is number => deadline !== null);
+    const nextDeadline = deadlines.length === 0 ? null : Math.min(...deadlines);
     const currentAlarm = await this.ctx.storage.getAlarm();
     if (nextDeadline === null) {
       if (currentAlarm !== null) await this.ctx.storage.deleteAlarm();
@@ -2072,8 +2252,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   override async alarm(_alarmInfo?: AlarmInvocationInfo): Promise<void> {
     // Alarm delivery is at-least-once. processAlarm commits every durable
     // transition transactionally before this derived schedule is replaced.
-    this.cleanupAuthorizationFailures(Date.now());
+    const now = Date.now();
+    this.cleanupAuthorizationFailures(now);
     this.realtime.processAlarm();
+    this.processDueBackgroundTasks(now);
     this.flushRealtimeWebSockets();
     await this.synchronizeRealtimeAlarm();
   }

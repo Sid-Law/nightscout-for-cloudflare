@@ -955,6 +955,7 @@ export class RealtimeSessionService {
     notifications: Record<string, unknown>[],
     snoozes: Record<string, unknown>[],
     lastUpdated: number,
+    commitInTransaction?: (result: NotificationProcessResult) => void,
   ): RealtimeNotificationProcessResult {
     const now = this.now();
     const result = this.storage.transactionSync(() => {
@@ -981,6 +982,7 @@ export class RealtimeSessionService {
           // live-only representation cannot fit the bounded transport.
         }
       }
+      commitInTransaction?.(processed);
       return {
         ...processed,
         delivered,

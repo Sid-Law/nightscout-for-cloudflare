@@ -70,6 +70,7 @@ export interface NightscoutStatusEnvironment {
   PUMP_WARN_BATT_QUIET_NIGHT?: string;
   TREATMENTNOTIFY_SNOOZE_MINS?: string;
   TREATMENTNOTIFY_INCLUDE_BOLUSES_OVER?: string;
+  HEARTBEAT?: string;
 }
 
 function configuredFeatureNames(value: string | undefined): string[] {
@@ -356,6 +357,7 @@ export function tenantStatusSettings(
     ["ALARM_TIMEAGO_URGENT_MINS", environment.ALARM_TIMEAGO_URGENT_MINS],
     ["DAY_START", environment.DAY_START],
     ["DAY_END", environment.DAY_END],
+    ["HEARTBEAT", environment.HEARTBEAT],
   ] as const) {
     if (value !== undefined) settingEnvironment[name] = value;
   }
