@@ -418,6 +418,18 @@
       "status": "adapted",
       "reason": "Represented by all 11 named Workers-runtime cases in test/dbsize-plugin-contract.test.ts and wired into the default-enabled /api/v2/properties dispatcher: exact current/warn/urgent percentages, configurable thresholds, MiB display, hidden empty state, warning/urgent notification text and levels, pill payload, and virtual-assistant response. The production property consumes the real SQLite Durable Object byte count supplied by the dataloader adapter; the broader persisted notification/background runner and environment-wide extended-settings importer remain separate compatibility work."
     },
+    "vendor/nightscout/tests/iob.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all 14 named Workers-runtime cases in test/iob-cob-plugin-contract.test.ts and wired into the opt-in /api/v2/properties and /api/v2/summary dispatchers: virtual-assistant replies, default and four-hour treatment calculations, negative-zero rendering, Treatment fallback, stale/empty OpenAPS fallback, OpenAPS scalar/AMA-array/multi-device precedence, Loop precedence and MiniMed Connect extraction. src/plugins/iob.ts preserves the locked v15.0.7 formula and response shapes without adding any dose recommendation; the Durable Object projects at most the newest 1000 ordinary Treatments from the official 2.5-day window for Workers Free safety."
+    },
+    "vendor/nightscout/tests/cob.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all nine named Workers-runtime cases in test/iob-cob-plugin-contract.test.ts and wired into the opt-in /api/v2/properties and /api/v2/summary dispatchers: single/multiple Treatment absorption, pill and virtual-assistant output, Treatment fallback, stale/empty OpenAPS fallback, OpenAPS extraction and Loop precedence. src/plugins/cob.ts preserves the locked v15.0.7 carb-absorption and IOB-activity interaction without adding any dose recommendation; the Durable Object projects at most the newest 1000 ordinary Treatments from the official 2.5-day window for Workers Free safety."
+    },
+    "vendor/nightscout/tests/data.treatmenttocurve.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime case in test/iob-cob-plugin-contract.test.ts and wired into /api/v2/ddata/at: Treatment display markers are placed between surrounding SGVs with the locked edge fallback, explicit glucose/unit conversion and bounds, and raw-BG fallback. src/data/treatment-to-curve.ts replaces only the upstream mutable data-loader plumbing; it preserves official display fields and does not perform dose calculation."
+    },
     "vendor/nightscout/tests/cannulaage.test.js": {
       "status": "adapted",
       "reason": "Represented by all three named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: latest non-future Site Change selection, exact hour/day display, notes pill shape, 48-hour warning request and official CAGE_* normalization. The Durable Object supplies only the latest bounded age-event rows rather than materializing the Treatment collection; persisted notification scheduling remains separate work."

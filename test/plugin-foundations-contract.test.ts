@@ -238,6 +238,7 @@ describe("enabled plugin property adapter", () => {
       cals: [{ mills: 1, slope: 1 }],
       devicestatus: [{ mills: 1, uploader: { battery: 20 } }],
       treatments: [],
+      profiles: [],
       dbstats: {},
     });
     expect(legacyCalls).toBe(1);

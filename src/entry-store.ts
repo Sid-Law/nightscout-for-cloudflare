@@ -153,6 +153,8 @@ const REALTIME_WEBSOCKET_EVENT_TIMEOUT_MS = 15_000;
 const REALTIME_SID = /^[A-Za-z0-9_-]{20}$/;
 const REALTIME_ENTRY_WINDOW_MS = 2 * 24 * 60 * 60 * 1_000;
 const AGE_TREATMENT_WINDOW_MS = 62 * 24 * 60 * 60 * 1_000;
+const RUNTIME_TREATMENT_WINDOW_MS = Math.round(2.5 * 24 * 60 * 60 * 1_000);
+const PROFILE_SWITCH_WINDOW_MS = 31 * 12 * 24 * 60 * 60 * 1_000;
 const AGE_TREATMENT_EVENT_TYPES = [
   "Sensor Start",
   "Sensor Change",
@@ -186,6 +188,7 @@ interface PluginPropertyContext {
   cals: RealtimeDocument[];
   devicestatus: RealtimeDocument[];
   treatments: RealtimeDocument[];
+  profiles: RealtimeDocument[];
   dbstats: Record<string, unknown>;
 }
 
@@ -1358,6 +1361,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       cals: [],
       devicestatus: [],
       treatments: [],
+      profiles: [],
       dbstats: sqliteNightscoutDatabaseStats(this.ctx.storage.sql.databaseSize),
     };
     let budget = new RealtimeJsonBudget(context);
@@ -1433,11 +1437,60 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       context,
       context.sgvs.length + context.cals.length + context.devicestatus.length,
     );
-    // Locked dataloader loads one latest row for each age-related event within
-    // 62 days. Keep the same tiny projection instead of deserializing the
-    // complete Treatment collection on every v2 property poll.
+
+    // Locked dataloader supplies the latest Profile to request-local plugin
+    // calculations. Keep the same one-row selection used by /profile/current.
+    context.profiles = this.realtimeDocuments(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'profile'
+       ORDER BY ${PROFILE_CURRENT_ORDER_BY}
+       LIMIT 1`,
+      [],
+      budget,
+      normalizeRealtimeDocument,
+    );
+    budget = new RealtimeJsonBudget(
+      context,
+      context.sgvs.length + context.cals.length + context.devicestatus.length +
+        context.profiles.length,
+    );
+
+    const seenTreatments = new Set<string>();
+    const appendTreatments = (documents: RealtimeDocument[]): void => {
+      for (const document of documents) {
+        const key = typeof document._id === "string"
+          ? `_id:${document._id}`
+          : `event:${String(document.eventType)}:${String(document.mills)}`;
+        if (seenTreatments.has(key)) continue;
+        seenTreatments.add(key);
+        context.treatments.push(document);
+      }
+    };
+
+    // Locked dataloader separately retains the latest zero-duration Profile
+    // Switch for one year so Profile-based IOB/COB calculations do not lose
+    // the active profile when the ordinary treatment window rolls forward.
+    appendTreatments(this.realtimeDocuments(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'treatments'
+         AND json_extract(body, '$.eventType') = 'Profile Switch'
+         AND json_type(body, '$.duration') IN ('integer', 'real')
+         AND CAST(json_extract(body, '$.duration') AS REAL) = 0
+         AND sort_time >= ?
+         AND sort_time <= ?
+       ORDER BY sort_time DESC, updated_at DESC, id ASC
+       LIMIT 1`,
+      [now - PROFILE_SWITCH_WINDOW_MS, now],
+      budget,
+      normalizeRealtimeDocument,
+    ));
+
+    // Locked dataloader also loads one latest row for each age-related event
+    // within 62 days.
     for (const eventType of AGE_TREATMENT_EVENT_TYPES) {
-      const [latest] = this.realtimeDocuments(
+      appendTreatments(this.realtimeDocuments(
         `SELECT id, body, sort_time
          FROM documents
          WHERE collection = 'treatments'
@@ -1449,9 +1502,29 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         [eventType, now - AGE_TREATMENT_WINDOW_MS, now],
         budget,
         normalizeRealtimeDocument,
-      );
-      if (latest !== undefined) context.treatments.push(latest);
+      ));
     }
+
+    // The official cold/frame dataloader reads 2.5 days of Treatments. Select
+    // the newest 1,000 rows under the existing transport budget, then restore
+    // the upstream ascending runtime order before executing IOB/COB formulas.
+    appendTreatments(this.realtimeDocuments(
+      `SELECT id, body, sort_time
+       FROM (
+         SELECT id, body, sort_time, updated_at
+         FROM documents
+         WHERE collection = 'treatments'
+           AND sort_time >= ?
+           AND sort_time <= ?
+         ORDER BY sort_time DESC, updated_at DESC, id ASC
+         LIMIT 1000
+       )
+       ORDER BY sort_time ASC, id ASC`,
+      [now - RUNTIME_TREATMENT_WINDOW_MS, now],
+      budget,
+      normalizeRealtimeDocument,
+    ));
+    context.treatments.sort((left, right) => Number(left.mills) - Number(right.mills));
     return context;
   }
 

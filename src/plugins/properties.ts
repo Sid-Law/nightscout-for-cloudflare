@@ -12,7 +12,13 @@ import {
   type AgePreferences,
 } from "./age";
 import { calculateLoopProperty } from "./loop";
+import { calculateIobTotal } from "./iob";
+import { calculateCobTotal } from "./cob";
 import { calculateRawBgProperty } from "./rawbg";
+import {
+  createNightscoutProfileFunctions,
+  type NightscoutProfileFunctions,
+} from "../profile-functions";
 import {
   createDefaultPluginCatalogs,
   createNightscoutPluginRegistry,
@@ -26,6 +32,7 @@ export interface PluginPropertyContext {
   cals: RealtimeDocument[];
   devicestatus: RealtimeDocument[];
   treatments?: RealtimeDocument[];
+  profiles?: RealtimeDocument[];
   dbstats?: Record<string, unknown>;
 }
 
@@ -35,6 +42,8 @@ export interface PluginPropertySource {
 }
 
 const AGE_TREATMENT_WINDOW_MS = 62 * 24 * 60 * 60 * 1_000;
+const RUNTIME_TREATMENT_WINDOW_MS = Math.round(2.5 * 24 * 60 * 60 * 1_000);
+const PROFILE_SWITCH_WINDOW_MS = 31 * 12 * 24 * 60 * 60 * 1_000;
 const AGE_TREATMENT_EVENT_TYPES = new Set([
   "Sensor Start",
   "Sensor Change",
@@ -44,22 +53,59 @@ const AGE_TREATMENT_EVENT_TYPES = new Set([
   "Pump Battery Change",
 ]);
 
-function parseAgeTreatments(value: unknown, now: number): RealtimeDocument[] {
+interface TreatmentCandidate {
+  document: RealtimeDocument;
+  index: number;
+}
+
+function treatmentCandidateKey(candidate: TreatmentCandidate): string {
+  const document = candidate.document;
+  if (typeof document._id === "string") return `_id:${document._id}`;
+  if (typeof document.identifier === "string") return `identifier:${document.identifier}`;
+  return `input:${candidate.index}`;
+}
+
+function parsePluginTreatments(value: unknown, now: number): RealtimeDocument[] {
   if (!Array.isArray(value)) return [];
-  const latest = new Map<string, RealtimeDocument>();
-  for (const candidate of value) {
-    if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) continue;
+  const recent: TreatmentCandidate[] = [];
+  const latestAges = new Map<string, TreatmentCandidate>();
+  let latestProfileSwitch: TreatmentCandidate | undefined;
+  value.forEach((candidate, index) => {
+    if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) return;
     const document = candidate as RealtimeDocument;
     const eventType = document.eventType;
     const mills = Number(document.mills);
+    if (!Number.isFinite(mills) || mills > now) return;
+    const wrapped = { document, index };
+    if (mills >= now - RUNTIME_TREATMENT_WINDOW_MS) recent.push(wrapped);
     if (
-      typeof eventType !== "string" || !AGE_TREATMENT_EVENT_TYPES.has(eventType) ||
-      !Number.isFinite(mills) || mills > now || mills < now - AGE_TREATMENT_WINDOW_MS
-    ) continue;
-    const current = latest.get(eventType);
-    if (current === undefined || mills > Number(current.mills)) latest.set(eventType, document);
+      typeof eventType === "string" && AGE_TREATMENT_EVENT_TYPES.has(eventType) &&
+      mills >= now - AGE_TREATMENT_WINDOW_MS
+    ) {
+      const current = latestAges.get(eventType);
+      if (current === undefined || mills > Number(current.document.mills)) {
+        latestAges.set(eventType, wrapped);
+      }
+    }
+    if (
+      eventType === "Profile Switch" && Number(document.duration) === 0 &&
+      mills >= now - PROFILE_SWITCH_WINDOW_MS &&
+      (latestProfileSwitch === undefined || mills > Number(latestProfileSwitch.document.mills))
+    ) latestProfileSwitch = wrapped;
+  });
+  const selected = new Map<string, TreatmentCandidate>();
+  for (const candidate of recent) selected.set(treatmentCandidateKey(candidate), candidate);
+  if (latestProfileSwitch !== undefined) {
+    selected.set(treatmentCandidateKey(latestProfileSwitch), latestProfileSwitch);
   }
-  return [...latest.values()];
+  for (const candidate of latestAges.values()) {
+    selected.set(treatmentCandidateKey(candidate), candidate);
+  }
+  return [...selected.values()]
+    .sort((left, right) =>
+      Number(left.document.mills) - Number(right.document.mills) || left.index - right.index
+    )
+    .map((candidate) => candidate.document);
 }
 
 function parsePluginPropertyContext(json: string, now: number): PluginPropertyContext {
@@ -68,7 +114,12 @@ function parsePluginPropertyContext(json: string, now: number): PluginPropertyCo
     sgvs: Array.isArray(value.sgvs) ? value.sgvs : [],
     cals: Array.isArray(value.cals) ? value.cals : [],
     devicestatus: Array.isArray(value.devicestatus) ? value.devicestatus : [],
-    treatments: parseAgeTreatments(value.treatments, now),
+    treatments: parsePluginTreatments(value.treatments, now),
+    profiles: Array.isArray(value.profiles)
+      ? value.profiles.filter((profile): profile is RealtimeDocument =>
+        typeof profile === "object" && profile !== null && !Array.isArray(profile)
+      )
+      : [],
     dbstats: typeof value.dbstats === "object"
         && value.dbstats !== null
         && !Array.isArray(value.dbstats)
@@ -112,6 +163,19 @@ export function calculatePluginProperties(
   extendedSettings: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
+  let profile: NightscoutProfileFunctions | undefined;
+  const pluginProfile = (): NightscoutProfileFunctions => {
+    if (profile !== undefined) return profile;
+    const profiles = JSON.parse(JSON.stringify(context.profiles ?? [])) as RealtimeDocument[];
+    profile = createNightscoutProfileFunctions(profiles);
+    profile.updateTreatments(
+      (context.treatments ?? [])
+        .filter((treatment) => treatment.eventType === "Profile Switch")
+        .map((treatment) => JSON.parse(JSON.stringify(treatment)) as RealtimeDocument),
+      [],
+    );
+    return profile;
+  };
   const agePreferences = (pluginSandbox: PluginExecutionSandbox): AgePreferences =>
     typeof pluginSandbox.extendedSettings === "object"
         && pluginSandbox.extendedSettings !== null
@@ -145,6 +209,26 @@ export function calculatePluginProperties(
     loop: {
       setProperties: () => {
         properties.loop = calculateLoopProperty(context.devicestatus, now);
+      },
+    },
+    iob: {
+      setProperties: () => {
+        properties.iob = calculateIobTotal(
+          context.treatments ?? [],
+          context.devicestatus,
+          pluginProfile(),
+          now,
+        );
+      },
+    },
+    cob: {
+      setProperties: () => {
+        properties.cob = calculateCobTotal(
+          context.treatments ?? [],
+          context.devicestatus,
+          pluginProfile(),
+          now,
+        );
       },
     },
     cage: {

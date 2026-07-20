@@ -61,6 +61,10 @@ import {
 import { nightscoutCorsHeaders as corsHeaders } from "./api3/response";
 import { normalizeApi3MaxLimit } from "./api3/input";
 import { buildNightscoutSummary } from "./api2/summary";
+import {
+  fitTreatmentsToBgCurve,
+  type TreatmentCurveData,
+} from "./data/treatment-to-curve";
 import type { NightscoutGlucoseUnits } from "./plugins/bgnow";
 import {
   calculatePluginProperties,
@@ -2756,7 +2760,22 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     // Locked ddata_at reuses the live cache inside five minutes; older/future
     // explicit frames run a two-day bounded load ending at the requested time.
     const frame = ddataRoute[1] !== undefined && Math.abs(at - now) >= 5 * 60_000;
-    return json(JSON.parse(await store.getDdataSnapshotJson(at, frame)));
+    const [snapshotJson, statusJson] = await Promise.all([
+      store.getDdataSnapshotJson(at, frame),
+      store.nightscoutHttpStatus(now),
+    ]);
+    const snapshot = JSON.parse(snapshotJson) as TreatmentCurveData;
+    const status = JSON.parse(statusJson) as {
+      settings?: { units?: unknown; enable?: unknown };
+    };
+    const enabled = Array.isArray(status.settings?.enable)
+      ? status.settings.enable
+      : [];
+    fitTreatmentsToBgCurve(snapshot, {
+      units: status.settings?.units,
+      rawBgEnabled: enabled.includes("rawbg"),
+    });
+    return json(snapshot);
   }
 
   const propertiesRoute = /^\/api\/v2\/properties(?:\/.*)?$/.test(url.pathname);
@@ -2770,8 +2789,9 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     const tenant = resolveTenant(request, url);
     // The upstream sandbox derives enabled plugin properties from ddata. Use a
     // bounded DO projection containing SGVs, calibrations, recent device
-    // status, database stats and one latest row per age-event type rather than
-    // materializing unrelated treatment/food collections.
+    // status, database stats, the official 2.5-day Treatment window, current
+    // Profile and one latest row per age-event type rather than materializing
+    // unrelated food or long-range Treatment history.
     const store = env.ENTRY_STORE.getByName(tenant);
     const now = Date.now();
     const [context, status] = await Promise.all([
@@ -2826,9 +2846,33 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     await requirePermission(request, env, url, "api:*:read");
     const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
     const now = Date.now();
-    const snapshot = JSON.parse(await store.getDdataSnapshotJson(now, false));
+    const [snapshotJson, context, statusJson] = await Promise.all([
+      store.getDdataSnapshotJson(now, false),
+      loadPluginPropertyContext(store, now),
+      store.nightscoutHttpStatus(now),
+    ]);
+    const status = JSON.parse(statusJson) as {
+      settings?: { units?: unknown; enable?: unknown };
+      extendedSettings?: Record<string, unknown>;
+    };
+    const units: NightscoutGlucoseUnits = status.settings?.units === "mmol"
+      ? "mmol"
+      : "mg/dl";
+    const enabled = new Set(
+      Array.isArray(status.settings?.enable)
+        ? status.settings.enable.filter((value): value is string => typeof value === "string")
+        : [],
+    );
+    const properties = calculatePluginProperties(
+      context,
+      units,
+      now,
+      enabled,
+      status.extendedSettings ?? {},
+    );
+    const snapshot = JSON.parse(snapshotJson);
     const hours = url.searchParams.get("hours") || 6;
-    return json(buildNightscoutSummary(snapshot, hours, now));
+    return json(buildNightscoutSummary(snapshot, hours, now, properties));
   }
 
   if (
