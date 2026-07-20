@@ -16,6 +16,11 @@ asset entries; its dry run reported 1005.41 KiB raw / 183.59 KiB gzip and only
 the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 51
 reported a 33 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
+Next runtime candidate `f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`
+adds the opt-in locked Loop property adapter and passes 490/490 tests across 43
+Workers-runtime files plus the same 20/20 audits. It is not deployed evidence
+until the release gates complete. Its dry run reports 1010.05 KiB raw / 184.58
+KiB gzip, 248 assets and only the existing two product bindings.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -101,16 +106,20 @@ The same aggregate snapshot feeds the wider v2 REST adapters without introducing
 process-global `ctx.ddata`. `src/realtime/ddata-snapshot.ts` represents the
 locked ddata singleton's empty buckets, clone, runtime normalization and
 prefer-new merge operations as pure functions; tenant state remains inside the
-SQLite Durable Object. `src/plugins/bgnow.ts`, `direction.ts`, `rawbg.ts` and
-`upbat.ts`, supported by request-safe `runtime/{times,units,levels}.ts`, are
+SQLite Durable Object. `src/plugins/bgnow.ts`, `direction.ts`, `rawbg.ts`,
+`upbat.ts` and `loop.ts`, supported by request-safe
+`runtime/{times,units,levels}.ts`, are
 ports of their locked property modules. They build the same
 four five-minute buckets around the last non-future SGV, preserve the
 over-nine-minute interpolation rule and mmol rounding, expose the official
 direction character/entity only for current data, reproduce raw calibration
-and noise behavior, and analyze recent per-uploader battery minima/severity.
+and noise behavior, analyze recent per-uploader battery minima/severity, and
+interpret uploader-provided Loop status and forecasts without calculating a
+dose.
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
-opt-in. `/api/v2/properties` applies those values plus the upstream comma
+opt-in; `loop` is likewise exposed only when configured in `ENABLE`.
+`/api/v2/properties` applies those values plus the upstream comma
 picker and truthy `pretty` serialization.
 
 Property polling uses `getPluginPropertyContextJson()`, a bounded DO projection
@@ -123,6 +132,16 @@ precise missing-method error and temporarily uses the already-deployed
 `getDdataSnapshotJson()` RPC; all storage and parse failures still propagate.
 Once the DO isolate updates, requests automatically return to the small
 projection.
+
+`src/plugins/loop.ts` is a request-local port of the five locked Loop plugin
+contracts. It selects six hours of recent DeviceStatus, preserves enacted,
+failure and `received=false` display states, emits the official forecast-point
+shape, evaluates stale Loop warning/urgent levels and builds the official
+notification request and English virtual-assistant responses. The current
+adapter does not persist or broadcast that request on a timer; the general
+plugin/notification scheduler remains a separate layer. No downstream dosing
+or recommendation formula is introduced.
+
 `src/api2/summary.ts` is a direct stateless port
 of the locked SGV/treatment/profile and basal-data processors. It receives one
 bounded snapshot and a request clock, so it neither shares request state nor
@@ -932,7 +951,7 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat` adapters are reused server
+`bgnow`/`direction`/`rawbg`/`upbat`/`loop` adapters are reused server
 calculation/property slices, but they are request-scoped rather than a
 background plugin engine. They do not calculate insulin
 recommendations, IOB or COB. Future summary state

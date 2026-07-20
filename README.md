@@ -97,6 +97,10 @@ for diagnosis, dosing, or medical decisions.
   every response/document; generated ObjectIds stay unique; 50 AAPS SMB, 100
   AndroidAPS SGV and 30 cross-collection offline-recovery requests complete
   through one tenant SQLite Durable Object without loss.
+- The complete five-case `loop.test.js` plugin contract. Enabled Loop device
+  status now feeds `/api/v2/properties` with the official enacted/error state,
+  forecast and stale-status calculation. This displays uploader-provided Loop
+  results; it does not calculate insulin doses or add medical advice.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -146,7 +150,11 @@ for diagnosis, dosing, or medical decisions.
   `levels` foundations plus `rawbg` and `upbat` plugins are also adapted:
   default-enabled `upbat` is live in `/properties`, while `rawbg` follows the
   official enabled-plugin gate and can be added through the compatible
-  `ENABLE` setting. Property reads use a bounded SGV/calibration/device-status
+  `ENABLE` setting. The opt-in `loop` property now uses the locked Loop status,
+  pill, six-point forecast, failure/received flag, stale-status level and
+  virtual-assistant calculations. Its notification request is adapted, while
+  the general persisted server-plugin notification runner remains incomplete.
+  Property reads use a bounded SGV/calibration/device-status
   DO projection, with an exact rolling-deploy fallback for an older live DO
   isolate. `/api/v2/summary/` ports the locked SGV, treatment,
   temporary-target, temp-basal and current-profile mapping without inventing
@@ -421,7 +429,7 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
 `data.calcdelta.test.js`, `websocket.shape-handling.test.js`,
-`profile.test.js`, `concurrent-writes.test.js` and 25 v1 client/API files are classified as fully
+`profile.test.js`, `concurrent-writes.test.js`, `loop.test.js` and 25 v1 client/API files are classified as fully
 `adapted`.
 The latest four v1 additions are `gap-treat-012.test.js`,
 `carb-dose-upload.test.js`, `objectid-cache.test.js` and
@@ -430,7 +438,7 @@ The latest four v1 additions are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 55 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 54 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed evidence candidate is commit
@@ -448,6 +456,13 @@ DeviceStatus prediction adapters, schema-v12 root-write authority, server-origin
 the prior property, API, authorization, `/storage` and `/alarm` slices.
 This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
+The next runtime candidate is
+`f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`; its 43-file Workers-runtime
+suite passes 490/490 plus the same 20/20 audits and TypeScript check. It adds
+the complete five-case Loop plugin adapter and opt-in property dispatch. It is
+not described as deployed until its Cloudflare and browser gates pass. Its
+official-UI build and dry run pass with 248 assets, 1010.05 KiB raw / 184.58
+KiB gzip and only `ENTRY_STORE` plus `ASSETS`.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
