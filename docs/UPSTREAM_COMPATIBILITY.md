@@ -49,6 +49,13 @@ and the remaining public Sandbox helper surface in a request-local object. The
 locked Profile, units and times ports replace only Node dynamic loading and
 module-global state; the dry-run asset count, size and bindings are unchanged.
 
+Next platform candidate `cc6c0b603701c28e133608be29cdf0f184d57be7`
+does not claim another upstream file. It sets Wrangler `keep_vars: true` to
+preserve dashboard-managed text variables across deploys and adds a deployment
+configuration audit that rejects checked-in plaintext vars and every
+out-of-scope Cloudflare product binding. Workers contracts remain 510/510; all
+three audits pass 21/21. This remains pre-deployment evidence.
+
 ## Generated route and test inventory
 
 `upstream/contract-manifest.json` is the version-controlled source of truth for
@@ -337,6 +344,12 @@ simulated Treatment POST returned the expected
 503 `api_secret_not_configured`, and its follow-up read stayed empty. Successful
 write paths remain local contract evidence because the current public Worker
 has no `API_SECRET` Secret binding and no deployed credential was read or sent.
+
+The next platform candidate preserves any dashboard-managed text variables on
+future Wrangler deploys but cannot restore an already absent value. Cloudflare
+documents that encrypted Secrets survive ordinary deployments independently;
+the project continues to recommend an encrypted `API_SECRET` and never stores
+or prints its value.
 
 The first deployment of this increment (`e24bfdec-233c-4dab-a462-142337b14118`)
 showed a Cloudflare rolling-release boundary: the new Worker reached an old

@@ -14,6 +14,7 @@ is not counted as API, plugin or real-time compatibility.
 - Worker: `nscf-phase1`
 - Deployed evidence candidate: `914247f2d9f5bb40c603e8db0c51012471513fe1`
 - Runtime source candidate: `914247f2d9f5bb40c603e8db0c51012471513fe1`
+- Next platform candidate: `cc6c0b603701c28e133608be29cdf0f184d57be7`
 - Git HEAD used by Wrangler: `6b47f7911ae03f04640504874fe55e2f64254495`
 - Cloudflare Version ID: `7d633773-090e-483b-8bbd-24beabfd0b9e`
 - Cloudflare ordinal version number: `54`
@@ -42,6 +43,11 @@ acceptance testing, an operator must explicitly configure `API_SECRET` as an
 encrypted Worker Secret. The port must not generate or silently replace a
 family credential. Post-deployment documentation changes are not part of the
 already active Worker version.
+Cloudflare's current Wrangler documentation states that dashboard text
+variables are overwritten by a normal deployment unless `keep_vars` is true,
+while encrypted Secrets are not deleted by ordinary deployments. The next
+candidate adds that preservation guard. It cannot restore the currently absent
+value; an operator must still configure it once before writable acceptance.
 
 ## Cloudflare footprint
 
@@ -56,6 +62,17 @@ The public instance is for simulated data only and must not receive real health
 data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
+
+The next platform candidate hardens deployment configuration without changing
+Nightscout runtime formulas or routes:
+
+- `keep_vars: true` preserves dashboard-managed text variables across later
+  Wrangler deployments;
+- a Node audit locks that setting, rejects a checked-in `vars` object and
+  rejects D1, R2, KV, Queues and custom routes while requiring only
+  `ENTRY_STORE` plus `ASSETS`;
+- encrypted Secrets remain preferred and are independently preserved by
+  Cloudflare. No credential was created, recovered, read or printed.
 
 The current deployed increment adds the complete locked Sandbox module contract:
 
@@ -349,6 +366,14 @@ tests cover the implemented adapter subset; all 16 API3 files,
 `sandbox.test.js` and 25 v1 client/API files are classified as fully `adapted`,
 52 remain unresolved and two bridge files are fixed-scope exclusions.
 Neither count proves complete compatibility.
+
+Next platform candidate `cc6c0b603701c28e133608be29cdf0f184d57be7`
+passes the same 510/510 Workers tests, 14/14 upstream-audit tests, 6/6 auth-audit
+tests and its new 1/1 Cloudflare-config audit. TypeScript, the official UI
+build and dry-run pass; the dry-run still reports 248 assets, 1021.31 KiB raw /
+186.89 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. It has not yet replaced
+version 54, so the post-deployment evidence below remains attributed to that
+active version.
 
 ## Post-deployment remote API evidence
 

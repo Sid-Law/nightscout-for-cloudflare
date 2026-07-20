@@ -19,6 +19,14 @@ gates.
 These are release facts for the named subset, not
 evidence of a complete port.
 
+Next platform candidate `cc6c0b603701c28e133608be29cdf0f184d57be7`
+sets Wrangler `keep_vars: true` so a dashboard-managed lab variable survives
+later code deployments. A Node configuration audit locks that behavior while
+rejecting checked-in plaintext vars and prohibited product bindings. The
+Workers runtime is unchanged; 510/510 Workers tests, 21/21 audit tests,
+TypeScript, official UI build and dry-run all pass. It remains pre-deployment
+evidence until the next Cloudflare and remote/browser gates complete.
+
 ## Current request and data flow
 
 ```text
@@ -967,8 +975,8 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat`/`loop` adapters, together with the next
-candidate's request-local Sandbox, are reusable server calculation/property
+`bgnow`/`direction`/`rawbg`/`upbat`/`loop` adapters, together with the deployed
+request-local Sandbox, are reusable server calculation/property
 slices rather than a background plugin engine. They do not calculate insulin
 recommendations, IOB or COB. Future summary state
 must come from the locked plugin modules through the persisted scheduler above;
@@ -986,6 +994,11 @@ rows and need range ordering and uniqueness. Official browser files are served
 by Workers Static Assets, so R2 is also unnecessary for the UI.
 
 Queues, KV and custom domains are intentionally absent from `wrangler.jsonc`.
+The same file sets `keep_vars: true`: Cloudflare dashboard text variables are
+otherwise overwritten by Wrangler deploys. This is operational preservation,
+not credential storage in Git. Encrypted Secrets remain the required
+production mechanism, and the configuration audit rejects a checked-in `vars`
+object as well as every out-of-scope product binding.
 
 ## Runtime and safety boundaries
 

@@ -348,6 +348,15 @@ show the value. This follows Cloudflare's current guidance to use encrypted
 for passwords and API tokens. A plaintext `API_SECRET` should be rotated and
 replaced with a Secret before any non-lab use.
 
+`wrangler.jsonc` sets `keep_vars: true` because a family may initially use the
+dashboard setup flow. Cloudflare documents that ordinary dashboard variables
+are otherwise overwritten by the next Wrangler deployment, while encrypted
+Secrets are not deleted by ordinary deploys. This protection preserves an
+already configured value; it does not create, recover or print one. The public
+lab currently has no `API_SECRET` Secret binding, so it must be configured once
+before Profile, Food or uploader write acceptance can succeed. See the official
+[Wrangler configuration reference](https://developers.cloudflare.com/workers/wrangler/configuration/#top-level-only-keys).
+
 Do not put a real value in `wrangler.jsonc`, commit `.dev.vars`, or paste it
 into an issue. Most current GET endpoints remain publicly readable. API v3
 `/status`, `/lastModified` and every generic collection operation (entries,
@@ -379,11 +388,13 @@ npm run build
 npm run check
 npm test
 npm run deploy:dry
-npm run deploy -- --keep-vars
+npm run deploy
 ```
 
 `wrangler.jsonc` creates only Worker `nscf-phase1`, its Workers Static Assets,
-and the `EntryStore` SQLite Durable Object namespace. A normal Wrangler deploy
+and the `EntryStore` SQLite Durable Object namespace. Its checked-in
+`keep_vars` setting makes the former `--keep-vars` command-line flag redundant.
+A normal Wrangler deploy
 requires an authenticated Cloudflare session and a verified Cloudflare account
 email.
 
@@ -461,6 +472,15 @@ dynamic `require` or module-global state. It is a plugin-runtime foundation,
 not a claim that the remaining registry, notification runner or background
 scheduler is complete. The manifest records 57 adapted, 52 unresolved and two
 fixed-scope exclusions.
+The next platform candidate is commit
+`cc6c0b603701c28e133608be29cdf0f184d57be7`. It enables Wrangler
+`keep_vars`, so dashboard-managed plaintext variables are preserved instead of
+being overwritten by a code deployment, and adds a Node configuration audit
+that also rejects stored plaintext vars and prohibited D1/R2/KV/Queues/routes.
+The 45-file Workers suite remains 510/510; the three audit suites pass 21/21,
+TypeScript and the official UI build pass, and dry-run remains 248 assets at
+1021.31 KiB raw / 186.89 KiB gzip with only `ENTRY_STORE` and `ASSETS`. It is
+not deployed evidence until the Cloudflare and post-deployment gates pass.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
