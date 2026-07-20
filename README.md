@@ -456,13 +456,15 @@ The prior eight v1 additions are
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed evidence candidate is commit
-`cc6c0b603701c28e133608be29cdf0f184d57be7`; its Worker runtime remains
-`914247f2d9f5bb40c603e8db0c51012471513fe1`. The 45-file Workers-runtime
-suite passes 510/510 tests and the three audit suites pass 21/21. Wrangler dry-run
-reads the same 248 official assets, reports 1021.31 KiB raw / 186.89 KiB gzip
-and exposes only `ENTRY_STORE` and `ASSETS`. This runtime adds the complete
-request-local five-case Sandbox adapter and remaining public helper surface,
-while retaining the 13-case Settings adapter, five-case Loop plugin, concurrent uploader and
+`55277d8967d0c33cdccab0bc77a6a503e4303524`. The 46-file Workers-runtime
+suite passes 515/515 tests, the three audit suites pass 21/21 and the complete
+official `pluginbase.test.js` file passes unchanged after public/upstream bundle
+byte equality. Wrangler dry-run reads the same 248 official assets, reports
+1030.64 KiB raw / 188.53 KiB gzip and exposes only `ENTRY_STORE` and `ASSETS`.
+This runtime adds the request-local static plugin registry and routes the
+implemented v2 property plugins through its locked order, enable and error
+gates while retaining the complete five-case Sandbox adapter, 13-case Settings
+adapter, five-case Loop plugin, concurrent uploader and
 Profile calculation contracts, four Loop client files and three Treatment identity contracts,
 exact `UUID_HANDLING` behavior, legacy raw-UUID repair and the MongoDB 5
 delete-result shape. It retains the legacy uploader edge and
@@ -471,27 +473,14 @@ the prior property, API, authorization, `/storage` and `/alarm` slices.
 This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
-dynamic `require` or module-global state. It is a plugin-runtime foundation,
-not a claim that the remaining registry, notification runner or background
-scheduler is complete. The manifest records 57 adapted, 52 unresolved and two
-fixed-scope exclusions.
-This release also enables Wrangler `keep_vars`, so dashboard-managed plaintext
+dynamic `require` or module-global state. The static registry likewise replaces
+Node plugin `require` without fabricating the 50 unresolved plugin/test
+algorithms. The manifest records one direct pass, 58 adapted, 50 unresolved
+and two fixed-scope exclusions. The deployed configuration also retains
+Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
 Its Node configuration audit rejects stored plaintext vars and prohibited
 D1/R2/KV/Queues/routes while locking the existing footprint.
-The next runtime candidate is
-`55277d8967d0c33cdccab0bc77a6a503e4303524`. It replaces the Node-only
-dynamic plugin registry with a request-local static Workers registry, routes
-the implemented v2 server property adapters through its official order and
-enable/error-isolation gates, and retains the exact client/server default
-catalog split. The unchanged official `pluginbase.test.js` client test is now a
-mandatory local gate after byte equality between the upstream-built and NSCF
-public bundles is proved. Local evidence is 46 Workers files / 515 tests,
-21/21 audit tests and that one direct upstream-client test; dry-run remains 248
-assets with only `ENTRY_STORE` and `ASSETS`, at 1030.64 KiB raw / 188.53 KiB
-gzip. The manifest records one direct pass, 58 adapted, 50 unresolved and two
-fixed-scope exclusions. This candidate is not deployed evidence until the
-Cloudflare, remote API and real-browser gates pass.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
@@ -526,9 +515,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `5d4e9153-99c2-483c-8f8f-b91c498ecfcb` was made current by
-deployment `fbeb3286-b3d0-4f40-8936-b64c6a591ba7` at
-`2026-07-20T03:30:46.408181Z`, with a reported 26 ms startup. No asset bytes
+Cloudflare version `ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba` was made current by
+deployment `476605d9-3d1c-43a7-920d-7d68fd1dc7b5` at
+`2026-07-20T03:57:53.262026Z`, with a reported 27 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -551,7 +540,7 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real Chromium run reloaded Cloudflare version 55 and rendered the official
+A real Chromium run reloaded Cloudflare version 56 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
@@ -568,7 +557,7 @@ Save was attempted. The session was closed after the pass.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 55 has therefore passed its credential-free remote API, Engine.IO and
+Version 56 has therefore passed its credential-free remote API, Engine.IO and
 real-browser acceptance gates.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes

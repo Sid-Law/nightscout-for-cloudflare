@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed evidence candidate: `cc6c0b603701c28e133608be29cdf0f184d57be7`
-- Runtime source candidate: `914247f2d9f5bb40c603e8db0c51012471513fe1`
-- Git HEAD used by Wrangler: `6f447bfe4a3fbf423fb294bc9b9d244a0dea96f1`
-- Cloudflare Version ID: `5d4e9153-99c2-483c-8f8f-b91c498ecfcb`
-- Cloudflare ordinal version number: `55`
+- Deployed evidence candidate: `55277d8967d0c33cdccab0bc77a6a503e4303524`
+- Runtime source candidate: `55277d8967d0c33cdccab0bc77a6a503e4303524`
+- Git HEAD used by Wrangler: `e214e94ea8d927023cdbfbdf7273eafed9986101`
+- Cloudflare Version ID: `ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba`
+- Cloudflare ordinal version number: `56`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T03:30:45.299768Z`
-- Activation: deployment `fbeb3286-b3d0-4f40-8936-b64c6a591ba7` created
-  `2026-07-20T03:30:46.408181Z`; Wrangler reports
+- Version creation time: `2026-07-20T03:57:52.353472Z`
+- Activation: deployment `476605d9-3d1c-43a7-920d-7d68fd1dc7b5` created
+  `2026-07-20T03:57:53.262026Z`; Wrangler reports
   this version at 100%
-- Worker startup: 26 ms
-- Deployment ID: `fbeb3286-b3d0-4f40-8936-b64c6a591ba7`
+- Worker startup: 27 ms
+- Deployment ID: `476605d9-3d1c-43a7-920d-7d68fd1dc7b5`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -31,7 +31,7 @@ is not counted as API, plugin or real-time compatibility.
   authority columns
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 1021.31 KiB raw / 186.89 KiB gzip
+- Upload: 1030.64 KiB raw / 188.53 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -62,8 +62,21 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
 
-The current deployed increment hardens deployment configuration without changing
-Nightscout runtime formulas or routes:
+The current deployed increment adds the static plugin registry without
+rewriting Nightscout formulas:
+
+- a request-local static registry replaces Node dynamic plugin `require` while
+  preserving the locked client/server catalogs, order, enable/shown gates,
+  hook/error behavior, event aggregation and client extended settings;
+- the implemented v2 server properties execute through that registry, while
+  descriptors for unresolved plugins do not fabricate their algorithms;
+- both named `plugins.test.js` cases and the wider registry surface pass in the
+  Workers suite;
+- the complete official `pluginbase.test.js` runs unchanged after its
+  upstream-built bundle and NSCF public bundle are proved byte-identical.
+
+The immediately preceding deployed increment hardened deployment
+configuration without changing Nightscout runtime formulas or routes:
 
 - `keep_vars: true` preserves dashboard-managed text variables across later
   Wrangler deployments;
@@ -73,20 +86,7 @@ Nightscout runtime formulas or routes:
 - encrypted Secrets remain preferred and are independently preserved by
   Cloudflare. No credential was created, recovered, read or printed.
 
-The next runtime candidate is
-`55277d8967d0c33cdccab0bc77a6a503e4303524`; it is not yet deployed evidence:
-
-- a request-local static registry replaces Node dynamic plugin `require` while
-  preserving the locked client/server catalogs, order, enable/shown gates,
-  hook/error behavior, event aggregation and client extended settings;
-- the implemented v2 server properties now execute through that registry, but
-  descriptors for unresolved plugins do not fabricate their algorithms;
-- both named `plugins.test.js` cases and the wider registry surface pass in the
-  Workers suite;
-- the complete official `pluginbase.test.js` runs unchanged only after its
-  upstream-built bundle and NSCF public bundle are proved byte-identical.
-
-The immediately preceding deployed increment added the complete locked Sandbox module contract:
+The earlier deployed increment added the complete locked Sandbox module contract:
 
 - all five named `sandbox.test.js` cases pass in both the locked original suite
   and the Workers runtime mapping, with one extra helper-surface/isolation case;
@@ -94,8 +94,8 @@ The immediately preceding deployed increment added the complete locked Sandbox m
   properties, historical SGV selection, LOW/HIGH and display/scaling helpers,
   default messages and plugin-specific extended settings remain request-local;
 - the existing locked Profile, units and times adapters replace Node dynamic
-  `require` and module-global state. The general plugin registry, data loader,
-  notification runner and alarm-backed schedule remain incomplete.
+  `require` and module-global state. The data loader, remaining plugin
+  algorithms, notification runner and alarm-backed schedule remain incomplete.
 
 The earlier deployed increment added the complete locked Settings module contract:
 
@@ -341,7 +341,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The pre-deployment evidence candidate is
+The deployed evidence candidate is
 `55277d8967d0c33cdccab0bc77a6a503e4303524`. It adds the request-local static
 plugin registry, routes implemented v2 property plugins through it and adds an
 unchanged official-client pluginbase gate while retaining the Wrangler
@@ -386,13 +386,12 @@ as fully `adapted`; one is `pass`, 50 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
-These are local pre-deployment gates. The Post-deployment sections below still
-describe active Cloudflare version 55 until this candidate is deployed and
-reaccepted remotely.
+These local pre-deployment gates were followed by the remote/API/Engine.IO and
+real-browser gates below against the same active version.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `5d4e9153-99c2-483c-8f8f-b91c498ecfcb` at 100%.
+Wrangler reports version `ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -404,9 +403,13 @@ not only Wrangler command success.
 | GET `/api/v1/status.json` and `/api/v2/status.json` | HTTP 200 with byte-equivalent filtered Settings snapshots: 63 JSON-visible keys, 14 enabled defaults, official title/plugin values and no secure fields or method functions |
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
-| GET `/api/v2/summary/?hours=6` | HTTP 200 with empty SGV/treatment arrays, `{}` Profile and the locked null plugin-state fields |
+| GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and the locked null plugin-state fields |
 | GET `/api/v2/properties/loop` | HTTP 200 with `{}` because Loop is opt-in and the deployed `ENABLE` setting does not enable it; no synthetic property was fabricated |
 | POST simulated Treatment without a configured secret | Expected HTTP 503 `api_secret_not_configured`; follow-up GET remained empty |
+
+The isolated tenant `smoke56-20260720-1201` passed 25 behavior/CORS assertions.
+The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
+`pingTimeout:20000`.
 
 No deployed credential was read or sent. The failed write was deliberately
 credential-free and could not mutate storage. Every checked API response
@@ -427,8 +430,9 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds the deployment-variable preservation/configuration audit and
-retains the complete request-local Sandbox contract, Settings, Loop property
+This release adds the request-local static plugin registry and retains the
+deployment-variable preservation/configuration audit, complete request-local
+Sandbox contract, Settings, Loop property
 calculation, concurrent uploader, Profile, Loop client and client/server root
 transport runtime. The current version repeated a fresh
 credential-free EIO4 polling-open check. Because the Worker has no
@@ -440,6 +444,8 @@ remain evidence from the immediately preceding compatible version.
 | Check | Result |
 | --- | --- |
 | Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
+| Local plugin registry contract | both named client/server cases plus order, enable/shown gates, hook/error behavior, event aggregation, iterators and settings projection |
+| Direct official client contract | complete locked `pluginbase.test.js` passed unchanged against the byte-identical shipped bundle |
 | Local Cloudflare configuration contract | `keep_vars` is true; no plaintext vars, D1, R2, KV, Queues or custom routes are checked in; only `ENTRY_STORE` and `ASSETS` are bound |
 | Local Sandbox contract | five locked client/server/LOW-HIGH/message cases plus helper-surface and request-isolation coverage |
 | Local Settings contract | 13 locked defaults/accessor/feature/alarm/threshold/snooze cases plus request isolation and recursive secure filtering |
@@ -474,7 +480,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 55's official UI without reading
+A real Chromium session exercised Cloudflare version 56's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -498,8 +504,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`5d4e9153-99c2-483c-8f8f-b91c498ecfcb`. It reused the same 248 unchanged
-official assets. Version 55 has therefore passed credential-free remote API,
+`ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba`. It reused the same 248 unchanged
+official assets. Version 56 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -563,7 +569,7 @@ mutation, report generation or every other protected page workflow.
   handled safely instead of reproducing the locked upstream unhandled
   rejection.
 - Server plugin jobs, notification generation/processing, remaining
-  plugin-derived properties, general sandbox/registry and summary state/persistence
+  plugin-derived properties, data-loader execution and summary state/persistence
   and the general alarm-driven background scheduler remain incomplete. Alarm
   ACK/silence state itself is persisted in schema v10 and must be consumed by
   that future notification engine. The existing realtime/auth alarm scheduler
@@ -579,11 +585,11 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`7d633773-090e-483b-8bbd-24beabfd0b9e` (version 54). It has its own remote API,
-Engine.IO and browser acceptance and lacks only this release's persistent
-Wrangler variable-preservation/configuration guard. Version 53
-(`a5a33a30-1d79-4831-a512-3553c2a5fe8c`) remains an older compatible fallback
-without the request-local Sandbox module adapter.
+`5d4e9153-99c2-483c-8f8f-b91c498ecfcb` (version 55). It has its own remote API,
+Engine.IO and browser acceptance and lacks only this release's static plugin
+registry/direct-client gate. Version 54
+(`7d633773-090e-483b-8bbd-24beabfd0b9e`) remains an older compatible fallback
+without the persistent Wrangler variable-preservation/configuration guard.
 The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not

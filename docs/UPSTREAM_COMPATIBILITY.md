@@ -18,9 +18,9 @@ storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
 Deployed evidence candidate
-`cc6c0b603701c28e133608be29cdf0f184d57be7`, with Worker runtime source
-`914247f2d9f5bb40c603e8db0c51012471513fe1`, passes 510/510 tests across 45
-Workers-runtime files plus 21/21 audit tests. The suite retains focused EIO4,
+`55277d8967d0c33cdccab0bc77a6a503e4303524` passes 515/515 tests across 46
+Workers-runtime files plus 21/21 audit tests and one complete unchanged
+upstream-client test. The suite retains focused EIO4,
 API3 `/storage` and `/alarm`, authorization, v1/v2 Status, all 16 locked API3
 files and 25 locked v1 client/API files, and now completely maps locked
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
@@ -32,23 +32,27 @@ files and 25 locked v1 client/API files, and now completely maps locked
 `gap-treat-012.test.js`, `carb-dose-upload.test.js`,
 `objectid-cache.test.js`, `sgv-devicestatus.test.js` and the complete
 24-assertion `profile.test.js`, the 13-case `concurrent-writes.test.js`, the
-five-case `loop.test.js`, the 13-case `settings.test.js` and the five-case
-`sandbox.test.js`. This is not
+five-case `loop.test.js`, the 13-case `settings.test.js`, the five-case
+`sandbox.test.js` and both named `plugins.test.js` cases. The complete
+`pluginbase.test.js` runs unchanged against the byte-identical shipped client
+bundle. This is not
 full-port evidence.
 The runtime code is deployed as Cloudflare version
-`5d4e9153-99c2-483c-8f8f-b91c498ecfcb`; exact release
+`ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
 
-The candidate Wrangler dry-run reports 248 official assets, 1021.31 KiB raw /
-186.89 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The candidate Wrangler dry-run reports 248 official assets, 1030.64 KiB raw /
+188.53 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
-The deployed increment adds the complete five-case `sandbox.test.js` adapter
-and the remaining public Sandbox helper surface in a request-local object. The
-locked Profile, units and times ports replace only Node dynamic loading and
-module-global state; the dry-run asset count, size and bindings are unchanged.
+The deployed increment adds the request-local static plugin registry and makes
+the implemented v2 property dispatcher consume it. Locked client/server
+catalog order, enable/shown gates, hooks, error containment, event aggregation
+and extended settings replace only Node dynamic loading; missing plugin
+algorithms are not fabricated. The prior complete Sandbox, Profile, units and
+times ports remain request-local.
 
 The deployed platform increment does not claim another upstream file. It sets
 Wrangler `keep_vars: true` to
@@ -56,16 +60,8 @@ preserve dashboard-managed text variables across deploys and adds a deployment
 configuration audit that rejects checked-in plaintext vars and every
 out-of-scope Cloudflare product binding.
 
-Next runtime candidate `55277d8967d0c33cdccab0bc77a6a503e4303524`
-maps both named `plugins.test.js` cases plus the request-local registry surface
-and makes the implemented v2 property dispatcher consume that registry. The
-Node dynamic loader becomes locked static client/server catalogs without
-inventing missing plugin algorithms. The complete locked
-`pluginbase.test.js` runs unchanged after the gate proves the NSCF public
-bundle is byte-identical to the upstream-built bundle. Local evidence is 46
-Workers files / 515 tests, 21/21 audits and one direct upstream client test;
-the manifest is one `pass`, 58 `adapted`, 50 `unresolved` and two fixed-scope
-exclusions. This remains pre-deployment evidence.
+The manifest is one `pass`, 58 `adapted`, 50 `unresolved` and two fixed-scope
+exclusions. Version 56 passed remote API/EIO4 and real-browser gates.
 
 ## Generated route and test inventory
 
@@ -178,7 +174,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single Cloudflare alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. A stale already-due platform alarm is replaced with a short prompt so queued delivery cannot erase the only SQL wakeup; a still-future earlier prompt is retained to avoid starvation. `/alarm` snooze rows are durable state but do not schedule plugin work. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one Cloudflare alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js`, `lib/profilefunctions.js` | **Static registry and complete Sandbox surfaces plus expanded request-scoped property, Loop and Profile foundation; data-loader/background execution missing.** Pure ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `loop`, `times`, `units`, `levels` and Profile calculations compute/support v2 behavior without rewriting formulas. The request-local Sandbox maps all five named upstream cases and helper surface. The static registry maps both named upstream cases plus locked client/server membership/order, enable/shown gates, hook/error behavior, event aggregation, iterators and extended-settings projection; implemented properties now execute through it. The client pluginbase file runs unchanged against the byte-identical official bundle. Loop's timer/persistence outlet and the unported descriptor algorithms are not connected or fabricated. | Adapt the data loader and remaining plugin files through the Sandbox and deterministic tenant platform context, then add notification/background execution without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/api/notifications-api.js`, `lib/adminnotifies.js`, push modules | **Partial ACK/outlet persistence plus Loop request calculation.** `/api/v1` and inherited `/api/v2` notification ACK plus Socket.IO ACK share bounded group/level snoozes, exact all-clear broadcasts and tenant-local current-connection delivery across eviction. The upstream `notifications-api.test.js` contract is tracked as adapted, and `loop.test.js` now produces the locked urgent stuck-Loop request. No persisted scheduler currently evaluates or publishes that request; general notification processing, activity/summary state, admin notices, plugin bus integration and push-provider processing remain missing. | Make the upstream engine consume the persisted snooze state and Loop request, add calculation/persistence/retry/eviction tests and keep external delivery disabled in simulated scope unless separately authorized. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Version 55's credential-free Chromium pass rendered the homepage/chart region and loaded Admin Tools, Food Editor, Profile Editor and `clock-color`. Food reached `Database loaded`; Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone; the empty-data clock rendered `-?-`. No exercised page had a JavaScript error or failed request. Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. The official Settings form opened and stayed closed for three seconds after dismissal. An earlier increment provided authenticated Profile Save/close evidence, but no protected Save was attempted in version 55. The public tenant has no Entries, so `---` is expected. Mutations/report generation, pushed live updates and full network assertions are not complete. | Re-run authenticated Profile Save/Food mutation only when a credential is explicitly available, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Version 56's credential-free Chromium pass rendered the homepage/chart region and loaded Admin Tools, Food Editor, Profile Editor and `clock-color`. Food reached `Database loaded`; Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone; the empty-data clock rendered `-?-`. No exercised page had a JavaScript error or failed request. Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. The official Settings form opened and stayed closed for three seconds after dismissal. An earlier increment provided authenticated Profile Save/close evidence, but no protected Save was attempted in version 56. The public tenant has no Entries, so `---` is expected. Mutations/report generation, pushed live updates and full network assertions are not complete. | Re-run authenticated Profile Save/Food mutation only when a credential is explicitly available, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
 | Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; one direct pass and 58 adapted files.** All 111 files are tracked with strict status/reason and heuristic route candidates: `pluginbase.test.js` runs unchanged, while all 16 API3 files, the named storage/concurrency/notification/data/property/Loop/Profile/Settings/Sandbox/registry/realtime foundations and 25 v1 client/API files are adapted; 50 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
@@ -327,9 +323,9 @@ controls, not upstream claims.
 ## Current deployed integration evidence
 
 Evidence candidate
-`cc6c0b603701c28e133608be29cdf0f184d57be7`, with Worker runtime source
-`914247f2d9f5bb40c603e8db0c51012471513fe1`, passes 510/510 tests in 45
-Workers-runtime files plus 21/21 audit tests. It retains the complete named
+`55277d8967d0c33cdccab0bc77a6a503e4303524` passes 515/515 tests in 46
+Workers-runtime files plus 21/21 audit tests and one unchanged direct upstream
+client test. It adds the static plugin registry while retaining the complete named
 five-case request-local Sandbox module and remaining helper surface while
 retaining the 13-case Settings snapshot, five-case Loop property calculation, 13-case concurrent uploader
 and 24-assertion Profile calculation mappings, GAP-TREAT-012, Loop
@@ -340,11 +336,11 @@ schema-v12 persisted root-write authority, the schema-v11 delta baseline and the
 ddata/summary slice, strict v1/v2 Status, Entries/Treatments,
 authorization, direct Hibernatable EIO4 WebSocket, all 16 locked API3 mappings,
 `/storage`, `/alarm` and inherited notification ACK slices. Cloudflare version
-`5d4e9153-99c2-483c-8f8f-b91c498ecfcb` is 100% active; deployment
-`fbeb3286-b3d0-4f40-8936-b64c6a591ba7` was created at
-`2026-07-20T03:30:46.408181Z` and reported a 26 ms startup. Wrangler processed
+`ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba` is 100% active; deployment
+`476605d9-3d1c-43a7-920d-7d68fd1dc7b5` was created at
+`2026-07-20T03:57:53.262026Z` and reported a 27 ms startup. Wrangler processed
 248 unchanged official asset entries; deployment and final dry run both
-reported 1021.31 KiB raw / 186.89 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
+reported 1030.64 KiB raw / 188.53 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
 in the dry run. This deployment had no explicit version annotation; none is
 invented.
 
@@ -462,8 +458,8 @@ write returned 503 because the Worker has no configured `API_SECRET`, and its
 follow-up read returned an empty array. No deployed credential was read or
 sent.
 
-The deployed version adds the complete Sandbox contract while retaining the
-Settings and Loop property adapters. The public EIO4
+The deployed version adds the static plugin registry while retaining the
+complete Sandbox, Settings and Loop property adapters. The public EIO4
 polling open handshake was re-smoked without a credentialed mutation. Local
 contracts prove Loop enacted/error/received/stale-alert/assistant behavior,
 prediction trimming,
@@ -475,7 +471,7 @@ WebSocket delivery green. The prior
 credentialed `/alarm` smoke remains historical evidence, not a claim of
 a current credentialed delivery or homepage switch.
 
-A real Chromium session reloaded Cloudflare version 55, rendered the official homepage
+A real Chromium session reloaded Cloudflare version 56, rendered the official homepage
 and chart region, then loaded Admin Tools, Food Editor, Profile Editor and
 `clock-color`. Food reached `Database loaded` and Profile reached `Values
 loaded.` through their permitted read paths, retained its stored simulated
@@ -487,7 +483,7 @@ bundle's nonfatal `Unable to find element for #chartContainer` warning because
 those pages contain no chart container. The official Settings form opened and
 stayed closed for three seconds after dismissal. No authenticated Save or
 protected mutation was attempted, and the isolated browser session was closed.
-This is same-version evidence alongside version 55's remote API and Engine.IO
+This is same-version evidence alongside version 56's remote API and Engine.IO
 smoke.
 
 An earlier deployed version completed an authenticated Profile Editor save and
