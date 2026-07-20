@@ -19,6 +19,13 @@ gates.
 These are release facts for the named subset, not
 evidence of a complete port.
 
+Next runtime candidate `914247f2d9f5bb40c603e8db0c51012471513fe1`
+adds the request-local official plugin Sandbox and passes 510/510 tests across
+45 Workers-runtime files plus 20/20 audits. Its official UI build and dry run
+pass with 248 assets, 1021.31 KiB raw / 186.89 KiB gzip and only the existing
+two product bindings. It remains pre-deployment evidence until its remote and
+browser gates complete.
+
 ## Current request and data flow
 
 ```text
@@ -146,6 +153,16 @@ notification request and English virtual-assistant responses. The current
 adapter does not persist or broadcast that request on a timer; the general
 plugin/notification scheduler remains a separate layer. No downstream dosing
 or recommendation formula is introduced.
+
+`src/sandbox.ts` is the request-local port of the public `lib/sandbox.js`
+surface used to host those official plugins. Its server and client initializers
+retain the safe notification view, translation and level references, immutable
+first-writer properties, non-future SGV/history selection, LOW/HIGH sentinels,
+unit/display rounding, default message construction and plugin-specific
+extended settings. Server initialization substitutes only the existing locked
+Profile adapter for Node's dynamic `require`; there is no filesystem access or
+cross-request module-global tenant state. This closes the Sandbox foundation,
+but it does not itself register every plugin or schedule server evaluation.
 
 `src/api2/summary.ts` is a direct stateless port
 of the locked SGV/treatment/profile and basal-data processors. It receives one
@@ -957,9 +974,9 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat`/`loop` adapters are reused server
-calculation/property slices, but they are request-scoped rather than a
-background plugin engine. They do not calculate insulin
+`bgnow`/`direction`/`rawbg`/`upbat`/`loop` adapters, together with the next
+candidate's request-local Sandbox, are reusable server calculation/property
+slices rather than a background plugin engine. They do not calculate insulin
 recommendations, IOB or COB. Future summary state
 must come from the locked plugin modules through the persisted scheduler above;
 platform code must not fill those fields with downstream formulas.

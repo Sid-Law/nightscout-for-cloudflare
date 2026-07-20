@@ -14,6 +14,7 @@ is not counted as API, plugin or real-time compatibility.
 - Worker: `nscf-phase1`
 - Deployed evidence candidate: `fb8c7a20a15584da6a5f89032e11503dcde3de46`
 - Runtime source candidate: `fb8c7a20a15584da6a5f89032e11503dcde3de46`
+- Next runtime candidate: `914247f2d9f5bb40c603e8db0c51012471513fe1`
 - Git HEAD used by Wrangler: `e247f274a286dd09d112dbfcf933201df33140a6`
 - Cloudflare Version ID: `a5a33a30-1d79-4831-a512-3553c2a5fe8c`
 - Cloudflare ordinal version number: `53`
@@ -56,6 +57,17 @@ The public instance is for simulated data only and must not receive real health
 data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
+
+The next runtime candidate adds the complete locked Sandbox module contract:
+
+- all five named `sandbox.test.js` cases pass in both the locked original suite
+  and the Workers runtime mapping, with one extra helper-surface/isolation case;
+- client/server initialization, safe notification projection, immutable
+  properties, historical SGV selection, LOW/HIGH and display/scaling helpers,
+  default messages and plugin-specific extended settings remain request-local;
+- the existing locked Profile, units and times adapters replace Node dynamic
+  `require` and module-global state. The general plugin registry, data loader,
+  notification runner and alarm-backed schedule remain incomplete.
 
 The current deployed increment adds the complete locked Settings module contract:
 
@@ -301,10 +313,10 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed evidence candidate is
-`fb8c7a20a15584da6a5f89032e11503dcde3de46`. It adds the complete 13-case
-Settings module mapping and request-local HTTP/Socket.IO status integration
-while retaining the five-case Loop plugin, 13-case concurrent uploader and
+The next runtime candidate is
+`914247f2d9f5bb40c603e8db0c51012471513fe1`. It adds the complete five-case
+Sandbox module mapping and remaining public helper surface while retaining the
+13-case Settings module, five-case Loop plugin, 13-case concurrent uploader and
 24-assertion Profile calculation mappings, as well as
 GAP-TREAT-012, Loop carb/dose, ObjectIdCache, SGV/DeviceStatus,
 UUID-handling, issue-6923, identity-matrix, legacy uploader/DeviceStatus work,
@@ -322,22 +334,26 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 44 files, 504/504 passed |
+| Workers integration tests | 45 files, 510/510 passed |
 | Worker dry run | 1021.31 KiB raw / 186.89 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 504 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 510 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
 `websocket.shape-handling.test.js`, `profile.test.js`,
-`concurrent-writes.test.js`, `loop.test.js`, `settings.test.js` and 25 v1
-client/API files are classified as fully `adapted`, 53 remain unresolved and
-two bridge files are fixed-scope exclusions.
+`concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
+`sandbox.test.js` and 25 v1 client/API files are classified as fully `adapted`,
+52 remain unresolved and two bridge files are fixed-scope exclusions.
 Neither count proves complete compatibility.
+
+This candidate has not yet replaced Cloudflare version 53. The remote API,
+Engine.IO and browser evidence below still describes the active deployed
+version until the next deployment and post-deployment gates succeed.
 
 ## Post-deployment remote API evidence
 

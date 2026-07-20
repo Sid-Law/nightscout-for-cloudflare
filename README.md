@@ -430,7 +430,7 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
 `data.calcdelta.test.js`, `websocket.shape-handling.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
-`settings.test.js` and 25 v1 client/API files are classified as fully
+`settings.test.js`, `sandbox.test.js` and 25 v1 client/API files are classified as fully
 `adapted`.
 The latest four v1 additions are `gap-treat-012.test.js`,
 `carb-dose-upload.test.js`, `objectid-cache.test.js` and
@@ -439,7 +439,7 @@ The latest four v1 additions are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 53 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 52 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed evidence candidate is commit
@@ -456,6 +456,19 @@ DeviceStatus prediction adapters, schema-v12 root-write authority, server-origin
 the prior property, API, authorization, `/storage` and `/alarm` slices.
 This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
+The next runtime candidate is commit
+`914247f2d9f5bb40c603e8db0c51012471513fe1`. It adds a request-local Workers
+port of official `lib/sandbox.js`, maps all five named upstream cases plus the
+remaining public helper surface, and reuses the locked Profile, units and times
+adapters instead of Node dynamic `require` or module-global state. The locked
+original file passes 5/5; the 45-file Workers-runtime suite passes 510/510 plus
+20/20 audits and TypeScript. The manifest records 57 adapted, 52 unresolved
+and two fixed-scope exclusions. Official UI preparation and Wrangler dry-run
+pass with 248 assets, 1021.31 KiB raw / 186.89 KiB gzip and only `ENTRY_STORE`
+plus `ASSETS`. This is a plugin-runtime foundation, not a claim that the
+remaining registry, notification runner or background scheduler is complete,
+and it is not deployed evidence until the Cloudflare, remote protocol and
+browser gates pass.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
