@@ -106,9 +106,9 @@ for diagnosis, dosing, or medical decisions.
   IAGE properties use the latest non-future matching Treatment and preserve
   the official pills, thresholds, notes and environment normalization.
   Timeago keeps the unchanged official client behavior and has a request-local
-  server request/display adapter. The durable notification processor can now
-  arbitrate and persist requests when invoked, but automatic plugin evaluation
-  and alarm-backed scheduling for these calculations are still missing.
+  server request/display adapter. The schema-v14 durable task runner now
+  evaluates Simple Alarms automatically; automatic Timeago/CAGE/SAGE/IAGE
+  evaluation remains a later task kind.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -142,8 +142,9 @@ for diagnosis, dosing, or medical decisions.
   locked all-clear payload, including Urgent-to-Warning snooze behavior. The
   official notification arbitration core now consumes bounded request and
   snooze arrays, persists emit/silence state and publishes its selected object
-  through this outlet in one SQLite transaction. Server plugins do not yet run
-  automatically on a persisted schedule.
+  through this outlet in one SQLite transaction. Simple Alarms now runs from a
+  persisted task automatically; the remaining server notification plugins do
+  not yet share that runner.
 - The official GET `/api/v1/notifications/ack` route and its inherited v2
   mount. Both require `notifications:*:ack`, return Express's exact `200 OK`
   text body, and use the same SQLite ACK/clear transaction as Socket.IO.
@@ -173,10 +174,13 @@ for diagnosis, dosing, or medical decisions.
   registry properties; IOB/COB remain `null` when disabled. BWP and other
   unported plugin state are not invented.
 - A tenant-local Durable Object alarm derived from persisted realtime
-  deadlines and authorization-delay cleanup. It survives eviction and drives
+  deadlines, authorization-delay cleanup and schema-v14 background tasks. It
+  survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
-  abandoned poll/POST lease cleanup and stale authorization-failure cleanup
-  without relying on a process-lifetime `setInterval`.
+  abandoned poll/POST lease cleanup, stale authorization-failure cleanup and
+  automatic Simple Alarm re-evaluation without relying on a process-lifetime
+  `setInterval`. In-range uploads finish evaluation inside their originating
+  request and leave no periodic task.
 - Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs. Only EIO4
   polling and direct WebSocket are routed: polling advertises `upgrades: []`,
   EIO3 and binary packets are rejected, and polling-to-WebSocket upgrade is not
@@ -200,8 +204,8 @@ adaptation and broader generic API v3 mixed-type/nested/query parity,
 failed-auth admin notifications, Mongo query/collection parity beyond the
 tested safe subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
 the direct-WebSocket at-most-once crash window, profile-switch/plugin
-preprocessing on root updates, the general background-task scheduler, server
-plugin execution, automatic notification-request generation, external push
+preprocessing on root updates, remaining background-task kinds, general server
+plugin execution, automatic non-Simple notification-request generation, external push
 providers, plugin-derived v2 summary
 state/persistence, and end-to-end verification of every official page workflow.
 The polling shim only keeps the official browser bundle supplied
@@ -480,27 +484,33 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 37 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 35 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed evidence candidate is commit
-`b614a5509b7fb4b398bf7610427fa87b8293fcbd`. The 54-file Workers-runtime
-suite passes 623/623 tests, the three audit suites pass 21/21, the complete
+`b38139adf51ca01d62b6b69a17959707c6d3ec1b`. The 55-file Workers-runtime
+suite passes 626/626 tests, the three audit suites pass 21/21, the complete
 official `pluginbase.test.js` client file passes unchanged, and fifteen locked
 server/data-plugin files pass 90/90 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1105.34 KiB raw / 203.13 KiB gzip and exposes only
+248 official assets, reports 1119.37 KiB raw / 206.18 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
-This runtime adds the locked official Simple Alarms calculation and core
-notification processor on top of the request-local Basal Profile and Treatment
-Notify plugins. Simple Alarms preserves the strict urgent/warning high/low
+This runtime connects the locked official Simple Alarms calculation and core
+notification processor to a generic SQLite task adapter. Simple Alarms preserves the strict urgent/warning high/low
 threshold comparisons, ten-minute/nonfuture input bounds, exact messages,
 event names, titles and Pushover sound metadata. The processor preserves
 request reset, first-urgent-then-warning choice, information/announcement
 handling, longest eligible snooze and automatic all-clear behavior. Schema v13
 persists `last_emit_at` beside the existing alarm silence state; a bounded
 internal RPC processes requests and publishes the selected `/alarm` object in
-one SQLite transaction. It is not a public API, an automatic timer or an
-external push provider.
+one SQLite transaction. Schema v14 adds a generic `background_tasks` table;
+successful notification state, live queue publication and task completion or
+reschedule commit atomically. Entry mutations run the leading-edge evaluation
+inside the upload request. Only an active high/low Simple Alarm retains a task,
+using the official heartbeat (60 seconds by default) until the latest SGV's
+ten-minute expiry. Task failures persist a two-second exponential retry capped
+at five minutes. A 15-second to 24-hour heartbeat bound is an explicit Workers
+Free hardening difference. The adapter is internal, not a public processing
+API or an external push provider.
 Basal is enabled by the official default feature set
 and calculates the current scheduled basal plus active Temp Basal and Combo
 Bolus treatment contributions from the current Profile; it exposes the locked
@@ -509,8 +519,8 @@ Treatment Notify preserves the upstream ten-minute selection window, manual
 versus automatic filtering, auto-snooze payloads, calibration/treatment/
 temporary-target/announcement classification and SHA-1 deduplication hash.
 That request calculation is complete and can feed the notification processor
-when invoked, but no automatic persisted plugin scheduler or external delivery
-provider is connected. The prior OpenAPS and Pump adapters remain.
+when invoked, but Treatment Notify is not yet an automatic task source and no
+external delivery provider is connected. The prior OpenAPS and Pump adapters remain.
 The runtime retains the preceding official IOB and COB formula adapters. They
 keep OpenAPS, Loop and pump DeviceStatus precedence, Treatment
 fallback, Profile/DIA/sensitivity/carb-ratio inputs, official recency and
@@ -524,7 +534,7 @@ explicit units and raw-BG fallback. These are official calculations and display
 placement only; NSCF adds no dose recommendation.
 The prior age/timeago and database-size adapters remain: Timeago's pure
 calculation is ready for, but is not yet driven by, an automatic notification
-scheduler, while ddata continues to publish the Durable Object's real SQLite
+scheduler task, while ddata continues to publish the Durable Object's real SQLite
 file size and the official `dbsize` calculation consumes it without
 double-counting indexes. Its platform maximum defaults to the documented
 Workers Free one-GB per-object ceiling expressed as 953.67 MiB; the official
@@ -552,7 +562,7 @@ D1/R2/KV/Queues/routes while locking the existing footprint.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
-automatic plugin evaluator/scheduler, including realtime profile-switch preprocessing,
+remaining plugin evaluators/task kinds, including realtime profile-switch preprocessing,
 remaining BWP/plugin-derived summary fields and their persistence, remain
 missing. No deployed
 credential was read or supplied to remote smoke requests, and no credential
@@ -584,9 +594,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `99984670-1693-4ea1-8dfe-c2d1bf7c59f7` (ordinal 62) was made current by
-deployment `5e10efaf-9f37-4753-b4a4-01d7abcefbf0` at
-`2026-07-20T07:56:31.517292Z`, with a reported 23 ms startup. No asset bytes
+Cloudflare version `c14ae3c9-b108-4fcd-9fa8-bdbd16e1dd69` (ordinal 63) was made current by
+deployment `63e500ed-d042-4b2b-a14c-536dfc14efee` at
+`2026-07-20T08:36:42.023729Z`, with a reported 24 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -595,7 +605,7 @@ the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
 missing-token API3 Entries returned the expected 401. The 72-assertion script
-observed 225,280 SQLite bytes and a
+used fresh tenant `public-smoke-1784536621695`, observed 237,568 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -615,25 +625,26 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real Chromium run reloaded Cloudflare version 62 and rendered the official
+A real Chromium run reloaded Cloudflare version 63 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
-Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
-official controls. The Food Editor reached `Database loaded` and the Profile
-Editor reached `Values loaded.` in their unauthorized read-only state. The
-stored simulated profile and its `Asia/Shanghai` timezone were present, while
-the empty-data clock rendered `-?-`; no protected
-Save was attempted. Browser console inspection found zero JavaScript errors.
+Tools, Food Editor, Profile Editor, Reporting, Swagger and `clock-color` pages
+also loaded with their official controls. The empty-data clock rendered `-?-`;
+no protected server mutation was attempted. Browser console inspection found
+zero JavaScript errors on the main workflows.
 The homepage rendered the live `dbsize` pill as `0%`, and the homepage and
 clock had no warnings. Admin, Food and Profile repeatedly
 logged the locked official-bundle warning `Unable to find element for
 #chartContainer` on pages that do not contain a chart. The isolated browser
-session also opened and closed the official Settings form; zero visible forms
-remained immediately and after three seconds, so it did not pop back open. No
-Save was attempted. The session was closed after the pass.
+session opened the official Settings form and clicked `Save` with unchanged
+defaults; zero visible forms remained after three seconds, so it did not pop
+back open. A batch page sweep produced one transient 404 console string while
+visiting Split without a corresponding failed response; an isolated Split
+reload returned HTTP 200 with zero console errors, so the event was recorded
+but not reproducible. The session was closed after the pass.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 62 has therefore passed its credential-free remote API, Engine.IO and
+Version 63 has therefore passed its credential-free remote API, Engine.IO and
 real-browser acceptance gates.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes

@@ -7,15 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`b614a5509b7fb4b398bf7610427fa87b8293fcbd` and Cloudflare version
-`99984670-1693-4ea1-8dfe-c2d1bf7c59f7`, reported as 100% active. The
-candidate's 54-file Workers-runtime suite passes 623/623 plus 21/21 audit tests,
+`b38139adf51ca01d62b6b69a17959707c6d3ec1b` and Cloudflare version
+`c14ae3c9-b108-4fcd-9fa8-bdbd16e1dd69`, reported as 100% active. The
+candidate's 55-file Workers-runtime suite passes 626/626 plus 21/21 audit tests,
 one unchanged direct upstream client test and 90/90 unchanged tests across fifteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1105.34 KiB raw / 203.13 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 62
-reported a 23 ms startup and passed credential-free API, EIO4 and real-browser
+asset entries; its dry run reported 1119.37 KiB raw / 206.18 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 63
+reported a 24 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -27,7 +27,7 @@ current runtime retains `src/plugins/registry.ts`, a request-local static replac
 Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
-implemented v2 property plugins execute through this registry. Version 62 adds
+implemented v2 property plugins execute through this registry. The current runtime includes
 `src/plugins/simplealarms.ts` and `src/notifications.ts` on top of
 `src/plugins/basal.ts` and `src/plugins/treatmentnotify.ts`: Basal preserves
 the current scheduled/temporary/Combo Bolus contribution, pill, visualization
@@ -35,8 +35,10 @@ and assistant behavior; Treatment Notify preserves the locked recent-treatment
 filtering, snooze, request classification and Web Crypto SHA-1 hash; Simple
 Alarms preserves the strict threshold cases and notification metadata. The
 notification processor preserves priority, snooze and automatic all-clear,
-with schema-v13 state and atomic live `/alarm` publication when invoked.
-Automatic plugin evaluation/scheduling and external delivery remain missing.
+with schema-v13 state and atomic live `/alarm` publication. Schema v14 adds a
+generic persisted task scheduler and automatically evaluates Simple Alarms;
+automatic task sources for the remaining notification plugins and external
+delivery remain missing.
 The prior OpenAPS/Pump adapters remain behind the same registry.
 `src/plugins/iob.ts`, `src/plugins/cob.ts` and
 `src/data/treatment-to-curve.ts` use official request-local
@@ -47,9 +49,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 official client `pluginbase.test.js` runs unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 54 Workers files / 623 tests, 21/21 audits, one direct upstream
+evidence is 55 Workers files / 626 tests, 21/21 audits, one direct upstream
 client file and fifteen direct upstream server/data-plugin files / 90 tests; the
-dry run is 1105.34 KiB raw / 203.13 KiB gzip with the same 248 assets and two bindings.
+dry run is 1119.37 KiB raw / 206.18 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -89,9 +91,10 @@ Embedded SQLite
   - persisted root `dataUpdate` baseline for server-originated deltas
   - persisted `/storage` namespace connections and collection subscriptions
   - persisted `/alarm` connections, shared HTTP/Socket ACK authority and snoozes
+  - persisted schema-v14 background tasks and retry state
   - hibernatable WebSocket attachments backed by persisted session authority
   - persisted authorization-failure delays
-  - one SQL-derived Durable Object alarm for realtime/auth deadlines
+  - one SQL-derived Durable Object alarm for realtime/auth/task deadlines
   - local schema migration table
 ```
 
@@ -182,6 +185,12 @@ announcement notification request with a Web Crypto SHA-1 hash. It does not
 schedule or deliver that request automatically. `simplealarms.ts` evaluates
 the locked nonfuture/recent SGV boundary, strict warning/urgent high/low
 thresholds, titles, event names, sounds and exact default message.
+Canonical document mutations schedule a schema-v14 Simple Alarm task. The
+originating write request evaluates the due leading edge from a bounded
+64-SGV projection; an ordinary in-range result completes the task without a
+periodic wake. An active high/low request is reevaluated at the configured
+heartbeat (60 seconds by default) until the source SGV reaches its exact
+ten-minute expiry.
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
 opt-in; `loop` is likewise exposed only when configured in `ENABLE`, while
@@ -230,8 +239,8 @@ contracts. It selects six hours of recent DeviceStatus, preserves enacted,
 failure and `received=false` display states, emits the official forecast-point
 shape, evaluates stale Loop warning/urgent levels and builds the official
 notification request and English virtual-assistant responses. The current
-adapter does not persist or broadcast that request on a timer; the general
-plugin/notification scheduler remains a separate layer. No downstream dosing
+adapter does not persist or broadcast that request on a timer; schema v14
+provides the generic scheduler, but Loop has no automatic task kind yet. No downstream dosing
 or recommendation formula is introduced.
 
 `src/sandbox.ts` is the request-local port of the public `lib/sandbox.js`
@@ -347,11 +356,13 @@ all-clear object. The official v1 `/notifications/ack` route and its inherited
 v2 mount use the same SQLite transaction and live broadcast path, require
 `notifications:*:ack`, and return Express's exact `200 OK` text body. The
 adapter bounds state to 256 distinct group names of at most 256 characters.
-Server plugins are not yet evaluated automatically, so the core processor is
-not an alarm-backed notification runner by itself.
+Simple Alarms now runs through the persisted scheduler; Treatment Notify,
+Timeago, CAGE/SAGE/IAGE, OpenAPS, Pump, Loop and the remaining notification
+sources are not yet automatic task kinds.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
 deadlines, bounded WebSocket close retries and stale authorization-failure
-cleanup are multiplexed through the DO's single persistent alarm. The handler
+cleanup plus background-task deadlines are multiplexed through the DO's single
+persistent alarm. The handler
 is transactional and idempotent under at-least-once delivery. A still-future
 earlier prompt is retained, while a stale past platform alarm is replaced so
 queued delivery cannot clear the only remaining SQL wakeup;
@@ -993,8 +1004,9 @@ The current server boundary is explicit:
   all currently connected tenant-local `/alarm` sockets, subscribed or not.
   Broken/overflow recipients are dropped independently and disconnected
   clients receive no replay. The bounded notification processor can persist and
-  publish upstream request arrays through this outlet; automatic plugin
-  computation/scheduling remains missing;
+  publish upstream request arrays through this outlet. Schema-v14 tasks now
+  compute and publish Simple Alarms automatically; automatic task adapters for
+  the remaining notification plugins remain missing;
 - root `subscribe` has no handler or ACK, matching the locked root. The four
   locked client-originated mutation events validate collection, authority,
   required `_id` and bounded payloads in upstream order, then return the exact
@@ -1004,18 +1016,21 @@ The current server boundary is explicit:
   locked `/storage` payload only after a successful mutation decision; v1 and
   direct database changes do not broadcast. `document_changes` is not consumed.
 
-Every realtime or authorization-delay state transition recomputes the single
-persisted alarm from SQL.
+Every realtime, authorization-delay or background-task state transition
+recomputes the single persisted alarm from SQL.
 The handler cleans all due sessions/leases, enqueues due pings, handles queue
-overflow and broadcasts the surviving client count inside one synchronous
-SQLite transaction, then schedules the next derived deadline. Repeated delivery
+overflow, broadcasts the surviving client count and runs due background work,
+then schedules the next derived deadline. Notification state, live `/alarm`
+queueing and task completion/reschedule share one synchronous SQLite
+transaction. Repeated delivery
 does not duplicate pings or deletions because `pong_deadline` and row removal
 are durable idempotency state. A stale already-due platform alarm is replaced
 with a short prompt rather than being allowed to disappear after the current
 RPC; a still-future earlier prompt is preserved to avoid starvation. WebSocket
 closure tombstones and authorization failure rows add their own due times to
-the same derived minimum. API3 pruning and server-plugin jobs still need a
-shared persisted task table before using the same one-alarm slot.
+the same derived minimum. API3 pruning and the remaining server-plugin jobs
+still need task adapters in the shared table before using the same one-alarm
+slot.
 
 Initial authorization data mirrors `dataWithRecentStatuses()`. `loadRetro`
 uses a separate unfiltered device-status view over the same one-day raw SQL
@@ -1031,7 +1046,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`99984670-1693-4ea1-8dfe-c2d1bf7c59f7`. Current credential-free remote smoke
+`c14ae3c9-b108-4fcd-9fa8-bdbd16e1dd69`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled
@@ -1064,18 +1079,30 @@ re-authorize after rollout, while their rows and data remain intact.
 Schema v13 adds nullable `last_emit_at` to the existing alarm-silence rows;
 activation repairs a v12 database idempotently without changing its groups,
 levels or snooze times.
+Schema v14 adds `background_tasks(kind, due_at, attempt_count, updated_at)` and
+an ordered due-time index. Partial activation repair preserves an existing task
+row while adding missing retry metadata. The one platform alarm is the minimum
+of realtime, failed-authorization cleanup and task deadlines. Early
+at-least-once delivery is a no-op; caught task failures persist a retry starting
+at two seconds with exponential backoff capped at five minutes, so exhausting
+Cloudflare's finite automatic retries does not silently discard the logical
+task. `HEARTBEAT` is accepted only inside the platform-bounded 15-second to
+24-hour interval.
 The remaining transport work is profile-switch status/plugin preprocessing,
 EIO3, polling upgrade
-and the direct-send replay/acknowledgement boundary; automatic server-plugin
-evaluation remains background work.
+and the direct-send replay/acknowledgement boundary; automatic task adapters for
+non-Simple server-plugin notifications remain background work.
 
 ### Background work and server plugins
 
 The upstream heartbeat (`lib/bus.js`) and plugin engines use process timers.
-The target adapter stores jobs with `kind`, `due_at`, retry state and an
-idempotency key. The alarm loads all due jobs, invokes the official server
-module through a tenant-scoped platform context, records results, and schedules
-the next due time.
+The deployed schema-v14 adapter replaces that lifecycle assumption with a
+generic SQLite task table containing `kind`, `due_at`, `attempt_count` and
+`updated_at`. The DO loads a bounded batch of due jobs, completes or reschedules
+them transactionally and derives the next wake from storage. This follows
+Cloudflare's one-alarm model: multiple logical events are stored and
+multiplexed through the one Durable Object alarm. The generic substrate is
+deployed; only the Simple Alarm notification task kind is connected today.
 
 Official plugin formulas and medical calculations are not rewritten. The
 build-time registry lists the locked server plugins so bundling is deterministic;
@@ -1096,9 +1123,10 @@ IOB/COB use the locked official formulas and can populate
 request-time Summary state when enabled; they do not recommend insulin.
 Treatment Notify and Simple Alarms request objects can be arbitrated, persisted
 and delivered to live `/alarm` clients when the internal processor is invoked.
-They are not evaluated on a schedule. Remaining BWP/plugin state and automatic
-notification outputs must come from locked upstream modules through the future
-scheduler rather than downstream formulas.
+Simple Alarms is additionally evaluated automatically on entry mutations and,
+while active, by the schema-v14 alarm scheduler. Treatment Notify and the
+remaining BWP/plugin state and automatic notification outputs still need task
+adapters around locked upstream modules rather than downstream formulas.
 
 ## Why no D1 or R2
 
