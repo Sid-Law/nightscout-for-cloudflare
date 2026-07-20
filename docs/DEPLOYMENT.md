@@ -12,14 +12,15 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `1378b05dcb8a3442135b318911fb62b55ccdc92a`
-- Runtime source candidate: `1378b05dcb8a3442135b318911fb62b55ccdc92a`
-- Git HEAD used by Wrangler: `1378b05dcb8a3442135b318911fb62b55ccdc92a`
-- Cloudflare Version ID: `de66cb8c-f9b6-464e-8741-8aed362d7955`
-- Cloudflare ordinal version number: `64`
+- Deployed runtime candidate: `5574563d94df48177098cdbe0149ce953b771b9c`
+- Runtime source candidate: `5574563d94df48177098cdbe0149ce953b771b9c`
+- Git HEAD used by Wrangler: `5574563d94df48177098cdbe0149ce953b771b9c`
+- Cloudflare Version ID: `980637fd-9d51-433f-8fdd-5b1175fdc0fc`
+- Cloudflare ordinal version number: `65` (inferred from sequential Wrangler
+  version history)
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T09:27:02.887Z`
-- Activation: deployment created `2026-07-20T09:27:03.757Z`; Wrangler reports
+- Version creation time: `2026-07-20T10:11:34.774Z`
+- Activation: deployment created `2026-07-20T10:11:35.590Z`; Wrangler reports
   this version at 100%
 - Worker startup: 25 ms
 - Deployment ID: not exposed separately by Wrangler 4.112.0's current
@@ -32,7 +33,7 @@ is not counted as API, plugin or real-time compatibility.
   persisted background-task table/index
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 1136.77 KiB raw / 209.71 KiB gzip
+- Upload: 1153.77 KiB raw / 213.01 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -62,8 +63,8 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 ## Release content
 
 The current deployed increment extends the generic SQLite background scheduler
-into one automatic official notification task for Simple Alarms, Treatment
-Notify and Timeago, without inventing medical or dosing logic:
+into one automatic official notification task for Simple Alarms, Pump, OpenAPS,
+Loop, Treatment Notify and Timeago, without inventing medical or dosing logic:
 
 - Simple Alarms preserves the locked recent/nonfuture SGV boundary, strict
   urgent/warning high/low thresholds, exact default message, titles, event
@@ -78,19 +79,28 @@ Notify and Timeago, without inventing medical or dosing logic:
 - a bounded internal `EntryStore` RPC accepts at most one MiB, 128 notification
   requests and 128 snoozes, then persists the decision and publishes the
   selected live `/alarm` object in one SQLite transaction;
-- canonical Entries, Treatments and Profile mutations schedule and immediately
-  evaluate the notification leading edge from at most 64 SGVs, 10 MBGs and the
-  newest 1,000 Treatments inside the existing JSON budget. Inactive results
-  leave no periodic wake; active results repeat at the configured heartbeat;
+- canonical Entries, DeviceStatus, Treatments and Profile mutations schedule
+  and immediately evaluate the notification leading edge from at most 64 SGVs,
+  ten MBGs, 1,000 matching current DeviceStatus rows plus the earliest future
+  matching status, the latest Profile and the newest 1,000 Treatments inside
+  the shared 900-KB/8,000-node/2,000-document budget. Inactive results leave no
+  periodic wake; active results repeat at the configured heartbeat;
 - Simple Alarms retains the exact ten-minute SGV expiry. Treatment Notify
   retains its strict ten-minute/manual-event filter, automated-event exclusion,
   snooze arbitration, exact expiry and future Treatment activation. Timeago
   retains strict `>` warning/urgent transitions by scheduling threshold plus
   one millisecond, fresh-SGV clearing and future SGV activation;
+- Pump, OpenAPS and Loop retain their strict warn/urgent threshold-plus-one-
+  millisecond transitions, source expiration and future DeviceStatus
+  activation. OpenAPS Offline starts at its future marker, suppresses Pump/
+  OpenAPS deadlines while active and clears one millisecond after its inclusive
+  expiry. Pump quiet-night low-battery behavior wakes at the next exact local
+  Profile-timezone boundary without minute polling;
 - Treatment Notify executes only when the official plugin-enable gate includes
   `treatmentnotify`; Timeago additionally requires truthy
-  `TIMEAGO_ENABLE_ALERTS`. Both remain dormant under the deployed upstream
-  default settings;
+  `TIMEAGO_ENABLE_ALERTS`. Pump, OpenAPS and Loop require their respective
+  official plugin-enable and `*_ENABLE_ALERTS` gates. All five gated branches
+  remain dormant under the deployed upstream default settings;
 - task completion/reschedule, notification state and live `/alarm` queueing
   commit together. Early at-least-once delivery is a no-op; caught failures
   persist exponential retry beginning at two seconds and capped at five
@@ -99,11 +109,11 @@ Notify and Timeago, without inventing medical or dosing logic:
   through the DO's one platform alarm. `HEARTBEAT` is bounded to 15 seconds
   through 24 hours;
 - the RPC is not a public HTTP API. Automatic CAGE/SAGE/IAGE,
-  OpenAPS/Pump/Loop/BWP/DBSize/admin notification producers and external push
+  BWP/DBSize/admin notification producers and external push
   providers remain incomplete;
 - all five named `simplealarms.test.js` and all eight named
   `notifications.test.js` cases pass unchanged in the direct upstream gate,
-  with existing DO migration/persistence/live-publication contracts plus eight
+  with existing DO migration/persistence/live-publication contracts plus eleven
   schema-v14 notification scheduling/repair/retry integrations;
 - the prior Basal Profile and Treatment Notify calculation behavior remains
   deployed:
@@ -124,9 +134,10 @@ Notify and Timeago, without inventing medical or dosing logic:
 - all eight named Basal/Treatment-Notify upstream cases plus two Workers-runtime
   integration cases pass. The unchanged upstream runner now covers 15 files and
   90/90 cases;
-- the prior OpenAPS, Pump, IOB, COB, Treatment-to-curve, age/timeago and
-  dataloader/database-size adapters remain deployed. No dose recommendation or
-  downstream medical calculation was added.
+- the prior OpenAPS, Pump and Loop calculations now also execute automatically
+  through the shared task under their official gates. IOB, COB, Treatment-to-
+  curve, age/timeago and dataloader/database-size adapters remain deployed. No
+  dose recommendation or downstream medical calculation was added.
 
 - `ctx.storage.sql.databaseSize` supplies the real SQLite file total to v2
   ddata and the property projection; it maps to upstream `dataSize` with
@@ -373,8 +384,8 @@ The cumulative deployed surface also includes:
   all-clear ACK payloads and Urgent-to-Warning snooze behavior. The core
   processor now selects, persists and publishes upstream notification requests
   when invoked, and one schema-v14 task automatically feeds Simple Alarms,
-  officially enabled Treatment Notify and opt-in Timeago alerts; remaining
-  server notification plugins are not yet automatic;
+  Pump, OpenAPS, Loop, officially enabled Treatment Notify and opt-in Timeago
+  alerts; remaining server notification plugins are not yet automatic;
 - the official v1 GET `/notifications/ack` route on both v1 and inherited v2
   mounts. It requires `notifications:*:ack`, returns the exact Express `OK`
   body, and commits through the same durable ACK/all-clear transaction as the
@@ -423,9 +434,9 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed runtime candidate is
-`1378b05dcb8a3442135b318911fb62b55ccdc92a`. It extends the schema-v14 generic
-task scheduler from automatic Simple Alarms to officially enabled Treatment
-Notify and opt-in Timeago on top of core notification
+`5574563d94df48177098cdbe0149ce953b771b9c`. It extends the schema-v14 generic
+task scheduler from automatic Simple Alarms/Treatment Notify/Timeago to Pump,
+OpenAPS and Loop under their official alert gates on top of core notification
 arbitration/persistence and schema v13 while retaining
 request-local Basal Profile state and all prior OpenAPS/Pump, IOB/COB/
 Treatment-to-curve, registry, age/timeago, dataloader/database-size, Sandbox,
@@ -445,13 +456,13 @@ The table below records the exact local gate completed before deployment.
 | Authorization audit tests | 6/6 passed |
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 55 files, 631/631 passed |
-| Worker dry run | 1136.77 KiB raw / 209.71 KiB gzip |
+| Workers integration tests | 56 files, 638/638 passed |
+| Worker dry run | 1153.77 KiB raw / 213.01 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; no credential was read, supplied, generated, replaced or inspected |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 631 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 638 Workers
 tests cover the implemented adapter subset; `pluginbase.test.js` additionally
 runs unchanged against the shipped official client bundle, while 15
 server/data-plugin files run unchanged in a separate 90/90 gate. All 16 API3 files,
@@ -475,7 +486,7 @@ real-browser gates below against the same active version.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `de66cb8c-f9b6-464e-8741-8aed362d7955` at 100%.
+Wrangler reports version `980637fd-9d51-433f-8fdd-5b1175fdc0fc` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -498,7 +509,7 @@ not only Wrangler command success.
 | Protected mutation | Deliberately not attempted; no API secret was sent or inspected |
 
 The reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784539642541` and passed 72 behavior/CORS assertions.
+`public-smoke-1784542320857` and passed 72 behavior/CORS assertions.
 The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
 `pingTimeout:20000`.
 
@@ -520,9 +531,9 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release extends schema-v14 background tasks from automatic Simple Alarms
-to officially enabled Treatment Notify and opt-in Timeago alerts, and retains
-request-local Basal Profile, OpenAPS/Pump, IOB/COB,
+This release extends schema-v14 background tasks from automatic Simple Alarms,
+Treatment Notify and Timeago to Pump, OpenAPS and Loop under their official
+alert gates, and retains request-local Basal Profile, IOB/COB,
 Treatment-to-curve, CAGE/SAGE/IAGE/timeago, the dataloader/database-size adapter, static plugin registry,
 deployment-variable preservation/configuration audit, complete request-local
 Sandbox contract, Settings, Loop property
@@ -546,7 +557,7 @@ remain evidence from the immediately preceding compatible version.
 | Local IOB/COB/treatment-curve contract | all 24 named upstream cases plus two DO/HTTP integrations: official source precedence/fallback/formulas/display, bounded Profile/Treatment inputs, ddata markers and enabled Summary state |
 | Local OpenAPS/Pump contract | all 16 named upstream cases plus two Workers-runtime integrations: official uploader-state precedence, thresholds, offline suppression, notification requests, pill/forecast visualization, assistant responses and opt-in dispatch |
 | Local Basal/Treatment-Notify contract | all eight named upstream cases plus Workers-runtime integrations: scheduled/temporary/Combo Bolus basal state, property/pill/visualization/assistant behavior, recent Treatment/MBG selection, synchronous SHA-1 hashing, automatic manual-event emit/expiry, snooze arbitration, automated-event exclusion and future activation |
-| Local notification scheduler/core contract | all five named Simple Alarms and all eight named notification-processor cases plus schema-v13 persistence; eight schema-v14 tests cover Simple high/multiplex/clear, repair/retry, Treatment Notify and Timeago exact activation/expiry/clear behavior |
+| Local notification scheduler/core contract | all five named Simple Alarms and all eight named notification-processor cases plus schema-v13 persistence; eleven schema-v14 tests cover Simple high/multiplex/clear, repair/retry, Treatment Notify/Timeago exact activation/expiry/clear behavior, Loop exact stale transitions, OpenAPS Offline start/end suppression and Pump exact stale transitions; three focused closed-loop adapter tests cover ordering, gates and deadlines |
 | Local age/timeago contract | all 17 locked CAGE/SAGE/IAGE/timeago cases, including event selection, display boundaries, notes, alert thresholds, request shapes, enable gates and environment normalization; Timeago scheduler integration additionally proves strict threshold-plus-one-millisecond transitions |
 | Prior-version anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
 | Prior-version read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
@@ -574,7 +585,7 @@ containment and idempotent v10 schema repair. HTTP v1/v2 and Socket ACK now
 share that tested durable transaction. Notification-core contracts additionally
 prove schema-v13 repair, emission state across reconstruction, exactly one
 automatic all-clear and atomic live publication. Schema-v14 contracts
-add automatic Simple/Treatment-Notify/Timeago publication, single-alarm
+add automatic Simple/Pump/OpenAPS/Loop/Treatment-Notify/Timeago publication, single-alarm
 multiplexing, activation/expiry, in-range/fresh clearing, data-preserving
 partial repair, persistent retry and recovery. The
 remote pass did not use a credential,
@@ -584,7 +595,7 @@ execution for the remaining server plugins.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 64's official UI without reading
+A real Chromium session exercised Cloudflare version 65's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region, loaded locked
@@ -594,7 +605,7 @@ credential storage or submitting protected mutations:
   `clock-color` loaded from the official bundle with their expected controls;
   the empty-data clock rendered `-?-` and no protected server mutation was
   attempted;
-- the agent-created verification tab was closed after the checks;
+- the user's existing homepage tab was returned to `/` and kept open after the checks;
 - the official Settings form opened and `Save` was clicked with unchanged
   defaults; zero visible forms remained after 3.5 seconds, directly
   rechecking the reported pop-back symptom;
@@ -602,8 +613,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`de66cb8c-f9b6-464e-8741-8aed362d7955`. It reused the same 248 unchanged
-official assets. Version 64 has therefore passed credential-free remote API,
+`980637fd-9d51-433f-8fdd-5b1175fdc0fc`. It reused the same 248 unchanged
+official assets. Version 65 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -660,8 +671,8 @@ mutation, report generation or every other protected page workflow.
   `/alarm` now combines its live transport/auth/ACK outlet with the internal
   core processor: inherited v1/v2 HTTP ACK and schema-v13 emission state are
   durable, and bounded upstream request arrays can feed it. Schema-v14 tasks
-  evaluate Simple Alarms, officially enabled Treatment Notify and opt-in
-  Timeago automatically; remaining server notification plugins are not yet
+  evaluate Simple Alarms, Pump, OpenAPS, Loop, officially enabled Treatment
+  Notify and opt-in Timeago automatically; remaining server notification plugins are not yet
   automatic, and credentialed remote event delivery has not been exercised.
 - `document_changes` is still an unbounded full-body journal. No transport
   consumes it; `/storage` instead atomically queues bounded frames only for
@@ -673,8 +684,8 @@ mutation, report generation or every other protected page workflow.
   handled safely instead of reproducing the locked upstream unhandled
   rejection.
 - The generic alarm-driven background scheduler is deployed in schema v14. One
-  task covers Simple Alarms, enabled Treatment Notify and opt-in Timeago.
-  CAGE/SAGE/IAGE, OpenAPS/Pump/Loop, BWP/DBSize, plugin-derived summary/activity
+  task covers Simple Alarms, Pump, OpenAPS, Loop, enabled Treatment Notify and
+  opt-in Timeago. CAGE/SAGE/IAGE, BWP/DBSize, plugin-derived summary/activity
   state and admin notifications still need producer/persistence adapters. Alarm ACK/silence state
   originates in schema v10 and schema v13 adds last-emission state consumed by
   the adapted core processor. API3 pruning and other maintenance jobs are not
@@ -689,9 +700,11 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`c14ae3c9-b108-4fcd-9fa8-bdbd16e1dd69` (version 63). It has its own remote API,
-Engine.IO and browser acceptance and retains schema-v14 automatic Simple Alarms
-but lacks this release's Treatment Notify and Timeago scheduling. Version 62
+`de66cb8c-f9b6-464e-8741-8aed362d7955` (version 64). It has its own remote API,
+Engine.IO and browser acceptance and retains schema-v14 automatic Simple Alarms,
+Treatment Notify and Timeago but lacks this release's automatic Pump/OpenAPS/
+Loop scheduling. Version 63 (`c14ae3c9-b108-4fcd-9fa8-bdbd16e1dd69`) retains
+automatic Simple Alarms but lacks Treatment Notify and Timeago scheduling. Version 62
 (`99984670-1693-4ea1-8dfe-c2d1bf7c59f7`) lacks the schema-v14 scheduler and
 automatic Simple Alarm execution. The earlier version 60
 (`18757f14-fdf9-4535-81cb-d8e8ebac4430`) lacks Basal Profile/Treatment Notify.

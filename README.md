@@ -143,11 +143,12 @@ for diagnosis, dosing, or medical decisions.
   official notification arbitration core now consumes bounded request and
   snooze arrays, persists emit/silence state and publishes its selected object
   through this outlet in one SQLite transaction. One persisted
-  `plugin-notifications` task now evaluates Simple Alarms, Treatment Notify and
-  Timeago in upstream order. Treatment Notify runs only when the official
-  plugin-enable gate includes it; Timeago alerts run only when
-  `TIMEAGO_ENABLE_ALERTS` is truthy. Other server notification plugins do not
-  yet share that runner.
+  `plugin-notifications` task now evaluates Simple Alarms, Pump, OpenAPS, Loop,
+  Treatment Notify and Timeago in official server order. Pump, OpenAPS and Loop
+  retain their official plugin-enable plus `*_ENABLE_ALERTS` gates; Treatment
+  Notify retains its plugin-enable gate, and Timeago additionally requires
+  truthy `TIMEAGO_ENABLE_ALERTS`. The public upstream-default configuration
+  leaves all five opt-in alert branches dormant.
 - The official GET `/api/v1/notifications/ack` route and its inherited v2
   mount. Both require `notifications:*:ack`, return Express's exact `200 OK`
   text body, and use the same SQLite ACK/clear transaction as Socket.IO.
@@ -166,9 +167,9 @@ for diagnosis, dosing, or medical decisions.
   official enabled-plugin gate and can be added through the compatible
   `ENABLE` setting. The opt-in `loop` property now uses the locked Loop status,
   pill, six-point forecast, failure/received flag, stale-status level and
-  virtual-assistant calculations. Its notification request is adapted, and the
-  persisted notification core can process it when invoked; automatic Loop and
-  other remaining server-plugin evaluation is still incomplete.
+  virtual-assistant calculations. Its notification request now also runs
+  automatically through the persisted scheduler when the official Loop alert
+  gates enable it.
   Property reads use the bounded SGV/calibration/device-status/Treatment/Profile
   DO projection, with an exact rolling-deploy fallback for an older live DO
   isolate. Official opt-in IOB/COB calculations now execute through the same
@@ -181,10 +182,11 @@ for diagnosis, dosing, or medical decisions.
   survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
   abandoned poll/POST lease cleanup, stale authorization-failure cleanup and
-  automatic Simple Alarm, Treatment Notify and Timeago re-evaluation without
+  automatic Simple Alarm, Pump, OpenAPS, Loop, Treatment Notify and Timeago
+  re-evaluation without
   relying on a process-lifetime `setInterval`. Mutations evaluate the leading
   edge inside their originating request; no future deadline is retained when
-  all three enabled producers are inactive.
+  all six enabled producers are inactive.
 - Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs. Only EIO4
   polling and direct WebSocket are routed: polling advertises `upgrades: []`,
   EIO3 and binary packets are rejected, and polling-to-WebSocket upgrade is not
@@ -209,7 +211,7 @@ failed-auth admin notifications, Mongo query/collection parity beyond the
 tested safe subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
 the direct-WebSocket at-most-once crash window, profile-switch/plugin
 preprocessing on root updates, remaining background-task kinds, general server
-plugin execution, automatic CAGE/SAGE/IAGE/OpenAPS/Pump/Loop/BWP/DBSize/admin
+plugin execution, automatic CAGE/SAGE/IAGE/BWP/DBSize/admin
 notification generation, external push providers, plugin-derived v2 summary
 state/persistence, and end-to-end verification of every official page workflow.
 The polling shim only keeps the official browser bundle supplied
@@ -492,28 +494,34 @@ The prior eight v1 additions are
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
-`1378b05dcb8a3442135b318911fb62b55ccdc92a`. The 55-file Workers-runtime
-suite passes 631/631 tests, the three audit suites pass 21/21, the complete
+`5574563d94df48177098cdbe0149ce953b771b9c`. The 56-file Workers-runtime
+suite passes 638/638 tests, the three audit suites pass 21/21, the complete
 official `pluginbase.test.js` client file passes unchanged, and fifteen locked
 server/data-plugin files pass 90/90 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1136.77 KiB raw / 209.71 KiB gzip and exposes only
+248 official assets, reports 1153.77 KiB raw / 213.01 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 This runtime connects a single `plugin-notifications` SQLite task to the locked
-official Simple Alarms, Treatment Notify and Timeago calculations and the core
-notification processor. The engine evaluates the three producers in upstream
-order from one bounded context, arbitrates requests and snoozes in one
+official Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago
+calculations and the core notification processor. The engine evaluates the six
+producers in official server order from one bounded context, arbitrates requests and snoozes in one
 transaction, atomically publishes the selected live `/alarm` frame, and stores
 the next exact logical deadline. Simple Alarms preserves strict high/low
 thresholds and ten-minute SGV expiry. Treatment Notify preserves its strict
 ten-minute window, manual/automatic filtering, snooze rules and synchronous
 upstream SHA-1 `notifyhash`. Timeago preserves strict `>` warning/urgent
-boundaries by waking one millisecond after the threshold. Future SGVs and
-eligible manual Treatments retain their exact activation deadline; active
-notifications repeat at the configured heartbeat and clear after expiry or a
-fresh in-range mutation. The task runs only through the official enable gates:
-Treatment Notify must be present in `settings.enable`, and Timeago additionally
-requires truthy `TIMEAGO_ENABLE_ALERTS`. The public upstream-default
-configuration therefore leaves both branches dormant. Task failures persist a
+boundaries by waking one millisecond after the threshold. Pump, OpenAPS and Loop
+preserve strict warn/urgent threshold-plus-one-millisecond transitions, source
+expiration and future DeviceStatus activation. OpenAPS Offline begins at its
+future marker time, suppresses Pump/OpenAPS deadlines while active and ends one
+millisecond after its inclusive expiry; Pump quiet-night low-battery mode wakes
+at the next exact profile-timezone boundary rather than polling each minute.
+Future SGVs and eligible manual Treatments retain their exact activation
+deadline; active notifications repeat at the configured heartbeat and clear
+after expiry or a fresh in-range mutation. The bounded context contains at most
+64 SGVs, ten MBGs, 1,000 matching current DeviceStatus rows plus the earliest
+future matching row, the latest Profile and the newest 1,000 Treatments within
+the existing time window and shared response budget. The task runs only through
+the official enable gates. Task failures persist a
 two-second exponential retry capped at five minutes. A 15-second to 24-hour
 heartbeat bound is an explicit Workers Free hardening difference. The adapter
 is internal, not a public processing API or an external push provider.
@@ -525,8 +533,9 @@ Treatment Notify preserves the upstream ten-minute selection window, manual
 versus automatic filtering, auto-snooze payloads, calibration/treatment/
 temporary-target/announcement classification and SHA-1 deduplication hash.
 When officially enabled, mutations and the persisted task now feed that request
-and snooze into the same processor automatically. No external delivery provider
-is connected. The prior OpenAPS and Pump adapters remain request-local.
+and snooze into the same processor automatically. Pump, OpenAPS and Loop use the
+same task and processor under their official alert gates. No external delivery
+provider is connected.
 The runtime retains the preceding official IOB and COB formula adapters. They
 keep OpenAPS, Loop and pump DeviceStatus precedence, Treatment
 fallback, Profile/DIA/sensitivity/carb-ratio inputs, official recency and
@@ -600,8 +609,10 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `de66cb8c-f9b6-464e-8741-8aed362d7955` (ordinal 64) was made current by
-the deployment created at `2026-07-20T09:27:03.757Z`, with a reported 25 ms
+Cloudflare version `980637fd-9d51-433f-8fdd-5b1175fdc0fc` (ordinal 65, inferred
+from the sequential Wrangler version history) was made current by the
+deployment created at `2026-07-20T10:11:35.590Z`; the version was created at
+`2026-07-20T10:11:34.774Z`, with a reported 25 ms
 startup. Wrangler 4.112.0 does not expose a separate deployment UUID in its
 current deployment-list output, so none is invented. No asset bytes needed
 uploading because all 248 official asset entries were unchanged.
@@ -612,7 +623,7 @@ the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
 missing-token API3 Entries returned the expected 401. The 72-assertion script
-used fresh tenant `public-smoke-1784539642541`, observed 237,568 SQLite bytes and a
+used fresh tenant `public-smoke-1784542320857`, observed 237,568 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -630,7 +641,7 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real Chromium run reloaded Cloudflare version 64 and rendered the official
+A real Chromium run reloaded Cloudflare version 65 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor, Reporting, Swagger and `clock-color` pages
 also loaded with their official controls. The empty-data clock rendered `-?-`;
@@ -639,11 +650,11 @@ zero warnings or JavaScript errors on the tested workflows. The homepage
 rendered the live `dbsize` pill as `0%`. The isolated browser session opened
 the official Settings form and clicked `Save` with unchanged defaults; zero
 visible forms remained after 3.5 seconds, so it did not pop
-back open. The session was closed after the pass.
+back open. The user's existing homepage tab was returned to `/` and kept open.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 64 has therefore passed its credential-free remote API, Engine.IO and
+Version 65 has therefore passed its credential-free remote API, Engine.IO and
 real-browser acceptance gates.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
