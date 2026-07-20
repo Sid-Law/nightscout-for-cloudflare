@@ -13,6 +13,7 @@ is not counted as API, plugin or real-time compatibility.
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
 - Deployed code candidate: `947dc1403c8a07ecc053457386a97d5b4bd18571`
+- Next locally accepted candidate: `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`
 - Git HEAD used by Wrangler: `895bd3ffdd483ee831000b7fa54587de35cb6551`
 - Cloudflare Version ID: `de8ab414-79e8-4938-8e09-e86c7f4cf0cf`
 - Cloudflare ordinal version number: `49`
@@ -258,11 +259,12 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed code candidate is
-`947dc1403c8a07ecc053457386a97d5b4bd18571`. It adds the complete named
-GAP-TREAT-012, Loop carb/dose, ObjectIdCache and SGV/DeviceStatus mappings while
-retaining UUID-handling, issue-6923, identity-matrix, legacy uploader/
-DeviceStatus work, schema-v12 root-write
+The next code candidate is
+`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. It adds the complete 24-assertion
+Profile calculation mapping and wires it into API v2 Summary while retaining
+GAP-TREAT-012, Loop carb/dose, ObjectIdCache, SGV/DeviceStatus,
+UUID-handling, issue-6923, identity-matrix, legacy uploader/DeviceStatus work,
+schema-v12 root-write
 authority and all prior property, v1, API3, authorization, realtime,
 notification ACK and official-page work.
 The table below records the exact local gate completed before deployment.
@@ -276,19 +278,19 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 40 files, 448/448 passed |
-| Worker dry run | 993.49 KiB raw / 181.09 KiB gzip |
+| Workers integration tests | 41 files, 472/472 passed |
+| Worker dry run | 1005.41 KiB raw / 183.59 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 448 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 472 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
-`websocket.shape-handling.test.js` and 25 v1 client/API files are classified as
-fully `adapted`, 57 remain unresolved and two bridge files are
+`websocket.shape-handling.test.js`, `profile.test.js` and 25 v1 client/API
+files are classified as fully `adapted`, 56 remain unresolved and two bridge files are
 fixed-scope exclusions.
 Neither count proves complete compatibility.
 

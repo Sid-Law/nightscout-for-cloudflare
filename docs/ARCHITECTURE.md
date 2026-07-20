@@ -6,14 +6,14 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed candidate
-`947dc1403c8a07ecc053457386a97d5b4bd18571` and Cloudflare version
-`de8ab414-79e8-4938-8e09-e86c7f4cf0cf`, reported as 100% active by direct
-deploy. The candidate's 40-file Workers-runtime suite passes 448/448 plus 20/20 audit
-tests. Wrangler processed 248 unchanged official asset entries; deployment and
-the final dry run both reported 993.49 KiB raw / 181.09 KiB gzip, with the dry
-run declaring only the `ENTRY_STORE` Durable Object and `ASSETS` product
-bindings. Cloudflare reported a 22 ms startup.
+“Current” below describes next adapter candidate
+`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`; the immediately preceding
+Cloudflare version `de8ab414-79e8-4938-8e09-e86c7f4cf0cf` remains 100% active
+until this candidate is deployed. The candidate's 41-file Workers-runtime suite
+passes 472/472 plus 20/20 audit tests. Wrangler processed 248 unchanged official
+asset entries; its dry run reported 1005.41 KiB raw / 183.59 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 49
+reported a 22 ms startup; candidate startup and remote evidence remain pending.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -414,7 +414,7 @@ SQLite tables and indexes may differ internally from MongoDB, but observable
 Nightscout behavior must be fixed by upstream-derived contract tests.
 
 The runtime adapter represented by candidate
-`947dc1403c8a07ecc053457386a97d5b4bd18571` implements all six official generic
+`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8` implements all six official generic
 vertical slices—entries, treatments, device status, profile, food and
 settings—in the tenant
 `EntryStore` Durable Object. Internal SQL schema version 4 extends `documents`
@@ -438,6 +438,18 @@ records the migration snapshot once across repeated Durable Object eviction.
 The locked `{startDate:-1,_id:-1}` current-Profile order is shared by v1
 `/profile/current`, Status settings and the realtime dataloader; the latter
 returns one Profile just like upstream `ctx.profile.last()`.
+
+`src/profile-functions.ts` ports the official Profile calculation surface used
+by the API v2 Summary path. It retains legacy on-the-fly conversion, store and
+historical-record selection, active Profile switches, DIA, carbohydrate
+absorption/ratio, insulin sensitivity, low/high targets, basal schedules,
+units, IANA-timezone lookup, Circadian Percentage Profile coercion and
+temp/combo-basal helpers. Node-specific lodash, memory-cache and
+moment-timezone mechanics become native arrays, an instance-local five-second
+`Map` cache and `Intl.DateTimeFormat`; keeping the previous-temp-basal pointer
+inside the instance prevents cross-tenant isolate state. The complete 24-case
+locked `profile.test.js` file is represented by Workers-runtime tests. This
+foundation does not imply that every plugin consuming Profile data is ported.
 
 Food uses the locked API v3 `created_at`-only fallback identity. V1 Food create
 forces a new server `created_at` like upstream, while save preserves an existing

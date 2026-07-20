@@ -86,6 +86,12 @@ for diagnosis, dosing, or medical decisions.
   `syncIdentifier` remains descriptive rather than an invented uniqueness
   index: a cache miss with a new timestamp can create the same duplicate that
   makes Loop's client-side ObjectId cache necessary.
+- The complete 24-assertion `profile.test.js` calculation contract. Legacy and
+  store-based profiles now share the locked DIA, carb absorption, carb ratio,
+  sensitivity, target, basal schedule, units, IANA-timezone and historical
+  profile-selection rules. The Workers adapter replaces only Node-specific
+  lodash/memory-cache/moment-timezone mechanics with native arrays, `Map` and
+  `Intl`, and the API v2 Summary path uses this adapter.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -409,8 +415,9 @@ directly comparable with the adapter suite and do not prove complete Nightscout
 compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
-`data.calcdelta.test.js`, `websocket.shape-handling.test.js` and 25 v1
-client/API files are classified as fully `adapted`.
+`data.calcdelta.test.js`, `websocket.shape-handling.test.js`,
+`profile.test.js` and 25 v1 client/API files are classified as fully
+`adapted`.
 The latest four v1 additions are `gap-treat-012.test.js`,
 `carb-dose-upload.test.js`, `objectid-cache.test.js` and
 `sgv-devicestatus.test.js`; the preceding three are `uuid-handling.test.js`,
@@ -418,16 +425,16 @@ The latest four v1 additions are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 57 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 56 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed code candidate is commit
-`947dc1403c8a07ecc053457386a97d5b4bd18571`. Its 40-file Workers-runtime
-suite passes 448/448 tests and both
+The next deployment candidate is commit
+`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. Its 41-file Workers-runtime
+suite passes 472/472 tests and both
 audit suites pass 20/20. Wrangler dry-run reads the same 248 official assets,
-reports 993.49 KiB raw / 181.09 KiB gzip and exposes only `ENTRY_STORE` and
-`ASSETS`. This deployment adds complete contract evidence for the four Loop
-client files above while retaining the three Treatment identity contracts,
+reports 1005.41 KiB raw / 183.59 KiB gzip and exposes only `ENTRY_STORE` and
+`ASSETS`. This candidate adds the complete Profile calculation contract while
+retaining the four Loop client files and three Treatment identity contracts,
 exact `UUID_HANDLING` behavior, legacy raw-UUID repair and the MongoDB 5
 delete-result shape. It retains the legacy uploader edge and
 DeviceStatus prediction adapters, schema-v12 root-write authority, server-originated deltas,
@@ -437,7 +444,7 @@ compatible.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
-notification/plugin engine, including profile-switch preprocessing and
+notification/plugin engine, including realtime profile-switch preprocessing and
 plugin-derived summary state, remain missing. No deployed
 credential was read or supplied to remote smoke requests, and no credential
 value is stored or quoted in this repository.

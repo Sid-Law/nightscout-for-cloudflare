@@ -49,14 +49,14 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 2. Official browser assets/pages | Partial | Version 49's credential-free browser pass rendered the homepage/chart and loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded`, Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone, and the empty-data clock rendered `-?-`, with no console error/warning. Stable Settings close, earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 49. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. `/storage` now atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 25 locked files adapted | Entries adapts its complete locked upstream file plus deduplication, Entries UUID and partial-failure contracts. Treatments additionally adapts complete UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, Loop carb/dose and ObjectIdCache files: exact flag parsing, UUID promotion/repair, ordered responses, cached-ID update/delete and descriptive `syncIdentifier` behavior. The complete Loop SGV/DeviceStatus file now locks directions, device metadata, replay behavior and nested Loop/pump payloads; DeviceStatus also retains official prediction trimming. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are mapped. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, wider Mongo query/document behavior and remaining v1 routes/test files. |
-| 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. The complete locked `ddata`, `bgnow`, `direction`, `rawbg` and `upbat` test files are adapted; `/properties` uses official buckets/interpolation/mmol/direction logic and now exposes default-enabled uploader battery from a bounded property projection. Raw BG retains the official enabled-plugin gate. Remaining plugin properties and summary state (IOB/COB/BWP/ages/battery), summary persistence and v2-only `/notifications/loop` remain; ddata uses a bounded two-day SGV window. |
+| 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary now uses the complete 24-assertion `profile.test.js` adapter for legacy/store profiles, schedule/timezone calculation and historical selection. The complete locked `ddata`, `bgnow`, `direction`, `rawbg` and `upbat` files are also adapted; `/properties` uses official buckets/interpolation/mmol/direction logic and exposes default-enabled uploader battery from a bounded property projection. Raw BG retains the official enabled-plugin gate. Remaining plugin properties and summary state (IOB/COB/BWP/ages/battery), summary persistence and v2-only `/notifications/loop` remain; ddata uses a bounded two-day SGV window. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
 | 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket; root write shape contract adapted | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read/write/treatment-write authorization, initial/retro data, server-originated deltas and the locked `dbAdd`/`dbUpdate`/`dbUpdateUnset`/`dbRemove` events, plus API3 `/storage` and `/alarm`. `/alarm` has locked subscription/auth/ACK behavior and a trusted notification outlet, but the server-side notification engine is missing. Add profile-switch/plugin preprocessing, close the direct-send at-most-once crash window, then add polling upgrade/EIO3 and the official-page switch. |
 | 9. Real-time storage updates | Root server/client mutations plus API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. Add pushed browser/credentialed remote workflows and profile/plugin preprocessing; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Realtime/auth plus notification-ACK foundation | The DO's single Cloudflare alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Stale already-due platform alarms are replaced so a queued delivery cannot erase the only SQL wakeup. Socket.IO and inherited v1/v2 HTTP ACK share the same durable group/level transaction. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share the scheduler. |
-| 11. Server plugins/notifications | Expanded property foundation plus ACK/outlet | Stateless ports of official `bgnow`, `direction`, `rawbg` and `upbat` plus shared `times`, `units` and `levels` now feed or support v2. The property dispatcher preserves official plugin order/enable gates and uses a request-scoped tenant projection; `/alarm` publishes trusted precomputed notification objects and Socket/HTTP ACK persist the same snooze/all-clear state. Build the remaining registry/sandbox/tenant context and port notification/background tests without rewriting formulas. |
-| 12. Upstream regression suite | Tracked; 52 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, the named notification/data/property/realtime foundations and 25 v1 client/API files are adapted. The newest four are the complete GAP-TREAT-012, Loop carb/dose, ObjectIdCache and SGV/DeviceStatus files. 57 files remain unresolved and two are fixed-scope exclusions. |
+| 11. Server plugins/notifications | Expanded property/Profile foundation plus ACK/outlet | Stateless ports of official `bgnow`, `direction`, `rawbg` and `upbat` plus shared `times`, `units`, `levels` and Profile calculations now feed or support v2. Profile retains the locked legacy/store conversion, IANA-timezone schedules and multi-record selection without Node-only dependencies. The property dispatcher preserves official plugin order/enable gates and uses a request-scoped tenant projection; `/alarm` publishes trusted precomputed notification objects and Socket/HTTP ACK persist the same snooze/all-clear state. Build the remaining registry/sandbox/tenant context and port notification/background tests without rewriting formulas. |
+| 12. Upstream regression suite | Tracked; 53 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, the named notification/data/property/Profile/realtime foundations and 25 v1 client/API files are adapted. The newest addition is the complete 24-assertion Profile calculation file, after GAP-TREAT-012, Loop carb/dose, ObjectIdCache and SGV/DeviceStatus. 56 files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -93,11 +93,10 @@ relabeled as scope exclusions.
 
 ## Current deployed increment
 
-Integration candidate
-`947dc1403c8a07ecc053457386a97d5b4bd18571` adds the complete locked
-`gap-treat-012`, `carb-dose-upload`, `objectid-cache` and
-`sgv-devicestatus` contracts on top of the already adapted
-`uuid-handling`, `issue-6923-legacy-uuid` and `identity-matrix` contracts.
+The next integration candidate
+`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8` adds the complete locked
+24-assertion `profile.test.js` contract and wires it into API v2 Summary on top
+of the already adapted Loop client and Treatment identity contracts.
 The Treatment adapter follows exact true-by-default `UUID_HANDLING` parsing,
 enabled/disabled promotion and query/delete semantics, legacy raw-UUID
 find/update/delete behavior and the MongoDB 5.9 delete-result shape. A
@@ -109,16 +108,18 @@ notification-ACK contracts remain green. Cloudflare Worker version
 `de8ab414-79e8-4938-8e09-e86c7f4cf0cf` is active at 100%; deployment
 `28487aec-6adc-4ca8-b64c-bb9de9006d2d` was created at
 `2026-07-20T00:35:19.306944Z` and Wrangler reported a 22 ms startup. It
-processed 248 unchanged official asset entries; deployment and dry run
-reported 993.49 KiB raw / 181.09 KiB gzip, and the dry run exposed only
-`ENTRY_STORE` plus `ASSETS`. No deployed credential was read or supplied to
-remote smoke. The candidate's 40-file Workers-runtime suite passes 448/448,
+processed 248 unchanged official asset entries. The next candidate's dry run
+reports 1005.41 KiB raw / 183.59 KiB gzip and exposes only `ENTRY_STORE` plus
+`ASSETS`. No deployed credential was read or supplied to remote smoke. The
+candidate's 41-file Workers-runtime suite passes 472/472,
 both audit suites pass 20/20 and TypeScript passes. The manifest now records
-52 adapted, 57 unresolved and two fixed-scope excluded files. The official UI
-build, dry run and credential-free remote API/Engine.IO smoke pass. Version 49
+53 adapted, 56 unresolved and two fixed-scope excluded files. The official UI
+build and dry run pass; version 49's credential-free remote API/Engine.IO smoke
+and
 real-browser acceptance also passed across the official homepage, Admin, Food,
 Profile and `clock-color` pages without console warnings/errors or protected
-writes. These remain subset facts, not a full-port claim.
+writes. The new candidate's post-deployment gates remain pending. These remain
+subset facts, not a full-port claim.
 
 Current remote reads, API3 version and EIO4 polling pass. The public Worker has
 no `API_SECRET` Secret binding: a simulated Treatment write returned the
