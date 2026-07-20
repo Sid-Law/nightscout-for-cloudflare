@@ -92,9 +92,15 @@ const openApsPumpProperties = await openApsPumpResponse.json();
 const ageResponse = await request("/api/v2/properties/cage,sage,iage,timeago");
 checked(ageResponse.status === 200, "age property status");
 const ageProperties = await ageResponse.json();
+const basalResponse = await request("/api/v2/properties/basal");
+checked(basalResponse.status === 200, "basal property status");
+const basalProperties = await basalResponse.json();
 const enabledPlugins = Array.isArray(statusV1.settings?.enable)
   ? statusV1.settings.enable
   : [];
+checked(enabledPlugins.includes("basal"), "basal remains default-enabled");
+equal(basalProperties, {}, "basal does not fabricate a property without a Profile");
+checked(!enabledPlugins.includes("treatmentnotify"), "treatmentnotify remains opt-in by default");
 for (const plugin of ["iob", "cob"]) {
   checked(
     Object.hasOwn(insulinCarbProperties, plugin) === enabledPlugins.includes(plugin),

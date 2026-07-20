@@ -450,14 +450,16 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `cannulaage.test.js`, `sensorage.test.js`, `insulinage.test.js`,
 `timeago.test.js`, `iob.test.js`, `cob.test.js` and
 `data.treatmenttocurve.test.js`, `openaps.test.js`, `pump.test.js`,
+`basalprofileplugin.test.js`, `treatmentnotify.test.js`,
 `websocket.shape-handling.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
 `settings.test.js`, `sandbox.test.js`, `plugins.test.js` and 25 v1 client/API
 files are classified as fully `adapted`. The complete locked
 `pluginbase.test.js` file runs unchanged against the byte-identical official
 client bundle and is classified as `pass`.
-The latest two complete upstream additions are `openaps.test.js` and
-`pump.test.js`. The preceding three are `iob.test.js`, `cob.test.js` and
+The latest two complete upstream additions are `basalprofileplugin.test.js`
+and `treatmentnotify.test.js`. The preceding two are `openaps.test.js` and
+`pump.test.js`; the preceding three are `iob.test.js`, `cob.test.js` and
 `data.treatmenttocurve.test.js`. The preceding four
 plugin additions are `cannulaage.test.js`, `sensorage.test.js`,
 `insulinage.test.js` and `timeago.test.js`. The preceding four v1 additions
@@ -468,27 +470,26 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 39 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 37 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed evidence candidate is commit
-`1379a3975e48872339f97b946c4039dc8547c09f`. The 51-file Workers-runtime
-suite passes 595/595 tests, the three audit suites pass 21/21, the complete
-official `pluginbase.test.js` client file passes unchanged, and eleven locked
-server/data-plugin files pass 69/69 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1092.11 KiB raw / 200.47 KiB gzip and exposes only
+`edde54d179d184a1589007014e6ca5ada0b95efc`. The 52-file Workers-runtime
+suite passes 605/605 tests, the three audit suites pass 21/21, the complete
+official `pluginbase.test.js` client file passes unchanged, and thirteen locked
+server/data-plugin files pass 77/77 unchanged. Wrangler dry-run reads the same
+248 official assets, reports 1095.86 KiB raw / 201.17 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
-This runtime adds request-local ports of the locked official OpenAPS and Pump
-plugins and routes their opt-in properties through the existing static
-registry. The six OpenAPS cases retain enacted/not-enacted/waiting state,
-per-device radio details, mmol display, all uploader-supplied prediction
-series, Offline suppression, stale-loop notification requests and assistant
-responses. The ten Pump cases retain pump-clock selection, reservoir/battery
-display and thresholds, display overrides, profile-timezone quiet-night and
-Offline suppression, and all assistant intents. Official `OPENAPS_*`,
-`PUMP_*`, `DAY_START` and `DAY_END` settings now map through the request-local
-Status snapshot. These adapters display calculations and state supplied by
-the uploader; NSCF adds no dosing algorithm or recommendation.
+This runtime adds request-local ports of the locked official Basal Profile and
+Treatment Notify plugins. Basal is enabled by the official default feature set
+and calculates the current scheduled basal plus active Temp Basal and Combo
+Bolus treatment contributions from the current Profile; it exposes the locked
+pill, visualization and assistant response without recommending a dose.
+Treatment Notify preserves the upstream ten-minute selection window, manual
+versus automatic filtering, auto-snooze payloads, calibration/treatment/
+temporary-target/announcement classification and SHA-1 deduplication hash.
+That request calculation is complete, but no persisted scheduler or external
+delivery provider is connected. The prior OpenAPS and Pump adapters remain.
 The runtime retains the preceding official IOB and COB formula adapters. They
 keep OpenAPS, Loop and pump DeviceStatus precedence, Treatment
 fallback, Profile/DIA/sensitivity/carb-ratio inputs, official recency and
@@ -519,8 +520,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 39 unresolved plugin/test
-algorithms. The manifest records one direct pass, 69 adapted, 39 unresolved
+Node plugin `require` without fabricating the 37 unresolved plugin/test
+algorithms. The manifest records one direct pass, 71 adapted, 37 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -561,17 +562,17 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `18757f14-fdf9-4535-81cb-d8e8ebac4430` (ordinal 60) was made current by
-deployment `36d3f88c-6f8c-4b3f-9736-fc5a257fe418` at
-`2026-07-20T06:38:05.802464Z`, with a reported 25 ms startup. No asset bytes
+Cloudflare version `6e584a02-6d36-4900-a01d-b01ae7d157a9` (ordinal 61) was made current by
+deployment `09b3ea18-0dc3-4dd0-ba60-b7208823b9a8` at
+`2026-07-20T07:18:58.350864Z`, with a reported 22 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
 version, matching v1/v2 Settings snapshots, real ddata/database-size values,
-the default-enabled `dbsize` property, opt-in-disabled Loop, IOB/COB,
+the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB,
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
-missing-token API3 Entries returned the expected 401. The 67-assertion script
+missing-token API3 Entries returned the expected 401. The 72-assertion script
 observed 225,280 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
@@ -592,7 +593,7 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real Chromium run reloaded Cloudflare version 60 and rendered the official
+A real Chromium run reloaded Cloudflare version 61 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
@@ -610,7 +611,7 @@ Save was attempted. The session was closed after the pass.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 60 has therefore passed its credential-free remote API, Engine.IO and
+Version 61 has therefore passed its credential-free remote API, Engine.IO and
 real-browser acceptance gates.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes

@@ -7,15 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`1379a3975e48872339f97b946c4039dc8547c09f` and Cloudflare version
-`18757f14-fdf9-4535-81cb-d8e8ebac4430`, reported as 100% active. The
-candidate's 51-file Workers-runtime suite passes 595/595 plus 21/21 audit tests,
-one unchanged direct upstream client test and 69/69 unchanged tests across eleven
+`edde54d179d184a1589007014e6ca5ada0b95efc` and Cloudflare version
+`6e584a02-6d36-4900-a01d-b01ae7d157a9`, reported as 100% active. The
+candidate's 52-file Workers-runtime suite passes 605/605 plus 21/21 audit tests,
+one unchanged direct upstream client test and 77/77 unchanged tests across thirteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1092.11 KiB raw / 200.47 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 60
-reported a 25 ms startup and passed credential-free API, EIO4 and real-browser
+asset entries; its dry run reported 1095.86 KiB raw / 201.17 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 61
+reported a 22 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -27,12 +27,13 @@ current runtime retains `src/plugins/registry.ts`, a request-local static replac
 Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
-implemented v2 property plugins execute through this registry. Version 60 adds
-`src/plugins/openaps.ts` and `src/plugins/pump.ts`: their request-local adapters
-retain the 16 locked state, visualization, notification-suppression and
-assistant cases while consuming only uploaded DeviceStatus/Treatment/Profile
-state. Official OpenAPS/Pump and day-boundary environment settings flow through
-the existing Status and registry boundary. The prior
+implemented v2 property plugins execute through this registry. Version 61 adds
+`src/plugins/basal.ts` and `src/plugins/treatmentnotify.ts`: Basal preserves
+the current scheduled/temporary/Combo Bolus contribution, pill, visualization
+and assistant behavior, while Treatment Notify preserves the locked recent-
+treatment filtering, snooze, request classification and Web Crypto SHA-1 hash.
+Both remain request-local; the notification result is not yet scheduled or
+delivered. The prior OpenAPS/Pump adapters remain behind the same registry.
 `src/plugins/iob.ts`, `src/plugins/cob.ts` and
 `src/data/treatment-to-curve.ts` use official request-local
 formulas and bounded Treatment/Profile inputs, while API v2 ddata applies the
@@ -42,9 +43,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 official client `pluginbase.test.js` runs unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 51 Workers files / 595 tests, 21/21 audits, one direct upstream
-client file and eleven direct upstream server/data-plugin files / 69 tests; the
-dry run is 1092.11 KiB raw / 200.47 KiB gzip with the same 248 assets and two bindings.
+evidence is 52 Workers files / 605 tests, 21/21 audits, one direct upstream
+client file and thirteen direct upstream server/data-plugin files / 77 tests; the
+dry run is 1095.86 KiB raw / 201.17 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -168,10 +169,17 @@ responses. Pump preserves newest pump-clock selection, reservoir/battery
 display and warning thresholds, display overrides, profile-timezone quiet
 night, Offline suppression and all four assistant intents. Both modules display
 uploader-provided closed-loop state and introduce no dosing calculation.
+Basal selects the current scheduled Profile rate, adds active Temp Basal and
+Combo Bolus treatment components and returns the locked property, pill,
+visualization and assistant shape. Treatment Notify examines only the locked
+recent ten-minute Treatment/MBG window, distinguishes manual and automatic
+records, and returns the official snooze/calibration/treatment/temporary-target/
+announcement notification request with a Web Crypto SHA-1 hash. It does not
+persist, schedule or deliver that request yet.
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
 opt-in; `loop` is likewise exposed only when configured in `ENABLE`, while
-`dbsize` remains enabled by the locked default feature set. OpenAPS, Pump, IOB,
+`dbsize` and Basal remain enabled by the locked default feature set. OpenAPS, Pump, IOB,
 COB, CAGE, SAGE and IAGE remain opt-in exactly as upstream; timeago is a
 client/notification plugin and is not fabricated as a v2 property.
 `/api/v2/properties` applies those values plus the upstream comma
@@ -181,8 +189,10 @@ Property polling uses `getPluginPropertyContextJson()`, a bounded DO projection
 of at most 64 SGVs, the newest calibration, recent device status, one small
 database-stat object, the latest current Profile, at most one latest row for
 each of six age-event types within 62 days, the newest zero-duration Profile
-Switch within the upstream one-year window and ordinary Treatments inside the
-upstream 2.5-day window. The ordinary set is selected newest-first with a
+Switch within the upstream one-year window, the latest ten meter-BG Entries in
+the existing two-day window and ordinary Treatments inside the upstream
+2.5-day window. Profile Switch, Temp Basal and Combo Bolus rows are also
+grouped for the Basal calculation. The ordinary set is selected newest-first with a
 1,000-row cap, then restored to ascending runtime order. All fields share the
 existing 900,000-byte, 8,000-node and 2,000-document transport budget. This
 avoids materializing long-range Treatment history or unrelated food while
@@ -1007,10 +1017,10 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`18757f14-fdf9-4535-81cb-d8e8ebac4430`. Current credential-free remote smoke
+`6e584a02-6d36-4900-a01d-b01ae7d157a9`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
-version, real ddata/database-size values, the opt-in-disabled
+version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled
 Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE property gates, null disabled IOB/COB Summary
 state, absence of property-only timeago and an EIO4 polling open packet;
 API3 Entries without a token returned the
@@ -1058,13 +1068,17 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat`/`loop`/`openaps`/`pump`/`iob`/`cob` adapters,
+`bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`loop`/`openaps`/`pump`/`iob`/`cob`
+and `treatmentnotify` adapters,
 together with the request-local Sandbox, are reusable server
 calculation/property slices dispatched by the registry rather than a background
-plugin engine. OpenAPS/Pump expose locked uploader state at request time;
+plugin engine. Basal exposes official recorded Profile/Treatment state and
+Treatment Notify produces locked request objects at request time. OpenAPS/Pump
+expose locked uploader state at request time;
 IOB/COB use the locked official formulas and can populate
 request-time Summary state when enabled; they do not recommend insulin.
-Remaining BWP/plugin state and persisted notification outputs must come from
+Treatment Notify request objects are not persisted or delivered. Remaining
+BWP/plugin state and persisted notification outputs must come from
 locked upstream modules through the future scheduler rather than downstream
 formulas.
 
