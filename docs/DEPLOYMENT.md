@@ -366,8 +366,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real browser session exercised the immediately preceding Cloudflare version
-48 official UI without reading
+A real browser session exercised Cloudflare version 49's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -376,19 +375,17 @@ credential storage or submitting protected mutations:
 - Admin Tools, Food Editor, Profile Editor and `clock-color` loaded from the
   official bundle with their expected headings/forms. Food reached `Database
   loaded` and Profile reached `Values loaded.` in the unauthorized read-only
-  state; no protected Save was attempted;
+  state. The stored simulated profile and `Asia/Shanghai` timezone were present,
+  and the empty-data clock rendered `-?-`; no protected Save was attempted;
 - the agent-created verification tab was closed without disturbing the user's
   existing tabs;
 - console inspection across the exercised pages found no errors or warnings.
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`b835ef23-3e10-49cf-8f70-87c783034b24`. It reused the same 248 unchanged
-official assets.
-
-Cloudflare version 49 remote API and Engine.IO smoke has passed. Its
-post-deployment real-browser pass is still pending and is not claimed by this
-record yet.
+`de8ab414-79e8-4938-8e09-e86c7f4cf0cf`. It reused the same 248 unchanged
+official assets. Version 49 has therefore passed credential-free remote API,
+Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
 version; the current load is recorded above, but no authenticated Food/Profile
@@ -469,7 +466,8 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 The immediately preceding known-good rollback Worker version is
 `b835ef23-3e10-49cf-8f70-87c783034b24`. Version 49 adds test-manifest and
 documentation evidence only, so version 48 contains the same deployed runtime
-adapter and already has remote API plus real-browser acceptance. The older
+adapter; version 49 itself now also has remote API plus real-browser acceptance.
+The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not
 be selected as a rollback target.

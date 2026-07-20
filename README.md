@@ -489,18 +489,20 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real browser run reloaded Cloudflare version 48 and rendered the official
+A real browser run reloaded Cloudflare version 49 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
-Editor reached `Values loaded.` in their unauthorized read-only state; no
-protected Save was attempted. Browser console inspection found no errors or
-warnings. The agent-created verification tab was closed after the pass.
+Editor reached `Values loaded.` in their unauthorized read-only state. The
+stored simulated profile and its `Asia/Shanghai` timezone were present, while
+the empty-data clock rendered `-?-`; no protected Save was attempted. Browser
+console inspection found no errors or warnings. The agent-created verification
+tab was closed after the pass.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 49 has passed remote API and Engine.IO smoke; its real-browser rerun is
-still pending and is not yet claimed.
+Version 49 has therefore passed its credential-free remote API, Engine.IO and
+real-browser acceptance gates.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
