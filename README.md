@@ -443,30 +443,19 @@ The prior eight v1 additions are
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed evidence candidate is commit
-`f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`; its 43-file Workers-runtime
-suite passes 490/490 tests and both audit suites pass 20/20. Wrangler dry-run
-reads the same 248 official assets, reports 1010.05 KiB raw / 184.58 KiB gzip
+`fb8c7a20a15584da6a5f89032e11503dcde3de46`; its 44-file Workers-runtime
+suite passes 504/504 tests and both audit suites pass 20/20. Wrangler dry-run
+reads the same 248 official assets, reports 1021.31 KiB raw / 186.89 KiB gzip
 and exposes only `ENTRY_STORE` and `ASSETS`. This runtime adds the complete
-five-case Loop plugin adapter and opt-in property dispatch while retaining the
-concurrent uploader and Profile calculation contracts, four Loop client files
-and three Treatment identity contracts,
+13-case request-local Settings adapter and filtered HTTP/Socket.IO status
+integration while retaining the five-case Loop plugin, concurrent uploader and
+Profile calculation contracts, four Loop client files and three Treatment identity contracts,
 exact `UUID_HANDLING` behavior, legacy raw-UUID repair and the MongoDB 5
 delete-result shape. It retains the legacy uploader edge and
 DeviceStatus prediction adapters, schema-v12 root-write authority, server-originated deltas,
 the prior property, API, authorization, `/storage` and `/alarm` slices.
 This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
-The next runtime candidate is commit
-`fb8c7a20a15584da6a5f89032e11503dcde3de46`. It replaces the duplicated
-status-settings object with a request-local port of official `lib/settings.js`,
-maps all 13 named upstream Settings cases and keeps recursive secret filtering
-before HTTP/Socket.IO status serialization. The locked original file passes
-13/13; the 44-file Workers-runtime suite passes 504/504 plus 20/20 audits and
-TypeScript. The manifest records 56 adapted, 53 unresolved and two fixed-scope
-exclusions. Official UI preparation and Wrangler dry-run pass with 248 assets,
-1021.31 KiB raw / 186.89 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. It is
-not deployed evidence until Cloudflare, remote API/Engine.IO and browser gates
-pass.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
@@ -501,14 +490,16 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `719c2b34-95a9-49d4-b22e-147092eee4fc` was made current by
-deployment `00d45bd3-52e3-4e20-840e-133d57884660` at
-`2026-07-20T01:56:52.173529Z`, with a reported 24 ms startup. No asset bytes
+Cloudflare version `a5a33a30-1d79-4831-a512-3553c2a5fe8c` was made current by
+deployment `b7726484-f054-4ae3-9c02-5b92c655d30d` at
+`2026-07-20T02:27:02.89612Z`, with a reported 29 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
-version, opt-in-disabled Loop property and EIO4 polling; missing-token API3
-Entries returned the expected 401.
+version, matching v1/v2 Settings snapshots, opt-in-disabled Loop property and
+EIO4 polling; missing-token API3 Entries returned the expected 401. The Settings
+snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
+secure fields and method functions.
 A deliberately unauthenticated simulated
 Treatment POST returned the expected 503 `api_secret_not_configured`, and a
 follow-up read confirmed no mutation. The current public lab has no
@@ -524,7 +515,7 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real Chromium run reloaded Cloudflare version 52 and rendered the official
+A real Chromium run reloaded Cloudflare version 53 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
@@ -535,11 +526,13 @@ Save was attempted. Browser console inspection found zero JavaScript errors.
 The homepage and clock had no warnings; Admin, Food and Profile repeatedly
 logged the locked official-bundle warning `Unable to find element for
 #chartContainer` on pages that do not contain a chart. The isolated browser
-session was closed after the pass.
+session also opened and closed the official Settings form; zero visible forms
+remained immediately and after three seconds, so it did not pop back open. No
+Save was attempted. The session was closed after the pass.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 52 has therefore passed its credential-free remote API, Engine.IO and
+Version 53 has therefore passed its credential-free remote API, Engine.IO and
 real-browser acceptance gates.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes

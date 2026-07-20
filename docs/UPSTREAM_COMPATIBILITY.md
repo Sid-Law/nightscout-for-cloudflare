@@ -18,7 +18,7 @@ storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
 Deployed evidence candidate
-`f78631cac0071f4f7fb4f4eb839c161e2f8aa73d` passes 490/490 tests across 43
+`fb8c7a20a15584da6a5f89032e11503dcde3de46` passes 504/504 tests across 44
 Workers-runtime files plus 20/20 audit tests. The suite retains focused EIO4,
 API3 `/storage` and `/alarm`, authorization, v1/v2 Status, all 16 locked API3
 files and 25 locked v1 client/API files, and now completely maps locked
@@ -30,23 +30,18 @@ files and 25 locked v1 client/API files, and now completely maps locked
 `issue-6923-legacy-uuid.test.js`, `identity-matrix.test.js`,
 `gap-treat-012.test.js`, `carb-dose-upload.test.js`,
 `objectid-cache.test.js`, `sgv-devicestatus.test.js` and the complete
-24-assertion `profile.test.js`, the 13-case `concurrent-writes.test.js` and the
-five-case `loop.test.js`. This is not full-port evidence.
+24-assertion `profile.test.js`, the 13-case `concurrent-writes.test.js`, the
+five-case `loop.test.js` and the 13-case `settings.test.js`. This is not
+full-port evidence.
 The runtime code is deployed as Cloudflare version
-`719c2b34-95a9-49d4-b22e-147092eee4fc`; exact release
+`a5a33a30-1d79-4831-a512-3553c2a5fe8c`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
 
-Next runtime candidate `fb8c7a20a15584da6a5f89032e11503dcde3de46`
-passes 504/504 tests across 44 Workers-runtime files plus 20/20 audits. It adds
-the complete 13-case `settings.test.js` adapter and wires the request-local
-filtered object into HTTP/Socket.IO status. It is not deployed evidence until
-Cloudflare, remote protocol and browser gates complete.
-
-The next candidate Wrangler dry-run reports 248 official assets, 1021.31 KiB
-raw / 186.89 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API
-and browser evidence below remains attributed to the named active version.
+The candidate Wrangler dry-run reports 248 official assets, 1021.31 KiB raw /
+186.89 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+browser evidence below is kept distinct from those local gates.
 
 ## Generated route and test inventory
 
@@ -159,7 +154,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single Cloudflare alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. A stale already-due platform alarm is replaced with a short prompt so queued delivery cannot erase the only SQL wakeup; a still-future earlier prompt is retained to avoid starvation. `/alarm` snooze rows are durable state but do not schedule plugin work. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one Cloudflare alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js`, `lib/profilefunctions.js` | **Expanded request-scoped property, Loop and Profile foundation; general registry/background execution missing.** Pure ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `loop`, `times`, `units`, `levels` and Profile calculations compute/support v2 behavior without rewriting formulas. Loop covers enacted/error display, forecast points, stale status, notification requests and virtual-assistant responses; its timer/persistence outlet is not connected. Profile instances are tenant/request-local instead of sharing the upstream module-global previous-temp-basal pointer. A deterministic property dispatcher preserves locked order and enable gates, but the complete sandbox/registry, extended-settings surface, remaining properties and periodic notification execution are absent. | Run the remaining official modules through a deterministic tenant platform context; adapt `sandbox.test.js` and subsequent plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/api/notifications-api.js`, `lib/adminnotifies.js`, push modules | **Partial ACK/outlet persistence plus Loop request calculation.** `/api/v1` and inherited `/api/v2` notification ACK plus Socket.IO ACK share bounded group/level snoozes, exact all-clear broadcasts and tenant-local current-connection delivery across eviction. The upstream `notifications-api.test.js` contract is tracked as adapted, and `loop.test.js` now produces the locked urgent stuck-Loop request. No persisted scheduler currently evaluates or publishes that request; general notification processing, activity/summary state, admin notices, plugin bus integration and push-provider processing remain missing. | Make the upstream engine consume the persisted snooze state and Loop request, add calculation/persistence/retry/eviction tests and keep external delivery disabled in simulated scope unless separately authorized. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Version 52's credential-free Chromium pass rendered the homepage/chart region and loaded Admin Tools, Food Editor, Profile Editor and `clock-color`. Food reached `Database loaded`; Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone; the empty-data clock rendered `-?-` with `No data found in DB`. No exercised page had a JavaScript error or failed request. Homepage/clock had no warnings; Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. An earlier increment provided authenticated Profile Save/close evidence, but no protected Save was attempted in version 52. The public tenant has no Entries, so `---` is expected. Mutations/report generation, pushed live updates and full network assertions are not complete. | Re-run authenticated Profile Save/Food mutation only when a credential is explicitly available, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Version 53's credential-free Chromium pass rendered the homepage/chart region and loaded Admin Tools, Food Editor, Profile Editor and `clock-color`. Food reached `Database loaded`; Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone; the empty-data clock rendered `-?-` with `No data found in DB`. No exercised page had a JavaScript error or failed request. Homepage/clock had no warnings; Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. The official Settings form opened and stayed closed for three seconds after dismissal. An earlier increment provided authenticated Profile Save/close evidence, but no protected Save was attempted in version 53. The public tenant has no Entries, so `---` is expected. Mutations/report generation, pushed live updates and full network assertions are not complete. | Re-run authenticated Profile Save/Food mutation only when a credential is explicitly available, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
 | Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; 56 adapted files.** All 111 files are tracked with strict status/reason and heuristic route candidates: all 16 API3 files, the named storage/concurrency/notification/data/property/Loop/Profile/Settings/realtime foundations and 25 v1 client/API files are adapted; 53 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
@@ -308,11 +303,11 @@ controls, not upstream claims.
 ## Current deployed integration evidence
 
 Evidence candidate
-`f78631cac0071f4f7fb4f4eb839c161e2f8aa73d` passes 490/490 tests in 43
+`fb8c7a20a15584da6a5f89032e11503dcde3de46` passes 504/504 tests in 44
 Workers-runtime files plus 20/20 audit tests. It adds the complete named
-five-case Loop property calculation and enabled dispatch while retaining the
-13-case concurrent uploader and 24-assertion Profile calculation mappings,
-GAP-TREAT-012, Loop
+13-case request-local Settings module and filtered status snapshot while
+retaining the five-case Loop property calculation, 13-case concurrent uploader
+and 24-assertion Profile calculation mappings, GAP-TREAT-012, Loop
 carb/dose, ObjectIdCache and SGV/DeviceStatus mappings,
 while retaining exact UUID enabled/disabled semantics, issue-6923 repair,
 MongoDB 5 Treatment delete results, the legacy uploader and prediction work,
@@ -320,24 +315,19 @@ schema-v12 persisted root-write authority, the schema-v11 delta baseline and the
 ddata/summary slice, strict v1/v2 Status, Entries/Treatments,
 authorization, direct Hibernatable EIO4 WebSocket, all 16 locked API3 mappings,
 `/storage`, `/alarm` and inherited notification ACK slices. Cloudflare version
-`719c2b34-95a9-49d4-b22e-147092eee4fc` is 100% active; deployment
-`00d45bd3-52e3-4e20-840e-133d57884660` was created at
-`2026-07-20T01:56:52.173529Z` and reported a 24 ms startup. Wrangler processed
+`a5a33a30-1d79-4831-a512-3553c2a5fe8c` is 100% active; deployment
+`b7726484-f054-4ae3-9c02-5b92c655d30d` was created at
+`2026-07-20T02:27:02.89612Z` and reported a 29 ms startup. Wrangler processed
 248 unchanged official asset entries; deployment and final dry run both
-reported 1010.05 KiB raw / 184.58 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
+reported 1021.31 KiB raw / 186.89 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
 in the dry run. This deployment had no explicit version annotation; none is
 invented.
 
-Next runtime candidate `fb8c7a20a15584da6a5f89032e11503dcde3de46`
-adds the complete Settings module contract and request-local status integration.
-Its 44-file suite passes 504/504 plus 20/20 audits and TypeScript; the official
-UI build and dry run pass. It remains pre-deployment evidence and is not
-attributed to the active Cloudflare version at this point.
-
 Credential-free remote smoke returned 200 for health, bounded v1 Entries and
 Treatments reads, fresh-tenant Profile/current and v2 Summary, API3 version,
-opt-in-disabled Loop property and a parseable EIO4 polling open; missing-token
-API3 Entries returned 401. A simulated Treatment POST returned the expected
+matching v1/v2 filtered Settings snapshots, opt-in-disabled Loop property and a
+parseable EIO4 polling open; missing-token API3 Entries returned 401. A
+simulated Treatment POST returned the expected
 503 `api_secret_not_configured`, and its follow-up read stayed empty. Successful
 write paths remain local contract evidence because the current public Worker
 has no `API_SECRET` Secret binding and no deployed credential was read or sent.
@@ -434,13 +424,15 @@ homepage REST shim. Their current bounds and named differences are:
 
 Final credential-free remote checks returned HTTP 200 for health, bounded v1
 Entries and Treatments reads, fresh Profile/current and v2 Summary, API3
-version, opt-in-disabled Loop property and an EIO4 polling open packet;
+version, matching v1/v2 filtered Settings snapshots, opt-in-disabled Loop
+property and an EIO4 polling open packet;
 missing-token API3 Entries returned its expected 401. The simulated Treatment
 write returned 503 because the Worker has no configured `API_SECRET`, and its
 follow-up read returned an empty array. No deployed credential was read or
 sent.
 
-The deployed version adds the complete Loop property contract. The public EIO4
+The deployed version adds the complete Settings contract while retaining the
+Loop property adapter. The public EIO4
 polling open handshake was re-smoked without a credentialed mutation. Local
 contracts prove Loop enacted/error/received/stale-alert/assistant behavior,
 prediction trimming,
@@ -452,7 +444,7 @@ WebSocket delivery green. The prior
 credentialed `/alarm` smoke remains historical evidence, not a claim of
 a current credentialed delivery or homepage switch.
 
-A real Chromium session reloaded Cloudflare version 52, rendered the official homepage
+A real Chromium session reloaded Cloudflare version 53, rendered the official homepage
 and chart region, then loaded Admin Tools, Food Editor, Profile Editor and
 `clock-color`. Food reached `Database loaded` and Profile reached `Values
 loaded.` through their permitted read paths, retained its stored simulated
@@ -462,9 +454,11 @@ The public tenant has no Entries, so the homepage's `---` value is expected.
 The page console contained no JavaScript errors and no request failed. Homepage and clock had no
 warnings; Admin, Food and Profile repeatedly emitted the locked official
 bundle's nonfatal `Unable to find element for #chartContainer` warning because
-those pages contain no chart container. No authenticated Save or protected
-mutation was attempted, and the isolated browser session was closed. This is
-same-version evidence alongside version 52's remote API and Engine.IO smoke.
+those pages contain no chart container. The official Settings form opened and
+stayed closed for three seconds after dismissal. No authenticated Save or
+protected mutation was attempted, and the isolated browser session was closed.
+This is same-version evidence alongside version 53's remote API and Engine.IO
+smoke.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing

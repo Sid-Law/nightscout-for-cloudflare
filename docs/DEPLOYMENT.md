@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed evidence candidate: `f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`
-- Runtime source candidate: `f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`
-- Git HEAD used by Wrangler: `cd702a79ecd3d124ca97f916bfb2685eb87283ae`
-- Cloudflare Version ID: `719c2b34-95a9-49d4-b22e-147092eee4fc`
-- Cloudflare ordinal version number: `52`
+- Deployed evidence candidate: `fb8c7a20a15584da6a5f89032e11503dcde3de46`
+- Runtime source candidate: `fb8c7a20a15584da6a5f89032e11503dcde3de46`
+- Git HEAD used by Wrangler: `e247f274a286dd09d112dbfcf933201df33140a6`
+- Cloudflare Version ID: `a5a33a30-1d79-4831-a512-3553c2a5fe8c`
+- Cloudflare ordinal version number: `53`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T01:56:51.124251Z`
-- Activation: deployment `00d45bd3-52e3-4e20-840e-133d57884660` created
-  `2026-07-20T01:56:52.173529Z`; Wrangler reports
+- Version creation time: `2026-07-20T02:27:01.996755Z`
+- Activation: deployment `b7726484-f054-4ae3-9c02-5b92c655d30d` created
+  `2026-07-20T02:27:02.89612Z`; Wrangler reports
   this version at 100%
-- Worker startup: 24 ms
-- Deployment ID: `00d45bd3-52e3-4e20-840e-133d57884660`
+- Worker startup: 29 ms
+- Deployment ID: `b7726484-f054-4ae3-9c02-5b92c655d30d`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -31,7 +31,7 @@ is not counted as API, plugin or real-time compatibility.
   authority columns
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 1010.05 KiB raw / 184.58 KiB gzip
+- Upload: 1021.31 KiB raw / 186.89 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -57,7 +57,19 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
 
-The current deployed increment adds the complete locked Loop plugin contract:
+The current deployed increment adds the complete locked Settings module contract:
+
+- all 13 named `settings.test.js` cases pass in both the locked original suite
+  and the Workers runtime mapping;
+- HTTP and Socket.IO status now consume a fresh request-local settings object
+  with official defaults, accessors, feature/alarm resolution, threshold
+  correction, snooze helpers and recursive secure-key filtering;
+- one extra Workers case proves that mutation and secret fields cannot cross a
+  request/tenant boundary. Broader `lib/server/env.js` process/filesystem and
+  extended-settings discovery remain incomplete.
+
+The immediately preceding deployed increment added the complete locked Loop
+plugin contract:
 
 - all five named `loop.test.js` cases pass in the Workers runtime as well as in
   the locked original suite;
@@ -68,8 +80,8 @@ The current deployed increment adds the complete locked Loop plugin contract:
   calculation or medical recommendation, and the persisted background
   notification runner remains incomplete.
 
-The immediately preceding evidence increment added the complete
-concurrent-uploader contract without changing its then-current Worker runtime:
+The earlier concurrent-uploader evidence increment added the complete contract
+without changing its then-current Worker runtime:
 
 - all 13 locked `concurrent-writes.test.js` cases cross the Worker HTTP boundary
   into one tenant Durable Object;
@@ -289,7 +301,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The next runtime candidate is
+The deployed evidence candidate is
 `fb8c7a20a15584da6a5f89032e11503dcde3de46`. It adds the complete 13-case
 Settings module mapping and request-local HTTP/Socket.IO status integration
 while retaining the five-case Loop plugin, 13-case concurrent uploader and
@@ -327,13 +339,9 @@ client/API files are classified as fully `adapted`, 53 remain unresolved and
 two bridge files are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
-This candidate has not yet replaced Cloudflare version 52. The remote API,
-Engine.IO and browser evidence below still describes the active deployed
-version until the next deployment and post-deployment gates succeed.
-
 ## Post-deployment remote API evidence
 
-Wrangler reports version `719c2b34-95a9-49d4-b22e-147092eee4fc` at 100%.
+Wrangler reports version `a5a33a30-1d79-4831-a512-3553c2a5fe8c` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -342,6 +350,7 @@ not only Wrangler command success.
 | GET `/api/v3/version` | HTTP 200 with Nightscout `15.0.7`, API3 `3.0.3-alpha` and SQLite Durable Object marker |
 | GET `/api/v3/entries?limit=1` without JWT | Expected HTTP 401 `Missing or bad access token or JWT` |
 | GET `/healthz` and `/api/v1/entries.json?count=1` | HTTP 200; healthy SQLite DO marker and empty simulated-data Entries array |
+| GET `/api/v1/status.json` and `/api/v2/status.json` | HTTP 200 with byte-equivalent filtered Settings snapshots: 63 JSON-visible keys, 14 enabled defaults, official title/plugin values and no secure fields or method functions |
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
 | GET `/api/v2/summary/?hours=6` | HTTP 200 with empty SGV/treatment arrays, `{}` Profile and the locked null plugin-state fields |
@@ -367,9 +376,9 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds the complete Loop property calculation contract and retains
-the concurrent uploader, Profile, Loop client and client/server root transport
-runtime. The current version repeated a fresh
+This release adds the complete request-local Settings contract and retains the
+Loop property calculation, concurrent uploader, Profile, Loop client and
+client/server root transport runtime. The current version repeated a fresh
 credential-free EIO4 polling-open check. Because the Worker has no
 `API_SECRET`, no credentialed remote mutation could be attempted; successful
 write/change delivery is proved by local integration contracts rather than
@@ -379,6 +388,7 @@ remain evidence from the immediately preceding compatible version.
 | Check | Result |
 | --- | --- |
 | Current EIO4 polling open | HTTP 200 and a parseable Engine.IO 4 SID |
+| Local Settings contract | 13 locked defaults/accessor/feature/alarm/threshold/snooze cases plus request isolation and recursive secure filtering |
 | Local Loop property contract | five locked enacted/error/received/stale-alert/assistant cases, including six forecast points and opt-in property dispatch |
 | Prior-version anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
 | Prior-version read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
@@ -410,7 +420,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 52's official UI without reading
+A real Chromium session exercised Cloudflare version 53's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -423,7 +433,10 @@ credential storage or submitting protected mutations:
   and the empty-data clock rendered `-?-`; no protected Save was attempted;
 - the agent-created verification tab was closed without disturbing the user's
   existing tabs, and the isolated browser process was closed;
-- console inspection found zero JavaScript errors. The homepage and clock had
+- the official Settings form opened and then closed; zero visible forms remained
+  immediately and after three seconds, directly rechecking the reported
+  pop-back symptom without saving or changing settings;
+- console inspection found zero JavaScript errors and no request failed. The homepage and clock had
   no warnings. Admin, Food and Profile repeatedly emitted the locked
   `bundle.app.js` warning `Unable to find element for #chartContainer` because
   those official non-chart pages have no chart container. This nonfatal warning
@@ -431,8 +444,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`719c2b34-95a9-49d4-b22e-147092eee4fc`. It reused the same 248 unchanged
-official assets. Version 52 has therefore passed credential-free remote API,
+`a5a33a30-1d79-4831-a512-3553c2a5fe8c`. It reused the same 248 unchanged
+official assets. Version 53 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -512,10 +525,10 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`f4909749-a807-4f10-9794-5eaa471da4d9` (version 51). It has its own remote API,
-Engine.IO and browser acceptance and lacks only this release's Loop property
-adapter. Version 50 (`4f89e2fc-ac35-499b-ac39-ffbd61f18e66`) remains an older
-compatible fallback.
+`719c2b34-95a9-49d4-b22e-147092eee4fc` (version 52). It has its own remote API,
+Engine.IO and browser acceptance and lacks only this release's request-local
+Settings module adapter. Version 51 (`f4909749-a807-4f10-9794-5eaa471da4d9`)
+remains an older compatible fallback.
 The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not

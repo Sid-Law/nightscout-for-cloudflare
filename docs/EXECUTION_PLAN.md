@@ -46,7 +46,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | Version 52's credential-free Chromium pass rendered the homepage/chart and loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded`, Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone, and the empty-data clock rendered `-?-` with `No data found in DB`. No page had a JavaScript error or failed request. Homepage/clock had no warnings; Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. Stable Settings close, earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 52. Protected mutation/report and pushed-live-update workflows remain. |
+| 2. Official browser assets/pages | Partial | Version 53's credential-free Chromium pass rendered the homepage/chart and loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded`, Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone, and the empty-data clock rendered `-?-` with `No data found in DB`. No page had a JavaScript error or failed request. Homepage/clock had no warnings; Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. The Settings form stayed closed for a three-second observation; earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 53. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. The complete 13-case concurrent-write contract now proves five-way scalar/batch writes, unique IDs and 50-SMB/100-SGV/30-cross-collection offline recovery through one tenant DO. `/storage` atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 25 locked files adapted | Entries adapts its complete locked upstream file plus deduplication, Entries UUID and partial-failure contracts. Treatments additionally adapts complete UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, Loop carb/dose and ObjectIdCache files: exact flag parsing, UUID promotion/repair, ordered responses, cached-ID update/delete and descriptive `syncIdentifier` behavior. The complete Loop SGV/DeviceStatus file now locks directions, device metadata, replay behavior and nested Loop/pump payloads; DeviceStatus also retains official prediction trimming. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are mapped. Status now consumes the request-local 13-case official Settings module adapter. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, wider Mongo query/document behavior and remaining v1 routes/test files. |
 | 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary now uses the complete 24-assertion `profile.test.js` adapter for legacy/store profiles, schedule/timezone calculation and historical selection. The complete locked `ddata`, `bgnow`, `direction`, `rawbg`, `upbat` and five-case `loop` files are adapted; `/properties` uses official buckets/interpolation/mmol/direction logic, exposes default-enabled uploader battery and opt-in Loop state from a bounded property projection. Raw BG and Loop retain their official enabled-plugin gates. Remaining plugin properties and summary state (IOB/COB/BWP/ages/battery), summary persistence, the persisted Loop notification runner and v2-only `/notifications/loop` delivery remain; ddata uses a bounded two-day SGV window. |
@@ -94,11 +94,10 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 The deployed evidence candidate
-`f78631cac0071f4f7fb4f4eb839c161e2f8aa73d` adds the complete five-case
-`loop.test.js` adapter and enabled `/api/v2/properties` dispatch while retaining
-the 13-case concurrent uploader, 24-assertion Profile, Loop client and
-Treatment identity contracts. It interprets uploader-provided Loop
-status/forecast data and adds no dosing formula.
+`fb8c7a20a15584da6a5f89032e11503dcde3de46` adds the complete 13-case
+`settings.test.js` adapter and request-local filtered HTTP/Socket.IO status
+snapshot while retaining the five-case Loop plugin, 13-case concurrent
+uploader, 24-assertion Profile, Loop client and Treatment identity contracts.
 The Treatment adapter follows exact true-by-default `UUID_HANDLING` parsing,
 enabled/disabled promotion and query/delete semantics, legacy raw-UUID
 find/update/delete behavior and the MongoDB 5.9 delete-result shape. A
@@ -107,31 +106,22 @@ Cloudflare's precise missing-method error; explicit false fails closed during
 that rolling boundary. All prior
 root-write/delta, property, API3 `/storage`, `/alarm`, authorization and
 notification-ACK contracts remain green. Cloudflare Worker version
-`719c2b34-95a9-49d4-b22e-147092eee4fc` is active at 100%; deployment
-`00d45bd3-52e3-4e20-840e-133d57884660` was created at
-`2026-07-20T01:56:52.173529Z` and Wrangler reported a 24 ms startup. It
+`a5a33a30-1d79-4831-a512-3553c2a5fe8c` is active at 100%; deployment
+`b7726484-f054-4ae3-9c02-5b92c655d30d` was created at
+`2026-07-20T02:27:02.89612Z` and Wrangler reported a 29 ms startup. It
 processed 248 unchanged official asset entries. The candidate's dry run
-reports 1010.05 KiB raw / 184.58 KiB gzip and exposes only `ENTRY_STORE` plus
+reports 1021.31 KiB raw / 186.89 KiB gzip and exposes only `ENTRY_STORE` plus
 `ASSETS`. No deployed credential was read or supplied to remote smoke. The
-candidate's 43-file Workers-runtime suite passes 490/490,
-both audit suites pass 20/20 and TypeScript passes. The version 52 evidence
-manifest recorded 55 adapted, 54 unresolved and two fixed-scope excluded files. The official UI
-build and dry run pass; version 52's credential-free remote API/Engine.IO smoke
+candidate's 44-file Workers-runtime suite passes 504/504,
+both audit suites pass 20/20 and TypeScript passes. The manifest records 56
+adapted, 53 unresolved and two fixed-scope excluded files. The official UI
+build and dry run pass; version 53's credential-free remote API/Engine.IO smoke
 and real-browser acceptance also passed across the official homepage, Admin,
 Food, Profile and `clock-color` pages without JavaScript errors or protected
-writes. The locked missing-`#chartContainer` warnings on non-chart pages remain
-recorded rather than hidden. These remain subset facts, not a full-port claim.
-All version 52 post-deployment gates for this evidence increment passed.
-
-Next runtime candidate `fb8c7a20a15584da6a5f89032e11503dcde3de46`
-ports the complete 13-case `settings.test.js` method surface into a fresh
-request-local object and makes HTTP/Socket.IO status serialization consume it.
-The original locked file passes 13/13; the Workers suite passes 504/504 across
-44 files plus 20/20 audits and TypeScript. The manifest records 56 adapted, 53
-unresolved and two fixed-scope exclusions. Official UI preparation and the
-Wrangler dry run pass with 248 assets, 1021.31 KiB raw / 186.89 KiB gzip and
-only `ENTRY_STORE` plus `ASSETS`. Deployment and post-deployment protocol/UI
-gates remain pending, so none of this candidate is attributed to version 52.
+writes. The official Settings form opened and stayed closed for a three-second
+observation without a Save. The locked missing-`#chartContainer` warnings on
+non-chart pages remain recorded rather than hidden. These remain subset facts,
+not a full-port claim. All version 53 post-deployment gates passed.
 
 Current remote reads, API3 version and EIO4 polling pass. The public Worker has
 no `API_SECRET` Secret binding: a simulated Treatment write returned the
@@ -295,12 +285,13 @@ The deployed increment includes:
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
-Version 52 credential-free remote smoke returned HTTP 200 for health, bounded v1
+Version 53 credential-free remote smoke returned HTTP 200 for health, bounded v1
 Entries and Treatments reads, fresh-tenant Profile/current and v2 Summary,
-API3 version, opt-in-disabled Loop property and EIO4 polling; missing-token API3
-Entries returned the expected 401. A simulated Treatment write returned
+matching v1/v2 filtered Settings snapshots, API3 version, opt-in-disabled Loop
+property and EIO4 polling; missing-token API3 Entries returned the expected 401.
+A simulated Treatment write returned
 the expected 503 because no `API_SECRET` is configured, and the follow-up read
-remained empty. No deployed credential was read or sent. The same version 52
+remained empty. No deployed credential was read or sent. The same version 53
 Chromium pass loaded the official homepage, Admin, Food, Profile and
 `clock-color` without protected writes. Food reached `Database loaded`,
 Profile reached `Values loaded.` and retained the stored simulated profile plus
@@ -308,7 +299,9 @@ Profile reached `Values loaded.` and retained the stored simulated profile plus
 data found in DB`. Console inspection found no JavaScript errors; homepage and
 clock had no warnings, while the three non-chart pages emitted the locked
 missing-`#chartContainer` warning. The isolated browser process was closed;
-this pass did not claim a protected Save.
+this pass did not claim a protected Save. The Settings form opened and stayed
+closed for three seconds after dismissal, directly rechecking the prior
+pop-back symptom.
 The immediately preceding compatible version's
 root protocol returned `{read:true,write:false,write_treatment:false}` to a
 fresh anonymous-readable session, rejected Food `dbAdd` with `Not permitted`,
