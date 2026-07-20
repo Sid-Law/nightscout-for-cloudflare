@@ -433,7 +433,7 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 55 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The next deployment evidence candidate is commit
+The deployed evidence candidate is commit
 `7630e8aec2dc09f15aa6436cbf904705f7fd737e`; it does not change the deployed
 runtime source from `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. Its 42-file
 Workers-runtime suite passes 485/485 tests and both
@@ -482,9 +482,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `4f89e2fc-ac35-499b-ac39-ffbd61f18e66` was made current by
-deployment `f53e60ea-4bab-4730-9164-680e67f1f00d` at
-`2026-07-20T01:04:00.535961Z`, with a reported 23 ms startup. No asset bytes
+Cloudflare version `f4909749-a807-4f10-9794-5eaa471da4d9` was made current by
+deployment `7f08480c-54e3-4a82-a68a-86c858f28c85` at
+`2026-07-20T01:26:29.175759Z`, with a reported 33 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -504,7 +504,7 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real Chromium run reloaded Cloudflare version 50 and rendered the official
+A real Chromium run reloaded Cloudflare version 51 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
@@ -519,7 +519,7 @@ session was closed after the pass.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 50 has therefore passed its credential-free remote API, Engine.IO and
+Version 51 has therefore passed its credential-free remote API, Engine.IO and
 real-browser acceptance gates.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes

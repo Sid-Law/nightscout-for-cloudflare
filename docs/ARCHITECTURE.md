@@ -6,19 +6,16 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed adapter candidate
+“Current” below describes deployed evidence candidate
+`7630e8aec2dc09f15aa6436cbf904705f7fd737e`, unchanged runtime source
 `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8` and Cloudflare version
-`4f89e2fc-ac35-499b-ac39-ffbd61f18e66`, reported as 100% active. The
-candidate's 41-file Workers-runtime suite
-passes 472/472 plus 20/20 audit tests. Wrangler processed 248 unchanged official
+`f4909749-a807-4f10-9794-5eaa471da4d9`, reported as 100% active. The
+candidate's 42-file Workers-runtime suite passes 485/485 plus 20/20 audit tests.
+Wrangler processed 248 unchanged official
 asset entries; its dry run reported 1005.41 KiB raw / 183.59 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 50
-reported a 23 ms startup and passed credential-free API, EIO4 and real-browser
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 51
+reported a 33 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
-The next evidence-only candidate
-`7630e8aec2dc09f15aa6436cbf904705f7fd737e` leaves runtime source unchanged
-and passes 485/485 tests across 42 Workers-runtime files plus the same 20/20
-audits; its post-deployment gates remain pending.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -887,7 +884,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`4f89e2fc-ac35-499b-ac39-ffbd61f18e66`. Current credential-free remote smoke
+`f4909749-a807-4f10-9794-5eaa471da4d9`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, fresh-tenant
 Profile/current and v2 Summary, API3 version and an EIO4 polling open packet;
 API3 Entries without a token returned the

@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed code candidate: `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`
-- Next evidence-only candidate: `7630e8aec2dc09f15aa6436cbf904705f7fd737e`
-- Git HEAD used by Wrangler: `317d6f03cad9833df305263a2b929284e9ca9c41`
-- Cloudflare Version ID: `4f89e2fc-ac35-499b-ac39-ffbd61f18e66`
-- Cloudflare ordinal version number: `50`
+- Deployed evidence candidate: `7630e8aec2dc09f15aa6436cbf904705f7fd737e`
+- Runtime source candidate: `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`
+- Git HEAD used by Wrangler: `e024dc70df88dff18a425abe28eddce00c47ea0d`
+- Cloudflare Version ID: `f4909749-a807-4f10-9794-5eaa471da4d9`
+- Cloudflare ordinal version number: `51`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T01:03:59.34848Z`
-- Activation: deployment `f53e60ea-4bab-4730-9164-680e67f1f00d` created
-  `2026-07-20T01:04:00.535961Z`; Wrangler reports
+- Version creation time: `2026-07-20T01:26:28.313964Z`
+- Activation: deployment `7f08480c-54e3-4a82-a68a-86c858f28c85` created
+  `2026-07-20T01:26:29.175759Z`; Wrangler reports
   this version at 100%
-- Worker startup: 23 ms
-- Deployment ID: `f53e60ea-4bab-4730-9164-680e67f1f00d`
+- Worker startup: 33 ms
+- Deployment ID: `7f08480c-54e3-4a82-a68a-86c858f28c85`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -57,8 +57,27 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
 
-The current deployed build contains the prior adapted slices plus this
-increment's Treatment identity work:
+The current deployed evidence increment adds the complete concurrent-uploader
+contract without changing Worker runtime source:
+
+- all 13 locked `concurrent-writes.test.js` cases cross the Worker HTTP boundary
+  into one tenant Durable Object;
+- simultaneous scalar and batch writes preserve response cardinality and
+  unique server-generated ObjectIds across Entries, Treatments and
+  DeviceStatus;
+- bounded offline-recovery cases preserve 50 AAPS SMB records, 100 AndroidAPS
+  SGVs and 30 mixed-collection records without lost writes.
+
+The unchanged deployed runtime source also includes the immediately preceding
+Profile calculation increment:
+
+- all 24 locked `profile.test.js` assertions cover legacy/store conversion,
+  schedules, units, timezone handling, profile switches and historical
+  selection;
+- API v2 Summary selects and evaluates the current Profile through that
+  Workers-safe adapter rather than a partial hand-written substitute.
+
+Earlier Treatment identity work remains deployed:
 
 - complete named Workers-runtime mapping for locked
   `uuid-handling.test.js`, `issue-6923-legacy-uuid.test.js` and
@@ -259,7 +278,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The next evidence candidate is
+The deployed evidence candidate is
 `7630e8aec2dc09f15aa6436cbf904705f7fd737e`; it changes no Worker runtime
 source relative to deployed runtime candidate
 `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. It adds the complete 13-case
@@ -300,7 +319,7 @@ Neither count proves complete compatibility.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `4f89e2fc-ac35-499b-ac39-ffbd61f18e66` at 100%.
+Wrangler reports version `f4909749-a807-4f10-9794-5eaa471da4d9` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -333,8 +352,9 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds the complete Profile calculation contract and retains the
-existing Loop client and client/server root transport evidence. The current version repeated a fresh
+This evidence-only release adds the complete concurrent uploader contract and
+retains the unchanged Profile, Loop client and client/server root transport
+runtime. The current version repeated a fresh
 credential-free EIO4 polling-open check. Because the Worker has no
 `API_SECRET`, no credentialed remote mutation could be attempted; successful
 write/change delivery is proved by local integration contracts rather than
@@ -374,7 +394,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 50's official UI without reading
+A real Chromium session exercised Cloudflare version 51's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region and loaded locked
@@ -395,8 +415,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`4f89e2fc-ac35-499b-ac39-ffbd61f18e66`. It reused the same 248 unchanged
-official assets. Version 50 has therefore passed credential-free remote API,
+`f4909749-a807-4f10-9794-5eaa471da4d9`. It reused the same 248 unchanged
+official assets. Version 51 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -476,10 +496,11 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`de8ab414-79e8-4938-8e09-e86c7f4cf0cf` (version 49). It has its own remote API,
-Engine.IO and browser acceptance and lacks only this release's Profile
-calculation adapter. Version 48 (`b835ef23-3e10-49cf-8f70-87c783034b24`)
-remains an older compatible fallback. The older
+`4f89e2fc-ac35-499b-ac39-ffbd61f18e66` (version 50). It has its own remote API,
+Engine.IO and browser acceptance and the same runtime source; version 51 adds
+only concurrent uploader contract evidence. Version 49
+(`de8ab414-79e8-4938-8e09-e86c7f4cf0cf`) remains an older compatible fallback.
+The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not
 be selected as a rollback target.

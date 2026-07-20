@@ -17,7 +17,7 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-Next evidence candidate
+Deployed evidence candidate
 `7630e8aec2dc09f15aa6436cbf904705f7fd737e` passes 485/485 tests across 42
 Workers-runtime files plus 20/20 audit tests. The suite retains focused EIO4,
 API3 `/storage` and `/alarm`, authorization, v1/v2 Status, all 16 locked API3
@@ -34,7 +34,7 @@ files and 25 locked v1 client/API files, and now completely maps locked
 This candidate changes tests/manifests only; runtime source remains
 `c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. This is not full-port evidence.
 The runtime code is deployed as Cloudflare version
-`4f89e2fc-ac35-499b-ac39-ffbd61f18e66`; exact release
+`f4909749-a807-4f10-9794-5eaa471da4d9`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
@@ -153,7 +153,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Realtime/auth alarm foundation only.** The DO single Cloudflare alarm derives transport heartbeat/session/lease/closure work and authorization-failure cleanup from SQLite and is retry-idempotent. A stale already-due platform alarm is replaced with a short prompt so queued delivery cannot erase the only SQL wakeup; a still-future earlier prompt is retained to avoid starvation. `/alarm` snooze rows are durable state but do not schedule plugin work. API3 pruning and plugin ticks are not scheduled. | Add a persisted multi-kind task table that shares the one Cloudflare alarm, with retry/idempotency and bounded Free-plan scheduling tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/dataloader.js`, `lib/profilefunctions.js` | **Expanded request-scoped property and Profile foundation; general registry/background execution missing.** Pure ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `times`, `units`, `levels` and Profile calculations compute/support v2 behavior without rewriting formulas. Profile instances are tenant/request-local instead of sharing the upstream module-global previous-temp-basal pointer. A deterministic property dispatcher preserves locked order and enable gates, but the complete sandbox/registry, extended-settings surface, remaining properties, notifications and periodic execution are absent. | Run the remaining official modules through a deterministic tenant platform context; adapt `sandbox.test.js` and subsequent plugin/data tests without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/api/notifications-api.js`, `lib/adminnotifies.js`, push modules | **Partial ACK/outlet persistence only.** `/api/v1` and inherited `/api/v2` notification ACK plus Socket.IO ACK share bounded group/level snoozes, exact all-clear broadcasts and tenant-local current-connection delivery across eviction. The upstream `notifications-api.test.js` contract is now tracked as adapted. Notification calculation, activity/summary state, admin notices, plugin bus integration and push-provider processing are missing. | Make the upstream engine consume the persisted snooze state, add calculation/persistence/retry/eviction tests and keep external delivery disabled in simulated scope unless separately authorized. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Version 50's credential-free Chromium pass rendered the homepage/chart region and loaded Admin Tools, Food Editor, Profile Editor and `clock-color`. Food reached `Database loaded`; Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone; the empty-data clock rendered `-?-` with `No data found in DB`. No exercised page had a JavaScript error. Homepage/clock had no warnings; Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. An earlier increment provided authenticated Profile Save/close evidence, but no protected Save was attempted in version 50. The public tenant has no Entries, so `---` is expected. Mutations/report generation, pushed live updates and full network assertions are not complete. | Re-run authenticated Profile Save/Food mutation only when a credential is explicitly available, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Version 51's credential-free Chromium pass rendered the homepage/chart region and loaded Admin Tools, Food Editor, Profile Editor and `clock-color`. Food reached `Database loaded`; Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone; the empty-data clock rendered `-?-` with `No data found in DB`. No exercised page had a JavaScript error. Homepage/clock had no warnings; Admin/Food/Profile emitted the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. An earlier increment provided authenticated Profile Save/close evidence, but no protected Save was attempted in version 51. The public tenant has no Entries, so `---` is expected. Mutations/report generation, pushed live updates and full network assertions are not complete. | Re-run authenticated Profile Save/Food mutation only when a credential is explicitly available, then add profile delete, admin mutations, report generation and pushed live updates with console/network assertions. |
 | Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; 54 adapted files.** All 111 files are tracked with strict status/reason and heuristic route candidates: all 16 API3 files, the named storage/concurrency/notification/data/property/Profile/realtime foundations and 25 v1 client/API files are adapted; 55 remain unresolved and two real-CGM bridges are fixed-scope exclusions. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
@@ -301,10 +301,12 @@ controls, not upstream claims.
 
 ## Current deployed integration evidence
 
-Code candidate
-`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8` passes 472/472 tests in 41
-Workers-runtime files plus 20/20 audit tests. It adds the complete named
-24-assertion Profile calculation mapping while retaining GAP-TREAT-012, Loop
+Evidence candidate
+`7630e8aec2dc09f15aa6436cbf904705f7fd737e` passes 485/485 tests in 42
+Workers-runtime files plus 20/20 audit tests. Runtime source remains
+`c07d52fc68db976d20b1ced9d3f9d0088ab1a0a8`. It adds the complete named
+13-case concurrent uploader mapping while retaining the 24-assertion Profile
+calculation mapping, GAP-TREAT-012, Loop
 carb/dose, ObjectIdCache and SGV/DeviceStatus mappings,
 while retaining exact UUID enabled/disabled semantics, issue-6923 repair,
 MongoDB 5 Treatment delete results, the legacy uploader and prediction work,
@@ -312,9 +314,9 @@ schema-v12 persisted root-write authority, the schema-v11 delta baseline and the
 ddata/summary slice, strict v1/v2 Status, Entries/Treatments,
 authorization, direct Hibernatable EIO4 WebSocket, all 16 locked API3 mappings,
 `/storage`, `/alarm` and inherited notification ACK slices. Cloudflare version
-`4f89e2fc-ac35-499b-ac39-ffbd61f18e66` is 100% active; deployment
-`f53e60ea-4bab-4730-9164-680e67f1f00d` was created at
-`2026-07-20T01:04:00.535961Z` and reported a 23 ms startup. Wrangler processed
+`f4909749-a807-4f10-9794-5eaa471da4d9` is 100% active; deployment
+`7f08480c-54e3-4a82-a68a-86c858f28c85` was created at
+`2026-07-20T01:26:29.175759Z` and reported a 33 ms startup. Wrangler processed
 248 unchanged official asset entries; deployment and final dry run both
 reported 1005.41 KiB raw / 183.59 KiB gzip, with only `ENTRY_STORE` and `ASSETS`
 in the dry run. This deployment had no explicit version annotation; none is
@@ -437,7 +439,7 @@ WebSocket delivery green. The prior
 credentialed `/alarm` smoke remains historical evidence, not a claim of
 a current credentialed delivery or homepage switch.
 
-A real Chromium session reloaded Cloudflare version 50, rendered the official homepage
+A real Chromium session reloaded Cloudflare version 51, rendered the official homepage
 and chart region, then loaded Admin Tools, Food Editor, Profile Editor and
 `clock-color`. Food reached `Database loaded` and Profile reached `Values
 loaded.` through their permitted read paths, retained its stored simulated
@@ -449,7 +451,7 @@ warnings; Admin, Food and Profile repeatedly emitted the locked official
 bundle's nonfatal `Unable to find element for #chartContainer` warning because
 those pages contain no chart container. No authenticated Save or protected
 mutation was attempted, and the isolated browser session was closed. This is
-same-version evidence alongside version 50's remote API and Engine.IO smoke.
+same-version evidence alongside version 51's remote API and Engine.IO smoke.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing
