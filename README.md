@@ -429,7 +429,8 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `ddata.test.js`, `bgnow.test.js`, `direction.test.js`, `levels.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
 `data.calcdelta.test.js`, `websocket.shape-handling.test.js`,
-`profile.test.js`, `concurrent-writes.test.js`, `loop.test.js` and 25 v1 client/API files are classified as fully
+`profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
+`settings.test.js` and 25 v1 client/API files are classified as fully
 `adapted`.
 The latest four v1 additions are `gap-treat-012.test.js`,
 `carb-dose-upload.test.js`, `objectid-cache.test.js` and
@@ -438,7 +439,7 @@ The latest four v1 additions are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 54 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 53 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed evidence candidate is commit
@@ -455,6 +456,17 @@ DeviceStatus prediction adapters, schema-v12 root-write authority, server-origin
 the prior property, API, authorization, `/storage` and `/alarm` slices.
 This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
+The next runtime candidate is commit
+`fb8c7a20a15584da6a5f89032e11503dcde3de46`. It replaces the duplicated
+status-settings object with a request-local port of official `lib/settings.js`,
+maps all 13 named upstream Settings cases and keeps recursive secret filtering
+before HTTP/Socket.IO status serialization. The locked original file passes
+13/13; the 44-file Workers-runtime suite passes 504/504 plus 20/20 audits and
+TypeScript. The manifest records 56 adapted, 53 unresolved and two fixed-scope
+exclusions. Official UI preparation and Wrangler dry-run pass with 248 assets,
+1021.31 KiB raw / 186.89 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. It is
+not deployed evidence until Cloudflare, remote API/Engine.IO and browser gates
+pass.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side

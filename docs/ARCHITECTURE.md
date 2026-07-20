@@ -19,6 +19,13 @@ gates.
 These are release facts for the named subset, not
 evidence of a complete port.
 
+Next runtime candidate `fb8c7a20a15584da6a5f89032e11503dcde3de46`
+adds the request-local official Settings adapter and passes 504/504 tests across
+44 Workers-runtime files plus 20/20 audits. Its official UI build and dry run
+pass with 248 assets, 1021.31 KiB raw / 186.89 KiB gzip and only the existing
+two product bindings. It remains pre-deployment evidence until its remote and
+browser gates complete.
+
 ## Current request and data flow
 
 ```text
@@ -32,6 +39,8 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - API_SECRET, subject access-token and signed-JWT authorization
   - bounded parsing, upstream query subset and tenant routing
   - v2 ddata/properties/summary stateless response adaptation
+  - request-local locked Settings defaults, accessors, feature/alarm resolution
+    and secure status filtering
   - inherited v1/v2 notification ACK authorization and HTTP adaptation
   - Socket.IO client-surface polling adapter
   - strict `/socket.io/` EIO4 polling and direct-WebSocket adapters
@@ -68,6 +77,14 @@ face names are inserted into the upstream clock template at request time. NSCF
 contains no alternative page, chart, component, CSS theme, translation or
 downstream-invented medical calculation. The request-scoped summary processor
 described below is ported from the locked upstream source.
+
+The cross-cutting Settings adapter is also request-local. It retains the
+official default object, camel/environment accessors, enable/disable and alarm
+selection, threshold correction, snooze lookup and recursive secure-key
+filtering, then supplies the JSON-visible snapshot used by HTTP and Socket.IO
+status. This replaces Node module-global mutation without changing the locked
+calculations. The broader `lib/server/env.js` process/filesystem discovery and
+extended-settings loader remain separate platform-adaptation work.
 
 Nightscout's Express server supplies UTF-8 in response headers, while the
 upstream homepage itself has no `<meta charset>`. Cloudflare Static Assets

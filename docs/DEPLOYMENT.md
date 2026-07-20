@@ -289,11 +289,11 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed evidence candidate is
-`f78631cac0071f4f7fb4f4eb839c161e2f8aa73d`. It adds the complete five-case
-Loop plugin mapping and opt-in v2 property dispatch while retaining the
-complete 13-case concurrent uploader and 24-assertion Profile calculation
-mappings, as well as
+The next runtime candidate is
+`fb8c7a20a15584da6a5f89032e11503dcde3de46`. It adds the complete 13-case
+Settings module mapping and request-local HTTP/Socket.IO status integration
+while retaining the five-case Loop plugin, 13-case concurrent uploader and
+24-assertion Profile calculation mappings, as well as
 GAP-TREAT-012, Loop carb/dose, ObjectIdCache, SGV/DeviceStatus,
 UUID-handling, issue-6923, identity-matrix, legacy uploader/DeviceStatus work,
 schema-v12 root-write
@@ -310,22 +310,26 @@ The table below records the exact local gate completed before deployment.
 | Audit tool tests | 14/14 passed |
 | Authorization audit tests | 6/6 passed |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 43 files, 490/490 passed |
-| Worker dry run | 1010.05 KiB raw / 184.58 KiB gzip |
+| Workers integration tests | 44 files, 504/504 passed |
+| Worker dry run | 1021.31 KiB raw / 186.89 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 490 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 504 Workers
 tests cover the implemented adapter subset; all 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
 `websocket.shape-handling.test.js`, `profile.test.js`,
-`concurrent-writes.test.js`, `loop.test.js` and 25 v1 client/API files are
-classified as fully `adapted`, 54 remain unresolved and two bridge files are
-fixed-scope exclusions.
+`concurrent-writes.test.js`, `loop.test.js`, `settings.test.js` and 25 v1
+client/API files are classified as fully `adapted`, 53 remain unresolved and
+two bridge files are fixed-scope exclusions.
 Neither count proves complete compatibility.
+
+This candidate has not yet replaced Cloudflare version 52. The remote API,
+Engine.IO and browser evidence below still describes the active deployed
+version until the next deployment and post-deployment gates succeed.
 
 ## Post-deployment remote API evidence
 
