@@ -7,14 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`8477cecd011989ba966f53416865df03849bbaef` and Cloudflare version
-`3a95a34d-806a-4d2b-9dff-3db1d1051b9a`, reported as 100% active. The
-candidate's 48-file Workers-runtime suite passes 532/532 plus 21/21 audit tests
-and one unchanged direct upstream client test.
+`1c122e5ee83f8f5c2ae99074de08504a36932bba` and Cloudflare version
+`1e44640e-740e-4198-a40f-65482c14edd2`, reported as 100% active. The
+candidate's 49-file Workers-runtime suite passes 551/551 plus 21/21 audit tests,
+one unchanged direct upstream client test and 29/29 unchanged tests across six
+locked upstream server-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1035.12 KiB raw / 189.61 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 57
-reported a 26 ms startup and passed credential-free API, EIO4 and real-browser
+asset entries; its dry run reported 1048.60 KiB raw / 191.93 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 58
+reported a 27 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -26,15 +27,18 @@ current runtime retains `src/plugins/registry.ts`, a request-local static replac
 Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
-implemented v2 property plugins execute through this registry. Version 57 adds
-`src/data-loader.ts` and `src/plugins/dbsize.ts`: real SQLite file bytes now
-flow through ddata and the official database-size calculation. The
+implemented v2 property plugins execute through this registry. Version 58 adds
+`src/plugins/age.ts` and `src/plugins/timeago.ts`: CAGE, SAGE and IAGE now use
+bounded latest-event inputs, while timeago remains request-local until a
+persisted notification runner exists. It retains `src/data-loader.ts` and
+`src/plugins/dbsize.ts`, so real SQLite file bytes flow through ddata and the
+official database-size calculation. The
 official client `pluginbase.test.js` runs unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 48 Workers files / 532 tests, 21/21 audits and one direct upstream
-client test; the dry run is 1035.12 KiB raw / 189.61 KiB gzip with the same 248
-assets and two bindings. Remote API/EIO4 and real-browser gates passed against
-the same active version.
+evidence is 49 Workers files / 551 tests, 21/21 audits, one direct upstream
+client file and six direct upstream server-plugin files / 29 tests; the dry run
+is 1048.60 KiB raw / 191.93 KiB gzip with the same 248 assets and two bindings.
+Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
 
@@ -129,7 +133,7 @@ process-global `ctx.ddata`. `src/realtime/ddata-snapshot.ts` represents the
 locked ddata singleton's empty buckets, clone, runtime normalization and
 prefer-new merge operations as pure functions; tenant state remains inside the
 SQLite Durable Object. `src/plugins/bgnow.ts`, `direction.ts`, `rawbg.ts`,
-`upbat.ts`, `loop.ts` and `dbsize.ts`, supported by request-safe
+`upbat.ts`, `loop.ts`, `dbsize.ts`, `age.ts` and `timeago.ts`, supported by request-safe
 `runtime/{times,units,levels}.ts`, are
 ports of their locked property modules. They build the same
 four five-minute buckets around the last non-future SGV, preserve the
@@ -138,18 +142,25 @@ direction character/entity only for current data, reproduce raw calibration
 and noise behavior, analyze recent per-uploader battery minima/severity, and
 interpret uploader-provided Loop status and forecasts without calculating a
 dose, and preserve the locked database-size percentages, thresholds, pill,
-notification request and assistant response.
+notification request and assistant response. The age adapter selects the latest
+non-future official Site Change, Sensor Start/Change and Insulin Change events,
+then preserves the locked CAGE/SAGE/IAGE duration, display, notes, severity and
+notification-request calculations. Timeago preserves the locked freshness
+display and warning/urgent requests without process-global hibernation state.
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
 opt-in; `loop` is likewise exposed only when configured in `ENABLE`, while
-`dbsize` remains enabled by the locked default feature set.
+`dbsize` remains enabled by the locked default feature set. CAGE, SAGE and IAGE
+remain opt-in exactly as upstream; timeago is a client/notification plugin and
+is not fabricated as a v2 property.
 `/api/v2/properties` applies those values plus the upstream comma
 picker and truthy `pretty` serialization.
 
 Property polling uses `getPluginPropertyContextJson()`, a bounded DO projection
-of at most 64 SGVs, the newest calibration, recent device status and one small
-database-stat object. It avoids
-materializing unrelated food, treatment and profile collections. Cloudflare
+of at most 64 SGVs, the newest calibration, recent device status, one small
+database-stat object and at most one latest row for each of six age-event types
+within 62 days. It avoids materializing unrelated food, treatment and profile
+collections. Cloudflare
 can route a newly deployed Worker to an older still-live DO isolate during a
 rolling release. The first plugin deployment exposed this when the old isolate
 did not implement the new RPC. `loadPluginPropertyContext()` catches only that
@@ -963,10 +974,11 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`3a95a34d-806a-4d2b-9dff-3db1d1051b9a`. Current credential-free remote smoke
+`1e44640e-740e-4198-a40f-65482c14edd2`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
-version, real ddata/database-size values and an EIO4 polling open packet;
+version, real ddata/database-size values, the opt-in-disabled Loop/CAGE/SAGE/IAGE
+property gates, absence of property-only timeago and an EIO4 polling open packet;
 API3 Entries without a token returned the
 expected 401. The current public Worker has no `API_SECRET` Secret binding, so
 a simulated Treatment POST returned the expected 503

@@ -46,17 +46,17 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | Version 57's credential-free Chromium pass rendered the homepage/chart and live `dbsize` pill, then loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded`, Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone, and the empty-data clock rendered `-?-`. No page had a JavaScript error or failed request. Admin/Food/Profile emitted only the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. The Settings form stayed closed for a three-second observation; earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 57. Protected mutation/report and pushed-live-update workflows remain. |
+| 2. Official browser assets/pages | Partial | Version 58's credential-free Chromium pass rendered the homepage/chart and live `dbsize` pill, then loaded Admin, Food, Profile and `clock-color`; Food reached `Database loaded`, Profile reached `Values loaded.` with its stored simulated profile and `Asia/Shanghai` timezone, and the empty-data clock rendered `-?-`. No page had a JavaScript error; per-page listeners recorded zero application-request failures. Two root-document `ERR_ABORTED` entries in an earlier accumulated trace were caused by tool-driven navigation/reload and are retained as test-harness artifacts rather than hidden. Admin/Food/Profile emitted only the locked bundle's nonfatal missing-`#chartContainer` warning on those non-chart pages. The Settings form stayed closed for a three-second observation; earlier authenticated Profile Save, Report/Swagger and Split/multiframe evidence remain. No protected Save was attempted in version 58. Protected mutation/report and pushed-live-update workflows remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. The complete 13-case concurrent-write contract now proves five-way scalar/batch writes, unique IDs and 50-SMB/100-SGV/30-cross-collection offline recovery through one tenant DO. `/storage` atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 25 locked files adapted | Entries adapts its complete locked upstream file plus deduplication, Entries UUID and partial-failure contracts. Treatments additionally adapts complete UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, Loop carb/dose and ObjectIdCache files: exact flag parsing, UUID promotion/repair, ordered responses, cached-ID update/delete and descriptive `syncIdentifier` behavior. The complete Loop SGV/DeviceStatus file now locks directions, device metadata, replay behavior and nested Loop/pump payloads; DeviceStatus also retains official prediction trimming. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are mapped. Status now consumes the request-local 13-case official Settings module adapter. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, wider Mongo query/document behavior and remaining v1 routes/test files. |
-| 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary now uses the complete 24-assertion `profile.test.js` adapter for legacy/store profiles, schedule/timezone calculation and historical selection. The complete locked `ddata`, `dataloader`, `dbsize`, `bgnow`, `direction`, `rawbg`, `upbat` and five-case `loop` files are adapted. Ddata publishes the real SQLite DO byte total; `/properties` runs the locked database-size thresholds/display plus glucose/uploader/Loop calculations through the registry. The platform reports the Workers Free one-GB ceiling as 953.67 MiB to both server and official client and accepts upstream `DBSIZE_*` overrides. Raw BG and Loop retain their official enable gates. Remaining plugin properties and summary state (IOB/COB/BWP/ages/battery), summary persistence, the persisted notification runner and v2-only `/notifications/loop` delivery remain; ddata uses a bounded two-day SGV window. |
+| 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary now uses the complete 24-assertion `profile.test.js` adapter for legacy/store profiles, schedule/timezone calculation and historical selection. The complete locked `ddata`, `dataloader`, `dbsize`, `bgnow`, `direction`, `rawbg`, `upbat`, `cannulaage`, `sensorage`, `insulinage`, `timeago` and five-case `loop` files are adapted. Ddata publishes the real SQLite DO byte total; `/properties` runs the locked database-size, glucose/uploader/Loop and opt-in CAGE/SAGE/IAGE calculations through the registry. The platform reports the Workers Free one-GB ceiling as 953.67 MiB to both server and official client and accepts upstream `DBSIZE_*` overrides. Raw BG, Loop and age plugins retain their official enable gates. Timeago's request-local calculation exists, but persisted scheduling does not. Remaining plugin properties and summary state (IOB/COB/BWP/ages/battery), summary persistence, the persisted notification runner and v2-only `/notifications/loop` delivery remain; ddata uses a bounded two-day SGV window. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
 | 7. Authentication/admin | Core adapted; named gaps/hardening | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. The deployed platform configuration preserves dashboard variables across Wrangler deploys and audits that no plaintext credential is committed; encrypted Secrets remain preferred. The current public lab still has no API_SECRET binding, so protected remote writes fail closed. The Workers boundary caps enforced delay at 60 seconds, failed-auth admin notification emission is missing, and repeated/bracket `secret` arrays are handled safely instead of reproducing the locked upstream unhandled rejection. |
 | 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket; root write shape contract adapted | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read/write/treatment-write authorization, initial/retro data, server-originated deltas and the locked `dbAdd`/`dbUpdate`/`dbUpdateUnset`/`dbRemove` events, plus API3 `/storage` and `/alarm`. `/alarm` has locked subscription/auth/ACK behavior and a trusted notification outlet, but the server-side notification engine is missing. Add profile-switch/plugin preprocessing, close the direct-send at-most-once crash window, then add polling upgrade/EIO3 and the official-page switch. |
 | 9. Real-time storage updates | Root server/client mutations plus API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. Add pushed browser/credentialed remote workflows and profile/plugin preprocessing; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Realtime/auth plus notification-ACK foundation | The DO's single Cloudflare alarm is derived from persisted realtime deadlines and authorization-failure cleanup and is idempotent across eviction/retry. Stale already-due platform alarms are replaced so a queued delivery cannot erase the only SQL wakeup. Socket.IO and inherited v1/v2 HTTP ACK share the same durable group/level transaction. Add a persisted multi-kind task table before API v3 pruning and server-plugin evaluation share the scheduler. |
-| 11. Server plugins/notifications | Static registry + Sandbox/dataloader/property/Profile/Loop/dbsize foundation plus ACK/outlet | Stateless ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `loop` and `dbsize` plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. The request-local static registry replaces Node dynamic `require`, preserves the locked catalogs/order/gates/hooks, and drives the implemented v2 properties. The dataloader's Promise completion and database-stat fields are adapted to `ctx.storage.sql.databaseSize`; default Free-plan capacity and all five `DBSIZE_*` settings reach the unchanged official client. Loop/database-size notification request calculations are not yet driven by a persisted timer. `/alarm` publishes trusted precomputed objects and ACKs persist snooze/all-clear state. Build the remaining plugin algorithms and notification/background runner without rewriting formulas. |
-| 12. Upstream regression suite | Tracked; 1 pass + 60 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, the named storage/concurrency/notification/data/dataloader/database-size/property/Profile/Settings/Sandbox/registry/realtime foundations and 25 v1 client/API files are adapted. The complete `pluginbase.test.js` file also runs unchanged after proving the public bundle is byte-identical to the locked upstream build. 48 files remain unresolved and two are fixed-scope exclusions. |
+| 11. Server plugins/notifications | Static registry + Sandbox/dataloader/property/Profile/Loop/dbsize/age/timeago foundation plus ACK/outlet | Stateless ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `loop`, `dbsize`, `cannulaage`, `sensorage`, `insulinage` and `timeago` plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. The request-local static registry replaces Node dynamic `require`, preserves the locked catalogs/order/gates/hooks, and drives the implemented v2 properties. The dataloader's Promise completion and database-stat fields are adapted to `ctx.storage.sql.databaseSize`; default Free-plan capacity and all five `DBSIZE_*` settings reach the unchanged official client. The age adapters query one latest bounded event per official event type and preserve locked threshold/display/notification-request behavior. Loop/database-size/age/timeago notification requests are not yet driven by a persisted timer. `/alarm` publishes trusted precomputed objects and ACKs persist snooze/all-clear state. Build the remaining plugin algorithms and notification/background runner without rewriting formulas. |
+| 12. Upstream regression suite | Tracked; 1 pass + 64 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, the named storage/concurrency/notification/data/dataloader/database-size/age/timeago/property/Profile/Settings/Sandbox/registry/realtime foundations and 25 v1 client/API files are adapted. The complete `pluginbase.test.js` file also runs unchanged after proving the public bundle is byte-identical to the locked upstream build. Six locked server-plugin files now run unchanged as a reusable 29/29-test gate. 44 files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -94,10 +94,13 @@ relabeled as scope exclusions.
 ## Current deployed increment
 
 The deployed evidence candidate
-`8477cecd011989ba966f53416865df03849bbaef` adds the request-local dataloader
-and database-size plugin adapter, routes the real SQLite DO byte total through
-v2 ddata/properties and the unchanged official client, and retains the static
-plugin registry, its official order/enable/error gates and Wrangler `keep_vars` plus the
+`1c122e5ee83f8f5c2ae99074de08504a36932bba` adds the request-local CAGE,
+SAGE, IAGE and timeago adapters and a bounded latest-age-event Durable Object
+projection. Opt-in age properties now run through the static registry without
+rewriting official formulas; timeago is ready for the future persisted
+notification runner. It retains the dataloader/database-size adapter, real
+SQLite DO byte total in v2 ddata/properties, unchanged official client, plugin
+registry order/enable/error gates and Wrangler `keep_vars` plus the
 Cloudflare configuration audit. It retains the complete five-case Sandbox
 surface, 13-case Settings adapter, five-case Loop plugin, 13-case concurrent
 uploader, 24-assertion Profile, Loop client and Treatment identity contracts.
@@ -109,23 +112,24 @@ Cloudflare's precise missing-method error; explicit false fails closed during
 that rolling boundary. All prior
 root-write/delta, property, API3 `/storage`, `/alarm`, authorization and
 notification-ACK contracts remain green. Cloudflare Worker version
-`3a95a34d-806a-4d2b-9dff-3db1d1051b9a` is active at 100%; deployment
-`629f83a3-b1d7-4226-a851-ffc22911e3a2` was created at
-`2026-07-20T04:27:17.543409Z` and Wrangler reported a 26 ms startup. It
+`1e44640e-740e-4198-a40f-65482c14edd2` is active at 100%; deployment
+`7188db9f-f59f-4454-8139-924788d39412` was created at
+`2026-07-20T05:06:36.832892Z` and Wrangler reported a 27 ms startup. It
 processed 248 unchanged official asset entries. The candidate's dry run
-reports 1035.12 KiB raw / 189.61 KiB gzip and exposes only `ENTRY_STORE` plus
+reports 1048.60 KiB raw / 191.93 KiB gzip and exposes only `ENTRY_STORE` plus
 `ASSETS`. No deployed credential was read or supplied to remote smoke. The
-candidate's 48-file Workers-runtime suite passes 532/532, all three audit
+candidate's 49-file Workers-runtime suite passes 551/551, all three audit
 suites pass 21/21, the complete official client `pluginbase.test.js` passes
-unchanged and TypeScript passes. The manifest records one direct pass, 60
-adapted, 48 unresolved and two fixed-scope excluded files. The official UI
-build and dry run pass; version 57's 51-assertion credential-free remote API/Engine.IO smoke
+unchanged, six locked server-plugin files pass 29/29 unchanged and TypeScript
+passes. The manifest records one direct pass, 64 adapted, 44 unresolved and
+two fixed-scope excluded files. The official UI build and dry run pass;
+version 58's 57-assertion credential-free remote API/Engine.IO smoke
 and real-browser acceptance also passed across the official homepage, Admin,
 Food, Profile and `clock-color` pages without JavaScript errors or protected
 writes. The official Settings form opened and stayed closed for a three-second
 observation without a Save. The locked missing-`#chartContainer` warnings on
 non-chart pages remain recorded rather than hidden. These remain subset facts,
-not a full-port claim. All version 57 post-deployment gates passed. The
+not a full-port claim. All version 58 post-deployment gates passed. The
 configuration guard prevents future dashboard text variables from being
 overwritten but cannot restore the currently absent credential; none was
 created, recovered or read.
@@ -292,14 +296,16 @@ The deployed increment includes:
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
-Version 57 credential-free remote smoke returned HTTP 200 for health, bounded v1
+Version 58's 57-assertion credential-free remote smoke returned HTTP 200 for
+health, bounded v1
 Entries and Treatments reads, fresh-tenant Profile/current and v2 Summary,
 matching v1/v2 filtered Settings snapshots, API3 version, real ddata/database
-stats, default-enabled `dbsize`, opt-in-disabled Loop
-property and EIO4 polling; missing-token API3 Entries returned the expected 401.
+stats, default-enabled `dbsize`, opt-in-disabled Loop/CAGE/SAGE/IAGE
+properties, absent property-only `timeago` and EIO4 polling; missing-token API3
+Entries returned the expected 401.
 A simulated Treatment write returned
 the expected 503 because no `API_SECRET` is configured, and the follow-up read
-remained empty. No deployed credential was read or sent. The same version 57
+remained empty. No deployed credential was read or sent. The same version 58
 Chromium pass loaded the official homepage, Admin, Food, Profile and
 `clock-color` without protected writes. Food reached `Database loaded`,
 Profile reached `Values loaded.` and retained the stored simulated profile plus

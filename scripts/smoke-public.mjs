@@ -81,6 +81,20 @@ const loopResponse = await request("/api/v2/properties/loop");
 checked(loopResponse.status === 200, "disabled Loop property status");
 equal(await loopResponse.json(), {}, "Loop remains opt-in");
 
+const ageResponse = await request("/api/v2/properties/cage,sage,iage,timeago");
+checked(ageResponse.status === 200, "age property status");
+const ageProperties = await ageResponse.json();
+const enabledPlugins = Array.isArray(statusV1.settings?.enable)
+  ? statusV1.settings.enable
+  : [];
+for (const plugin of ["cage", "sage", "iage"]) {
+  checked(
+    Object.hasOwn(ageProperties, plugin) === enabledPlugins.includes(plugin),
+    `${plugin} enabled gate`,
+  );
+}
+checked(!Object.hasOwn(ageProperties, "timeago"), "timeago remains a client/notification plugin");
+
 const summaryResponse = await request("/api/v2/summary");
 checked(summaryResponse.status === 200, "v2 summary status");
 const summary = await summaryResponse.json();
