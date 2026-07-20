@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "86adc37fc687417a8a23730576f02d74ca3ef4183fbad3ea487246e137cd51a3",
+  "inputs_sha256": "aff0562f3ba638d9ccbca51b71897f31d7b6527b918a57307fd4084cf7450c9e",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 0,
-      "adapted": 53,
+      "adapted": 54,
       "excluded-fixed-scope": 2,
-      "unresolved": 56
+      "unresolved": 55
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7973,8 +7973,8 @@
     },
     {
       "file": "vendor/nightscout/tests/concurrent-writes.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all 13 named Workers-runtime cases in test/api-v1-concurrent-writes.test.ts: five simultaneous scalar and two-item batch writes for Treatments, DeviceStatus and Entries; ten staggered Treatment writes in 100 ms; concurrent cross-collection batches; unique server ObjectIds; per-batch response cardinality; 50 AAPS SMB offline-recovery writes; 100 AndroidAPS SGV recovery writes; and 30 concurrent Treatment/Entry/DeviceStatus requests. Every request crosses the Worker boundary into one tenant SQLite Durable Object, and non-200 responses fail the contract before persisted counts are checked.",
       "workstream": "1-storage-foundation",
       "depends_on": [],
       "related_routes": [

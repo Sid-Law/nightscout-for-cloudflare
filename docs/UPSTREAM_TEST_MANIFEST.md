@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 0, adapted: 53, excluded-fixed-scope: 2, unresolved: 56
-- Input fingerprint: `86adc37fc687417a8a23730576f02d74ca3ef4183fbad3ea487246e137cd51a3`
+- Statuses: pass: 0, adapted: 54, excluded-fixed-scope: 2, unresolved: 55
+- Input fingerprint: `aff0562f3ba638d9ccbca51b71897f31d7b6527b918a57307fd4084cf7450c9e`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -19,7 +19,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
-| 1-storage-foundation | none | 15 | 8 | 0 |
+| 1-storage-foundation | none | 15 | 7 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 5 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 27 | 0 |
@@ -51,7 +51,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/api.objectid-validation.test.js` | adapted | 0 | Represented by the pure Workers-runtime helper contract in test/api-v1-collections-contract.test.ts: undefined/null acceptance, 24-hex acceptance, UUID/number rejection, first-invalid batch reporting and all-valid null result. |
 | `vendor/nightscout/tests/api.partial-failures.test.js` | adapted | 6 | Represented by the complete 14-case Workers-runtime contract in test/api-v1-partial-failures.test.ts: non-unique Trio id batches, response and Loop syncIdentifier ordering, replay positions, ObjectId/Trio/AAPS identity separation, per-item response IDs, large DeviceStatus predictions, configured/default/disabled IOB/COB/UAM/ZT truncation for suggested and enacted branches, the locked non-validating string-sgv fixture, and the 50-entry recovery batch. The adapter retains the 100-document and 512-KiB Workers bounds. |
 | `vendor/nightscout/tests/cache-objectid-compat.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/concurrent-writes.test.js` | unresolved | 6 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/concurrent-writes.test.js` | adapted | 6 | Represented by all 13 named Workers-runtime cases in test/api-v1-concurrent-writes.test.ts: five simultaneous scalar and two-item batch writes for Treatments, DeviceStatus and Entries; ten staggered Treatment writes in 100 ms; concurrent cross-collection batches; unique server ObjectIds; per-batch response cardinality; 50 AAPS SMB offline-recovery writes; 100 AndroidAPS SGV recovery writes; and 30 concurrent Treatment/Entry/DeviceStatus requests. Every request crosses the Worker boundary into one tenant SQLite Durable Object, and non-200 responses fail the contract before persisted counts are checked. |
 | `vendor/nightscout/tests/issue-6923-legacy-uuid.test.js` | adapted | 8 | Represented by the complete three-case Workers-runtime regression in test/api-v1-treatment-identity-matrix.test.ts. A raw pre-fix Treatment with UUID directly in _id and no identifier is inserted through the main-namespace raw storage path, then found, updated in place without duplication, and deleted through the v1 API with the MongoDB 5 acknowledged/deletedCount response. |
 | `vendor/nightscout/tests/mongo-pool-config.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/mongo-storage.retry.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |

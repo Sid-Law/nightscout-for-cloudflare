@@ -406,6 +406,10 @@
       "status": "adapted",
       "reason": "Represented by all 24 named Workers-runtime assertions in test/profile-functions-contract.test.ts and wired into the API v2 Summary profile path: empty/missing data, legacy scalar conversion/reload, DIA, carb absorption, carb ratio, sensitivity, low/high targets, units, timezone-aware basal/sensitivity/carb schedules, reverse-chronological multi-record selection and current-profile lookup. src/profile-functions.ts preserves the locked selection/coercion rules while replacing lodash, memory-cache and moment-timezone mechanics with Workers-native arrays, Map and Intl."
     },
+    "vendor/nightscout/tests/concurrent-writes.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all 13 named Workers-runtime cases in test/api-v1-concurrent-writes.test.ts: five simultaneous scalar and two-item batch writes for Treatments, DeviceStatus and Entries; ten staggered Treatment writes in 100 ms; concurrent cross-collection batches; unique server ObjectIds; per-batch response cardinality; 50 AAPS SMB offline-recovery writes; 100 AndroidAPS SGV recovery writes; and 30 concurrent Treatment/Entry/DeviceStatus requests. Every request crosses the Worker boundary into one tenant SQLite Durable Object, and non-200 responses fail the contract before persisted counts are checked."
+    },
     "vendor/nightscout/tests/api.shape-handling.test.js": {
       "status": "adapted",
       "reason": "Represented across test/api-v1-collections-contract.test.ts, test/api-v1-entries-contract.test.ts, test/api-v1-treatments-contract.test.ts and test/worker.test.ts: every locked Entries, Treatments, DeviceStatus and Profile single/array/ten-item/empty response shape, mixed SGV/MBG and treatment types, nested Loop fixtures, syncIdentifier preservation, and legacy Food/Activity PUT-by-ID behavior."
