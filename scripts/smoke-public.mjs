@@ -81,12 +81,22 @@ const loopResponse = await request("/api/v2/properties/loop");
 checked(loopResponse.status === 200, "disabled Loop property status");
 equal(await loopResponse.json(), {}, "Loop remains opt-in");
 
+const insulinCarbResponse = await request("/api/v2/properties/iob,cob");
+checked(insulinCarbResponse.status === 200, "IOB/COB property status");
+const insulinCarbProperties = await insulinCarbResponse.json();
+
 const ageResponse = await request("/api/v2/properties/cage,sage,iage,timeago");
 checked(ageResponse.status === 200, "age property status");
 const ageProperties = await ageResponse.json();
 const enabledPlugins = Array.isArray(statusV1.settings?.enable)
   ? statusV1.settings.enable
   : [];
+for (const plugin of ["iob", "cob"]) {
+  checked(
+    Object.hasOwn(insulinCarbProperties, plugin) === enabledPlugins.includes(plugin),
+    `${plugin} enabled gate`,
+  );
+}
 for (const plugin of ["cage", "sage", "iage"]) {
   checked(
     Object.hasOwn(ageProperties, plugin) === enabledPlugins.includes(plugin),
@@ -100,6 +110,8 @@ checked(summaryResponse.status === 200, "v2 summary status");
 const summary = await summaryResponse.json();
 checked(Array.isArray(summary.sgvs) && summary.sgvs.length === 0, "empty summary SGVs");
 checked(summary.profile && Object.keys(summary.profile).length === 0, "empty summary profile");
+checked(summary.state?.iob === null, "disabled IOB remains null in summary");
+checked(summary.state?.cob === null, "disabled COB remains null in summary");
 
 const api3Unauthorized = await request("/api/v3/entries");
 checked(api3Unauthorized.status === 401, "API3 missing JWT");

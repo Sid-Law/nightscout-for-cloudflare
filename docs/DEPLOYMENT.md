@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed evidence candidate: `1c122e5ee83f8f5c2ae99074de08504a36932bba`
-- Runtime source candidate: `1c122e5ee83f8f5c2ae99074de08504a36932bba`
-- Git HEAD used by Wrangler: `1c122e5ee83f8f5c2ae99074de08504a36932bba`
-- Cloudflare Version ID: `1e44640e-740e-4198-a40f-65482c14edd2`
-- Cloudflare ordinal version number: `58`
+- Deployed evidence candidate: `94b64e3e417806ddfa5243834ee8ce7eb9bc2f41`
+- Runtime source candidate: `94b64e3e417806ddfa5243834ee8ce7eb9bc2f41`
+- Git HEAD used by Wrangler: `94b64e3e417806ddfa5243834ee8ce7eb9bc2f41`
+- Cloudflare Version ID: `1ed7fda2-c6bc-4137-9f53-25fcc16d8f40`
+- Cloudflare ordinal version number: `59`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T05:06:36.025042Z`
-- Activation: deployment `7188db9f-f59f-4454-8139-924788d39412` created
-  `2026-07-20T05:06:36.832892Z`; Wrangler reports
+- Version creation time: `2026-07-20T05:56:09.343832Z`
+- Activation: deployment `dc4797d9-63ca-4039-904e-74b5808fd88f` created
+  `2026-07-20T05:56:10.151935Z`; Wrangler reports
   this version at 100%
-- Worker startup: 27 ms
-- Deployment ID: `7188db9f-f59f-4454-8139-924788d39412`
+- Worker startup: 31 ms
+- Deployment ID: `dc4797d9-63ca-4039-904e-74b5808fd88f`
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -31,7 +31,7 @@ is not counted as API, plugin or real-time compatibility.
   authority columns
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 1048.60 KiB raw / 191.93 KiB gzip
+- Upload: 1070.53 KiB raw / 196.22 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -62,26 +62,30 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
 
-The current deployed increment adds the CAGE, SAGE, IAGE and timeago adapters
-without rewriting Nightscout formulas:
+The current deployed increment adds official IOB, COB and Treatment-to-curve
+behavior without rewriting Nightscout formulas:
 
-- CAGE, SAGE and IAGE select the latest non-future Site Change, Sensor
-  Start/Change or Insulin Change, preserve the official duration/pill/notes,
-  threshold and notification-request shapes, and remain opt-in through
-  `ENABLE`;
-- the Durable Object supplies at most one latest row for each of the six
-  official age-event types in a 62-day window rather than materializing all
-  Treatments;
-- timeago preserves the official current/future suppression, display
-  boundaries and warning/urgent requests in request-local state; the unchanged
-  official client remains authoritative in the browser, while persisted
-  notification scheduling is still missing;
-- the exact upstream `CAGE_*`, `SAGE_*`, `IAGE_*`, `TIMEAGO_ENABLE_ALERTS` and
-  `ALARM_TIMEAGO_*` settings are normalized by the platform context;
-- all 17 named cases across the four age/timeago files pass Workers-runtime
-  contracts, and those files plus `dataloader.test.js` and `dbsize.test.js`
-  pass unchanged upstream as a reusable six-file 29/29 gate;
-- the previous dataloader/database-size adapter remains deployed.
+- IOB preserves OpenAPS, Loop and pump/MM Connect extraction and precedence,
+  the 30-minute recency and five-minute future tolerance, Treatment fallback,
+  DIA-scaled decay/activity, rounding, display and assistant responses;
+- COB preserves OpenAPS/Loop extraction, Treatment fallback, carb absorption,
+  its official IOB-activity interaction, freshness, display and assistant
+  responses;
+- both properties remain opt-in through the locked `ENABLE` set and now feed
+  API v2 Summary state when enabled; when disabled the Summary keeps `null`;
+- the Durable Object supplies the current Profile, the official 2.5-day
+  ordinary-Treatment window, the latest zero-duration Profile Switch within one
+  year and the existing latest age events within 62 days. Ordinary Treatments
+  are capped at the newest 1,000 under the existing 900-KB/8,000-node/2,000-
+  document budget and restored to ascending runtime order;
+- API v2 ddata applies the locked Treatment marker placement between
+  surrounding SGVs, including explicit mg/dL/mmol caps and raw-BG fallback;
+- all 24 named IOB/COB/treatment-curve cases plus two DO/HTTP integration cases
+  pass in the Workers suite. Those three upstream files plus dataloader,
+  dbsize, CAGE, SAGE, IAGE and timeago pass unchanged as a reusable nine-file
+  53/53 gate;
+- no dose recommendation or downstream medical calculation was added. The
+  prior age/timeago and dataloader/database-size adapters remain deployed.
 
 - `ctx.storage.sql.databaseSize` supplies the real SQLite file total to v2
   ddata and the property projection; it maps to upstream `dataSize` with
@@ -230,10 +234,10 @@ The immediately preceding v2 increment remains deployed and includes:
 - official `bgnow`, `delta`, `buckets` and `direction` calculations from the
   immediately preceding release remain deployed;
 - `/api/v2/summary/` with locked hour filtering, SGV/noise, carb/insulin,
-  temporary-target, temp-basal schedule and current-profile mapping. It does
-  not fabricate server-plugin values: IOB/COB/BWP are `null`, and the
-  summary age/battery properties are absent until those official plugins feed
-  the summary mapper;
+  temporary-target, temp-basal schedule and current-profile mapping. The
+  current release additionally feeds enabled request-local registry values,
+  including IOB/COB, into the mapper. Disabled IOB/COB and unimplemented BWP
+  remain `null`; unsupported properties are not fabricated;
 
 The immediately preceding v1 increment remains deployed and includes:
 
@@ -375,20 +379,12 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed evidence candidate is
-`1c122e5ee83f8f5c2ae99074de08504a36932bba`. It adds the request-local
-CAGE/SAGE/IAGE/timeago adapters, routes bounded latest age events through the
-static plugin registry, and retains the dataloader/database-size adapter and
-real SQLite bytes through ddata. It also retains the
-unchanged official-client pluginbase gate while retaining the Wrangler
-variable-preservation audit, complete five-case Sandbox module mapping and
-remaining public helper surface, the
-13-case Settings module, five-case Loop plugin, 13-case concurrent uploader and
-24-assertion Profile calculation mappings, as well as
-GAP-TREAT-012, Loop carb/dose, ObjectIdCache, SGV/DeviceStatus,
-UUID-handling, issue-6923, identity-matrix, legacy uploader/DeviceStatus work,
-schema-v12 root-write
-authority and all prior property, v1, API3, authorization, realtime,
-notification ACK and official-page work.
+`94b64e3e417806ddfa5243834ee8ce7eb9bc2f41`. It adds the request-local
+official IOB/COB formulas, bounded Treatment/Profile property context,
+IOB/COB Summary state and ddata Treatment marker placement while retaining all
+prior registry, age/timeago, dataloader/database-size, Sandbox, Settings, Loop,
+Profile, uploader, identity, root-write/delta, v1, API3, authorization,
+realtime, notification-ACK and official-page work.
 The table below records the exact local gate completed before deployment.
 
 | Check | Result |
@@ -399,29 +395,30 @@ The table below records the exact local gate completed before deployment.
 | Upstream route/test audit | 161 registrations and 111 test files; generated outputs deterministic |
 | Audit tool tests | 14/14 passed |
 | Direct upstream client test | complete locked `pluginbase.test.js` passed unchanged after public/upstream bundle byte equality |
-| Direct upstream server-plugin tests | six locked files passed 29/29 unchanged (`dataloader`, `dbsize`, CAGE, SAGE, IAGE and timeago) |
+| Direct upstream server/data-plugin tests | nine locked files passed 53/53 unchanged (`dataloader`, `dbsize`, CAGE, SAGE, IAGE, timeago, treatment-to-curve, IOB and COB) |
 | Authorization audit tests | 6/6 passed |
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 49 files, 551/551 passed |
-| Worker dry run | 1048.60 KiB raw / 191.93 KiB gzip |
+| Workers integration tests | 50 files, 577/577 passed |
+| Worker dry run | 1070.53 KiB raw / 196.22 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | Secret inventory empty; no credential was read, supplied, generated or replaced |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 551 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 577 Workers
 tests cover the implemented adapter subset; `pluginbase.test.js` additionally
-runs unchanged against the shipped official client bundle, while six
-server-plugin files run unchanged in a separate 29/29 gate. All 16 API3 files,
+runs unchanged against the shipped official client bundle, while nine
+server/data-plugin files run unchanged in a separate 53/53 gate. All 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
 `dataloader.test.js`, `dbsize.test.js`, `cannulaage.test.js`,
 `sensorage.test.js`, `insulinage.test.js`, `timeago.test.js`,
+`iob.test.js`, `cob.test.js`, `data.treatmenttocurve.test.js`,
 `websocket.shape-handling.test.js`, `profile.test.js`,
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js` and 25 v1 client/API files are classified
-as fully `adapted`; one is `pass`, 44 remain unresolved and two bridge files
+as fully `adapted`; one is `pass`, 41 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -430,7 +427,7 @@ real-browser gates below against the same active version.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `1e44640e-740e-4198-a40f-65482c14edd2` at 100%.
+Wrangler reports version `1ed7fda2-c6bc-4137-9f53-25fcc16d8f40` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -442,15 +439,16 @@ not only Wrangler command success.
 | GET `/api/v1/status.json` and `/api/v2/status.json` | HTTP 200 with byte-equivalent filtered Settings snapshots: 63 JSON-visible keys, 14 enabled defaults, official title/plugin values and no secure fields or method functions |
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
-| GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and the locked null plugin-state fields |
+| GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and locked `null` IOB/COB fields because both plugins are disabled |
 | GET `/api/v2/ddata/at` | HTTP 200 with real SQLite `dataSize:225280` bytes and `indexSize:0`; the total is not double-counted |
 | GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.21`, `display:"0%"` and `status:"current"` |
 | GET `/api/v2/properties/loop` | HTTP 200 with `{}` because Loop is opt-in and the deployed `ENABLE` setting does not enable it; no synthetic property was fabricated |
+| GET `/api/v2/properties/iob,cob` | HTTP 200; property presence exactly follows the deployed opt-in `ENABLE` set and both are absent by default |
 | GET `/api/v2/properties/cage,sage,iage,timeago` | HTTP 200; CAGE/SAGE/IAGE presence follows the deployed opt-in `ENABLE` set and all are absent by default, while timeago remains a client/notification plugin rather than a fabricated property |
 | POST simulated Treatment without a configured secret | Expected HTTP 503 `api_secret_not_configured`; follow-up GET remained empty |
 
 The reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784524053534` and passed 57 behavior/CORS assertions.
+`public-smoke-1784527040684` and passed 63 behavior/CORS assertions.
 The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
 `pingTimeout:20000`.
 
@@ -473,8 +471,8 @@ version is retained only as incident evidence and is not a rollback target.
 
 ## Post-deployment real-time evidence
 
-This release adds request-local CAGE/SAGE/IAGE/timeago adapters and retains the
-dataloader/database-size adapter, static plugin registry,
+This release adds request-local IOB/COB and Treatment-to-curve adapters and
+retains CAGE/SAGE/IAGE/timeago, the dataloader/database-size adapter, static plugin registry,
 deployment-variable preservation/configuration audit, complete request-local
 Sandbox contract, Settings, Loop property
 calculation, concurrent uploader, Profile, Loop client and client/server root
@@ -495,6 +493,7 @@ remain evidence from the immediately preceding compatible version.
 | Local Sandbox contract | five locked client/server/LOW-HIGH/message cases plus helper-surface and request-isolation coverage |
 | Local Settings contract | 13 locked defaults/accessor/feature/alarm/threshold/snooze cases plus request isolation and recursive secure filtering |
 | Local Loop property contract | five locked enacted/error/received/stale-alert/assistant cases, including six forecast points and opt-in property dispatch |
+| Local IOB/COB/treatment-curve contract | all 24 named upstream cases plus two DO/HTTP integrations: official source precedence/fallback/formulas/display, bounded Profile/Treatment inputs, ddata markers and enabled Summary state |
 | Local age/timeago contract | all 17 locked CAGE/SAGE/IAGE/timeago cases, including event selection, display boundaries, notes, alert thresholds, request shapes, enable gates and environment normalization |
 | Prior-version anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
 | Prior-version read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
@@ -526,7 +525,7 @@ generation pipeline.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 58's official UI without reading
+A real Chromium session exercised Cloudflare version 59's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region, loaded locked
@@ -542,10 +541,8 @@ credential storage or submitting protected mutations:
 - the official Settings form opened and then closed; zero visible forms remained
   immediately and after three seconds, directly rechecking the reported
   pop-back symptom without saving or changing settings;
-- console inspection found zero JavaScript errors. Per-page listeners recorded
-  zero application-request failures; two root-document `ERR_ABORTED` entries in
-  an earlier accumulated trace were caused by tool-driven navigation/reload and
-  are not presented as Worker failures. The homepage and clock had
+- fresh per-page listeners recorded zero JavaScript errors, failed requests and
+  HTTP error responses. The homepage and clock had
   no warnings. Admin, Food and Profile repeatedly emitted the locked
   `bundle.app.js` warning `Unable to find element for #chartContainer` because
   those official non-chart pages have no chart container. This nonfatal warning
@@ -553,8 +550,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`1e44640e-740e-4198-a40f-65482c14edd2`. It reused the same 248 unchanged
-official assets. Version 58 has therefore passed credential-free remote API,
+`1ed7fda2-c6bc-4137-9f53-25fcc16d8f40`. It reused the same 248 unchanged
+official assets. Version 59 has therefore passed credential-free remote API,
 Engine.IO and real-browser acceptance.
 
 Authenticated Profile Save remains historical evidence from an earlier
@@ -572,10 +569,11 @@ mutation, report generation or every other protected page workflow.
   uploader, pump or closed-loop client.
 - API v1 and v2 remain subsets. Their inherited notification ACK, ddata helper,
   `bgnow`/`direction`/`rawbg`/`upbat` properties and core summary mapper are
-  adapted. CAGE/SAGE/IAGE properties and timeago's request-local calculation
-  are also adapted, but persisted evaluation/delivery, remaining plugin-derived
-  properties and summary
-  state/persistence, v2 notification-loop and other routes remain incomplete. API v3
+  adapted. CAGE/SAGE/IAGE, IOB/COB and timeago's request-local calculation are
+  also adapted; ddata includes official Treatment marker placement and Summary
+  receives enabled IOB/COB state. Persisted evaluation/delivery, BWP and
+  remaining plugin-derived state/persistence, v2 notification-loop and other
+  routes remain incomplete. API v3
   routes all six official generic collections and all 16 locked upstream API3
   test files have named Workers-runtime adaptations. Broad large-response
   resource handling and Mongo mixed-type/nested/array semantics remain
@@ -620,7 +618,7 @@ mutation, report generation or every other protected page workflow.
   handled safely instead of reproducing the locked upstream unhandled
   rejection.
 - Server plugin jobs, notification generation/processing, remaining
-  plugin-derived properties and summary state/persistence
+  plugin-derived properties and BWP/other summary state/persistence
   and the general alarm-driven background scheduler remain incomplete. Alarm
   ACK/silence state itself is persisted in schema v10 and must be consumed by
   that future notification engine. The existing realtime/auth alarm scheduler
@@ -636,12 +634,12 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`3a95a34d-806a-4d2b-9dff-3db1d1051b9a` (version 57). It has its own remote API,
-Engine.IO and browser acceptance and lacks only this release's age/timeago
-adapter increment. Version 56 (`ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba`)
-lacks the dataloader/database-size adapter as well. Version 55
-(`5d4e9153-99c2-483c-8f8f-b91c498ecfcb`) remains an older compatible fallback
-without the static plugin registry/direct-client gate.
+`1e44640e-740e-4198-a40f-65482c14edd2` (version 58). It has its own remote API,
+Engine.IO and browser acceptance and lacks only this release's IOB/COB/
+treatment-curve increment. Version 57
+(`3a95a34d-806a-4d2b-9dff-3db1d1051b9a`) lacks the age/timeago increment as
+well. Version 56 (`ea57c96b-6c3f-4cc3-bfd7-e212db8f69ba`) lacks the
+dataloader/database-size adapter.
 The older
 failed property rollout
 `e24bfdec-233c-4dab-a462-142337b14118` remains an incident record and must not

@@ -161,13 +161,13 @@ for diagnosis, dosing, or medical decisions.
   pill, six-point forecast, failure/received flag, stale-status level and
   virtual-assistant calculations. Its notification request is adapted, while
   the general persisted server-plugin notification runner remains incomplete.
-  Property reads use a bounded SGV/calibration/device-status
+  Property reads use the bounded SGV/calibration/device-status/Treatment/Profile
   DO projection, with an exact rolling-deploy fallback for an older live DO
-  isolate. `/api/v2/summary/` ports the locked SGV, treatment,
-  temporary-target, temp-basal and current-profile mapping without inventing
-  plugin values; until the official server plugin engine is present, its
-  IOB/COB/BWP state serializes as `null` and summary age/battery fields are
-  absent.
+  isolate. Official opt-in IOB/COB calculations now execute through the same
+  dispatcher. `/api/v2/summary/` ports the locked SGV, treatment,
+  temporary-target, temp-basal and current-profile mapping and receives enabled
+  registry properties; IOB/COB remain `null` when disabled. BWP and other
+  unported plugin state are not invented.
 - A tenant-local Durable Object alarm derived from persisted realtime
   deadlines and authorization-delay cleanup. It survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
@@ -448,40 +448,51 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js`,
 `data.calcdelta.test.js`, `dataloader.test.js`, `dbsize.test.js`,
 `cannulaage.test.js`, `sensorage.test.js`, `insulinage.test.js`,
-`timeago.test.js`,
+`timeago.test.js`, `iob.test.js`, `cob.test.js` and
+`data.treatmenttocurve.test.js`,
 `websocket.shape-handling.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
 `settings.test.js`, `sandbox.test.js`, `plugins.test.js` and 25 v1 client/API
 files are classified as fully `adapted`. The complete locked
 `pluginbase.test.js` file runs unchanged against the byte-identical official
 client bundle and is classified as `pass`.
-The latest four plugin additions are `cannulaage.test.js`,
-`sensorage.test.js`, `insulinage.test.js` and `timeago.test.js`. The preceding
-four v1 additions are `gap-treat-012.test.js`,
+The latest three complete upstream additions are `iob.test.js`,
+`cob.test.js` and `data.treatmenttocurve.test.js`. The preceding four
+plugin additions are `cannulaage.test.js`, `sensorage.test.js`,
+`insulinage.test.js` and `timeago.test.js`. The preceding four v1 additions
+are `gap-treat-012.test.js`,
 `carb-dose-upload.test.js`, `objectid-cache.test.js` and
 `sgv-devicestatus.test.js`; the preceding three are `uuid-handling.test.js`,
 `issue-6923-legacy-uuid.test.js` and `identity-matrix.test.js`.
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 44 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 41 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed evidence candidate is commit
-`1c122e5ee83f8f5c2ae99074de08504a36932bba`. The 49-file Workers-runtime
-suite passes 551/551 tests, the three audit suites pass 21/21, the complete
-official `pluginbase.test.js` client file passes unchanged, and six locked
-server-plugin files pass 29/29 unchanged. Wrangler dry-run reads the same 248
-official assets, reports 1048.60 KiB raw / 191.93 KiB gzip and exposes only
+`94b64e3e417806ddfa5243834ee8ce7eb9bc2f41`. The 50-file Workers-runtime
+suite passes 577/577 tests, the three audit suites pass 21/21, the complete
+official `pluginbase.test.js` client file passes unchanged, and nine locked
+server/data-plugin files pass 53/53 unchanged. Wrangler dry-run reads the same
+248 official assets, reports 1070.53 KiB raw / 196.22 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
-This runtime adds the request-local age/timeago adapters to the existing static
-plugin registry and routes opt-in CAGE, SAGE and IAGE properties through its
-locked order, enable and error gates. The Durable Object supplies only the
-latest bounded age-event rows needed by those calculations rather than
-materializing the Treatment collection. Timeago's pure calculation is ready
-for, but is not yet driven by, the persisted notification scheduler. The v2
-ddata snapshot continues to publish the Durable Object's real SQLite file
-size, and the unchanged official `dbsize` calculation consumes it without
+This runtime adds request-local ports of the locked official IOB and COB
+formulas and routes their opt-in properties through the existing static
+registry. They retain OpenAPS, Loop and pump DeviceStatus precedence, Treatment
+fallback, Profile/DIA/sensitivity/carb-ratio inputs, official recency and
+rounding behavior, and now feed enabled IOB/COB into API v2 Summary. The
+Durable Object projects the official 2.5-day ordinary-Treatment window, the
+latest zero-duration Profile Switch from one year, the latest current Profile
+and the existing 62-day age events; ordinary Treatments are capped at the
+newest 1,000 under the existing Workers Free response budget. API v2 ddata now
+also applies the locked treatment-to-glucose-curve marker placement, including
+explicit units and raw-BG fallback. These are official calculations and display
+placement only; NSCF adds no dose recommendation.
+The prior age/timeago and database-size adapters remain: Timeago's pure
+calculation is ready for, but is not yet driven by, the persisted notification
+scheduler, while ddata continues to publish the Durable Object's real SQLite
+file size and the official `dbsize` calculation consumes it without
 double-counting indexes. Its platform maximum defaults to the documented
 Workers Free one-GB per-object ceiling expressed as 953.67 MiB; the official
 [`databaseSize` API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)
@@ -497,8 +508,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 44 unresolved plugin/test
-algorithms. The manifest records one direct pass, 64 adapted, 44 unresolved
+Node plugin `require` without fabricating the 41 unresolved plugin/test
+algorithms. The manifest records one direct pass, 67 adapted, 41 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -507,8 +518,9 @@ D1/R2/KV/Queues/routes while locking the existing footprint.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
-notification/plugin engine, including realtime profile-switch preprocessing and
-plugin-derived summary state, remain missing. No deployed
+notification/plugin engine, including realtime profile-switch preprocessing,
+remaining BWP/plugin-derived summary fields and their persistence, remain
+missing. No deployed
 credential was read or supplied to remote smoke requests, and no credential
 value is stored or quoted in this repository.
 Entries migration remains intentionally
@@ -538,17 +550,17 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `1e44640e-740e-4198-a40f-65482c14edd2` was made current by
-deployment `7188db9f-f59f-4454-8139-924788d39412` at
-`2026-07-20T05:06:36.832892Z`, with a reported 27 ms startup. No asset bytes
+Cloudflare version `1ed7fda2-c6bc-4137-9f53-25fcc16d8f40` was made current by
+deployment `dc4797d9-63ca-4039-904e-74b5808fd88f` at
+`2026-07-20T05:56:10.151935Z`, with a reported 31 ms startup. No asset bytes
 needed uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
 version, matching v1/v2 Settings snapshots, real ddata/database-size values,
-the default-enabled `dbsize` property, opt-in-disabled Loop and age properties,
-and EIO4
-polling; missing-token API3 Entries returned the expected 401. The 57-assertion
-script observed 225,280 SQLite bytes and a
+the default-enabled `dbsize` property, opt-in-disabled Loop, IOB/COB and age
+properties, null disabled IOB/COB Summary state, and EIO4 polling;
+missing-token API3 Entries returned the expected 401. The 63-assertion script
+observed 225,280 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -568,7 +580,7 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real Chromium run reloaded Cloudflare version 58 and rendered the official
+A real Chromium run reloaded Cloudflare version 59 and rendered the official
 homepage with its chart region and locked `bundle.app.js`. The official Admin
 Tools, Food Editor, Profile Editor and `clock-color` page also loaded with their
 official controls. The Food Editor reached `Database loaded` and the Profile
@@ -586,7 +598,7 @@ Save was attempted. The session was closed after the pass.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 58 has therefore passed its credential-free remote API, Engine.IO and
+Version 59 has therefore passed its credential-free remote API, Engine.IO and
 real-browser acceptance gates.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes

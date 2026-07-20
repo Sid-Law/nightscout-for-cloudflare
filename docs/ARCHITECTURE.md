@@ -7,15 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`1c122e5ee83f8f5c2ae99074de08504a36932bba` and Cloudflare version
-`1e44640e-740e-4198-a40f-65482c14edd2`, reported as 100% active. The
-candidate's 49-file Workers-runtime suite passes 551/551 plus 21/21 audit tests,
-one unchanged direct upstream client test and 29/29 unchanged tests across six
-locked upstream server-plugin files.
+`94b64e3e417806ddfa5243834ee8ce7eb9bc2f41` and Cloudflare version
+`1ed7fda2-c6bc-4137-9f53-25fcc16d8f40`, reported as 100% active. The
+candidate's 50-file Workers-runtime suite passes 577/577 plus 21/21 audit tests,
+one unchanged direct upstream client test and 53/53 unchanged tests across nine
+locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1048.60 KiB raw / 191.93 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 58
-reported a 27 ms startup and passed credential-free API, EIO4 and real-browser
+asset entries; its dry run reported 1070.53 KiB raw / 196.22 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 59
+reported a 31 ms startup and passed credential-free API, EIO4 and real-browser
 gates.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -27,17 +27,19 @@ current runtime retains `src/plugins/registry.ts`, a request-local static replac
 Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
-implemented v2 property plugins execute through this registry. Version 58 adds
-`src/plugins/age.ts` and `src/plugins/timeago.ts`: CAGE, SAGE and IAGE now use
-bounded latest-event inputs, while timeago remains request-local until a
-persisted notification runner exists. It retains `src/data-loader.ts` and
+implemented v2 property plugins execute through this registry. Version 59 adds
+`src/plugins/iob.ts`, `src/plugins/cob.ts` and
+`src/data/treatment-to-curve.ts`: IOB/COB now use official request-local
+formulas and bounded Treatment/Profile inputs, while API v2 ddata applies the
+official treatment-marker curve placement. It retains the age/timeago,
+`src/data-loader.ts` and
 `src/plugins/dbsize.ts`, so real SQLite file bytes flow through ddata and the
 official database-size calculation. The
 official client `pluginbase.test.js` runs unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 49 Workers files / 551 tests, 21/21 audits, one direct upstream
-client file and six direct upstream server-plugin files / 29 tests; the dry run
-is 1048.60 KiB raw / 191.93 KiB gzip with the same 248 assets and two bindings.
+evidence is 50 Workers files / 577 tests, 21/21 audits, one direct upstream
+client file and nine direct upstream server/data-plugin files / 53 tests; the
+dry run is 1070.53 KiB raw / 196.22 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -133,7 +135,8 @@ process-global `ctx.ddata`. `src/realtime/ddata-snapshot.ts` represents the
 locked ddata singleton's empty buckets, clone, runtime normalization and
 prefer-new merge operations as pure functions; tenant state remains inside the
 SQLite Durable Object. `src/plugins/bgnow.ts`, `direction.ts`, `rawbg.ts`,
-`upbat.ts`, `loop.ts`, `dbsize.ts`, `age.ts` and `timeago.ts`, supported by request-safe
+`upbat.ts`, `loop.ts`, `iob.ts`, `cob.ts`, `dbsize.ts`, `age.ts` and
+`timeago.ts`, supported by request-safe
 `runtime/{times,units,levels}.ts`, are
 ports of their locked property modules. They build the same
 four five-minute buckets around the last non-future SGV, preserve the
@@ -147,20 +150,31 @@ non-future official Site Change, Sensor Start/Change and Insulin Change events,
 then preserves the locked CAGE/SAGE/IAGE duration, display, notes, severity and
 notification-request calculations. Timeago preserves the locked freshness
 display and warning/urgent requests without process-global hibernation state.
+IOB preserves the locked OpenAPS/Loop/pump extraction and precedence,
+30-minute recency, Treatment fallback, DIA-scaled decay/activity, rounding,
+display and assistant behavior. COB preserves OpenAPS/Loop extraction, the
+official carb-absorption calculation, IOB-activity interaction, freshness,
+display and assistant behavior. Both describe already-recorded state; neither
+recommends a dose.
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
 opt-in; `loop` is likewise exposed only when configured in `ENABLE`, while
-`dbsize` remains enabled by the locked default feature set. CAGE, SAGE and IAGE
-remain opt-in exactly as upstream; timeago is a client/notification plugin and
-is not fabricated as a v2 property.
+`dbsize` remains enabled by the locked default feature set. IOB, COB, CAGE,
+SAGE and IAGE remain opt-in exactly as upstream; timeago is a
+client/notification plugin and is not fabricated as a v2 property.
 `/api/v2/properties` applies those values plus the upstream comma
 picker and truthy `pretty` serialization.
 
 Property polling uses `getPluginPropertyContextJson()`, a bounded DO projection
 of at most 64 SGVs, the newest calibration, recent device status, one small
-database-stat object and at most one latest row for each of six age-event types
-within 62 days. It avoids materializing unrelated food, treatment and profile
-collections. Cloudflare
+database-stat object, the latest current Profile, at most one latest row for
+each of six age-event types within 62 days, the newest zero-duration Profile
+Switch within the upstream one-year window and ordinary Treatments inside the
+upstream 2.5-day window. The ordinary set is selected newest-first with a
+1,000-row cap, then restored to ascending runtime order. All fields share the
+existing 900,000-byte, 8,000-node and 2,000-document transport budget. This
+avoids materializing long-range Treatment history or unrelated food while
+preserving the normal IOB/COB inputs. Cloudflare
 can route a newly deployed Worker to an older still-live DO isolate during a
 rolling release. The first plugin deployment exposed this when the old isolate
 did not implement the new RPC. `loadPluginPropertyContext()` catches only that
@@ -213,13 +227,20 @@ server order. This supplies the registry layer only: descriptors for unported
 plugins do not fabricate their calculations, notifications or background
 work.
 
+`src/data/treatment-to-curve.ts` is a request-local port of
+`lib/data/treatmenttocurve.js`. After ddata is loaded it mutates only the
+official Treatment display fields, placing markers between surrounding SGVs,
+respecting explicit mg/dL/mmol values and caps, and using the existing locked
+raw-BG calculation when enabled. It does not calculate insulin or advice.
+
 `src/api2/summary.ts` is a direct stateless port
 of the locked SGV/treatment/profile and basal-data processors. It receives one
 bounded snapshot and a request clock, so it neither shares request state nor
-creates timers. Unadapted server-plugin properties are intentionally not
-synthesized: IOB/COB/BWP become JSON `null` and summary age/battery fields are
-omitted until the remaining official registry and tenant execution context are
-available.
+creates timers. The route now calculates the same enabled request-local
+registry properties and supplies official IOB/COB values to Summary state.
+When those plugins are disabled, IOB/COB remain JSON `null`, matching the
+locked mapper. BWP and remaining plugin-derived/persisted state are
+intentionally not synthesized.
 
 Separately, exact `/socket.io` and `/socket.io/` requests can now reach real
 tenant-local Engine.IO 4 polling and direct-WebSocket endpoints. Polling
@@ -974,11 +995,12 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`1e44640e-740e-4198-a40f-65482c14edd2`. Current credential-free remote smoke
+`1ed7fda2-c6bc-4137-9f53-25fcc16d8f40`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
-version, real ddata/database-size values, the opt-in-disabled Loop/CAGE/SAGE/IAGE
-property gates, absence of property-only timeago and an EIO4 polling open packet;
+version, real ddata/database-size values, the opt-in-disabled
+Loop/IOB/COB/CAGE/SAGE/IAGE property gates, null disabled IOB/COB Summary
+state, absence of property-only timeago and an EIO4 polling open packet;
 API3 Entries without a token returned the
 expected 401. The current public Worker has no `API_SECRET` Secret binding, so
 a simulated Treatment POST returned the expected 503
@@ -1024,13 +1046,14 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat`/`loop` adapters, together with the deployed
-request-local Sandbox, are reusable server calculation/property
-slices now dispatched by the registry rather than a background plugin engine.
-They do not calculate insulin
-recommendations, IOB or COB. Future summary state
-must come from the locked plugin modules through the persisted scheduler above;
-platform code must not fill those fields with downstream formulas.
+`bgnow`/`direction`/`rawbg`/`upbat`/`loop`/`iob`/`cob` adapters,
+together with the request-local Sandbox, are reusable server
+calculation/property slices dispatched by the registry rather than a background
+plugin engine. IOB/COB use the locked official formulas and can populate
+request-time Summary state when enabled; they do not recommend insulin.
+Remaining BWP/plugin state and persisted notification outputs must come from
+locked upstream modules through the future scheduler rather than downstream
+formulas.
 
 ## Why no D1 or R2
 
