@@ -278,11 +278,18 @@ describe("Nightscout compatibility API", () => {
     const staleProperties = await (
       await SELF.fetch(`https://example.test/api/v2/properties?tenant=${staleName}`)
     ).json<Record<string, any>>();
-    expect(staleProperties).toEqual({
+    expect(staleProperties).toMatchObject({
       bgnow: { sgvs: [] },
       delta: null,
       upbat: { display: "?%", devices: {} },
+      dbsize: {
+        display: "0%",
+        status: "current",
+        notificationLevel: 0,
+        details: { maxSize: 953.67 },
+      },
     });
+    expect(staleProperties.dbsize.totalDataSize).toBeGreaterThan(0);
   });
 
   it("persists food editor records through create, update, filtering and delete", async () => {

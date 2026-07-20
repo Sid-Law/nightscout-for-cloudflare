@@ -12,7 +12,7 @@ export interface RealtimeDdataInput {
   food: RealtimeDocument[];
   treatments: RealtimeDocument[];
   devicestatus: RealtimeDocument[];
-  dbstats?: Record<string, never>;
+  dbstats?: Record<string, unknown>;
 }
 
 /**

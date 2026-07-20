@@ -3,6 +3,7 @@ import { SELF } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import {
+  CLOUDFLARE_FREE_SQLITE_DO_MAX_MIB,
   nightscoutStatus,
   nightscoutWebsocketStatus,
   normalizeConfiguredDisplayUnits,
@@ -360,6 +361,36 @@ describe("tenant status configuration sources", () => {
       bgLow: 55,
     });
     expect(settingsOf(empty).alarmTypes).toEqual(["predict"]);
+  });
+
+  it("maps the Workers Free SQLite quota and upstream DBSIZE settings", () => {
+    const defaults = tenantStatusSettings({});
+    expect(defaults.extendedSettings).toEqual({
+      dbsize: { max: CLOUDFLARE_FREE_SQLITE_DO_MAX_MIB },
+    });
+
+    const configured = tenantStatusSettings({
+      DBSIZE_MAX: "800",
+      DBSIZE_WARN_PERCENTAGE: "55",
+      DBSIZE_URGENT_PERCENTAGE: "70",
+      DBSIZE_ENABLE_ALERTS: "true",
+      DBSIZE_IN_MIB: "off",
+    });
+    expect(configured.extendedSettings).toEqual({
+      dbsize: {
+        max: 800,
+        warnPercentage: 55,
+        urgentPercentage: 70,
+        enableAlerts: true,
+        inMib: false,
+      },
+    });
+    expect(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      configured,
+    ).extendedSettings).toEqual(configured.extendedSettings);
   });
 });
 

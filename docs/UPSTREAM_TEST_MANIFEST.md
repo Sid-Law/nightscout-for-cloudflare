@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 1, adapted: 58, excluded-fixed-scope: 2, unresolved: 50
-- Input fingerprint: `c2d9183966e34a32c7717cceefe1eed4eac3e15b13417b1f4f5c4ba8e04a1173`
+- Statuses: pass: 1, adapted: 60, excluded-fixed-scope: 2, unresolved: 48
+- Input fingerprint: `0439dd262e772a760b01609802d7846e3b676329e0189529d71b56b9ad1e6cff`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -22,7 +22,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 1-storage-foundation | none | 15 | 7 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 5 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
-| 4-plugins-and-calculations | 1-storage-foundation | 40 | 24 | 0 |
+| 4-plugins-and-calculations | 1-storage-foundation | 40 | 22 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 8 | 2 |
@@ -108,8 +108,8 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/cob.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/data.calcdelta.test.js` | adapted | 0 | Represented by the complete named Workers-runtime contract in test/realtime-calcdelta-contract.test.ts: unchanged state returns the original frame, new/changed SGVs produce one-item deltas, treatment/MBG/calibration changes are detected without an SGV change, and profile replacement is included. The production root namespace persists its previous bounded ddata frame in DO SQLite and applies this adapter for authorized polling and direct-WebSocket receivers across isolate reconstruction. |
 | `vendor/nightscout/tests/data.treatmenttocurve.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/dataloader.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/dbsize.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/dataloader.test.js` | adapted | 0 | Represented by the complete named Workers-runtime case plus SQLite integration cases in test/data-loader-contract.test.ts: Promise-based stats are awaited before completion, dataSize/indexSize are copied exactly, rejected stats complete safely, and the live v2 ddata snapshot publishes the tenant Durable Object's actual ctx.storage.sql.databaseSize. Because Cloudflare exposes one SQLite file total rather than MongoDB's separate logical data/index sizes, the adapter places that total in dataSize and zero in indexSize so the locked dbsize sum does not double-count it. |
+| `vendor/nightscout/tests/dbsize.test.js` | adapted | 0 | Represented by all 11 named Workers-runtime cases in test/dbsize-plugin-contract.test.ts and wired into the default-enabled /api/v2/properties dispatcher: exact current/warn/urgent percentages, configurable thresholds, MiB display, hidden empty state, warning/urgent notification text and levels, pill payload, and virtual-assistant response. The production property consumes the real SQLite Durable Object byte count supplied by the dataloader adapter; the broader persisted notification/background runner and environment-wide extended-settings importer remain separate compatibility work. |
 | `vendor/nightscout/tests/ddata.test.js` | adapted | 0 | Represented by the named Workers-runtime contract in test/api-v2-data-contract.test.ts: creation and deep clone of every locked data bucket, created_at-to-mills normalization, durationInMilliseconds-to-rounded-duration and exact endmills derivation, source immutability, and prefer-new identifier collision merging. The production snapshot adapter additionally covers recent device-status windows and public-profile filtering. |
 | `vendor/nightscout/tests/direction.test.js` | adapted | 0 | Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: current Flat/DoubleUp offers, every locked direction character/entity mapping, and the exact direct-HTML pill label. |
 | `vendor/nightscout/tests/errorcodes.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |

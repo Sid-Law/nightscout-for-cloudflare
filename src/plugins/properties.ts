@@ -4,6 +4,7 @@ import {
   type NightscoutGlucoseUnits,
 } from "./bgnow";
 import { calculateDirectionProperty } from "./direction";
+import { calculateDatabaseSizeProperty } from "./dbsize";
 import { calculateLoopProperty } from "./loop";
 import { calculateRawBgProperty } from "./rawbg";
 import {
@@ -18,6 +19,7 @@ export interface PluginPropertyContext {
   sgvs: RealtimeDocument[];
   cals: RealtimeDocument[];
   devicestatus: RealtimeDocument[];
+  dbstats?: Record<string, unknown>;
 }
 
 export interface PluginPropertySource {
@@ -31,6 +33,11 @@ function parsePluginPropertyContext(json: string): PluginPropertyContext {
     sgvs: Array.isArray(value.sgvs) ? value.sgvs : [],
     cals: Array.isArray(value.cals) ? value.cals : [],
     devicestatus: Array.isArray(value.devicestatus) ? value.devicestatus : [],
+    dbstats: typeof value.dbstats === "object"
+        && value.dbstats !== null
+        && !Array.isArray(value.dbstats)
+      ? value.dbstats
+      : {},
   };
 }
 
@@ -66,6 +73,7 @@ export function calculatePluginProperties(
   units: NightscoutGlucoseUnits,
   now: number,
   enabled: ReadonlySet<string>,
+  extendedSettings: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   const server: Record<string, Partial<NightscoutPlugin>> = {
@@ -97,14 +105,33 @@ export function calculatePluginProperties(
         properties.loop = calculateLoopProperty(context.devicestatus, now);
       },
     },
+    dbsize: {
+      setProperties: (pluginSandbox) => {
+        const preferences: Record<string, unknown> =
+          typeof pluginSandbox.extendedSettings === "object"
+            && pluginSandbox.extendedSettings !== null
+            && !Array.isArray(pluginSandbox.extendedSettings)
+          ? pluginSandbox.extendedSettings as Record<string, unknown>
+          : {};
+        properties.dbsize = calculateDatabaseSizeProperty(context.dbstats, preferences);
+      },
+    },
   };
   const registry = createNightscoutPluginRegistry(
     { settings: { enable: [...enabled] } },
     createDefaultPluginCatalogs({ server }),
   ).registerServerDefaults();
   const sandbox = {
-    withExtendedSettings(): PluginExecutionSandbox {
-      return sandbox;
+    withExtendedSettings(plugin: NightscoutPlugin): PluginExecutionSandbox {
+      const selected = extendedSettings[plugin.name];
+      return {
+        ...sandbox,
+        extendedSettings: typeof selected === "object"
+            && selected !== null
+            && !Array.isArray(selected)
+          ? selected
+          : {},
+      };
     },
   } satisfies PluginExecutionSandbox;
   registry.setProperties(sandbox);

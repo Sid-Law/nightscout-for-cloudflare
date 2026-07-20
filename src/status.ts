@@ -6,6 +6,7 @@ import {
 
 const MMOL_TO_MGDL = 18.01559;
 const MAX_AUTH_FAIL_DELAY_MS = 60_000;
+export const CLOUDFLARE_FREE_SQLITE_DO_MAX_MIB = 1_000_000_000 / (1024 * 1024);
 
 export type NightscoutDisplayUnits = "mg/dl" | "mmol";
 
@@ -18,6 +19,11 @@ export interface NightscoutStatusEnvironment {
   BG_TARGET_TOP?: string;
   BG_TARGET_BOTTOM?: string;
   BG_LOW?: string;
+  DBSIZE_MAX?: string;
+  DBSIZE_WARN_PERCENTAGE?: string;
+  DBSIZE_URGENT_PERCENTAGE?: string;
+  DBSIZE_ENABLE_ALERTS?: string;
+  DBSIZE_IN_MIB?: string;
 }
 
 function configuredFeatureNames(value: string | undefined): string[] {
@@ -59,6 +65,39 @@ export interface NightscoutStatusSettingsOverrides {
     bgLow: number;
   };
   simpleAlarms?: boolean;
+  /** Request-local client/server plugin settings after platform adaptation. */
+  extendedSettings?: Record<string, unknown>;
+}
+
+function normalizeExtendedSetting(value: string | undefined): unknown {
+  if (value === undefined) return undefined;
+  if (!Number.isNaN(Number(value))) return Number(value);
+  const normalized = value.toLowerCase();
+  if (normalized === "on" || normalized === "true") return true;
+  if (normalized === "off" || normalized === "false") return false;
+  return value;
+}
+
+function platformExtendedSettings(
+  environment: NightscoutStatusEnvironment,
+): Record<string, unknown> {
+  const dbsize: Record<string, unknown> = {
+    // Cloudflare documents a 1 GB per-object ceiling on Workers Free, while
+    // the locked plugin expresses its configured maximum in binary MiB.
+    max: normalizeExtendedSetting(environment.DBSIZE_MAX)
+      ?? CLOUDFLARE_FREE_SQLITE_DO_MAX_MIB,
+  };
+  const configured = [
+    ["warnPercentage", environment.DBSIZE_WARN_PERCENTAGE],
+    ["urgentPercentage", environment.DBSIZE_URGENT_PERCENTAGE],
+    ["enableAlerts", environment.DBSIZE_ENABLE_ALERTS],
+    ["inMib", environment.DBSIZE_IN_MIB],
+  ] as const;
+  for (const [key, raw] of configured) {
+    const value = normalizeExtendedSetting(raw);
+    if (value !== undefined) dbsize[key] = value;
+  }
+  return { dbsize };
 }
 
 /**
@@ -189,6 +228,7 @@ export function tenantStatusSettings(
   const enable = configuredEnable(environment, base.simpleAlarms);
   return {
     ...base,
+    extendedSettings: platformExtendedSettings(environment),
     ...(thresholds === undefined ? {} : { thresholds }),
     ...(enable === undefined ? {} : { enable }),
   };
@@ -232,6 +272,7 @@ export function nightscoutStatus(
 ): Record<string, unknown> {
   const settings = nightscoutSettings(authDefaultRoles, settingsOverrides);
   const enable = settings.enable as string[];
+  const extendedSettings = settingsOverrides.extendedSettings ?? {};
   return {
     status: "ok",
     name: "Nightscout",
@@ -242,7 +283,7 @@ export function nightscoutStatus(
     careportalEnabled: enable.includes("careportal"),
     boluscalcEnabled: enable.includes("boluscalc"),
     settings,
-    extendedSettings: {},
+    extendedSettings,
     authorized,
     runtimeState: "loaded",
   };
@@ -266,7 +307,7 @@ export function nightscoutWebsocketStatus(
     careportalEnabled: httpStatus.careportalEnabled,
     boluscalcEnabled: httpStatus.boluscalcEnabled,
     settings: httpStatus.settings,
-    extendedSettings: {},
+    extendedSettings: httpStatus.extendedSettings,
   };
   if (activeProfile !== undefined && activeProfile !== null) {
     websocketStatus.activeProfile = activeProfile;

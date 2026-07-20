@@ -29,6 +29,7 @@ import {
   type DocumentQuery,
 } from "./document-repository";
 import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
+import { sqliteNightscoutDatabaseStats } from "./data-loader";
 import {
   normalizeLegacyDeviceStatusDocument,
   parseLegacyPredictionsMaxSize,
@@ -175,6 +176,7 @@ interface PluginPropertyContext {
   sgvs: RealtimeDocument[];
   cals: RealtimeDocument[];
   devicestatus: RealtimeDocument[];
+  dbstats: Record<string, unknown>;
 }
 
 type RealtimeWebSocketCloseResult = "inactive" | "closed" | "failed";
@@ -1185,7 +1187,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       mbgs: [],
       food: [],
       treatments: [],
-      dbstats: {},
+      dbstats: sqliteNightscoutDatabaseStats(this.ctx.storage.sql.databaseSize),
     };
 
     // Deterministic truncation priority starts with SGVs so oversized profile
@@ -1338,10 +1340,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
    * Small bounded data view used by /api/v2/properties. The official server
    * derives properties from its in-memory ddata cache; querying the complete
    * snapshot here would also deserialize treatments, profiles, and food on
-   * every property poll. This adapter loads only the three plugin inputs.
+   * every property poll. This adapter loads only the bounded plugin inputs.
    */
   private pluginPropertyContext(now: number): PluginPropertyContext {
-    const context: PluginPropertyContext = { sgvs: [], cals: [], devicestatus: [] };
+    const context: PluginPropertyContext = {
+      sgvs: [],
+      cals: [],
+      devicestatus: [],
+      dbstats: sqliteNightscoutDatabaseStats(this.ctx.storage.sql.databaseSize),
+    };
     let budget = new RealtimeJsonBudget(context);
 
     for (const row of this.ctx.storage.sql.exec<DbDocument>(

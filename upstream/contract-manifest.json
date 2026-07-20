@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "c2d9183966e34a32c7717cceefe1eed4eac3e15b13417b1f4f5c4ba8e04a1173",
+  "inputs_sha256": "0439dd262e772a760b01609802d7846e3b676329e0189529d71b56b9ad1e6cff",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 1,
-      "adapted": 58,
+      "adapted": 60,
       "excluded-fixed-scope": 2,
-      "unresolved": 50
+      "unresolved": 48
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8011,8 +8011,8 @@
     },
     {
       "file": "vendor/nightscout/tests/dataloader.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime case plus SQLite integration cases in test/data-loader-contract.test.ts: Promise-based stats are awaited before completion, dataSize/indexSize are copied exactly, rejected stats complete safely, and the live v2 ddata snapshot publishes the tenant Durable Object's actual ctx.storage.sql.databaseSize. Because Cloudflare exposes one SQLite file total rather than MongoDB's separate logical data/index sizes, the adapter places that total in dataSize and zero in indexSize so the locked dbsize sum does not double-count it.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -8022,8 +8022,8 @@
     },
     {
       "file": "vendor/nightscout/tests/dbsize.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Represented by all 11 named Workers-runtime cases in test/dbsize-plugin-contract.test.ts and wired into the default-enabled /api/v2/properties dispatcher: exact current/warn/urgent percentages, configurable thresholds, MiB display, hidden empty state, warning/urgent notification text and levels, pill payload, and virtual-assistant response. The production property consumes the real SQLite Durable Object byte count supplied by the dataloader adapter; the broader persisted notification/background runner and environment-wide extended-settings importer remain separate compatibility work.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

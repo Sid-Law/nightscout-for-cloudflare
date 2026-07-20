@@ -94,7 +94,7 @@ export interface RealtimeSnapshot {
   mbgs: unknown[];
   food: unknown[];
   treatments: unknown[];
-  dbstats: Record<string, never>;
+  dbstats: Record<string, unknown>;
   status?: Record<string, unknown>;
 }
 

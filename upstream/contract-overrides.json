@@ -410,6 +410,14 @@
       "status": "adapted",
       "reason": "Represented by all 13 named Workers-runtime cases in test/api-v1-concurrent-writes.test.ts: five simultaneous scalar and two-item batch writes for Treatments, DeviceStatus and Entries; ten staggered Treatment writes in 100 ms; concurrent cross-collection batches; unique server ObjectIds; per-batch response cardinality; 50 AAPS SMB offline-recovery writes; 100 AndroidAPS SGV recovery writes; and 30 concurrent Treatment/Entry/DeviceStatus requests. Every request crosses the Worker boundary into one tenant SQLite Durable Object, and non-200 responses fail the contract before persisted counts are checked."
     },
+    "vendor/nightscout/tests/dataloader.test.js": {
+      "status": "adapted",
+      "reason": "Represented by the complete named Workers-runtime case plus SQLite integration cases in test/data-loader-contract.test.ts: Promise-based stats are awaited before completion, dataSize/indexSize are copied exactly, rejected stats complete safely, and the live v2 ddata snapshot publishes the tenant Durable Object's actual ctx.storage.sql.databaseSize. Because Cloudflare exposes one SQLite file total rather than MongoDB's separate logical data/index sizes, the adapter places that total in dataSize and zero in indexSize so the locked dbsize sum does not double-count it."
+    },
+    "vendor/nightscout/tests/dbsize.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all 11 named Workers-runtime cases in test/dbsize-plugin-contract.test.ts and wired into the default-enabled /api/v2/properties dispatcher: exact current/warn/urgent percentages, configurable thresholds, MiB display, hidden empty state, warning/urgent notification text and levels, pill payload, and virtual-assistant response. The production property consumes the real SQLite Durable Object byte count supplied by the dataloader adapter; the broader persisted notification/background runner and environment-wide extended-settings importer remain separate compatibility work."
+    },
     "vendor/nightscout/tests/loop.test.js": {
       "status": "adapted",
       "reason": "Represented by all five named Workers-runtime cases in test/loop-plugin-contract.test.ts and wired into the enabled /api/v2/properties dispatcher: exact enacted pill text and six forecast points, failure display, enacted.received=false handling, the urgent stuck-Loop notification request, both virtual-assistant intents and their locked English responses. src/plugins/loop.ts ports the upstream analysis, visualization, status-level and notification-request calculations without adding a dosing algorithm; the general persisted notification/background runner remains separately unresolved."

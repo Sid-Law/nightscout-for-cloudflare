@@ -2777,6 +2777,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       loadPluginPropertyContext(store, now),
       store.nightscoutHttpStatus(now).then((value) => JSON.parse(value) as {
         settings?: { units?: unknown; enable?: unknown };
+        extendedSettings?: Record<string, unknown>;
       }),
     ]);
     const units: NightscoutGlucoseUnits = status.settings?.units === "mmol"
@@ -2787,7 +2788,13 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
         ? status.settings.enable.filter((value): value is string => typeof value === "string")
         : [],
     );
-    const properties = calculatePluginProperties(context, units, now, enabled);
+    const properties = calculatePluginProperties(
+      context,
+      units,
+      now,
+      enabled,
+      status.extendedSettings ?? {},
+    );
     let result = properties;
     const rawSelection = url.pathname
       .slice("/api/v2/properties".length)
