@@ -172,7 +172,7 @@ medical or dosing logic:
   descriptors for unresolved plugins do not fabricate their algorithms;
 - both named `plugins.test.js` cases and the wider registry surface pass in the
   Workers suite;
-- eight complete official client files run 35/35 unchanged after the
+- eleven complete official client files run 42/42 unchanged after the
   upstream-built bundle and NSCF public bundle are proved byte-identical;
   Care Portal and Profile Editor use their locked headless mock transports, so
   this is not credentialed remote mutation evidence.
@@ -458,7 +458,9 @@ Settings, Loop, Profile, uploader, identity, root-write/delta, v1, API3,
 authorization, realtime, notification-ACK and official-page work.
 The table below records the exact current local gate for the immutable deployed
 runtime and assets. The unchanged-client runner now includes the original
-client `hashauth` module; Static Assets remain byte-identical to v15.0.7.
+client Hashauth, Admin Tools, report-settings and complete Reports workflows;
+Static Assets remain byte-identical to v15.0.7. These later test/manifest
+additions do not change the deployed Worker.
 
 | Check | Result |
 | --- | --- |
@@ -467,7 +469,7 @@ client `hashauth` module; Static Assets remain byte-identical to v15.0.7.
 | Static Assets | 248 official asset entries rebuilt |
 | Upstream route/test audit | 161 registrations and 111 test files; generated outputs deterministic |
 | Audit tool tests | 14/14 passed |
-| Direct upstream client tests | 8 locked files passed 35/35 unchanged after public/upstream bundle byte equality (`pluginbase`, renderer, error codes, utilities, Care Portal, Bolus Wizard Preview, Profile Editor and Hashauth) |
+| Direct upstream client tests | 11 locked files passed 42/42 unchanged after public/upstream bundle byte equality (`pluginbase`, renderer, error codes, utilities, Care Portal, Bolus Wizard Preview, Profile Editor, Hashauth, Admin Tools, report storage and Reports) |
 | Direct upstream server/data-plugin tests | 15 locked files passed 90/90 unchanged (`dataloader`, `dbsize`, CAGE, SAGE, IAGE, timeago, treatment-to-curve, IOB, COB, OpenAPS, Pump, Basal Profile, Treatment Notify, Simple Alarms and Notifications) |
 | Authorization audit tests | 6/6 passed |
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
@@ -480,8 +482,8 @@ client `hashauth` module; Static Assets remain byte-identical to v15.0.7.
 
 The locked upstream contains 111 JavaScript test files; a static declaration
 audit finds 883 active `it(...)` cases plus one skipped case. The 653 Workers
-tests cover the implemented adapter subset; eight complete client files additionally
-run 35/35 unchanged against the shipped official client bundle, while 15
+tests cover the implemented adapter subset; eleven complete client files additionally
+run 42/42 unchanged against the shipped official client bundle, while 15
 server/data-plugin files run unchanged in a separate 90/90 gate. All 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
@@ -495,7 +497,7 @@ server/data-plugin files run unchanged in a separate 90/90 gate. All 16 API3 fil
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js`, `query.test.js`, `language.test.js` and
 25 v1 client/API files and the four named server authentication files are
-classified as fully `adapted`; eight are `pass`, 22 remain unresolved and two bridge files
+classified as fully `adapted`; eleven are `pass`, 19 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -571,7 +573,7 @@ remain evidence from the immediately preceding compatible version.
 | Current EIO4 polling open | HTTP 200, a 20-character Engine.IO 4 SID, `pingInterval:25000` and `pingTimeout:20000` |
 | Live database stats/property | ddata published 237,568 SQLite bytes; the default-enabled registry property returned the same total and 953.67 MiB Free-plan maximum |
 | Local plugin registry contract | both named client/server cases plus order, enable/shown gates, hook/error behavior, event aggregation, iterators and settings projection |
-| Direct official client contract | 8 locked client files passed 35/35 unchanged against the byte-identical shipped bundle; Care Portal/Profile Editor saves use locked mocks rather than the public tenant |
+| Direct official client contract | 11 locked client files passed 42/42 unchanged against the byte-identical shipped bundle; Care Portal/Profile Editor/Admin/Reports mutations use locked mocks rather than the public tenant |
 | Local Cloudflare configuration contract | `keep_vars` is true; no plaintext vars, D1, R2, KV, Queues or custom routes are checked in; only `ENTRY_STORE` and `ASSETS` are bound |
 | Local Sandbox contract | five locked client/server/LOW-HIGH/message cases plus helper-surface and request-isolation coverage |
 | Local Settings contract | 13 locked defaults/accessor/feature/alarm/threshold/snooze cases plus request isolation and recursive secure filtering |

@@ -10,7 +10,7 @@ system is a compatible subset, not a full server.
 `b4eda4cc9014edb4ac8983f805f1c2f61cbb1e0d` and Cloudflare version
 `5abd2045-6f0b-426b-a7e3-0b0eb19e2de2`, reported as 100% active. The
 candidate's 58-file Workers-runtime suite passes 653/653 plus 22/22 audit tests,
-35/35 unchanged direct upstream client tests across eight files and 90/90 unchanged tests across fifteen
+42/42 unchanged direct upstream client tests across eleven files and 90/90 unchanged tests across fifteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
 asset entries; its dry run reported 1155.18 KiB raw / 213.31 KiB gzip and only
@@ -56,10 +56,10 @@ official treatment-marker curve placement. It retains the age/timeago,
 `src/data-loader.ts` and
 `src/plugins/dbsize.ts`, so real SQLite file bytes flow through ddata and the
 official database-size calculation. The
-eight complete official client files run 35/35 unchanged only after a byte-equality
+eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 58 Workers files / 653 tests, 22/22 audits, eight direct upstream
-client files / 35 tests and fifteen direct upstream server/data-plugin files / 90 tests; the
+evidence is 58 Workers files / 653 tests, 22/22 audits, eleven direct upstream
+client files / 42 tests and fifteen direct upstream server/data-plugin files / 90 tests; the
 dry run is 1155.18 KiB raw / 213.31 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 

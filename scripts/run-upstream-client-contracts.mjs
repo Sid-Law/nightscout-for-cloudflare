@@ -47,6 +47,9 @@ const result = spawnSync(
     "./tests/boluswizardpreview.test.js",
     "./tests/profileeditor.test.js",
     "./tests/hashauth.test.js",
+    "./tests/admintools.test.js",
+    "./tests/reportstorage.test.js",
+    "./tests/reports.test.js",
   ],
   {
     cwd: upstreamRoot,
@@ -59,5 +62,5 @@ if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
 
 console.log(
-  "Eight locked client/bundled-module files passed 35 tests unchanged against the byte-identical NSCF client bundle.",
+  "Eleven locked client/bundled-module files passed 42 tests unchanged against the byte-identical NSCF client bundle.",
 );

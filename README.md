@@ -474,10 +474,11 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
 `settings.test.js`, `sandbox.test.js`, `plugins.test.js`, `query.test.js`,
 `language.test.js` and 25 v1 client/API
-files are classified as fully `adapted`. Eight complete locked client files
+files are classified as fully `adapted`. Eleven complete locked client files
 (`pluginbase.test.js`, `client.renderer.test.js`, `errorcodes.test.js`,
 `utils.test.js`, `careportal.test.js`, `boluswizardpreview.test.js` and
-`profileeditor.test.js`, plus `hashauth.test.js`) run unchanged for 35/35 tests against the
+`profileeditor.test.js`, plus `hashauth.test.js`, `admintools.test.js`,
+`reportstorage.test.js` and `reports.test.js`) run unchanged for 42/42 tests against the
 byte-identical official client bundle and are classified as `pass`.
 The latest two complete upstream additions are `query.test.js` and
 `language.test.js`. The preceding two are `simplealarms.test.js` and
@@ -494,19 +495,21 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 22 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 19 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
 `b4eda4cc9014edb4ac8983f805f1c2f61cbb1e0d`. The 58-file Workers-runtime
-suite passes 653/653 tests, the four audit suites pass 22/22, eight complete
-official client files pass 35/35 unchanged, and fifteen locked server/data-plugin
+suite passes 653/653 tests, the four audit suites pass 22/22, eleven complete
+official client files pass 42/42 unchanged, and fifteen locked server/data-plugin
 files pass 90/90 unchanged. Wrangler dry-run reads the same
 248 official assets, reports 1155.18 KiB raw / 213.31 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 This increment adds the exact v1/v2 `experiments/test` permission probe and
 completes the named API security, API verifyauth, verifyauth and server
-API_SECRET mappings. The original client Hashauth file now also runs unchanged.
+API_SECRET mappings. The original client Hashauth, Admin Tools, report-settings
+and complete Reports files now also run unchanged; their editor/network calls
+use the locked mocks and are not remote credentialed evidence.
 It retains the request-local Worker-safe port of the locked query defaults,
 walker, date and ObjectId/UUID normalization surface; live Entries parsing
 reuses its four-day boundary and ObjectId normalization before bounded SQLite
@@ -582,8 +585,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 22 unresolved plugin/test
-algorithms. The manifest records eight direct passes, 79 adapted, 22 unresolved
+Node plugin `require` without fabricating the 19 unresolved plugin/test
+algorithms. The manifest records eleven direct passes, 79 adapted, 19 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
