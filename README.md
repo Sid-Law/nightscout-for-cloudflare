@@ -473,7 +473,7 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `data.treatmenttocurve.test.js`, `openaps.test.js`, `pump.test.js`,
 `basalprofileplugin.test.js`, `treatmentnotify.test.js`,
 `simplealarms.test.js`, `notifications.test.js`, `adminnotifies.test.js`,
-`bootevent-debounce.test.js`,
+`bootevent-debounce.test.js`, `ar2.test.js`,
 `websocket.shape-handling.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
 `settings.test.js`, `sandbox.test.js`, `plugins.test.js`, `query.test.js`,
@@ -484,10 +484,11 @@ files are classified as fully `adapted`. Eleven complete locked client files
 `profileeditor.test.js`, plus `hashauth.test.js`, `admintools.test.js`,
 `reportstorage.test.js` and `reports.test.js`) run unchanged for 42/42 tests against the
 byte-identical official client bundle and are classified as `pass`.
-Nineteen complete locked server/data-plugin files also run unchanged for
-124/124 tests; the newest addition is `expressextensions.test.js`, whose two
-cases lock exact `.json` suffix handling and reject the lookalike
-`entriesXjson` path.
+Twenty complete locked server/data-plugin files also run unchanged for
+134/134 tests; the newest addition is `ar2.test.js`, whose ten cases lock the
+official prediction cone, warning/urgent decisions, interpolation and virtual
+assistant output. The preceding `expressextensions.test.js` addition locks
+exact `.json` suffix handling and rejects the lookalike `entriesXjson` path.
 The latest two complete upstream additions are `query.test.js` and
 `language.test.js`. The preceding two are `simplealarms.test.js` and
 `notifications.test.js`; the preceding two are `basalprofileplugin.test.js`
@@ -503,15 +504,15 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 13 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 12 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
-`f0beff98a66d3bd1cd2e5cf8ad98786d9a59c95c`. The 61-file Workers-runtime
-suite passes 673/673 tests, the four audit suites pass 22/22, eleven complete
-official client files pass 42/42 unchanged, and nineteen locked server/data-plugin
-files pass 124/124 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1167.03 KiB raw / 215.55 KiB gzip and exposes only
+`58b33fc2b068a42a033be29ea8d2ca34fef0081a`. The 62-file Workers-runtime
+suite passes 687/687 tests, the four audit suites pass 22/22, eleven complete
+official client files pass 42/42 unchanged, and twenty locked server/data-plugin
+files pass 134/134 unchanged. Wrangler dry-run reads the same
+248 official assets, reports 1175.66 KiB raw / 217.19 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -544,11 +545,14 @@ Workers Static Assets, all 33 JSON files are audited as valid and byte-identical
 to v15.0.7, `LANGUAGE` reaches HTTP/Socket settings, and the default Sandbox
 uses the same request-local translator.
 This runtime connects a single `plugin-notifications` SQLite task to the locked
-official Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago
-calculations and the core notification processor. The engine evaluates the six
+official AR2, Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago
+calculations and the core notification processor. The engine evaluates the seven
 producers in official server order from one bounded context, arbitrates requests and snoozes in one
 transaction, atomically publishes the selected live `/alarm` frame, and stores
-the next exact logical deadline. Simple Alarms preserves strict high/low
+the next exact logical deadline. AR2 preserves the official coefficients,
+six-point loss divisor, prediction cone, exact alert titles/messages/sounds,
+`ALARM_TYPES` and `AR2_CONE_FACTOR`; it is also exposed by the v2 property
+registry and renders through the unchanged official client. Simple Alarms preserves strict high/low
 thresholds and ten-minute SGV expiry. Treatment Notify preserves its strict
 ten-minute window, manual/automatic filtering, snooze rules and synchronous
 upstream SHA-1 `notifyhash`. Timeago preserves strict `>` warning/urgent
@@ -610,8 +614,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 13 unresolved plugin/test
-algorithms. The manifest records fifteen direct passes, 81 adapted, 13 unresolved
+Node plugin `require` without fabricating the 12 unresolved plugin/test
+algorithms. The manifest records fifteen direct passes, 82 adapted, 12 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -651,9 +655,8 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `f6b730d9-2d80-4929-877b-bb0c240f714e` (ordinal 72) was made
-current at `2026-07-21T23:16:54.596Z`; the version was created at
-`2026-07-21T23:16:53.788Z`, with a reported 40 ms startup. No asset bytes needed
+Cloudflare version `83c08370-341c-4c4c-b7ea-4378e499eb24` (ordinal 73) was made
+current at `2026-07-21T23:44:59.295697Z`, with a reported 25 ms startup. No asset bytes needed
 uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -662,7 +665,7 @@ the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
 missing-token API3 Entries returned the expected 401. The 72-assertion script
-used fresh tenant `public-smoke-1784676187391`, observed 262,144 SQLite bytes and a
+used fresh tenant `public-smoke-1784677520758`, observed 262,144 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -690,7 +693,11 @@ After the user supplied a valid construction credential, 25 entries from
 `101 mg/dL`, an upward arrow, `+3` and a populated two-hour chart. No Settings
 save, Food/Profile mutation or real health data was used. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 72 has therefore passed its 72-assertion credential-free remote API,
+After the AR2 deployment, a version 73 browser pass loaded the same official
+homepage with two SVGs, eleven chart paths and all 26 official AR2 forecast
+dots. The only captured errors were the browser's expected autoplay-policy
+rejection before user interaction; no application/API error was captured.
+Version 73 has therefore passed its 72-assertion credential-free remote API,
 Engine.IO and named real-browser gates. Four fresh-tenant Admin-notification
 probes returned count one while correctly hiding the body from anonymous
 callers. One immediate post-activation request returned the old zero-count

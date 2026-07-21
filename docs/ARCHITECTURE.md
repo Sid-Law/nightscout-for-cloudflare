@@ -7,14 +7,14 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`f0beff98a66d3bd1cd2e5cf8ad98786d9a59c95c` and Cloudflare version
-`f6b730d9-2d80-4929-877b-bb0c240f714e`, reported as 100% active. The
-candidate's 61-file Workers-runtime suite passes 673/673 plus 22/22 audit tests,
-42/42 unchanged direct upstream client tests across eleven files and 124/124 unchanged tests across nineteen
+`58b33fc2b068a42a033be29ea8d2ca34fef0081a` and Cloudflare version
+`83c08370-341c-4c4c-b7ea-4378e499eb24`, reported as 100% active. The
+candidate's 62-file Workers-runtime suite passes 687/687 plus 22/22 audit tests,
+42/42 unchanged direct upstream client tests across eleven files and 134/134 unchanged tests across twenty
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1167.03 KiB raw / 215.55 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 72
+asset entries; its dry run reported 1175.66 KiB raw / 217.19 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 73
 reported a 40 ms startup and passed credential-free API, EIO4, Admin-notification
 and real-browser gates. One immediate old Admin-notification response during
 activation is explicitly retained; four same-region new-tenant retries converged.
@@ -34,17 +34,18 @@ Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
 implemented v2 property plugins execute through this registry. The current runtime includes
-`src/plugins/simplealarms.ts` and `src/notifications.ts` on top of
+`src/plugins/ar2.ts`, `src/plugins/simplealarms.ts` and `src/notifications.ts` on top of
 `src/plugins/basal.ts` and `src/plugins/treatmentnotify.ts`: Basal preserves
 the current scheduled/temporary/Combo Bolus contribution, pill, visualization
 and assistant behavior; Treatment Notify preserves the locked recent-treatment
 filtering, snooze, request classification and synchronous `node:crypto` SHA-1
-hash; Simple
-Alarms preserves the strict threshold cases and notification metadata. The
+hash; AR2 preserves the locked autoregressive coefficients, forecast cone,
+loss thresholds and notification metadata, while Simple Alarms preserves the
+strict threshold cases. The
 notification processor preserves priority, snooze and automatic all-clear,
 with schema-v13 state and atomic live `/alarm` publication. Schema v14 adds a
 generic persisted task scheduler. One `plugin-notifications` task automatically
-evaluates Simple Alarms, Pump, OpenAPS, Loop, officially enabled Treatment
+evaluates AR2, Simple Alarms, Pump, OpenAPS, Loop, officially enabled Treatment
 Notify and opt-in Timeago alerts in official server order; task sources for the
 remaining notification plugins and external delivery remain missing. Pump,
 OpenAPS and Loop retain their official plugin and alert gates behind the same
@@ -76,9 +77,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 61 Workers files / 673 tests, 22/22 audits, eleven direct upstream
-client files / 42 tests and nineteen direct upstream server/data-plugin files / 124 tests; the
-dry run is 1167.03 KiB raw / 215.55 KiB gzip with the same 248 assets and two bindings.
+evidence is 62 Workers files / 687 tests, 22/22 audits, eleven direct upstream
+client files / 42 tests and twenty direct upstream server/data-plugin files / 134 tests; the
+dry run is 1175.66 KiB raw / 217.19 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -179,7 +180,7 @@ locked ddata singleton's empty buckets, clone, runtime normalization and
 prefer-new merge operations as pure functions; tenant state remains inside the
 SQLite Durable Object. `src/plugins/bgnow.ts`, `direction.ts`, `rawbg.ts`,
 `upbat.ts`, `loop.ts`, `iob.ts`, `cob.ts`, `dbsize.ts`, `age.ts`,
-`timeago.ts` and `simplealarms.ts`, supported by request-safe
+`timeago.ts`, `ar2.ts` and `simplealarms.ts`, supported by request-safe
 `runtime/{times,units,levels}.ts`, are
 ports of their locked property modules. They build the same
 four five-minute buckets around the last non-future SGV, preserve the
@@ -191,7 +192,9 @@ dose, and preserve the locked database-size percentages, thresholds, pill,
 notification request and assistant response. The age adapter selects the latest
 non-future official Site Change, Sensor Start/Change and Insulin Change events,
 then preserves the locked CAGE/SAGE/IAGE duration, display, notes, severity and
-notification-request calculations. Timeago preserves the locked freshness
+notification-request calculations. AR2 preserves its six-point forecast,
+13-step cone, inclusive loss divisor, predicted alarm labels and exact
+notification/assistant output. Timeago preserves the locked freshness
 display and warning/urgent requests without process-global hibernation state.
 IOB preserves the locked OpenAPS/Loop/pump extraction and precedence,
 30-minute recency, Treatment fallback, DIA-scaled decay/activity, rounding,
@@ -216,7 +219,9 @@ When the official enable gate includes `treatmentnotify`, canonical mutations
 and the persisted task evaluate it automatically. `simplealarms.ts` evaluates
 the locked nonfuture/recent SGV boundary, strict warning/urgent high/low
 thresholds, titles, event names, sounds and exact default message.
-`timeago.ts` calculates its next transition explicitly; strict upstream `>`
+`ar2.ts` evaluates before Simple Alarms in locked server order, is exposed by
+the v2 property dispatcher and maps `ALARM_TYPES` plus `AR2_CONE_FACTOR` into
+the unchanged official client. `timeago.ts` calculates its next transition explicitly; strict upstream `>`
 boundaries wake at threshold plus one millisecond, and a future SGV wakes when
 it becomes current. Canonical document mutations schedule one schema-v14
 `plugin-notifications` task. The originating request evaluates the leading edge
@@ -228,7 +233,7 @@ no periodic wake. Timeago scheduling additionally requires truthy
 `src/plugins/properties.ts` executes them in locked server-plugin order and
 respects `settings.enable`: `upbat` is enabled by default and `rawbg` stays
 opt-in; `loop` is likewise exposed only when configured in `ENABLE`, while
-`dbsize` and Basal remain enabled by the locked default feature set. OpenAPS, Pump, IOB,
+`dbsize`, Basal and AR2 remain enabled by the locked default feature/alarm set. OpenAPS, Pump, IOB,
 COB, CAGE, SAGE and IAGE remain opt-in exactly as upstream; timeago is a
 client/notification plugin and is not fabricated as a v2 property.
 `/api/v2/properties` applies those values plus the upstream comma
@@ -390,7 +395,7 @@ all-clear object. The official v1 `/notifications/ack` route and its inherited
 v2 mount use the same SQLite transaction and live broadcast path, require
 `notifications:*:ack`, and return Express's exact `200 OK` text body. The
 adapter bounds state to 256 distinct group names of at most 256 characters.
-Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago now run through
+AR2, Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago now run through
 the persisted scheduler under their official gates; CAGE/SAGE/IAGE and the
 remaining notification sources are not yet automatic producers.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
@@ -1041,7 +1046,7 @@ The current server boundary is explicit:
   Broken/overflow recipients are dropped independently and disconnected
   clients receive no replay. The bounded notification processor can persist and
   publish upstream request arrays through this outlet. A schema-v14 task now
-  computes and publishes Simple Alarms, Pump, OpenAPS, Loop, officially enabled
+  computes and publishes AR2, Simple Alarms, Pump, OpenAPS, Loop, officially enabled
   Treatment Notify and opt-in Timeago alerts automatically; adapters for the
   remaining notification plugins remain missing;
 - root `subscribe` has no handler or ACK, matching the locked root. The four
@@ -1083,10 +1088,10 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`f6b730d9-2d80-4929-877b-bb0c240f714e`. Current credential-free remote smoke
+`83c08370-341c-4c4c-b7ea-4378e499eb24`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
-version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled
+version, real ddata/database-size values, the default-enabled Basal and AR2 properties and the opt-in-disabled
 Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE property gates, null disabled IOB/COB Summary
 state, absence of property-only timeago and an EIO4 polling open packet;
 API3 Entries without a token returned the
@@ -1094,6 +1099,9 @@ expected 401. Anonymous mutation and experiment probes fail closed with the
 configured construction credential. A separate credentialed 25-entry
 `simulator://nscf-demo` batch wrote and read back successfully, after which the
 official homepage rendered `101 mg/dL`, its upward trend and a populated chart.
+The version-73 browser acceptance additionally rendered 26 AR2 forecast dots;
+its only console errors were expected browser autoplay-policy rejections before
+user interaction.
 No real CGM or closed-loop traffic was used. Four fresh-tenant Admin-notification probes returned the readable-site
 count while hiding the body, and the real browser retained the official Admin,
 clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send
@@ -1158,7 +1166,7 @@ generic SQLite task table containing `kind`, `due_at`, `attempt_count` and
 them transactionally and derives the next wake from storage. This follows
 Cloudflare's one-alarm model: multiple logical events are stored and
 multiplexed through the one Durable Object alarm. The generic substrate is
-deployed; one unified notification task connects Simple Alarms, Pump, OpenAPS,
+deployed; one unified notification task connects AR2, Simple Alarms, Pump, OpenAPS,
 Loop, Treatment Notify and Timeago with their official enable gates today.
 
 Official plugin formulas and medical calculations are not rewritten. The
@@ -1169,7 +1177,7 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`simplealarms`/`loop`/`openaps`/`pump`/`iob`/`cob`
+`bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`ar2`/`simplealarms`/`loop`/`openaps`/`pump`/`iob`/`cob`
 and `treatmentnotify` adapters plus the core notification processor,
 together with the request-local Sandbox, are reusable server
 calculation/property slices dispatched by the registry rather than a background
@@ -1180,7 +1188,7 @@ request time and their existing request objects now also execute automatically
 when the official alert gates enable them;
 IOB/COB use the locked official formulas and can populate
 request-time Summary state when enabled; they do not recommend insulin.
-Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago request objects
+AR2, Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago request objects
 are arbitrated, persisted and delivered to live `/alarm` clients by the same
 internal engine. Mutations evaluate the leading edge and the schema-v14
 scheduler retains only the earliest logical activation, strict threshold-plus-
