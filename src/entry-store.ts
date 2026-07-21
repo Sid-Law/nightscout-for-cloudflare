@@ -18,6 +18,10 @@ import {
   type SubjectCredential,
 } from "./authorization";
 import {
+  migrateDataUpdateDebounceV16,
+  SqliteDataUpdateDebounceRepository,
+} from "./data-update-debounce";
+import {
   createJwtSecret,
   isJwtSecret,
   issueJwt as signJwt,
@@ -661,6 +665,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (15)",
       );
 
+      // Upstream bootevent uses process-local lodash debounce and mutable
+      // running/pending flags. Persist the equivalent burst window so rapid
+      // uploads remain coalesced across Durable Object eviction.
+      migrateDataUpdateDebounceV16(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (16)",
+      );
+
       // This named, idempotent auth state is intentionally independent of the
       // numeric migration sequence. WebSocket transport remediation owns the
       // next numeric marker, while delay-list state can safely repair itself
@@ -991,6 +1003,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return new SqliteBackgroundTaskRepository(this.ctx.storage);
   }
 
+  private dataUpdateDebounce(): SqliteDataUpdateDebounceRepository {
+    return new SqliteDataUpdateDebounceRepository(this.ctx.storage);
+  }
+
   private adminNotifies(): SqliteAdminNotifyRepository {
     return new SqliteAdminNotifyRepository(this.ctx.storage);
   }
@@ -1073,7 +1089,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           ? runtime.treatmentNotify || runtime.pump || runtime.openAps
           : collection === "devicestatus" && (runtime.pump || runtime.openAps || runtime.loop);
     if (!inputChanged) return;
-    tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
+    if (this.dataUpdateDebounce().record(PLUGIN_NOTIFICATIONS_TASK, now)) {
+      tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
+    }
   }
 
   private latestSgvAtOrBefore(
@@ -1375,6 +1393,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
   private processDueBackgroundTasks(now: number): void {
     const tasks = this.backgroundTasks();
+    for (const kind of this.dataUpdateDebounce().consumeDue(
+      now,
+      BACKGROUND_TASK_BATCH_LIMIT,
+    )) {
+      // Only known kinds are recorded, but fail closed if a future migration
+      // leaves an unknown row instead of fabricating a new task behavior.
+      if (kind === PLUGIN_NOTIFICATIONS_TASK) tasks.schedule(kind, now, now);
+    }
     for (const task of tasks.due(now, BACKGROUND_TASK_BATCH_LIMIT)) {
       try {
         if (task.kind === PLUGIN_NOTIFICATIONS_TASK) {
@@ -2493,7 +2519,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const realtimeDeadline = this.realtime.nextDeadline();
     const authorizationDeadline = this.authorizationFailureCleanupDeadline();
     const backgroundDeadline = this.backgroundTasks().nextDeadline();
-    const deadlines = [realtimeDeadline, authorizationDeadline, backgroundDeadline]
+    const dataUpdateDeadline = this.dataUpdateDebounce().nextDeadline();
+    const deadlines = [
+      realtimeDeadline,
+      authorizationDeadline,
+      backgroundDeadline,
+      dataUpdateDeadline,
+    ]
       .filter((deadline): deadline is number => deadline !== null);
     const nextDeadline = deadlines.length === 0 ? null : Math.min(...deadlines);
     const currentAlarm = await this.ctx.storage.getAlarm();

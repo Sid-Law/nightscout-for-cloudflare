@@ -21,6 +21,7 @@ import { URGENT } from "../src/runtime/levels";
 
 interface MutableEntryStoreSurface {
   env: NightscoutStatusEnvironment;
+  processDueBackgroundTasks: (now: number) => void;
   processPluginNotificationTask: (task: BackgroundTaskRow, now: number) => void;
 }
 
@@ -76,6 +77,19 @@ function enableSimpleAlarms(instance: EntryStore): void {
     BG_LOW: "55",
     HEARTBEAT: "60",
   });
+}
+
+function flushDataUpdateTrailing(
+  instance: EntryStore,
+  state: DurableObjectState,
+): number | null {
+  const row = state.storage.sql.exec<{ due_at: number }>(
+    `SELECT due_at FROM data_update_debounce
+     WHERE pending = 1 ORDER BY due_at ASC LIMIT 1`,
+  ).toArray()[0];
+  if (row === undefined) return null;
+  (instance as unknown as MutableEntryStoreSurface).processDueBackgroundTasks(row.due_at);
+  return row.due_at;
 }
 
 function enableTreatmentNotify(instance: EntryStore, simpleAlarms = false): void {
@@ -241,6 +255,7 @@ describe("SQLite Durable Object background notification scheduler", () => {
         device: "simulator://scheduler",
         type: "sgv",
       }]));
+      expect(flushDataUpdateTrailing(instance, state)).not.toBeNull();
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM background_tasks",
       ).one().count).toBe(0);
@@ -463,6 +478,7 @@ describe("SQLite Durable Object background notification scheduler", () => {
         device: "simulator://scheduler",
         type: "sgv",
       }]));
+      expect(flushDataUpdateTrailing(instance, state)).not.toBeNull();
       expect(state.storage.sql.exec<BackgroundTaskRow>(
         "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
       ).one().due_at).toBe(freshAt + 60_001);
@@ -559,6 +575,7 @@ describe("SQLite Durable Object background notification scheduler", () => {
         created_at: new Date(offlineAt).toISOString(),
         duration: 1,
       }]));
+      expect(flushDataUpdateTrailing(instance, state)).not.toBeNull();
       expect(state.storage.sql.exec<BackgroundTaskRow>(
         "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
       ).one().due_at).toBe(offlineAt);

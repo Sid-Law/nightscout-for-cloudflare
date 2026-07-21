@@ -350,6 +350,10 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/bootevent-debounce.test.js": {
+      "status": "adapted",
+      "reason": "All nine locked leading-edge, tick, 20/50-event coalescing, no-overlap, pending-final, trailing, spaced-event and five-second maxWait cases are represented by test/bootevent-debounce-contract.test.ts. Schema v16 persists the one-second/five-second burst window in SQLite, promotes exactly one trailing plugin-notification task through the DO alarm, and relies on Durable Object input serialization instead of process-local running/pending flags. The integration case proves a real 20-Profile batch evaluates the leading and final states while root data publication remains immediate; existing scheduler, concurrent upload and realtime-root suites remain green."
+    },
     "vendor/nightscout/tests/env.test.js": {
       "status": "pass",
       "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. All 15 cases retain SHOW_PLUGINS defaults, generic camel-cased extended settings, Pushover/Azure variable auto-enable, strict readENVTruthy parsing and every DISPLAY_UNITS spelling/default. This locks the upstream parser itself; Cloudflare request-local environment mapping remains separately bounded, and external Pushover delivery stays disabled in simulated scope."

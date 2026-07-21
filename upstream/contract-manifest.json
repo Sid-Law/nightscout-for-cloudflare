@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "d2f925f8d53cf1aa09650cea7751d9fb488735ada47230ae6bac3504cb3cd3e2",
+  "inputs_sha256": "163d8cb15e6a22cf1ae23c4edc04c98f5eadc70eebe00846238050eee0f7b959",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 14,
-      "adapted": 80,
+      "adapted": 81,
       "excluded-fixed-scope": 2,
-      "unresolved": 15
+      "unresolved": 14
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7872,8 +7872,8 @@
     },
     {
       "file": "vendor/nightscout/tests/bootevent-debounce.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "All nine locked leading-edge, tick, 20/50-event coalescing, no-overlap, pending-final, trailing, spaced-event and five-second maxWait cases are represented by test/bootevent-debounce-contract.test.ts. Schema v16 persists the one-second/five-second burst window in SQLite, promotes exactly one trailing plugin-notification task through the DO alarm, and relies on Durable Object input serialization instead of process-local running/pending flags. The integration case proves a real 20-Profile batch evaluates the leading and final states while root data publication remains immediate; existing scheduler, concurrent upload and realtime-root suites remain green.",
       "workstream": "7-background-and-integrations",
       "depends_on": [
         "1-storage-foundation",

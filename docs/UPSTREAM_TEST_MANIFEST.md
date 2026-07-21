@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 14, adapted: 80, excluded-fixed-scope: 2, unresolved: 15
-- Input fingerprint: `d2f925f8d53cf1aa09650cea7751d9fb488735ada47230ae6bac3504cb3cd3e2`
+- Statuses: pass: 14, adapted: 81, excluded-fixed-scope: 2, unresolved: 14
+- Input fingerprint: `163d8cb15e6a22cf1ae23c4edc04c98f5eadc70eebe00846238050eee0f7b959`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -25,7 +25,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 5 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
-| 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 7 | 2 |
+| 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 6 | 2 |
 | 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 0 | 0 |
 
 Dispatch work in numeric order. Within a workstream, use each test's `related_routes` in `upstream/contract-manifest.json` only as heuristic candidate links for grouping implementation slices; confirm each link against upstream source before claiming coverage.
@@ -169,7 +169,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | Test file | Status | Candidate routes (heuristic) | Reason |
 | --- | --- | ---: | --- |
 | `vendor/nightscout/tests/00_production-safety.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/bootevent-debounce.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/bootevent-debounce.test.js` | adapted | 0 | All nine locked leading-edge, tick, 20/50-event coalescing, no-overlap, pending-final, trailing, spaced-event and five-second maxWait cases are represented by test/bootevent-debounce-contract.test.ts. Schema v16 persists the one-second/five-second burst window in SQLite, promotes exactly one trailing plugin-notification task through the DO alarm, and relies on Durable Object input serialization instead of process-local running/pending flags. The integration case proves a real 20-Profile batch evaluates the leading and final states while root data publication remains immediate; existing scheduler, concurrent upload and realtime-root suites remain green. |
 | `vendor/nightscout/tests/bridge.test.js` | excluded-fixed-scope | 0 | Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope permits only simulated data. |
 | `vendor/nightscout/tests/flakiness-control.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/maker.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
