@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "fa8ead14264d338fe76fd6577f28104c5d5d709c0b35124a31e1e6fffa18c6ac",
+  "inputs_sha256": "2418fad36add074320f46a1406c10b6a67406d3c4035e7791d2b22932ac068ae",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -38,10 +38,10 @@
     },
     "test_file_count": 111,
     "tests_by_status": {
-      "pass": 7,
-      "adapted": 75,
+      "pass": 8,
+      "adapted": 79,
       "excluded-fixed-scope": 2,
-      "unresolved": 27
+      "unresolved": 22
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7392,8 +7392,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.security.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "All sixteen locked REST-security cases are represented in test/auth-compat.test.ts: false access tokens, denied anonymous reads, canonical JWT issuance with accessToken/iat/exp, broken-role fallback, SHA-1 API_SECRET, query/header access tokens, Bearer success/failure, admin verifyauth, and the six exact subject/role PUT success or missing/invalid _id failures. Production routes use the same request-local authorization resolution and SQLite role/subject storage; the adapter additionally re-resolves live JWT state and bounds credential work.",
       "workstream": "2-authorization",
       "depends_on": [
         "1-storage-foundation"
@@ -7512,8 +7512,8 @@
     },
     {
       "file": "vendor/nightscout/tests/api.verifyauth.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "Both locked API-mounted verifyauth cases are represented in test/auth-compat.test.ts and test/api-v2-inheritance.test.ts: an anonymous/default resolution returns the UNAUTHORIZED message inside the HTTP-200 envelope, while the exact SHA-1 API_SECRET digest returns OK; v1 and inherited v2 produce the same shape.",
       "workstream": "2-authorization",
       "depends_on": [
         "1-storage-foundation"
@@ -8139,8 +8139,8 @@
     },
     {
       "file": "vendor/nightscout/tests/hashauth.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All five unauthorized/authorized state, optional localStorage persistence, removal and too-short-secret alert cases execute against the original client hashauth module. No credential value is supplied by the runner or recorded by NSCF.",
       "workstream": "2-authorization",
       "depends_on": [
         "1-storage-foundation"
@@ -8526,8 +8526,8 @@
     },
     {
       "file": "vendor/nightscout/tests/security.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "All three active locked API_SECRET middleware cases are represented in test/auth-compat.test.ts: public status remains available, /api/v1 and inherited /api/v2 experiments/test reject an unauthenticated caller, the exact SHA-1 API_SECRET digest returns {status:'ok'}, and a configured secret shorter than 12 characters fails closed as api_secret_not_configured. The route uses the exact authorization:debug:test permission and also accepts a delegated role/JWT. The commented Socket.IO case in the locked file is not an active test declaration and realtime authorization is tracked separately.",
       "workstream": "2-authorization",
       "depends_on": [
         "1-storage-foundation"
@@ -8684,8 +8684,8 @@
     },
     {
       "file": "vendor/nightscout/tests/verifyauth.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "All four locked verifyauth cases are represented in test/auth-compat.test.ts: default readable permissions, wrong-secret UNAUTHORIZED inside the HTTP-200 envelope, persisted per-IP failure-delay accumulation on repeated attempts, and exact SHA-1/SHA-512 authorized responses. Success clears delay state; Durable Object alarms prune expired rows without relying on module-global timers.",
       "workstream": "2-authorization",
       "depends_on": [
         "1-storage-foundation"

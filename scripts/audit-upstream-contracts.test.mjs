@@ -176,16 +176,18 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.equal(first.routes.length, 161);
   assert.equal(first.tests.length, 111);
   assert.equal(serializeManifest(first), serializeManifest(second));
-  assert.equal(first.tests.filter((item) => item.status === "pass").length, 7);
-  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 75);
+  assert.equal(first.tests.filter((item) => item.status === "pass").length, 8);
+  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 79);
   assert.deepEqual(first.statistics.tests_by_status, {
-    pass: 7,
-    adapted: 75,
+    pass: 8,
+    adapted: 79,
     "excluded-fixed-scope": 2,
-    unresolved: 27,
+    unresolved: 22,
   });
   for (const file of [
     "vendor/nightscout/tests/api.aaps-client.test.js",
+    "vendor/nightscout/tests/api.security.test.js",
+    "vendor/nightscout/tests/api.verifyauth.test.js",
     "vendor/nightscout/tests/api.alexa.test.js",
     "vendor/nightscout/tests/api.activity.test.js",
     "vendor/nightscout/tests/api.devicestatus.test.js",
@@ -211,6 +213,7 @@ test("the locked repository manifest is stable and validates all 111 test files"
     "vendor/nightscout/tests/simplealarms.test.js",
     "vendor/nightscout/tests/notifications.test.js",
     "vendor/nightscout/tests/settings.test.js",
+    "vendor/nightscout/tests/security.test.js",
     "vendor/nightscout/tests/sandbox.test.js",
     "vendor/nightscout/tests/plugins.test.js",
     "vendor/nightscout/tests/api.root.test.js",
@@ -252,6 +255,7 @@ test("the locked repository manifest is stable and validates all 111 test files"
     "vendor/nightscout/tests/units.test.js",
     "vendor/nightscout/tests/upbat.test.js",
     "vendor/nightscout/tests/websocket.shape-handling.test.js",
+    "vendor/nightscout/tests/verifyauth.test.js",
   ]) {
     assert.equal(first.tests.find((item) => item.file === file)?.status, "adapted", file);
   }
@@ -260,6 +264,7 @@ test("the locked repository manifest is stable and validates all 111 test files"
     "vendor/nightscout/tests/careportal.test.js",
     "vendor/nightscout/tests/client.renderer.test.js",
     "vendor/nightscout/tests/errorcodes.test.js",
+    "vendor/nightscout/tests/hashauth.test.js",
     "vendor/nightscout/tests/pluginbase.test.js",
     "vendor/nightscout/tests/profileeditor.test.js",
     "vendor/nightscout/tests/utils.test.js",

@@ -2904,6 +2904,18 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     return legacyOk();
   }
 
+  if (
+    request.method === "GET"
+    && /^\/api\/v[12]\/experiments\/test\/?$/.test(url.pathname)
+  ) {
+    // Locked lib/api/experiments/index.js intentionally exposes only this
+    // authorization probe. Keep it behind the exact upstream permission and
+    // inherit it through both v1 and v2 without adding a general experiments
+    // surface.
+    await requirePermission(request, env, url, "authorization:debug:test");
+    return json({ status: "ok" });
+  }
+
   if (request.method === "GET" && /^\/api\/v[12]\/verifyauth\/?$/.test(url.pathname)) {
     const resolution = await resolveRequestAuthorization(request, env, url);
     const permissionGroups = env.ENTRY_STORE === undefined

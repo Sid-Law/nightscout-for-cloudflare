@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 7, adapted: 75, excluded-fixed-scope: 2, unresolved: 27
-- Input fingerprint: `fa8ead14264d338fe76fd6577f28104c5d5d709c0b35124a31e1e6fffa18c6ac`
+- Statuses: pass: 8, adapted: 79, excluded-fixed-scope: 2, unresolved: 22
+- Input fingerprint: `2418fad36add074320f46a1406c10b6a67406d3c4035e7791d2b22932ac068ae`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -20,7 +20,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
 | 1-storage-foundation | none | 15 | 6 | 0 |
-| 2-authorization | 1-storage-foundation | 6 | 5 | 0 |
+| 2-authorization | 1-storage-foundation | 6 | 0 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 7 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
@@ -66,12 +66,12 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 
 | Test file | Status | Candidate routes (heuristic) | Reason |
 | --- | --- | ---: | --- |
-| `vendor/nightscout/tests/api.security.test.js` | unresolved | 7 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/api.verifyauth.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/hashauth.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/api.security.test.js` | adapted | 7 | All sixteen locked REST-security cases are represented in test/auth-compat.test.ts: false access tokens, denied anonymous reads, canonical JWT issuance with accessToken/iat/exp, broken-role fallback, SHA-1 API_SECRET, query/header access tokens, Bearer success/failure, admin verifyauth, and the six exact subject/role PUT success or missing/invalid _id failures. Production routes use the same request-local authorization resolution and SQLite role/subject storage; the adapter additionally re-resolves live JWT state and bounds credential work. |
+| `vendor/nightscout/tests/api.verifyauth.test.js` | adapted | 2 | Both locked API-mounted verifyauth cases are represented in test/auth-compat.test.ts and test/api-v2-inheritance.test.ts: an anonymous/default resolution returns the UNAUTHORIZED message inside the HTTP-200 envelope, while the exact SHA-1 API_SECRET digest returns OK; v1 and inherited v2 produce the same shape. |
+| `vendor/nightscout/tests/hashauth.test.js` | pass | 0 | The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All five unauthorized/authorized state, optional localStorage persistence, removal and too-short-secret alert cases execute against the original client hashauth module. No credential value is supplied by the runner or recorded by NSCF. |
 | `vendor/nightscout/tests/identity-matrix.test.js` | adapted | 2 | Represented by the complete twelve-case Workers-runtime client identity matrix in test/api-v1-treatment-identity-matrix.test.ts: Loop UUID and explicit-identifier overrides, Loop syncIdentifier isolation, AAPS null/ObjectId identifiers and pump metadata, xDrip uuid plus ObjectId, generated/provided/UUID v1 IDs, repeated-identifier upsert and distinct identifiers. |
-| `vendor/nightscout/tests/security.test.js` | unresolved | 4 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/verifyauth.test.js` | unresolved | 2 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/security.test.js` | adapted | 4 | All three active locked API_SECRET middleware cases are represented in test/auth-compat.test.ts: public status remains available, /api/v1 and inherited /api/v2 experiments/test reject an unauthenticated caller, the exact SHA-1 API_SECRET digest returns {status:'ok'}, and a configured secret shorter than 12 characters fails closed as api_secret_not_configured. The route uses the exact authorization:debug:test permission and also accepts a delegated role/JWT. The commented Socket.IO case in the locked file is not an active test declaration and realtime authorization is tracked separately. |
+| `vendor/nightscout/tests/verifyauth.test.js` | adapted | 2 | All four locked verifyauth cases are represented in test/auth-compat.test.ts: default readable permissions, wrong-secret UNAUTHORIZED inside the HTTP-200 envelope, persisted per-IP failure-delay accumulation on repeated attempts, and exact SHA-1/SHA-512 authorized responses. Success clears delay state; Durable Object alarms prune expired rows without relying on module-global timers. |
 
 ### 3-api-v1-v2
 

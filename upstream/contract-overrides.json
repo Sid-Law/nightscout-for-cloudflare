@@ -350,6 +350,26 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/api.security.test.js": {
+      "status": "adapted",
+      "reason": "All sixteen locked REST-security cases are represented in test/auth-compat.test.ts: false access tokens, denied anonymous reads, canonical JWT issuance with accessToken/iat/exp, broken-role fallback, SHA-1 API_SECRET, query/header access tokens, Bearer success/failure, admin verifyauth, and the six exact subject/role PUT success or missing/invalid _id failures. Production routes use the same request-local authorization resolution and SQLite role/subject storage; the adapter additionally re-resolves live JWT state and bounds credential work."
+    },
+    "vendor/nightscout/tests/api.verifyauth.test.js": {
+      "status": "adapted",
+      "reason": "Both locked API-mounted verifyauth cases are represented in test/auth-compat.test.ts and test/api-v2-inheritance.test.ts: an anonymous/default resolution returns the UNAUTHORIZED message inside the HTTP-200 envelope, while the exact SHA-1 API_SECRET digest returns OK; v1 and inherited v2 produce the same shape."
+    },
+    "vendor/nightscout/tests/security.test.js": {
+      "status": "adapted",
+      "reason": "All three active locked API_SECRET middleware cases are represented in test/auth-compat.test.ts: public status remains available, /api/v1 and inherited /api/v2 experiments/test reject an unauthenticated caller, the exact SHA-1 API_SECRET digest returns {status:'ok'}, and a configured secret shorter than 12 characters fails closed as api_secret_not_configured. The route uses the exact authorization:debug:test permission and also accepts a delegated role/JWT. The commented Socket.IO case in the locked file is not an active test declaration and realtime authorization is tracked separately."
+    },
+    "vendor/nightscout/tests/verifyauth.test.js": {
+      "status": "adapted",
+      "reason": "All four locked verifyauth cases are represented in test/auth-compat.test.ts: default readable permissions, wrong-secret UNAUTHORIZED inside the HTTP-200 envelope, persisted per-IP failure-delay accumulation on repeated attempts, and exact SHA-1/SHA-512 authorized responses. Success clears delay state; Durable Object alarms prune expired rows without relying on module-global timers."
+    },
+    "vendor/nightscout/tests/hashauth.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All five unauthorized/authorized state, optional localStorage persistence, removal and too-short-secret alert cases execute against the original client hashauth module. No credential value is supplied by the runner or recorded by NSCF."
+    },
     "vendor/nightscout/tests/errorcodes.test.js": {
       "status": "pass",
       "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All eight in-range/error/calibration/display/default/custom-mapping cases execute against the original errorcodes plugin; no Cloudflare rewrite is used. Automatic persisted evaluation of this plugin remains a separate scheduler integration task."

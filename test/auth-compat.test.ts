@@ -831,6 +831,62 @@ describe("locked Nightscout v15.0.7 authorization compatibility", () => {
     expect(await stub.authorizationDelay(requestIp, Date.now())).toBe(0);
   });
 
+  it("adapts the locked API_SECRET experiments permission probe through v1 and v2", async () => {
+    const tenantName = tenant("auth-experiments");
+
+    const status = await configuredFetch(
+      tenantName,
+      "/api/v1/status.json",
+      "readable",
+    );
+    expect(status.status).toBe(200);
+
+    for (const version of ["v1", "v2"]) {
+      const anonymous = await configuredFetch(
+        tenantName,
+        `/api/${version}/experiments/test`,
+        "readable",
+      );
+      expect(anonymous.status).toBe(401);
+
+      const admin = await configuredFetch(
+        tenantName,
+        `/api/${version}/experiments/test`,
+        "readable",
+        { headers: { "api-secret": await adminDigest() } },
+      );
+      expect(admin.status).toBe(200);
+      expect(await admin.json()).toEqual({ status: "ok" });
+    }
+
+    await createRole(tenantName, "debug-probe", ["authorization:debug:test"]);
+    const { listed } = await createSubject(tenantName, "Debug probe", ["debug-probe"]);
+    const issued = await issueFor(tenantName, listed.accessToken);
+    const delegated = await configuredFetch(
+      tenantName,
+      "/api/v1/experiments/test",
+      "denied",
+      { headers: { Authorization: `Bearer ${String(issued.token)}` } },
+    );
+    expect(delegated.status).toBe(200);
+    expect(await delegated.json()).toEqual({ status: "ok" });
+
+    const shortSecretEnv = {
+      ...configuredWorkerEnv("denied"),
+      API_SECRET: "tooshort",
+    };
+    const shortSecret = await worker.fetch(
+      new Request(endpoint("/api/v1/experiments/test", tenantName), {
+        headers: { "api-secret": await hexDigest("SHA-1", "tooshort") },
+      }),
+      shortSecretEnv,
+    );
+    expect(shortSecret.status).toBe(503);
+    expect(await shortSecret.json()).toMatchObject({
+      error: { code: "api_secret_not_configured" },
+    });
+  });
+
   it("derives realtime read/write/treatment flags from live role permissions", async () => {
     const tenantName = tenant("auth-realtime-permissions");
     await createRole(tenantName, "realtime-writer", [
