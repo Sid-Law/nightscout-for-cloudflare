@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 13, adapted: 80, excluded-fixed-scope: 2, unresolved: 16
-- Input fingerprint: `75f3d85731807330bce6e5292e1eb6cb9c81d53fce828b8b2f85327de19a6a12`
+- Statuses: pass: 14, adapted: 80, excluded-fixed-scope: 2, unresolved: 15
+- Input fingerprint: `d2f925f8d53cf1aa09650cea7751d9fb488735ada47230ae6bac3504cb3cd3e2`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -26,7 +26,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 7 | 2 |
-| 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 1 | 0 |
+| 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 0 | 0 |
 
 Dispatch work in numeric order. Within a workstream, use each test's `related_routes` in `upstream/contract-manifest.json` only as heuristic candidate links for grouping implementation slices; confirm each link against upstream source before claiming coverage.
 
@@ -186,7 +186,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | --- | --- | ---: | --- |
 | `vendor/nightscout/tests/careportal.test.js` | pass | 0 | The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. Its Care Portal open, Snack Bolus entry, client authorization and mocked Treatment save workflow passes against the original bundle. This is direct official-client evidence; it does not claim a credentialed remote mutation on the public Worker. |
 | `vendor/nightscout/tests/client.renderer.test.js` | pass | 0 | The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the gate proves public/bundle/js/bundle.app.js is byte-identical to the locked upstream build. All six official bubble-scale and brush-highlight cases execute against vendor/nightscout/lib/client/renderer.js, the same source included in that shipped official bundle; no Cloudflare renderer fork or substitute UI exists. |
-| `vendor/nightscout/tests/env.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/env.test.js` | pass | 0 | The complete locked upstream file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. All 15 cases retain SHOW_PLUGINS defaults, generic camel-cased extended settings, Pushover/Azure variable auto-enable, strict readENVTruthy parsing and every DISPLAY_UNITS spelling/default. This locks the upstream parser itself; Cloudflare request-local environment mapping remains separately bounded, and external Pushover delivery stays disabled in simulated scope. |
 | `vendor/nightscout/tests/language.test.js` | adapted | 0 | Represented by all seven runtime cases in test/language-contract.test.ts and the recursive asset case in scripts/audit-language-contracts.test.mjs: English identity, positional/object placeholders, French/Czech/case-insensitive/Traditional-Chinese translation and unsupported-code fallback. The request-local src/language.ts adapter loads official dictionaries through Workers Static Assets instead of fs; all 33 deployed JSON files are valid and byte-identical to locked v15.0.7, and LANGUAGE now reaches HTTP/Socket status for the unchanged browser loader. |
 | `vendor/nightscout/tests/profileeditor.test.js` | pass | 4 | The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. The original Profile Editor renders, loads its mocked profile list, switches records and exercises mocked save/delete confirmations. This proves the shipped official client workflow, not a current credentialed remote Profile mutation. |
 | `vendor/nightscout/tests/reports.test.js` | pass | 15 | The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. Both full report workflows render the original day-to-day/statistics/distribution/hourly/percentile/success/calibration/treatment/profile surfaces, exercise mocked Treatment edit/delete, and produce the week-to-week report from locked fixtures. The data/API calls are upstream mocks, so public large-range loading and credentialed report mutations remain separate acceptance work. |

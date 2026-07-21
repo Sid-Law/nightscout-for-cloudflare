@@ -10,7 +10,7 @@ system is a compatible subset, not a full server.
 `c4cdce8e69f1fc9910363e0afbfff4ca896e547e` and Cloudflare version
 `f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927`, reported as 100% active. The
 candidate's 60-file Workers-runtime suite passes 663/663 plus 22/22 audit tests,
-42/42 unchanged direct upstream client tests across eleven files and 107/107 unchanged tests across seventeen
+42/42 unchanged direct upstream client tests across eleven files and 122/122 unchanged tests across eighteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
 asset entries; its dry run reported 1162.31 KiB raw / 214.78 KiB gzip and only
@@ -70,7 +70,7 @@ official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
 evidence is 60 Workers files / 663 tests, 22/22 audits, eleven direct upstream
-client files / 42 tests and seventeen direct upstream server/data-plugin files / 107 tests; the
+client files / 42 tests and eighteen direct upstream server/data-plugin files / 122 tests; the
 dry run is 1162.31 KiB raw / 214.78 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 

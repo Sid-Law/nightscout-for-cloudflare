@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "75f3d85731807330bce6e5292e1eb6cb9c81d53fce828b8b2f85327de19a6a12",
+  "inputs_sha256": "d2f925f8d53cf1aa09650cea7751d9fb488735ada47230ae6bac3504cb3cd3e2",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -38,10 +38,10 @@
     },
     "test_file_count": 111,
     "tests_by_status": {
-      "pass": 13,
+      "pass": 14,
       "adapted": 80,
       "excluded-fixed-scope": 2,
-      "unresolved": 16
+      "unresolved": 15
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8055,8 +8055,8 @@
     },
     {
       "file": "vendor/nightscout/tests/env.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. All 15 cases retain SHOW_PLUGINS defaults, generic camel-cased extended settings, Pushover/Azure variable auto-enable, strict readENVTruthy parsing and every DISPLAY_UNITS spelling/default. This locks the upstream parser itself; Cloudflare request-local environment mapping remains separately bounded, and external Pushover delivery stays disabled in simulated scope.",
       "workstream": "8-ui-and-process-boundaries",
       "depends_on": [
         "3-api-v1-v2",
