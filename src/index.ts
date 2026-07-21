@@ -2944,8 +2944,19 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   if (request.method === "GET" && /^\/api\/v[12]\/adminnotifies\/?$/.test(url.pathname)) {
     // Locked adminnotifies is public but still resolves credentials so a bad
     // explicit secret participates in the shared failure delay-list.
-    await resolveRequestAuthorization(request, env, url);
-    return json({ message: { notifies: [], notifyCount: 0 } });
+    const resolution = await resolveRequestAuthorization(request, env, url);
+    if (env.ENTRY_STORE === undefined) {
+      return json({ message: { notifies: [], notifyCount: 0 } });
+    }
+    const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+    const permissionGroups = await permissionGroupsForResolution(resolution, store, env);
+    const notifies = parseDocuments(await store.listAdminNotifications(Date.now()));
+    return json({
+      message: {
+        notifies: permissionGroupsAllow(permissionGroups, "*:*:admin") ? notifies : [],
+        notifyCount: notifies.length,
+      },
+    });
   }
 
   const entriesResponse = await handleEntriesApi(request, env, url);

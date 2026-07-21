@@ -62,7 +62,7 @@ describe("API v2 inherits the implemented v1 router", () => {
 
       const notifies = await SELF.fetch(`https://example.test/api/${version}/adminnotifies`);
       expect(notifies.status).toBe(200);
-      expect(await notifies.json()).toEqual({ message: { notifies: [], notifyCount: 0 } });
+      expect(await notifies.json()).toEqual({ message: { notifies: [], notifyCount: 1 } });
     }
   });
 

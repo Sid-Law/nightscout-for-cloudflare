@@ -240,7 +240,7 @@ describe("Nightscout compatibility API", () => {
     });
 
     const notifies = await SELF.fetch("https://example.test/api/v1/adminnotifies");
-    expect(await notifies.json()).toEqual({ message: { notifies: [], notifyCount: 0 } });
+    expect(await notifies.json()).toEqual({ message: { notifies: [], notifyCount: 2 } });
   });
 
   it("provides the official clock startup scripts and properties shape", async () => {

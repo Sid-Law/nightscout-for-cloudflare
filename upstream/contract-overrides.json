@@ -350,6 +350,10 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/adminnotifies.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream server file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. Its original aggregation case retains message-based deduplication. The Workers suite additionally covers SQLite DO persistence across eviction, first-metadata retention, public-count/admin-body filtering, the exact eight/twelve-hour windows, readable-site and bad-credential producers, the ADMIN_NOTIFIES_ENABLED gate, and a bounded Free-plan transient-message adapter."
+    },
     "vendor/nightscout/tests/admintools.test.js": {
       "status": "pass",
       "reason": "The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. Its original Admin Tools UI loads DeviceStatus/Treatment/Entry counts and exercises delete-all, delete-old and future-record cleanup buttons with the exact status text. Network calls are the locked test's mocks, so this proves shipped client behavior rather than a current credentialed remote cleanup."

@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { SqliteAdminNotifyRepository } from "./admin-notifies";
 import {
   migrateBackgroundTasksV14,
   PLUGIN_NOTIFICATIONS_TASK,
@@ -512,6 +513,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     });
     ctx.blockConcurrencyWhile(async () => {
       this.migrate();
+      this.reconcileAdminNotifies(Date.now());
       this.seedAutomaticNotificationTask(Date.now());
       await this.synchronizeRealtimeAlarm();
     });
@@ -644,6 +646,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       migrateBackgroundTasksV14(this.ctx.storage);
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (14)",
+      );
+
+      // Admin notifications were a Node-process-local array upstream. Persist
+      // them per tenant so DO eviction does not erase the warning drawer.
+      this.adminNotifies().migrate();
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (15)",
       );
 
       // This named, idempotent auth state is intentionally independent of the
@@ -974,6 +983,33 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
   private backgroundTasks(): SqliteBackgroundTaskRepository {
     return new SqliteBackgroundTaskRepository(this.ctx.storage);
+  }
+
+  private adminNotifies(): SqliteAdminNotifyRepository {
+    return new SqliteAdminNotifyRepository(this.ctx.storage);
+  }
+
+  private adminNotifiesEnabled(now: number): boolean {
+    const status = nightscoutStatus(
+      new Date(now),
+      this.env.AUTH_DEFAULT_ROLES ?? "readable",
+      this.tenantStatusSettings(),
+    );
+    return recordValue(status.settings).adminNotifiesEnabled !== false;
+  }
+
+  private reconcileAdminNotifies(now: number): void {
+    this.adminNotifies().reconcileReadableSite(
+      (this.env.AUTH_DEFAULT_ROLES ?? "readable") === "readable",
+      this.adminNotifiesEnabled(now),
+      now,
+    );
+  }
+
+  listAdminNotifications(now = Date.now()): string {
+    const timestamp = Number.isFinite(now) ? Math.trunc(now) : Date.now();
+    this.reconcileAdminNotifies(timestamp);
+    return JSON.stringify(this.adminNotifies().listForApi(timestamp));
   }
 
   private resolvedAutomaticNotificationRuntime(now: number): AutomaticNotificationRuntime {
@@ -2132,6 +2168,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           excess,
         );
       }
+      this.adminNotifies().add({
+        title: "Failed authentication",
+        message: `A device at IP address ${normalizedIp} attempted authenticating with Nightscout with wrong credentials. Check if you have an uploader setup with wrong API_SECRET or token?`,
+      }, this.adminNotifiesEnabled(timestamp), timestamp);
     });
     await this.synchronizeRealtimeAlarm();
   }

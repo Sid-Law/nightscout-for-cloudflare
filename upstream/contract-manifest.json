@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "e977f139444058335409e2b0bdebe221d68dff241af0e0b7cd33eaddf8f50326",
+  "inputs_sha256": "b512366ece062afaa890e99a62b9da9ecbb52633256e1733688fc94211e6e3fc",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -38,10 +38,10 @@
     },
     "test_file_count": 111,
     "tests_by_status": {
-      "pass": 11,
+      "pass": 12,
       "adapted": 79,
       "excluded-fixed-scope": 2,
-      "unresolved": 19
+      "unresolved": 18
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7119,8 +7119,8 @@
     },
     {
       "file": "vendor/nightscout/tests/adminnotifies.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream server file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. Its original aggregation case retains message-based deduplication. The Workers suite additionally covers SQLite DO persistence across eviction, first-metadata retention, public-count/admin-body filtering, the exact eight/twelve-hour windows, readable-site and bad-credential producers, the ADMIN_NOTIFIES_ENABLED gate, and a bounded Free-plan transient-message adapter.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
