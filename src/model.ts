@@ -1,5 +1,12 @@
+import {
+  LEGACY_QUERY_DEFAULT_WINDOW_MS,
+  LegacyObjectId,
+  legacyDateMinimum,
+  normalizeLegacyIdValue,
+} from "./server-query";
+
 const MAX_BATCH_SIZE = 100;
-export const LEGACY_ENTRY_DEFAULT_WINDOW_MS = 4 * 24 * 60 * 60 * 1_000;
+export const LEGACY_ENTRY_DEFAULT_WINDOW_MS = LEGACY_QUERY_DEFAULT_WINDOW_MS;
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 
 export class ApiError extends Error {
@@ -372,11 +379,12 @@ export function parseHistoryQuery(url: URL): HistoryQuery {
     if (field === "_id" && operator !== "eq") {
       throw new ApiError(400, "unsupported_query_filter", `unsupported Entries filter ${name}`);
     }
+    const normalizedId = field === "_id" ? normalizeLegacyIdValue(value).value : value;
     const parsedValue = LEGACY_NUMERIC_ENTRY_FIELDS.has(field)
       ? parseLegacyInteger(value, name)
-      : field === "_id" && /^[0-9a-fA-F]{24}$/.test(value)
-        ? value.toLowerCase()
-        : value;
+      : normalizedId instanceof LegacyObjectId
+        ? normalizedId.toString()
+        : String(normalizedId);
     filters.push({
       field,
       operator,
@@ -424,7 +432,7 @@ export function parseHistoryQuery(url: URL): HistoryQuery {
     filters.push({
       field: "date",
       operator: "gte",
-      value: Date.now() - LEGACY_ENTRY_DEFAULT_WINDOW_MS,
+      value: legacyDateMinimum(),
     });
   }
   return { count, filters, sort, type };

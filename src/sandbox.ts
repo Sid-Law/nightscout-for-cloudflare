@@ -1,3 +1,4 @@
+import { createNightscoutLanguage } from "./language";
 import { createNightscoutProfileFunctions } from "./profile-functions";
 import { nightscoutTimes } from "./runtime/times";
 import { mgdlToMMOL, mmolToMgdl } from "./runtime/units";
@@ -24,7 +25,7 @@ export interface SandboxDdata extends SandboxData {
 }
 
 export interface SandboxLanguage extends Record<string, unknown> {
-  translate: (...args: unknown[]) => unknown;
+  translate: (text: string, ...args: unknown[]) => unknown;
 }
 
 export interface SandboxPlugin {
@@ -68,7 +69,7 @@ export interface NightscoutSandbox extends Record<string, unknown> {
   notifications: SandboxNotifications;
   levels?: unknown;
   language: SandboxLanguage;
-  translate: (...args: unknown[]) => unknown;
+  translate: (text: string, ...args: unknown[]) => unknown;
   properties: Record<string, unknown>;
   unitsLabel: string;
   extendedSettings: Record<string, unknown>;
@@ -310,7 +311,7 @@ export function createNightscoutSandbox(): NightscoutSandbox {
   sandbox.time = 0;
   sandbox.data = {};
   sandbox.notifications = {};
-  sandbox.language = { translate: (key): unknown => key };
+  sandbox.language = createNightscoutLanguage();
   sandbox.translate = sandbox.language.translate;
   sandbox.properties = {};
   sandbox.unitsLabel = "mg/dl";

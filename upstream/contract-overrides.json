@@ -350,6 +350,14 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/query.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all five named locked cases plus current UUID coverage in test/query-contract.test.ts: four-day and configurable date defaults, ID-based date-filter bypass, non-ObjectId preservation and ObjectId-shaped normalization. src/server-query.ts ports the upstream walker/date/ID surface without mongodb, traverse or moment; the live Entries parser reuses its ObjectId normalization and default date boundary before translating the query to bounded indexed SQLite filters."
+    },
+    "vendor/nightscout/tests/language.test.js": {
+      "status": "adapted",
+      "reason": "Represented by all seven runtime cases in test/language-contract.test.ts and the recursive asset case in scripts/audit-language-contracts.test.mjs: English identity, positional/object placeholders, French/Czech/case-insensitive/Traditional-Chinese translation and unsupported-code fallback. The request-local src/language.ts adapter loads official dictionaries through Workers Static Assets instead of fs; all 33 deployed JSON files are valid and byte-identical to locked v15.0.7, and LANGUAGE now reaches HTTP/Socket status for the unchanged browser loader."
+    },
     "vendor/nightscout/tests/api.aaps-client.test.js": {
       "status": "adapted",
       "reason": "Represented by the named Workers-runtime AndroidAPS v1 contract in test/api-v1-core-contract.test.ts: SGV device/app metadata, dateString-derived utcOffset, SMB/meal/temp-basal numeric and boolean fields, pumpId/pumpType/pumpSerial preservation, single-array and multi-document batches, ordered ObjectId responses and stored-field reads."

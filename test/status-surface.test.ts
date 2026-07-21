@@ -251,6 +251,18 @@ describe("locked Nightscout status settings", () => {
 });
 
 describe("tenant status configuration sources", () => {
+  it("passes the official LANGUAGE setting to browser and socket status", () => {
+    const overrides = tenantStatusSettings({ LANGUAGE: "zh_tw" });
+    expect(settingsOf(nightscoutStatus(new Date(0), "readable", overrides)).language)
+      .toBe("zh_tw");
+    expect(settingsOf(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      overrides,
+    )).language).toBe("zh_tw");
+  });
+
   it("uses the current profile units when DISPLAY_UNITS is absent across v1 and v2", async () => {
     const name = tenant("status-profile-units");
     await saveProfile(name, {

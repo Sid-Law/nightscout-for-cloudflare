@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 1, adapted: 73, excluded-fixed-scope: 2, unresolved: 35
-- Input fingerprint: `d1eaf325bc950b35df70880c5515fdb36cfe0e5d3e61598c7013d07ee1cbe04d`
+- Statuses: pass: 1, adapted: 75, excluded-fixed-scope: 2, unresolved: 33
+- Input fingerprint: `72d769a7b3ad5407fa9e16def90f4d75d1b066436e781f9ae7fbea237b550096`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -19,14 +19,14 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
-| 1-storage-foundation | none | 15 | 7 | 0 |
+| 1-storage-foundation | none | 15 | 6 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 5 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 10 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 7 | 2 |
-| 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 6 | 0 |
+| 8-ui-and-process-boundaries | 3-api-v1-v2, 4-plugins-and-calculations, 6-realtime | 8 | 5 | 0 |
 
 Dispatch work in numeric order. Within a workstream, use each test's `related_routes` in `upstream/contract-manifest.json` only as heuristic candidate links for grouping implementation slices; confirm each link against upstream source before claiming coverage.
 
@@ -57,7 +57,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/mongo-storage.retry.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/mongo-storage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/objectid-cache.test.js` | adapted | 8 | Represented by all seven named Workers-runtime ObjectIdCache cases in test/api-v1-loop-client-contract.test.ts: POST-response cache mapping, cached-ID PUT and DELETE, cache-miss and app-restart duplicate behavior with fresh timestamps, ordered batch identity mapping, temp-basal update, and pump-event hexadecimal syncIdentifier preservation. The contract retains upstream behavior that syncIdentifier is descriptive rather than a server uniqueness key. |
-| `vendor/nightscout/tests/query.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/query.test.js` | adapted | 0 | Represented by all five named locked cases plus current UUID coverage in test/query-contract.test.ts: four-day and configurable date defaults, ID-based date-filter bypass, non-ObjectId preservation and ObjectId-shaped normalization. src/server-query.ts ports the upstream walker/date/ID surface without mongodb, traverse or moment; the live Entries parser reuses its ObjectId normalization and default date boundary before translating the query to bounded indexed SQLite filters. |
 | `vendor/nightscout/tests/reportstorage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/storage.shape-handling.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/uuid-handling.test.js` | adapted | 6 | Represented by all fifteen UUID-OFF, UUID-ON and UUID-EDGE Workers-runtime cases in test/api-v1-treatment-identity-matrix.test.ts: locked true-by-default/on/off/invalid parsing, write promotion versus stripping, identifier and legacy-_id GET/DELETE selection, ObjectId preservation, invalid-length/non-hyphen/empty/case-sensitive lookup edges and repeated-identifier upsert. A versioned UUID-aware DO RPC fails closed for explicit false during a rolling old-isolate boundary instead of silently applying true semantics. |
@@ -187,7 +187,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/careportal.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/client.renderer.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/env.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
-| `vendor/nightscout/tests/language.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/language.test.js` | adapted | 0 | Represented by all seven runtime cases in test/language-contract.test.ts and the recursive asset case in scripts/audit-language-contracts.test.mjs: English identity, positional/object placeholders, French/Czech/case-insensitive/Traditional-Chinese translation and unsupported-code fallback. The request-local src/language.ts adapter loads official dictionaries through Workers Static Assets instead of fs; all 33 deployed JSON files are valid and byte-identical to locked v15.0.7, and LANGUAGE now reaches HTTP/Socket status for the unchanged browser loader. |
 | `vendor/nightscout/tests/profileeditor.test.js` | unresolved | 4 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/reports.test.js` | unresolved | 15 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/sandbox.test.js` | adapted | 0 | Represented by all five named Workers-runtime cases in test/sandbox-contract.test.ts plus one complete helper-surface case: client/server initialization, safe notification projection, LOW/HIGH display sentinels, BG Now/default messages, immutable first-writer properties, historical SGV selection, unit/insulin/BG display conversion and plugin-specific extended settings. src/sandbox.ts replaces only Node dynamic require/module-global state with the existing request-local Profile, units and times adapters. |

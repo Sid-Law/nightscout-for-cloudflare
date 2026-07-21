@@ -177,12 +177,12 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.equal(first.tests.length, 111);
   assert.equal(serializeManifest(first), serializeManifest(second));
   assert.equal(first.tests.filter((item) => item.status === "pass").length, 1);
-  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 73);
+  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 75);
   assert.deepEqual(first.statistics.tests_by_status, {
     pass: 1,
-    adapted: 73,
+    adapted: 75,
     "excluded-fixed-scope": 2,
-    unresolved: 35,
+    unresolved: 33,
   });
   for (const file of [
     "vendor/nightscout/tests/api.aaps-client.test.js",
@@ -219,6 +219,8 @@ test("the locked repository manifest is stable and validates all 111 test files"
     "vendor/nightscout/tests/api.treatments.test.js",
     "vendor/nightscout/tests/api.unauthorized.test.js",
     "vendor/nightscout/tests/api.v1-batch-operations.test.js",
+    "vendor/nightscout/tests/query.test.js",
+    "vendor/nightscout/tests/language.test.js",
     "vendor/nightscout/tests/carb-dose-upload.test.js",
     "vendor/nightscout/tests/gap-treat-012.test.js",
     "vendor/nightscout/tests/objectid-cache.test.js",

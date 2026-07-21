@@ -12,6 +12,7 @@ export type NightscoutDisplayUnits = "mg/dl" | "mmol";
 
 export interface NightscoutStatusEnvironment {
   DISPLAY_UNITS?: string;
+  LANGUAGE?: string;
   ENABLE?: string;
   DISABLE?: string;
   AUTH_FAIL_DELAY?: string;
@@ -366,6 +367,7 @@ export function tenantStatusSettings(
     ["DAY_START", environment.DAY_START],
     ["DAY_END", environment.DAY_END],
     ["HEARTBEAT", environment.HEARTBEAT],
+    ["LANGUAGE", environment.LANGUAGE],
   ] as const) {
     if (value !== undefined) settingEnvironment[name] = value;
   }
