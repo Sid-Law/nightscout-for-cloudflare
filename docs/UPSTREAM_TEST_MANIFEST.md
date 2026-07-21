@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 12, adapted: 79, excluded-fixed-scope: 2, unresolved: 18
-- Input fingerprint: `b512366ece062afaa890e99a62b9da9ecbb52633256e1733688fc94211e6e3fc`
+- Statuses: pass: 13, adapted: 79, excluded-fixed-scope: 2, unresolved: 17
+- Input fingerprint: `d33e82a6ccb9ca3c0fab6d8ab95f08d3a04286a803e5e460d588d423419db7e9`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -19,7 +19,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
-| 1-storage-foundation | none | 15 | 5 | 0 |
+| 1-storage-foundation | none | 15 | 4 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 0 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 5 | 0 |
@@ -50,7 +50,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/api.entries.uuid.test.js` | adapted | 2 | Represented by the complete nine-case Workers-runtime contract in test/api-v1-entry-uuid.test.ts: the three sysTime+type baseline replays, UUID create/same-UUID/different-UUID behavior, mixed ObjectId/UUID/generated-ID batch, update of a pre-fix custom UUID _id row, and UUID preservation as identifier under a server ObjectId. The pre-fix row is inserted through the already adapted raw main-namespace storage path rather than fabricated by the v1 normalizer. |
 | `vendor/nightscout/tests/api.objectid-validation.test.js` | adapted | 0 | Represented by the pure Workers-runtime helper contract in test/api-v1-collections-contract.test.ts: undefined/null acceptance, 24-hex acceptance, UUID/number rejection, first-invalid batch reporting and all-valid null result. |
 | `vendor/nightscout/tests/api.partial-failures.test.js` | adapted | 6 | Represented by the complete 14-case Workers-runtime contract in test/api-v1-partial-failures.test.ts: non-unique Trio id batches, response and Loop syncIdentifier ordering, replay positions, ObjectId/Trio/AAPS identity separation, per-item response IDs, large DeviceStatus predictions, configured/default/disabled IOB/COB/UAM/ZT truncation for suggested and enacted branches, the locked non-validating string-sgv fixture, and the 50-entry recovery batch. The adapter retains the 100-document and 512-KiB Workers bounds. |
-| `vendor/nightscout/tests/cache-objectid-compat.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/cache-objectid-compat.test.js` | pass | 0 | The complete locked upstream file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. All 16 cases preserve the MongoDB 5 ObjectId root-cause demonstration, ddata string normalization, fixed null/empty/stale age filter and cache insertion/data-update behavior for ObjectId, string and mixed identifiers. NSCF's request-local SQLite projections do not make the Node process cache authoritative; their separate ID normalization remains covered by Workers tests. |
 | `vendor/nightscout/tests/concurrent-writes.test.js` | adapted | 6 | Represented by all 13 named Workers-runtime cases in test/api-v1-concurrent-writes.test.ts: five simultaneous scalar and two-item batch writes for Treatments, DeviceStatus and Entries; ten staggered Treatment writes in 100 ms; concurrent cross-collection batches; unique server ObjectIds; per-batch response cardinality; 50 AAPS SMB offline-recovery writes; 100 AndroidAPS SGV recovery writes; and 30 concurrent Treatment/Entry/DeviceStatus requests. Every request crosses the Worker boundary into one tenant SQLite Durable Object, and non-200 responses fail the contract before persisted counts are checked. |
 | `vendor/nightscout/tests/issue-6923-legacy-uuid.test.js` | adapted | 8 | Represented by the complete three-case Workers-runtime regression in test/api-v1-treatment-identity-matrix.test.ts. A raw pre-fix Treatment with UUID directly in _id and no identifier is inserted through the main-namespace raw storage path, then found, updated in place without duplication, and deleted through the v1 API with the MongoDB 5 acknowledged/deletedCount response. |
 | `vendor/nightscout/tests/mongo-pool-config.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |

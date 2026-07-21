@@ -498,14 +498,14 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 18 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 17 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
 `aa5029c40ba1d8a4f670c94bf1ee5ab48330a1d8`. The 59-file Workers-runtime
 suite passes 658/658 tests, the four audit suites pass 22/22, eleven complete
-official client files pass 42/42 unchanged, and sixteen locked server/data-plugin
-files pass 91/91 unchanged. Wrangler dry-run reads the same
+official client files pass 42/42 unchanged, and seventeen locked server/data-plugin
+files pass 107/107 unchanged. Wrangler dry-run reads the same
 248 official assets, reports 1161.62 KiB raw / 214.68 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 This increment replaces the upstream process-local Admin notification array
@@ -590,8 +590,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 18 unresolved plugin/test
-algorithms. The manifest records twelve direct passes, 79 adapted, 18 unresolved
+Node plugin `require` without fabricating the 17 unresolved plugin/test
+algorithms. The manifest records thirteen direct passes, 79 adapted, 17 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
