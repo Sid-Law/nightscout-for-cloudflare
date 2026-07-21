@@ -1,29 +1,33 @@
 # NSCF architecture
 
-Last audited: 2026-07-20
+Last audited: 2026-07-22
 
 This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`5574563d94df48177098cdbe0149ce953b771b9c` and Cloudflare version
-`980637fd-9d51-433f-8fdd-5b1175fdc0fc`, reported as 100% active. The
-candidate's 56-file Workers-runtime suite passes 638/638 plus 21/21 audit tests,
+`f0d442ca79fce67c2a2a118b9944ee5c2738f426` and Cloudflare version
+`1841cdc5-b06b-4ab4-94f1-742bef1e4e24`, reported as 100% active. The
+candidate's 58-file Workers-runtime suite passes 652/652 plus 22/22 audit tests,
 one unchanged direct upstream client test and 90/90 unchanged tests across fifteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1153.77 KiB raw / 213.01 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 65
-reported a 25 ms startup and passed credential-free API, EIO4 and real-browser
-gates.
+asset entries; its dry run reported 1154.98 KiB raw / 213.27 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 66
+reported a 31 ms startup and passed credential-free API, EIO4 and the named
+real-browser gates, with one activation-time ddata transient explicitly retained.
 These are release facts for the named subset, not
 evidence of a complete port.
 
 The deployed platform configuration sets Wrangler `keep_vars: true` so a
 dashboard-managed lab variable survives later code deployments. A Node audit locks that behavior while
 rejecting checked-in plaintext vars and prohibited product bindings. The
-current runtime retains `src/plugins/registry.ts`, a request-local static replacement for the
+current runtime retains `src/server-query.ts`, which replaces Mongo ObjectId,
+`traverse` and `moment` mechanics while preserving the locked query contract,
+and `src/language.ts`, which replaces server `fs` with request-local Static
+Assets loading while preserving official translations. It also retains
+`src/plugins/registry.ts`, a request-local static replacement for the
 Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
@@ -52,9 +56,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 official client `pluginbase.test.js` runs unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 56 Workers files / 638 tests, 21/21 audits, one direct upstream
+evidence is 58 Workers files / 652 tests, 22/22 audits, one direct upstream
 client file and fifteen direct upstream server/data-plugin files / 90 tests; the
-dry run is 1153.77 KiB raw / 213.01 KiB gzip with the same 248 assets and two bindings.
+dry run is 1154.98 KiB raw / 213.27 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -69,6 +73,8 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
   - API_SECRET, subject access-token and signed-JWT authorization
   - bounded parsing, upstream query subset and tenant routing
+  - request-local locked language selection/placeholder handling with official
+    dictionaries loaded from Static Assets rather than server filesystem access
   - v2 ddata/properties/summary stateless response adaptation
   - request-local locked Settings defaults, accessors, feature/alarm resolution
     and secure status filtering
@@ -1054,7 +1060,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`980637fd-9d51-433f-8fdd-5b1175fdc0fc`. Current credential-free remote smoke
+`1841cdc5-b06b-4ab4-94f1-742bef1e4e24`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled

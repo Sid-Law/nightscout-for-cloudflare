@@ -1,6 +1,6 @@
 # Current deployment record
 
-Last synchronized: 2026-07-20 (Asia/Shanghai)
+Last synchronized: 2026-07-22 (Asia/Shanghai)
 
 ## Status
 
@@ -12,19 +12,17 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `5574563d94df48177098cdbe0149ce953b771b9c`
-- Runtime source candidate: `5574563d94df48177098cdbe0149ce953b771b9c`
-- Git HEAD used by Wrangler: `5574563d94df48177098cdbe0149ce953b771b9c`
-- Cloudflare Version ID: `980637fd-9d51-433f-8fdd-5b1175fdc0fc`
-- Cloudflare ordinal version number: `65` (inferred from sequential Wrangler
-  version history)
+- Deployed runtime candidate: `f0d442ca79fce67c2a2a118b9944ee5c2738f426`
+- Runtime source candidate: `f0d442ca79fce67c2a2a118b9944ee5c2738f426`
+- Git HEAD used by Wrangler: `f0d442ca79fce67c2a2a118b9944ee5c2738f426`
+- Cloudflare Version ID: `1841cdc5-b06b-4ab4-94f1-742bef1e4e24`
+- Cloudflare ordinal version number: `66`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-20T10:11:34.774Z`
-- Activation: deployment created `2026-07-20T10:11:35.590Z`; Wrangler reports
+- Version creation time: `2026-07-21T19:45:23.975Z`
+- Activation: deployment `35700469-468c-499b-8c6f-91c6a81b5290` created
+  `2026-07-21T19:45:24.998Z`; Wrangler reports
   this version at 100%
-- Worker startup: 25 ms
-- Deployment ID: not exposed separately by Wrangler 4.112.0's current
-  deployment-list output; none is invented
+- Worker startup: 31 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -33,7 +31,7 @@ is not counted as API, plugin or real-time compatibility.
   persisted background-task table/index
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 1153.77 KiB raw / 213.01 KiB gzip
+- Upload: 1154.98 KiB raw / 213.27 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -62,9 +60,22 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 
 ## Release content
 
-The current deployed increment extends the generic SQLite background scheduler
-into one automatic official notification task for Simple Alarms, Pump, OpenAPS,
-Loop, Treatment Notify and Timeago, without inventing medical or dosing logic:
+The current deployed increment retains the generic SQLite background scheduler
+and adds the locked query/language compatibility layer without inventing
+medical or dosing logic:
+
+- the request-local query adapter preserves four-day/configurable date defaults,
+  date-filter bypass for IDs, non-ObjectId strings, ObjectId-shaped values and
+  current UUID handling without `mongodb`, `traverse` or `moment`; the live
+  Entries parser reuses its default boundary and ObjectId normalization before
+  bounded indexed SQLite execution;
+- the request-local language adapter preserves English identity, placeholders,
+  French/Czech/case-insensitive/Traditional-Chinese lookup, speech metadata and
+  unsupported-language fallback. It loads dictionaries through Static Assets
+  instead of `fs`; all 33 deployed JSON files are valid and byte-identical to
+  the locked release, and `LANGUAGE` reaches HTTP and Socket settings;
+- the preceding automatic official notification task for Simple Alarms, Pump,
+  OpenAPS, Loop, Treatment Notify and Timeago remains deployed;
 
 - Simple Alarms preserves the locked recent/nonfuture SGV boundary, strict
   urgent/warning high/low thresholds, exact default message, titles, event
@@ -434,10 +445,8 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed runtime candidate is
-`5574563d94df48177098cdbe0149ce953b771b9c`. It extends the schema-v14 generic
-task scheduler from automatic Simple Alarms/Treatment Notify/Timeago to Pump,
-OpenAPS and Loop under their official alert gates on top of core notification
-arbitration/persistence and schema v13 while retaining
+`f0d442ca79fce67c2a2a118b9944ee5c2738f426`. It adds locked query and language
+adapters on top of the schema-v14 generic notification scheduler while retaining
 request-local Basal Profile state and all prior OpenAPS/Pump, IOB/COB/
 Treatment-to-curve, registry, age/timeago, dataloader/database-size, Sandbox,
 Settings, Loop, Profile, uploader, identity, root-write/delta, v1, API3,
@@ -455,14 +464,15 @@ The table below records the exact local gate completed before deployment.
 | Direct upstream server/data-plugin tests | 15 locked files passed 90/90 unchanged (`dataloader`, `dbsize`, CAGE, SAGE, IAGE, timeago, treatment-to-curve, IOB, COB, OpenAPS, Pump, Basal Profile, Treatment Notify, Simple Alarms and Notifications) |
 | Authorization audit tests | 6/6 passed |
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
+| Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 56 files, 638/638 passed |
-| Worker dry run | 1153.77 KiB raw / 213.01 KiB gzip |
+| Workers integration tests | 58 files, 652/652 passed |
+| Worker dry run | 1154.98 KiB raw / 213.27 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; no credential was read, supplied, generated, replaced or inspected |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 638 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 652 Workers
 tests cover the implemented adapter subset; `pluginbase.test.js` additionally
 runs unchanged against the shipped official client bundle, while 15
 server/data-plugin files run unchanged in a separate 90/90 gate. All 16 API3 files,
@@ -476,8 +486,8 @@ server/data-plugin files run unchanged in a separate 90/90 gate. All 16 API3 fil
 `treatmentnotify.test.js`, `simplealarms.test.js`, `notifications.test.js`,
 `websocket.shape-handling.test.js`, `profile.test.js`,
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
-`sandbox.test.js`, `plugins.test.js` and 25 v1 client/API files are classified
-as fully `adapted`; one is `pass`, 35 remain unresolved and two bridge files
+`sandbox.test.js`, `plugins.test.js`, `query.test.js`, `language.test.js` and
+25 v1 client/API files are classified as fully `adapted`; one is `pass`, 33 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -486,7 +496,7 @@ real-browser gates below against the same active version.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `980637fd-9d51-433f-8fdd-5b1175fdc0fc` at 100%.
+Wrangler reports version `1841cdc5-b06b-4ab4-94f1-742bef1e4e24` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -509,7 +519,7 @@ not only Wrangler command success.
 | Protected mutation | Deliberately not attempted; no API secret was sent or inspected |
 
 The reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784542320857` and passed 72 behavior/CORS assertions.
+`public-smoke-1784663163199` and passed 72 behavior/CORS assertions.
 The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
 `pingTimeout:20000`.
 
@@ -595,27 +605,29 @@ execution for the remaining server plugins.
 
 ## Real-browser evidence
 
-A real Chromium session exercised Cloudflare version 65's official UI without reading
+A real browser session exercised Cloudflare version 66's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region, loaded locked
   `bundle.app.js` and displayed the live database-size pill as `0%`; the
   public tenant has no Entries, so `---` is expected;
-- Admin Tools, Food Editor, Profile Editor, Reporting, Swagger and
-  `clock-color` loaded from the official bundle with their expected controls;
-  the empty-data clock rendered `-?-` and no protected server mutation was
-  attempted;
+- the Settings form exposed the official language selector and About reported
+  Nightscout 15.0.7; Admin Tools exposed the expected unauthenticated device-
+  authentication dialog without receiving a credential;
+- `clock-color` rendered `-?-` with no JavaScript error and no protected server
+  mutation was attempted;
 - the user's existing homepage tab was returned to `/` and kept open after the checks;
-- the official Settings form opened and `Save` was clicked with unchanged
-  defaults; zero visible forms remained after 3.5 seconds, directly
-  rechecking the reported pop-back symptom;
-- main workflow listeners recorded zero warnings and zero JavaScript errors.
+- the first reload immediately after activation retained one timestamped ddata
+  500 console entry; direct ddata verification and a second reload returned
+  200 and added no new error. The transient is retained as evidence rather
+  than omitted.
 
 This pass asserted rendered DOM, status text, official-script presence and a
 fresh console trace for Cloudflare version
-`980637fd-9d51-433f-8fdd-5b1175fdc0fc`. It reused the same 248 unchanged
-official assets. Version 65 has therefore passed credential-free remote API,
-Engine.IO and real-browser acceptance.
+`1841cdc5-b06b-4ab4-94f1-742bef1e4e24`. It reused the same 248 unchanged
+official assets. Version 66 has therefore passed credential-free remote API,
+Engine.IO and the named real-browser acceptance, with the activation transient
+above explicitly recorded.
 
 Authenticated Profile Save remains historical evidence from an earlier
 version; the current load is recorded above, but no authenticated Food/Profile

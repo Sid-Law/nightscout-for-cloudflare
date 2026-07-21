@@ -472,12 +472,14 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `simplealarms.test.js`, `notifications.test.js`,
 `websocket.shape-handling.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
-`settings.test.js`, `sandbox.test.js`, `plugins.test.js` and 25 v1 client/API
+`settings.test.js`, `sandbox.test.js`, `plugins.test.js`, `query.test.js`,
+`language.test.js` and 25 v1 client/API
 files are classified as fully `adapted`. The complete locked
 `pluginbase.test.js` file runs unchanged against the byte-identical official
 client bundle and is classified as `pass`.
-The latest two complete upstream additions are `simplealarms.test.js` and
-`notifications.test.js`. The preceding two are `basalprofileplugin.test.js`
+The latest two complete upstream additions are `query.test.js` and
+`language.test.js`. The preceding two are `simplealarms.test.js` and
+`notifications.test.js`; the preceding two are `basalprofileplugin.test.js`
 and `treatmentnotify.test.js`; the preceding two are `openaps.test.js` and
 `pump.test.js`; the preceding three are `iob.test.js`, `cob.test.js` and
 `data.treatmenttocurve.test.js`. The preceding four
@@ -490,16 +492,24 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 35 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 33 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
-`5574563d94df48177098cdbe0149ce953b771b9c`. The 56-file Workers-runtime
-suite passes 638/638 tests, the three audit suites pass 21/21, the complete
+`f0d442ca79fce67c2a2a118b9944ee5c2738f426`. The 58-file Workers-runtime
+suite passes 652/652 tests, the four audit suites pass 22/22, the complete
 official `pluginbase.test.js` client file passes unchanged, and fifteen locked
 server/data-plugin files pass 90/90 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1153.77 KiB raw / 213.01 KiB gzip and exposes only
+248 official assets, reports 1154.98 KiB raw / 213.27 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
+This increment adds a request-local Worker-safe port of the locked query
+defaults, walker, date and ObjectId/UUID normalization surface; live Entries
+parsing reuses its four-day boundary and ObjectId normalization before bounded
+SQLite execution. It also adds the locked server language surface without
+bundling 1.5 MiB of dictionaries into the Worker: localization is fetched from
+Workers Static Assets, all 33 JSON files are audited as valid and byte-identical
+to v15.0.7, `LANGUAGE` reaches HTTP/Socket settings, and the default Sandbox
+uses the same request-local translator.
 This runtime connects a single `plugin-notifications` SQLite task to the locked
 official Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago
 calculations and the core notification processor. The engine evaluates the six
@@ -567,8 +577,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 35 unresolved plugin/test
-algorithms. The manifest records one direct pass, 73 adapted, 35 unresolved
+Node plugin `require` without fabricating the 33 unresolved plugin/test
+algorithms. The manifest records one direct pass, 75 adapted, 33 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -609,12 +619,10 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `980637fd-9d51-433f-8fdd-5b1175fdc0fc` (ordinal 65, inferred
-from the sequential Wrangler version history) was made current by the
-deployment created at `2026-07-20T10:11:35.590Z`; the version was created at
-`2026-07-20T10:11:34.774Z`, with a reported 25 ms
-startup. Wrangler 4.112.0 does not expose a separate deployment UUID in its
-current deployment-list output, so none is invented. No asset bytes needed
+Cloudflare version `1841cdc5-b06b-4ab4-94f1-742bef1e4e24` (ordinal 66) was made
+current by deployment `35700469-468c-499b-8c6f-91c6a81b5290` at
+`2026-07-21T19:45:24.998Z`; the version was created at
+`2026-07-21T19:45:23.975Z`, with a reported 31 ms startup. No asset bytes needed
 uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -623,7 +631,7 @@ the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
 missing-token API3 Entries returned the expected 401. The 72-assertion script
-used fresh tenant `public-smoke-1784542320857`, observed 237,568 SQLite bytes and a
+used fresh tenant `public-smoke-1784663163199`, observed 237,568 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -641,21 +649,23 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real Chromium run reloaded Cloudflare version 65 and rendered the official
-homepage with its chart region and locked `bundle.app.js`. The official Admin
-Tools, Food Editor, Profile Editor, Reporting, Swagger and `clock-color` pages
-also loaded with their official controls. The empty-data clock rendered `-?-`;
-no protected server mutation was attempted. Browser console inspection found
-zero warnings or JavaScript errors on the tested workflows. The homepage
-rendered the live `dbsize` pill as `0%`. The isolated browser session opened
-the official Settings form and clicked `Save` with unchanged defaults; zero
-visible forms remained after 3.5 seconds, so it did not pop
-back open. The user's existing homepage tab was returned to `/` and kept open.
+A real browser run reloaded Cloudflare version 66 and rendered the official
+homepage, chart region, empty-data `---`, `mg/dl` units and live `0%` dbsize
+pill. The Settings form opened with the complete official language selector
+and the About block reported Nightscout 15.0.7. Admin Tools displayed the
+expected unauthenticated device-authentication dialog without receiving a
+credential, and `clock-color` rendered `-?-` with no JavaScript error. The
+first reload immediately after activation retained one timestamped ddata 500
+console entry; a direct `/api/v2/ddata/at?tenant=demo` check and a second reload
+returned 200 and produced no new error, so the transient is recorded rather
+than hidden. No protected server mutation or Settings save was attempted. The
+user's existing homepage tab was returned to `/` and kept open.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 65 has therefore passed its credential-free remote API, Engine.IO and
-real-browser acceptance gates.
+Version 66 has therefore passed its credential-free remote API, Engine.IO and
+the named real-browser acceptance gates, with the activation-time transient
+above retained as an explicit observation.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
