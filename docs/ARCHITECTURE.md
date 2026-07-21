@@ -7,24 +7,24 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`b4eda4cc9014edb4ac8983f805f1c2f61cbb1e0d` and Cloudflare version
-`5abd2045-6f0b-426b-a7e3-0b0eb19e2de2`, reported as 100% active. The
-candidate's 58-file Workers-runtime suite passes 653/653 plus 22/22 audit tests,
-42/42 unchanged direct upstream client tests across eleven files and 90/90 unchanged tests across fifteen
+`aa5029c40ba1d8a4f670c94bf1ee5ab48330a1d8` and Cloudflare version
+`80f36caa-6ec6-4eae-90e1-024b4675dcc0`, reported as 100% active. The
+candidate's 59-file Workers-runtime suite passes 658/658 plus 22/22 audit tests,
+42/42 unchanged direct upstream client tests across eleven files and 91/91 unchanged tests across sixteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1155.18 KiB raw / 213.31 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 67
-reported a 28 ms startup and passed credential-free API, EIO4 and the named
-real-browser gates. One immediate old/new route split during activation is
-explicitly retained; same-region retries converged.
+asset entries; its dry run reported 1161.62 KiB raw / 214.68 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 68
+reported a 39 ms startup and passed credential-free API, EIO4, Admin-notification
+and real-browser gates. One immediate old Admin-notification response during
+activation is explicitly retained; four same-region new-tenant retries converged.
 These are release facts for the named subset, not
 evidence of a complete port.
 
 The deployed platform configuration sets Wrangler `keep_vars: true` so a
 dashboard-managed lab variable survives later code deployments. A Node audit locks that behavior while
 rejecting checked-in plaintext vars and prohibited product bindings. The
-current runtime adds the exact v1/v2 `experiments/test` authorization probe and
+current runtime retains the exact v1/v2 `experiments/test` authorization probe and
 retains `src/server-query.ts`, which replaces Mongo ObjectId,
 `traverse` and `moment` mechanics while preserving the locked query contract,
 and `src/language.ts`, which replaces server `fs` with request-local Static
@@ -49,6 +49,11 @@ Notify and opt-in Timeago alerts in official server order; task sources for the
 remaining notification plugins and external delivery remain missing. Pump,
 OpenAPS and Loop retain their official plugin and alert gates behind the same
 registry.
+Schema v15 replaces the upstream process-local Admin-notification array with
+per-tenant SQLite state. It preserves message aggregation, the public count and
+admin-only body split, eight-hour API visibility, twelve-hour transient
+retention, readable-site and failed-auth producers, and the official disable
+gate across DO eviction.
 `src/plugins/iob.ts`, `src/plugins/cob.ts` and
 `src/data/treatment-to-curve.ts` use official request-local
 formulas and bounded Treatment/Profile inputs, while API v2 ddata applies the
@@ -58,9 +63,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 58 Workers files / 653 tests, 22/22 audits, eleven direct upstream
-client files / 42 tests and fifteen direct upstream server/data-plugin files / 90 tests; the
-dry run is 1155.18 KiB raw / 213.31 KiB gzip with the same 248 assets and two bindings.
+evidence is 59 Workers files / 658 tests, 22/22 audits, eleven direct upstream
+client files / 42 tests and sixteen direct upstream server/data-plugin files / 91 tests; the
+dry run is 1161.62 KiB raw / 214.68 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -103,6 +108,7 @@ Embedded SQLite
   - persisted `/storage` namespace connections and collection subscriptions
   - persisted `/alarm` connections, shared HTTP/Socket ACK authority and snoozes
   - persisted schema-v14 background tasks and retry state
+  - persisted schema-v15 Admin notifications and aggregation state
   - hibernatable WebSocket attachments backed by persisted session authority
   - persisted authorization-failure delays
   - one SQL-derived Durable Object alarm for realtime/auth/task deadlines
@@ -427,9 +433,11 @@ DO alarm. Locked v15.0.7 sends repeated/bracket `secret` arrays into
 rejection rather than a normal response. NSCF deliberately hardens that edge:
 an array can never grant admin, its bounded values are tried as ordered subject
 credentials, and an invalid/oversized array returns 401 and records the
-failure. Two other differences remain named: the Workers request boundary caps
-the actually enforced delay at 60 seconds, and a failed attempt does not yet
-emit the upstream admin notification. Most current GET routes remain public.
+failure and emits the locked Admin warning without storing the presented
+credential. Two differences remain named: the Workers request boundary caps
+the actually enforced delay at 60 seconds, and schema v15 bounds transient
+Admin messages to 128 per tenant instead of retaining an unbounded process
+array. Most current GET routes remain public.
 API v3 `/status`, `/lastModified` and all entries, treatments, device-status,
 profile, food and settings routes accept only a verified Bearer JWT; API
 secrets and query tokens are not API v3 credentials.
@@ -1062,7 +1070,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`5abd2045-6f0b-426b-a7e3-0b0eb19e2de2`. Current credential-free remote smoke
+`80f36caa-6ec6-4eae-90e1-024b4675dcc0`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled
@@ -1072,7 +1080,9 @@ API3 Entries without a token returned the
 expected 401. The acceptance run sent no API secret; the active runtime's
 failure-closed experiment probes and a name-only encrypted-secret listing show
 that no valid API secret currently reaches it. It performed no protected
-mutation. Successful protected
+mutation. Four fresh-tenant Admin-notification probes returned the readable-site
+count while hiding the body, and the real browser retained the official Admin
+link and Settings/About 15.0.7 surfaces. Successful protected
 uploader and realtime mutation behavior remains covered locally rather than by
 a credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
@@ -1105,6 +1115,10 @@ at two seconds with exponential backoff capped at five minutes, so exhausting
 Cloudflare's finite automatic retries does not silently discard the logical
 task. `HEARTBEAT` is accepted only inside the platform-bounded 15-second to
 24-hour interval.
+Schema v15 adds `admin_notifies(message, body, count, last_recorded,
+persistent)`. The exact upstream eight-hour API and twelve-hour cleanup windows
+are evaluated from persisted timestamps; persistent warnings survive, while an
+explicitly disabled Admin-notification setting clears the tenant drawer.
 The task projection is bounded to 64 SGVs, ten MBGs, up to 1,000 matching
 current DeviceStatus rows plus the earliest future matching DeviceStatus, the
 latest Profile and the newest 1,000 Treatments in the existing window and
@@ -1114,7 +1128,7 @@ activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
 The remaining transport work is profile-switch status/plugin preprocessing,
 EIO3, polling upgrade and the direct-send replay/acknowledgement boundary;
-automatic producers for CAGE/SAGE/IAGE/BWP/DBSize/admin notifications remain
+automatic alarm producers for CAGE/SAGE/IAGE/BWP/DBSize remain
 background work.
 
 ### Background work and server plugins
@@ -1153,7 +1167,7 @@ are arbitrated, persisted and delivered to live `/alarm` clients by the same
 internal engine. Mutations evaluate the leading edge and the schema-v14
 scheduler retains only the earliest logical activation, strict threshold-plus-
 one-millisecond transition, source expiry, quiet-night boundary or heartbeat.
-CAGE/SAGE/IAGE, BWP/DBSize, admin and remaining automatic outputs still need
+CAGE/SAGE/IAGE, BWP/DBSize and remaining automatic outputs still need
 adapters around locked upstream modules rather than downstream formulas.
 
 ## Why no D1 or R2

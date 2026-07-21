@@ -45,8 +45,9 @@ for diagnosis, dosing, or medical decisions.
   authorization-token lifetime, derived subject access tokens and prefix
   matching, body/query/header credential precedence, persisted per-IP failure
   delay, locked `shiro-trie` permission matching and corrected `verifyauth`
-  behavior. The enforced delay is deliberately capped at 60 seconds; failed
-  authentication does not yet generate the upstream admin notification.
+  behavior. The enforced delay is deliberately capped at 60 seconds. Failed
+  credentials now produce the locked Admin notification, aggregated by source
+  IP in tenant SQLite and retained across Durable Object eviction.
 - The public API v3 version envelope, JWT-protected status endpoint and all six
   official generic collection verticals: entries, treatments, device status,
   profile, food and settings. Each has collection search/create, resource
@@ -207,12 +208,12 @@ for diagnosis, dosing, or medical decisions.
 This is not yet a drop-in Nightscout server. Important missing work includes
 the complete v1/v2 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
-failed-auth admin notifications, Mongo query/collection parity beyond the
-tested safe subset, Engine.IO polling-to-WebSocket upgrade, EIO3 HTTP transport,
+Mongo query/collection parity beyond the tested safe subset, Engine.IO
+polling-to-WebSocket upgrade, EIO3 HTTP transport,
 the direct-WebSocket at-most-once crash window, profile-switch/plugin
 preprocessing on root updates, remaining background-task kinds, general server
 plugin execution, automatic CAGE/SAGE/IAGE/BWP/DBSize/admin
-notification generation, external push providers, plugin-derived v2 summary
+alarm generation, external push providers, plugin-derived v2 summary
 state/persistence, and end-to-end verification of every official page workflow.
 The polling shim only keeps the official browser bundle supplied
 with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
@@ -332,8 +333,10 @@ hardening difference: locked v15.0.7 passes them to a scalar-only API-key check
 and the request does not complete normally; NSCF never treats an array as the
 admin secret, tries its bounded values as subject credentials in order, and
 returns 401 plus a recorded failure when none match. Other explicit differences
-are the 60-second Workers cap on enforced delay and the missing upstream
-failed-auth admin notification. The root adapter dependency audit is clean,
+are the 60-second Workers cap on enforced delay and replacement of the
+upstream unbounded Admin-notification array: NSCF retains at most 128 transient
+messages per tenant while keeping persistent warnings. The root adapter
+dependency audit is clean,
 while `npm ci` for the locked upstream
 v15.0.7 tree currently reports 66 inherited findings (9 low, 18 moderate, 37
 high, 2 critical). They are recorded rather than silently changed because
@@ -469,7 +472,7 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `timeago.test.js`, `iob.test.js`, `cob.test.js` and
 `data.treatmenttocurve.test.js`, `openaps.test.js`, `pump.test.js`,
 `basalprofileplugin.test.js`, `treatmentnotify.test.js`,
-`simplealarms.test.js`, `notifications.test.js`,
+`simplealarms.test.js`, `notifications.test.js`, `adminnotifies.test.js`,
 `websocket.shape-handling.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
 `settings.test.js`, `sandbox.test.js`, `plugins.test.js`, `query.test.js`,
@@ -495,21 +498,23 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 19 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 18 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
-`b4eda4cc9014edb4ac8983f805f1c2f61cbb1e0d`. The 58-file Workers-runtime
-suite passes 653/653 tests, the four audit suites pass 22/22, eleven complete
-official client files pass 42/42 unchanged, and fifteen locked server/data-plugin
-files pass 90/90 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1155.18 KiB raw / 213.31 KiB gzip and exposes only
+`aa5029c40ba1d8a4f670c94bf1ee5ab48330a1d8`. The 59-file Workers-runtime
+suite passes 658/658 tests, the four audit suites pass 22/22, eleven complete
+official client files pass 42/42 unchanged, and sixteen locked server/data-plugin
+files pass 91/91 unchanged. Wrangler dry-run reads the same
+248 official assets, reports 1161.62 KiB raw / 214.68 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
-This increment adds the exact v1/v2 `experiments/test` permission probe and
-completes the named API security, API verifyauth, verifyauth and server
-API_SECRET mappings. The original client Hashauth, Admin Tools, report-settings
-and complete Reports files now also run unchanged; their editor/network calls
-use the locked mocks and are not remote credentialed evidence.
+This increment replaces the upstream process-local Admin notification array
+with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
+count/admin-only body split, the eight-hour API and twelve-hour retention
+windows, the readable-site warning, failed-auth producer and
+`ADMIN_NOTIFIES_ENABLED` gate. The original Admin-notifies file now runs
+unchanged; the 128-transient-message ceiling is an explicit Workers Free
+hardening boundary.
 It retains the request-local Worker-safe port of the locked query defaults,
 walker, date and ObjectId/UUID normalization surface; live Entries parsing
 reuses its four-day boundary and ObjectId normalization before bounded SQLite
@@ -585,8 +590,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 19 unresolved plugin/test
-algorithms. The manifest records eleven direct passes, 79 adapted, 19 unresolved
+Node plugin `require` without fabricating the 18 unresolved plugin/test
+algorithms. The manifest records twelve direct passes, 79 adapted, 18 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -627,9 +632,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `5abd2045-6f0b-426b-a7e3-0b0eb19e2de2` (ordinal 67) was made
-current at `2026-07-21T20:11:18.751Z`; the version was created at
-`2026-07-21T20:11:17.895Z`, with a reported 28 ms startup. No asset bytes needed
+Cloudflare version `80f36caa-6ec6-4eae-90e1-024b4675dcc0` (ordinal 68) was made
+current at `2026-07-21T20:43:20.982Z`; the version was created at
+`2026-07-21T20:43:20.146Z`, with a reported 39 ms startup. No asset bytes needed
 uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -638,7 +643,7 @@ the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
 missing-token API3 Entries returned the expected 401. The 72-assertion script
-used fresh tenant `public-smoke-1784664689292`, observed 237,568 SQLite bytes and a
+used fresh tenant `public-smoke-1784666611302`, observed 249,856 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -657,9 +662,10 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real browser run loaded Cloudflare version 67 and rendered the official
+A real browser run loaded Cloudflare version 68 and rendered the official
 homepage, chart region, empty-data `---`, `mg/dl` units and live `0%` dbsize
-pill. The Settings form opened with the complete official language selector
+pill plus the official Admin-notification link. The Settings form opened with
+the complete official language selector
 and the About block reported Nightscout 15.0.7. The preceding version's Admin Tools displayed the
 expected unauthenticated device-authentication dialog without receiving a
 credential, and `clock-color` rendered `-?-` with no JavaScript error. The
@@ -668,12 +674,13 @@ shipped assets were unchanged. No protected server mutation or Settings save was
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 67 has therefore passed its 72-assertion credential-free remote API,
-Engine.IO and named real-browser gates. One immediate post-activation probe
-briefly split across old/new code (v1 404 while v2 used the new guard); a
-same-region retry converged with both versions using the new route. With no
-valid deployed API secret, both correctly fail closed rather than proving an
-authenticated write.
+Version 68 has therefore passed its 72-assertion credential-free remote API,
+Engine.IO and named real-browser gates. Four fresh-tenant Admin-notification
+probes returned count one while correctly hiding the body from anonymous
+callers. One immediate post-activation request returned the old zero-count
+behavior; the 100% deployment status and same-region retries then converged.
+With no valid deployed API secret, the administrator-body and protected-write
+paths remain for the final user environment test.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
