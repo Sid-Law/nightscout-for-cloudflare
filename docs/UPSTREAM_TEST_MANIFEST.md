@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 14, adapted: 81, excluded-fixed-scope: 2, unresolved: 14
-- Input fingerprint: `163d8cb15e6a22cf1ae23c4edc04c98f5eadc70eebe00846238050eee0f7b959`
+- Statuses: pass: 15, adapted: 81, excluded-fixed-scope: 2, unresolved: 13
+- Input fingerprint: `df76f269f2291b735868d9c73f422e0bccd95ce386df392e01132335ea6dc5b2`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -22,7 +22,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 1-storage-foundation | none | 15 | 3 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 0 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
-| 4-plugins-and-calculations | 1-storage-foundation | 40 | 5 | 0 |
+| 4-plugins-and-calculations | 1-storage-foundation | 40 | 4 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 6 | 2 |
@@ -113,7 +113,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/ddata.test.js` | adapted | 0 | Represented by the named Workers-runtime contract in test/api-v2-data-contract.test.ts: creation and deep clone of every locked data bucket, created_at-to-mills normalization, durationInMilliseconds-to-rounded-duration and exact endmills derivation, source immutability, and prefer-new identifier collision merging. The production snapshot adapter additionally covers recent device-status windows and public-profile filtering. |
 | `vendor/nightscout/tests/direction.test.js` | adapted | 0 | Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: current Flat/DoubleUp offers, every locked direction character/entity mapping, and the exact direct-HTML pill label. |
 | `vendor/nightscout/tests/errorcodes.test.js` | pass | 0 | The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All eight in-range/error/calibration/display/default/custom-mapping cases execute against the original errorcodes plugin; no Cloudflare rewrite is used. Automatic persisted evaluation of this plugin remains a separate scheduler integration task. |
-| `vendor/nightscout/tests/expressextensions.test.js` | unresolved | 5 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/expressextensions.test.js` | pass | 5 | The complete locked upstream file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. Both cases preserve the exact .json suffix-to-application/json Accept rewrite and reject the lookalike entriesXjson path. NSCF routes separately retain their existing extension/content-negotiation HTTP contracts; this strict pass locks the upstream middleware itself without fabricating Express process state. |
 | `vendor/nightscout/tests/fail.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/gap-treat-012.test.js` | adapted | 8 | Represented by all twelve named Workers-runtime GAP-TREAT-012 cases in test/api-v1-loop-client-contract.test.ts: UUID _id promotion, indefinite and remote overrides, lookup/delete/update/re-POST by promoted identifier, ordered UUID and mixed batches, upper/lower-case UUID preservation, and valid ObjectId non-promotion. |
 | `vendor/nightscout/tests/insulinage.test.js` | adapted | 0 | Represented by all three named Workers-runtime cases in test/age-timeago-plugin-contract.test.ts and wired into the opt-in /api/v2/properties dispatcher: latest non-future Insulin Change selection, exact day/hour display, notes pill shape, 48-hour warning request and official IAGE_* normalization. The adapter deliberately retains the locked v15.0.7 urgent-comparison behavior instead of silently correcting upstream logic; persisted notification scheduling remains separate work. |

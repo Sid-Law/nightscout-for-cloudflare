@@ -150,8 +150,9 @@ medical or dosing logic:
   scheduled and retried through the shared task; delivery remains tenant-local
   `/alarm` only and no external provider is connected;
 - all eight named Basal/Treatment-Notify upstream cases plus two Workers-runtime
-  integration cases pass. The unchanged upstream runner now covers 18 files and
-  122/122 cases, including Admin notices, ObjectId cache compatibility and the environment parser;
+  integration cases pass. The unchanged upstream runner now covers 19 files and
+  124/124 cases, including Admin notices, ObjectId cache compatibility, the
+  environment parser and Express extension middleware;
 - the prior OpenAPS, Pump and Loop calculations now also execute automatically
   through the shared task under their official gates. IOB, COB, Treatment-to-
   curve, age/timeago and dataloader/database-size adapters remain deployed. No
@@ -479,7 +480,7 @@ in the current deployed candidate.
 | Upstream route/test audit | 161 registrations and 111 test files; generated outputs deterministic |
 | Audit tool tests | 14/14 passed |
 | Direct upstream client tests | 11 locked files passed 42/42 unchanged after public/upstream bundle byte equality (`pluginbase`, renderer, error codes, utilities, Care Portal, Bolus Wizard Preview, Profile Editor, Hashauth, Admin Tools, report storage and Reports) |
-| Direct upstream server/data-plugin tests | 18 locked files passed 122/122 unchanged (`dataloader`, `dbsize`, CAGE, SAGE, IAGE, timeago, treatment-to-curve, IOB, COB, OpenAPS, Pump, Basal Profile, Treatment Notify, Simple Alarms, Notifications, Admin notices, ObjectId cache compatibility and env) |
+| Direct upstream server/data-plugin tests | 19 locked files passed 124/124 unchanged (`dataloader`, `dbsize`, CAGE, SAGE, IAGE, timeago, treatment-to-curve, IOB, COB, OpenAPS, Pump, Basal Profile, Treatment Notify, Simple Alarms, Notifications, Admin notices, ObjectId cache compatibility, env and Express extension middleware) |
 | Authorization audit tests | 6/6 passed |
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
@@ -492,8 +493,8 @@ in the current deployed candidate.
 The locked upstream contains 111 JavaScript test files; a static declaration
 audit finds 883 active `it(...)` cases plus one skipped case. The 673 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
-run 42/42 unchanged against the shipped official client bundle, while 18
-server/data-plugin files run unchanged in a separate 122/122 gate. All 16 API3 files,
+run 42/42 unchanged against the shipped official client bundle, while 19
+server/data-plugin files run unchanged in a separate 124/124 gate. All 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,
@@ -507,7 +508,7 @@ server/data-plugin files run unchanged in a separate 122/122 gate. All 16 API3 f
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js`, `query.test.js`, `language.test.js` and
 25 v1 client/API files and the four named server authentication files are
-classified as direct `pass` or fully `adapted`; fourteen are `pass`, 14 remain unresolved and two bridge files
+classified as direct `pass` or fully `adapted`; fifteen are `pass`, 13 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 

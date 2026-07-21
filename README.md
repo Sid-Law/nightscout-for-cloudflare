@@ -484,6 +484,10 @@ files are classified as fully `adapted`. Eleven complete locked client files
 `profileeditor.test.js`, plus `hashauth.test.js`, `admintools.test.js`,
 `reportstorage.test.js` and `reports.test.js`) run unchanged for 42/42 tests against the
 byte-identical official client bundle and are classified as `pass`.
+Nineteen complete locked server/data-plugin files also run unchanged for
+124/124 tests; the newest addition is `expressextensions.test.js`, whose two
+cases lock exact `.json` suffix handling and reject the lookalike
+`entriesXjson` path.
 The latest two complete upstream additions are `query.test.js` and
 `language.test.js`. The preceding two are `simplealarms.test.js` and
 `notifications.test.js`; the preceding two are `basalprofileplugin.test.js`
@@ -499,14 +503,14 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 14 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 13 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
 `f0beff98a66d3bd1cd2e5cf8ad98786d9a59c95c`. The 61-file Workers-runtime
 suite passes 673/673 tests, the four audit suites pass 22/22, eleven complete
-official client files pass 42/42 unchanged, and eighteen locked server/data-plugin
-files pass 122/122 unchanged. Wrangler dry-run reads the same
+official client files pass 42/42 unchanged, and nineteen locked server/data-plugin
+files pass 124/124 unchanged. Wrangler dry-run reads the same
 248 official assets, reports 1167.03 KiB raw / 215.55 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
@@ -606,8 +610,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 14 unresolved plugin/test
-algorithms. The manifest records fourteen direct passes, 81 adapted, 14 unresolved
+Node plugin `require` without fabricating the 13 unresolved plugin/test
+algorithms. The manifest records fifteen direct passes, 81 adapted, 13 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
