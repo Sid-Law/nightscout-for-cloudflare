@@ -498,23 +498,30 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 17 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 16 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
-`aa5029c40ba1d8a4f670c94bf1ee5ab48330a1d8`. The 59-file Workers-runtime
-suite passes 658/658 tests, the four audit suites pass 22/22, eleven complete
+`c4cdce8e69f1fc9910363e0afbfff4ca896e547e`. The 60-file Workers-runtime
+suite passes 663/663 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and seventeen locked server/data-plugin
 files pass 107/107 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1161.62 KiB raw / 214.68 KiB gzip and exposes only
+248 official assets, reports 1162.31 KiB raw / 214.78 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
-This increment replaces the upstream process-local Admin notification array
+The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
 count/admin-only body split, the eight-hour API and twelve-hour retention
 windows, the readable-site warning, failed-auth producer and
 `ADMIN_NOTIFIES_ENABLED` gate. The original Admin-notifies file now runs
 unchanged; the 128-transient-message ceiling is an explicit Workers Free
 hardening boundary.
+This increment also adapts the complete 26-case upstream storage-shape file.
+The public scalar/array/batch paths retain their response cardinality, while
+direct Profile/Food/Activity `save()` now generates a fresh ObjectId for a
+missing or invalid internal ID just as the locked Mongo storage does. The HTTP
+API still rejects invalid IDs before that internal adapter, so this does not
+weaken uploader validation. Raw Mongo `insertOne` is intentionally replaced by
+an explicit typed SQLite document-batch RPC rather than emulated.
 It retains the request-local Worker-safe port of the locked query defaults,
 walker, date and ObjectId/UUID normalization surface; live Entries parsing
 reuses its four-day boundary and ObjectId normalization before bounded SQLite
@@ -590,8 +597,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 17 unresolved plugin/test
-algorithms. The manifest records thirteen direct passes, 79 adapted, 17 unresolved
+Node plugin `require` without fabricating the 16 unresolved plugin/test
+algorithms. The manifest records thirteen direct passes, 80 adapted, 16 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -632,9 +639,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `80f36caa-6ec6-4eae-90e1-024b4675dcc0` (ordinal 68) was made
-current at `2026-07-21T20:43:20.982Z`; the version was created at
-`2026-07-21T20:43:20.146Z`, with a reported 39 ms startup. No asset bytes needed
+Cloudflare version `f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927` (ordinal 69) was made
+current at `2026-07-21T21:12:16.911Z`; the version was created at
+`2026-07-21T21:12:16.046Z`, with a reported 33 ms startup. No asset bytes needed
 uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -643,7 +650,7 @@ the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
 missing-token API3 Entries returned the expected 401. The 72-assertion script
-used fresh tenant `public-smoke-1784666611302`, observed 249,856 SQLite bytes and a
+used fresh tenant `public-smoke-1784668353416`, observed 249,856 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -662,7 +669,7 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real browser run loaded Cloudflare version 68 and rendered the official
+A real browser run loaded Cloudflare version 69 and rendered the official
 homepage, chart region, empty-data `---`, `mg/dl` units and live `0%` dbsize
 pill plus the official Admin-notification link. The Settings form opened with
 the complete official language selector

@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `aa5029c40ba1d8a4f670c94bf1ee5ab48330a1d8`
-- Runtime source candidate: `aa5029c40ba1d8a4f670c94bf1ee5ab48330a1d8`
-- Git HEAD used by Wrangler: `aa5029c40ba1d8a4f670c94bf1ee5ab48330a1d8`
-- Cloudflare Version ID: `80f36caa-6ec6-4eae-90e1-024b4675dcc0`
-- Cloudflare ordinal version number: `68`
+- Deployed runtime candidate: `c4cdce8e69f1fc9910363e0afbfff4ca896e547e`
+- Runtime source candidate: `c4cdce8e69f1fc9910363e0afbfff4ca896e547e`
+- Git HEAD used by Wrangler: `c4cdce8e69f1fc9910363e0afbfff4ca896e547e`
+- Cloudflare Version ID: `f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927`
+- Cloudflare ordinal version number: `69`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-21T20:43:20.146Z`
-- Activation: deployment metadata created `2026-07-21T20:43:20.982Z`;
+- Version creation time: `2026-07-21T21:12:16.046Z`
+- Activation: deployment metadata created `2026-07-21T21:12:16.911Z`;
   Wrangler reports this version at 100%
-- Worker startup: 39 ms
+- Worker startup: 33 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -30,7 +30,7 @@ is not counted as API, plugin or real-time compatibility.
   persisted background-task table/index and the v15 Admin-notification table
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 1161.62 KiB raw / 214.68 KiB gzip
+- Upload: 1162.31 KiB raw / 214.78 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -451,8 +451,8 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed runtime candidate is
-`aa5029c40ba1d8a4f670c94bf1ee5ab48330a1d8`. It adds schema-v15 persisted
-Admin notices on top of the locked v1/v2 `experiments/test`, complete named API
+`c4cdce8e69f1fc9910363e0afbfff4ca896e547e`. It retains schema-v15 persisted
+Admin notices and adds the complete storage-shape adapter on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
 work while retaining
 request-local Basal Profile state and all prior OpenAPS/Pump, IOB/COB/
@@ -463,7 +463,7 @@ The table below records the exact current local gate for the immutable deployed
 runtime and assets. The unchanged-client runner now includes the original
 client Hashauth, Admin Tools, report-settings and complete Reports workflows;
 the unchanged server runner now also includes Admin notices. Static Assets
-remain byte-identical to v15.0.7, while schema-v15 runtime changes are included
+remain byte-identical to v15.0.7, while the runtime changes are included
 in the current deployed candidate.
 
 | Check | Result |
@@ -479,13 +479,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 59 files, 658/658 passed |
-| Worker dry run | 1161.62 KiB raw / 214.68 KiB gzip |
+| Workers integration tests | 60 files, 663/663 passed |
+| Worker dry run | 1162.31 KiB raw / 214.78 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; no credential was read, supplied, generated, replaced or inspected |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 658 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 663 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 17
 server/data-plugin files run unchanged in a separate 107/107 gate. All 16 API3 files,
@@ -497,12 +497,12 @@ server/data-plugin files run unchanged in a separate 107/107 gate. All 16 API3 f
 `iob.test.js`, `cob.test.js`, `data.treatmenttocurve.test.js`,
 `openaps.test.js`, `pump.test.js`, `basalprofileplugin.test.js`,
 `treatmentnotify.test.js`, `simplealarms.test.js`, `notifications.test.js`,
-`adminnotifies.test.js`,
+`adminnotifies.test.js`, `storage.shape-handling.test.js`,
 `websocket.shape-handling.test.js`, `profile.test.js`,
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js`, `query.test.js`, `language.test.js` and
 25 v1 client/API files and the four named server authentication files are
-classified as fully `adapted`; thirteen are `pass`, 17 remain unresolved and two bridge files
+classified as direct `pass` or fully `adapted`; thirteen are `pass`, 16 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -513,7 +513,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `80f36caa-6ec6-4eae-90e1-024b4675dcc0` at 100%.
+Wrangler reports version `f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -538,7 +538,7 @@ not only Wrangler command success.
 | Protected mutation | Deliberately not attempted; no API secret value was sent or inspected, and the active runtime currently reports no valid configured secret |
 
 The reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784666611302` and passed 72 behavior/CORS assertions.
+`public-smoke-1784668353416` and passed 72 behavior/CORS assertions.
 The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
 `pingTimeout:20000`.
 
@@ -625,7 +625,7 @@ execution for the remaining server plugins.
 
 ## Real-browser evidence
 
-A real browser session exercised Cloudflare version 68's official UI without reading
+A real browser session exercised Cloudflare version 69's official UI without reading
 credential storage or submitting protected mutations:
 
 - the homepage rendered its official chart region, loaded locked
@@ -642,8 +642,8 @@ credential storage or submitting protected mutations:
 
 This pass asserted rendered DOM, status text, official-script presence and a
 rendered state for Cloudflare version
-`80f36caa-6ec6-4eae-90e1-024b4675dcc0`. It reused the same 248 unchanged
-official assets. Version 68 has therefore passed credential-free remote API,
+`f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927`. It reused the same 248 unchanged
+official assets. Version 69 has therefore passed credential-free remote API,
 Engine.IO and the named real-browser acceptance. The immediate old zero-count
 Admin response and later same-region convergence are explicitly retained above.
 

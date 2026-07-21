@@ -7,15 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`aa5029c40ba1d8a4f670c94bf1ee5ab48330a1d8` and Cloudflare version
-`80f36caa-6ec6-4eae-90e1-024b4675dcc0`, reported as 100% active. The
-candidate's 59-file Workers-runtime suite passes 658/658 plus 22/22 audit tests,
+`c4cdce8e69f1fc9910363e0afbfff4ca896e547e` and Cloudflare version
+`f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927`, reported as 100% active. The
+candidate's 60-file Workers-runtime suite passes 663/663 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 107/107 unchanged tests across seventeen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1161.62 KiB raw / 214.68 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 68
-reported a 39 ms startup and passed credential-free API, EIO4, Admin-notification
+asset entries; its dry run reported 1162.31 KiB raw / 214.78 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 69
+reported a 33 ms startup and passed credential-free API, EIO4, Admin-notification
 and real-browser gates. One immediate old Admin-notification response during
 activation is explicitly retained; four same-region new-tenant retries converged.
 These are release facts for the named subset, not
@@ -54,6 +54,12 @@ per-tenant SQLite state. It preserves message aggregation, the public count and
 admin-only body split, eight-hour API visibility, twelve-hour transient
 retention, readable-site and failed-auth producers, and the official disable
 gate across DO eviction.
+The legacy document adapter additionally preserves the locked storage-shape
+semantics: scalar and array API writes map to explicit batches, Profile/Food/
+Activity direct saves create a fresh ObjectId when their internal ID is absent
+or invalid, and role/subject replacements remain single-row updates. The
+public v1/v2 ObjectId validator still rejects invalid uploader mutations before
+the internal save fallback. There is no raw Mongo collection façade.
 `src/plugins/iob.ts`, `src/plugins/cob.ts` and
 `src/data/treatment-to-curve.ts` use official request-local
 formulas and bounded Treatment/Profile inputs, while API v2 ddata applies the
@@ -63,9 +69,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 59 Workers files / 658 tests, 22/22 audits, eleven direct upstream
+evidence is 60 Workers files / 663 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and seventeen direct upstream server/data-plugin files / 107 tests; the
-dry run is 1161.62 KiB raw / 214.68 KiB gzip with the same 248 assets and two bindings.
+dry run is 1162.31 KiB raw / 214.78 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -1070,7 +1076,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`80f36caa-6ec6-4eae-90e1-024b4675dcc0`. Current credential-free remote smoke
+`f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled
