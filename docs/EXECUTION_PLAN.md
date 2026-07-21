@@ -56,7 +56,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 9. Real-time storage updates | Root server/client mutations plus API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. Add pushed browser/credentialed remote workflows and profile/plugin preprocessing; keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Generic SQLite scheduler + unified automatic notification task | Schema v14 stores logical tasks, due times, attempts and update times in SQLite. The DO's one Cloudflare alarm is derived from the minimum of persisted realtime, authorization-cleanup and task deadlines. One `plugin-notifications` task evaluates Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago in official server order from a bounded SGV/MBG/DeviceStatus/Profile/Treatment context. Mutations run the leading edge; the task retains the earliest heartbeat, strict threshold-plus-one-millisecond transition, expiry, quiet-night boundary or future activation deadline only while needed. Notification state, live queueing and task completion/reschedule commit together. Failures persist two-second exponential retry capped at five minutes; early at-least-once delivery is a no-op. Add the remaining plugin producers, summary/activity persistence and future maintenance/pruning. |
 | 11. Server plugins/notifications | Static registry + six automatic producers + persisted core | Stateless ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `basal`, `simplealarms`, `loop`, `openaps`, `pump`, `iob`, `cob`, `dbsize`, `cannulaage`, `sensorage`, `insulinage`, `timeago`, Treatment Notify and treatment-to-curve plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. Simple Alarms, Pump, OpenAPS, Loop, officially enabled Treatment Notify and opt-in Timeago alerts are automatically evaluated by schema v14 under their official gates. The official processor preserves urgent/warning priority, information/announcement handling, snooze arbitration and automatic all-clear. The static registry replaces Node dynamic `require`, preserves the locked catalogs/order/gates/hooks, and drives implemented v2 properties and IOB/COB Summary state. No public processing endpoint was added. CAGE/SAGE/IAGE/BWP/DBSize/admin notification producers and external providers remain incomplete. Build those adapters without rewriting formulas. |
-| 12. Upstream regression suite | Tracked; 1 pass + 75 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, the named storage/concurrency/notification/data/dataloader/database-size/age/timeago/Basal/Treatment-Notify/Simple-Alarms/OpenAPS/Pump/IOB/COB/treatment-curve/property/Profile/Settings/Language/Query/Sandbox/registry/realtime foundations and 25 v1 client/API files are adapted. The complete `pluginbase.test.js` file also runs unchanged after proving the public bundle is byte-identical to the locked upstream build. Fifteen locked server/data-plugin files run unchanged as a reusable 90/90-test gate. 33 files remain unresolved and two are fixed-scope exclusions. |
+| 12. Upstream regression suite | Tracked; 7 pass + 75 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, the named storage/concurrency/notification/data/dataloader/database-size/age/timeago/Basal/Treatment-Notify/Simple-Alarms/OpenAPS/Pump/IOB/COB/treatment-curve/property/Profile/Settings/Language/Query/Sandbox/registry/realtime foundations and 25 v1 client/API files are adapted. Seven complete client files run 30/30 unchanged after proving the public bundle is byte-identical to the locked upstream build. Care Portal/Profile Editor saves use their locked mock transports and do not replace the final credentialed environment test. Fifteen locked server/data-plugin files run unchanged as a reusable 90/90-test gate. 27 files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -152,9 +152,9 @@ its version was created at `2026-07-21T19:45:23.975Z`, deployment
 processed 248 unchanged official asset entries. The Wrangler 4.112.0 dry run
 reports 1154.98 KiB raw / 213.27 KiB gzip and exposes only `ENTRY_STORE` plus
 `ASSETS`. The 58-file Workers-runtime suite passes 652/652, all four audit suites pass
-22/22, the complete official client `pluginbase.test.js` passes unchanged,
-fifteen locked server/data-plugin files pass 90/90 unchanged and TypeScript
-passes. The manifest records one direct pass, 75 adapted, 33 unresolved and
+22/22, seven official client files pass 30/30 unchanged, fifteen locked
+server/data-plugin files pass 90/90 unchanged and TypeScript passes. The
+manifest records seven direct passes, 75 adapted, 27 unresolved and
 two fixed-scope excluded files.
 
 Version 66's 72-assertion credential-free API/Engine.IO smoke passed. Its
@@ -355,7 +355,7 @@ The code is still not a full port: non-Entries echo, arbitrary aggregation,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, profile-switch status/plugin preprocessing before
 deltas, automatic task adapters for the remaining server plugins, external notification providers,
-remaining BWP/plugin summary fields and 35 upstream test files (33 unresolved
+remaining BWP/plugin summary fields and 29 upstream test files (27 unresolved
 plus two fixed-scope exclusions) remain incomplete.
 The homepage still consumes the REST polling shim and does not yet use the
 separate EIO4 server.

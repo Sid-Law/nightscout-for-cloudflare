@@ -40,6 +40,12 @@ const result = spawnSync(
     "./tests/hooks.js",
     "--exit",
     "./tests/pluginbase.test.js",
+    "./tests/client.renderer.test.js",
+    "./tests/errorcodes.test.js",
+    "./tests/utils.test.js",
+    "./tests/careportal.test.js",
+    "./tests/boluswizardpreview.test.js",
+    "./tests/profileeditor.test.js",
   ],
   {
     cwd: upstreamRoot,
@@ -51,4 +57,6 @@ const result = spawnSync(
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
 
-console.log("Locked pluginbase.test.js passed against the byte-identical NSCF client bundle.");
+console.log(
+  "Seven locked client/bundled-module files passed 30 tests unchanged against the byte-identical NSCF client bundle.",
+);

@@ -171,8 +171,10 @@ medical or dosing logic:
   descriptors for unresolved plugins do not fabricate their algorithms;
 - both named `plugins.test.js` cases and the wider registry surface pass in the
   Workers suite;
-- the complete official `pluginbase.test.js` runs unchanged after its
-  upstream-built bundle and NSCF public bundle are proved byte-identical.
+- seven complete official client files run 30/30 unchanged after the
+  upstream-built bundle and NSCF public bundle are proved byte-identical;
+  Care Portal and Profile Editor use their locked headless mock transports, so
+  this is not credentialed remote mutation evidence.
 
 The immediately preceding deployed increment hardened deployment
 configuration without changing Nightscout runtime formulas or routes:
@@ -451,7 +453,10 @@ request-local Basal Profile state and all prior OpenAPS/Pump, IOB/COB/
 Treatment-to-curve, registry, age/timeago, dataloader/database-size, Sandbox,
 Settings, Loop, Profile, uploader, identity, root-write/delta, v1, API3,
 authorization, realtime, notification-ACK and official-page work.
-The table below records the exact local gate completed before deployment.
+The table below records the exact current local gate for the immutable deployed
+runtime and assets. The seven-file client runner was widened after deployment;
+that follow-up changed only tests, generated audit metadata and documentation,
+not Worker code or Static Assets.
 
 | Check | Result |
 | --- | --- |
@@ -460,7 +465,7 @@ The table below records the exact local gate completed before deployment.
 | Static Assets | 248 official asset entries rebuilt |
 | Upstream route/test audit | 161 registrations and 111 test files; generated outputs deterministic |
 | Audit tool tests | 14/14 passed |
-| Direct upstream client test | complete locked `pluginbase.test.js` passed unchanged after public/upstream bundle byte equality |
+| Direct upstream client tests | 7 locked files passed 30/30 unchanged after public/upstream bundle byte equality (`pluginbase`, renderer, error codes, utilities, Care Portal, Bolus Wizard Preview and Profile Editor) |
 | Direct upstream server/data-plugin tests | 15 locked files passed 90/90 unchanged (`dataloader`, `dbsize`, CAGE, SAGE, IAGE, timeago, treatment-to-curve, IOB, COB, OpenAPS, Pump, Basal Profile, Treatment Notify, Simple Alarms and Notifications) |
 | Authorization audit tests | 6/6 passed |
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
@@ -473,8 +478,8 @@ The table below records the exact local gate completed before deployment.
 
 The locked upstream contains 111 JavaScript test files; a static declaration
 audit finds 883 active `it(...)` cases plus one skipped case. The 652 Workers
-tests cover the implemented adapter subset; `pluginbase.test.js` additionally
-runs unchanged against the shipped official client bundle, while 15
+tests cover the implemented adapter subset; seven complete client files additionally
+run 30/30 unchanged against the shipped official client bundle, while 15
 server/data-plugin files run unchanged in a separate 90/90 gate. All 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
@@ -487,12 +492,14 @@ server/data-plugin files run unchanged in a separate 90/90 gate. All 16 API3 fil
 `websocket.shape-handling.test.js`, `profile.test.js`,
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js`, `query.test.js`, `language.test.js` and
-25 v1 client/API files are classified as fully `adapted`; one is `pass`, 33 remain unresolved and two bridge files
+25 v1 client/API files are classified as fully `adapted`; seven are `pass`, 27 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
-These local pre-deployment gates were followed by the remote/API/Engine.IO and
-real-browser gates below against the same active version.
+The runtime-changing local gates were followed by the remote/API/Engine.IO and
+real-browser gates below against the same active version. The later widened
+unchanged-client gate requires no redeployment because the shipped bundle bytes
+are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
@@ -559,7 +566,7 @@ remain evidence from the immediately preceding compatible version.
 | Current EIO4 polling open | HTTP 200, a 20-character Engine.IO 4 SID, `pingInterval:25000` and `pingTimeout:20000` |
 | Live database stats/property | ddata published 237,568 SQLite bytes; the default-enabled registry property returned the same total and 953.67 MiB Free-plan maximum |
 | Local plugin registry contract | both named client/server cases plus order, enable/shown gates, hook/error behavior, event aggregation, iterators and settings projection |
-| Direct official client contract | complete locked `pluginbase.test.js` passed unchanged against the byte-identical shipped bundle |
+| Direct official client contract | 7 locked client files passed 30/30 unchanged against the byte-identical shipped bundle; Care Portal/Profile Editor saves use locked mocks rather than the public tenant |
 | Local Cloudflare configuration contract | `keep_vars` is true; no plaintext vars, D1, R2, KV, Queues or custom routes are checked in; only `ENTRY_STORE` and `ASSETS` are bound |
 | Local Sandbox contract | five locked client/server/LOW-HIGH/message cases plus helper-surface and request-isolation coverage |
 | Local Settings contract | 13 locked defaults/accessor/feature/alarm/threshold/snooze cases plus request isolation and recursive secure filtering |

@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "72d769a7b3ad5407fa9e16def90f4d75d1b066436e781f9ae7fbea237b550096",
+  "inputs_sha256": "fa8ead14264d338fe76fd6577f28104c5d5d709c0b35124a31e1e6fffa18c6ac",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -38,10 +38,10 @@
     },
     "test_file_count": 111,
     "tests_by_status": {
-      "pass": 1,
+      "pass": 7,
       "adapted": 75,
       "excluded-fixed-scope": 2,
-      "unresolved": 33
+      "unresolved": 27
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7861,8 +7861,8 @@
     },
     {
       "file": "vendor/nightscout/tests/boluswizardpreview.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All ten mg/dl/mmol forecast, range, alarm, snooze and pill cases execute the official Bolus Wizard Preview plugin. NSCF adds no calculation or recommendation; persisted server evaluation remains a separate integration task.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -7936,8 +7936,8 @@
     },
     {
       "file": "vendor/nightscout/tests/careportal.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. Its Care Portal open, Snack Bolus entry, client authorization and mocked Treatment save workflow passes against the original bundle. This is direct official-client evidence; it does not claim a credentialed remote mutation on the public Worker.",
       "workstream": "8-ui-and-process-boundaries",
       "depends_on": [
         "3-api-v1-v2",
@@ -7949,8 +7949,8 @@
     },
     {
       "file": "vendor/nightscout/tests/client.renderer.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the gate proves public/bundle/js/bundle.app.js is byte-identical to the locked upstream build. All six official bubble-scale and brush-highlight cases execute against vendor/nightscout/lib/client/renderer.js, the same source included in that shipped official bundle; no Cloudflare renderer fork or substitute UI exists.",
       "workstream": "8-ui-and-process-boundaries",
       "depends_on": [
         "3-api-v1-v2",
@@ -8068,8 +8068,8 @@
     },
     {
       "file": "vendor/nightscout/tests/errorcodes.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All eight in-range/error/calibration/display/default/custom-mapping cases execute against the original errorcodes plugin; no Cloudflare rewrite is used. Automatic persisted evaluation of this plugin remains a separate scheduler integration task.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"
@@ -8402,8 +8402,8 @@
     },
     {
       "file": "vendor/nightscout/tests/profileeditor.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. The original Profile Editor renders, loads its mocked profile list, switches records and exercises mocked save/delete confirmations. This proves the shipped official client workflow, not a current credentialed remote Profile mutation.",
       "workstream": "8-ui-and-process-boundaries",
       "depends_on": [
         "3-api-v1-v2",
@@ -8657,8 +8657,8 @@
     },
     {
       "file": "vendor/nightscout/tests/utils.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All three number-formatting and date/time merge cases use the original bundled client utility with no Cloudflare fork.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

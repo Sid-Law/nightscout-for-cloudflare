@@ -350,6 +350,30 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/errorcodes.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All eight in-range/error/calibration/display/default/custom-mapping cases execute against the original errorcodes plugin; no Cloudflare rewrite is used. Automatic persisted evaluation of this plugin remains a separate scheduler integration task."
+    },
+    "vendor/nightscout/tests/utils.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All three number-formatting and date/time merge cases use the original bundled client utility with no Cloudflare fork."
+    },
+    "vendor/nightscout/tests/careportal.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. Its Care Portal open, Snack Bolus entry, client authorization and mocked Treatment save workflow passes against the original bundle. This is direct official-client evidence; it does not claim a credentialed remote mutation on the public Worker."
+    },
+    "vendor/nightscout/tests/boluswizardpreview.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All ten mg/dl/mmol forecast, range, alarm, snooze and pill cases execute the official Bolus Wizard Preview plugin. NSCF adds no calculation or recommendation; persisted server evaluation remains a separate integration task."
+    },
+    "vendor/nightscout/tests/profileeditor.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. The original Profile Editor renders, loads its mocked profile list, switches records and exercises mocked save/delete confirmations. This proves the shipped official client workflow, not a current credentialed remote Profile mutation."
+    },
+    "vendor/nightscout/tests/client.renderer.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the gate proves public/bundle/js/bundle.app.js is byte-identical to the locked upstream build. All six official bubble-scale and brush-highlight cases execute against vendor/nightscout/lib/client/renderer.js, the same source included in that shipped official bundle; no Cloudflare renderer fork or substitute UI exists."
+    },
     "vendor/nightscout/tests/query.test.js": {
       "status": "adapted",
       "reason": "Represented by all five named locked cases plus current UUID coverage in test/query-contract.test.ts: four-day and configurable date defaults, ID-based date-filter bypass, non-ObjectId preservation and ObjectId-shaped normalization. src/server-query.ts ports the upstream walker/date/ID surface without mongodb, traverse or moment; the live Entries parser reuses its ObjectId normalization and default date boundary before translating the query to bounded indexed SQLite filters."

@@ -474,9 +474,11 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
 `settings.test.js`, `sandbox.test.js`, `plugins.test.js`, `query.test.js`,
 `language.test.js` and 25 v1 client/API
-files are classified as fully `adapted`. The complete locked
-`pluginbase.test.js` file runs unchanged against the byte-identical official
-client bundle and is classified as `pass`.
+files are classified as fully `adapted`. Seven complete locked client files
+(`pluginbase.test.js`, `client.renderer.test.js`, `errorcodes.test.js`,
+`utils.test.js`, `careportal.test.js`, `boluswizardpreview.test.js` and
+`profileeditor.test.js`) run unchanged for 30/30 tests against the
+byte-identical official client bundle and are classified as `pass`.
 The latest two complete upstream additions are `query.test.js` and
 `language.test.js`. The preceding two are `simplealarms.test.js` and
 `notifications.test.js`; the preceding two are `basalprofileplugin.test.js`
@@ -492,14 +494,14 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 33 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 27 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
 `f0d442ca79fce67c2a2a118b9944ee5c2738f426`. The 58-file Workers-runtime
-suite passes 652/652 tests, the four audit suites pass 22/22, the complete
-official `pluginbase.test.js` client file passes unchanged, and fifteen locked
-server/data-plugin files pass 90/90 unchanged. Wrangler dry-run reads the same
+suite passes 652/652 tests, the four audit suites pass 22/22, seven complete
+official client files pass 30/30 unchanged, and fifteen locked server/data-plugin
+files pass 90/90 unchanged. Wrangler dry-run reads the same
 248 official assets, reports 1154.98 KiB raw / 213.27 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 This increment adds a request-local Worker-safe port of the locked query
@@ -577,8 +579,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 33 unresolved plugin/test
-algorithms. The manifest records one direct pass, 75 adapted, 33 unresolved
+Node plugin `require` without fabricating the 27 unresolved plugin/test
+algorithms. The manifest records seven direct passes, 75 adapted, 27 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
