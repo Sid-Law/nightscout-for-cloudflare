@@ -93,6 +93,8 @@ import {
   type NightscoutStatusSettingsOverrides,
 } from "./status";
 import { calculateSimpleAlarmRequest } from "./plugins/simplealarms";
+import { calculateAr2NotificationRequest } from "./plugins/ar2";
+import { nightscoutDirectionInfo } from "./plugins/direction";
 import { calculateClosedLoopNotificationEvaluation } from "./plugins/closed-loop-notifications";
 import { calculateTreatmentNotificationEvaluation } from "./plugins/treatmentnotify";
 import { calculateTimeAgoNotificationEvaluation } from "./plugins/timeago";
@@ -218,6 +220,7 @@ interface PluginPropertyContext {
 interface AutomaticNotificationRuntime {
   settings: Record<string, unknown>;
   extendedSettings: Record<string, unknown>;
+  ar2: boolean;
   simpleAlarms: boolean;
   pump: boolean;
   openAps: boolean;
@@ -1054,6 +1057,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return {
       settings,
       extendedSettings,
+      ar2: enabled.has("ar2"),
       simpleAlarms: enabled.has("simplealarms"),
       pump: enabled.has("pump") && Boolean(pumpPreferences.enableAlerts),
       openAps: enabled.has("openaps") && Boolean(openApsPreferences.enableAlerts),
@@ -1079,12 +1083,12 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const tasks = this.backgroundTasks();
     const now = Date.now();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
-    const anyEnabled = runtime.simpleAlarms || runtime.pump || runtime.openAps
+    const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.pump || runtime.openAps
       || runtime.loop || runtime.treatmentNotify || runtime.timeAgo;
     const inputChanged = collection === "profile"
       ? anyEnabled
       : collection === "entries"
-        ? runtime.simpleAlarms || runtime.treatmentNotify || runtime.timeAgo
+        ? runtime.ar2 || runtime.simpleAlarms || runtime.treatmentNotify || runtime.timeAgo
         : collection === "treatments"
           ? runtime.treatmentNotify || runtime.pump || runtime.openAps
           : collection === "devicestatus" && (runtime.pump || runtime.openAps || runtime.loop);
@@ -1130,7 +1134,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       treatments: [],
     };
     const budget = new RealtimeJsonBudget(result);
-    if (runtime.simpleAlarms || runtime.timeAgo) {
+    if (runtime.ar2 || runtime.simpleAlarms || runtime.timeAgo) {
       for (const row of this.ctx.storage.sql.exec<DbDocument>(
         `SELECT id, body, sort_time
          FROM documents
@@ -1277,9 +1281,27 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const data = this.automaticNotificationData(now, runtime);
 
     // Preserve the locked server plugin order for every implemented producer:
-    // simplealarms, pump, openaps, loop, treatmentnotify, then timeago. The
+    // ar2, simplealarms, pump, openaps, loop, treatmentnotify, then timeago. The
     // shared engine can therefore arbitrate identical requests and treatment
     // snoozes in the same order as the Node server.
+    if (runtime.ar2) {
+      schedule(this.earliestFutureEntryAt(data.sgvs, now));
+      const latest = this.latestSgvAtOrBefore(data.sgvs, now);
+      const request = calculateAr2NotificationRequest(
+        data.sgvs,
+        now,
+        runtime.settings,
+        latest === null ? {} : { direction: nightscoutDirectionInfo(latest) },
+      );
+      if (request !== null) {
+        notifications.push(request);
+        if (latest !== null) {
+          const expiresAt = Number(latest.mills) + nightscoutTimes.mins(10).msecs + 1;
+          schedule(Math.min(now + heartbeatMs, expiresAt));
+        }
+      }
+    }
+
     if (runtime.simpleAlarms) {
       schedule(this.earliestFutureEntryAt(data.sgvs, now));
       const request = calculateSimpleAlarmRequest(data.sgvs, now, runtime.settings);
@@ -1362,7 +1384,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   private seedAutomaticNotificationTask(now: number): void {
     const tasks = this.backgroundTasks();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
-    const anyEnabled = runtime.simpleAlarms || runtime.pump || runtime.openAps
+    const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.pump || runtime.openAps
       || runtime.loop || runtime.treatmentNotify || runtime.timeAgo;
     if (tasks.has(PLUGIN_NOTIFICATIONS_TASK)) {
       if (!anyEnabled) tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);

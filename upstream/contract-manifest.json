@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "df76f269f2291b735868d9c73f422e0bccd95ce386df392e01132335ea6dc5b2",
+  "inputs_sha256": "32d962b20be78ea853b561465ada650fd8764042630c755b4916c30513708971",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 15,
-      "adapted": 81,
+      "adapted": 82,
       "excluded-fixed-scope": 2,
-      "unresolved": 13
+      "unresolved": 12
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7828,8 +7828,8 @@
     },
     {
       "file": "vendor/nightscout/tests/ar2.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "All ten locked cone, line, in-range, warning/urgent high and low, predicted-title, long-gap interpolation and virtual-assistant cases are represented by test/ar2-plugin-contract.test.ts. src/plugins/ar2.ts preserves the upstream AR coefficients, six-point loss divisor, 13-step cone, thresholds, exact titles/messages/sounds/debug payload and unit scaling without Node globals. The Workers property registry exposes AR2 in official server order; ALARM_TYPES and AR2_CONE_FACTOR map into status; the SQLite DO scheduler runs AR2 before Simple Alarms and emits it through the persisted /alarm outlet. The complete upstream file also runs unchanged in scripts/run-upstream-server-plugin-contracts.mjs.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

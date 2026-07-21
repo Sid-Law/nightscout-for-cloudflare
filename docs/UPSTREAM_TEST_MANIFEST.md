@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 15, adapted: 81, excluded-fixed-scope: 2, unresolved: 13
-- Input fingerprint: `df76f269f2291b735868d9c73f422e0bccd95ce386df392e01132335ea6dc5b2`
+- Statuses: pass: 15, adapted: 82, excluded-fixed-scope: 2, unresolved: 12
+- Input fingerprint: `32d962b20be78ea853b561465ada650fd8764042630c755b4916c30513708971`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -22,7 +22,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 | 1-storage-foundation | none | 15 | 3 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 0 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
-| 4-plugins-and-calculations | 1-storage-foundation | 40 | 4 | 0 |
+| 4-plugins-and-calculations | 1-storage-foundation | 40 | 3 | 0 |
 | 5-api-v3 | 1-storage-foundation, 2-authorization, 3-api-v1-v2 | 15 | 0 | 0 |
 | 6-realtime | 1-storage-foundation, 2-authorization, 5-api-v3 | 2 | 0 | 0 |
 | 7-background-and-integrations | 1-storage-foundation, 4-plugins-and-calculations | 11 | 6 | 2 |
@@ -99,7 +99,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/XX_clean.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/adminnotifies.test.js` | pass | 0 | The complete locked upstream server file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. Its original aggregation case retains message-based deduplication. The Workers suite additionally covers SQLite DO persistence across eviction, first-metadata retention, public-count/admin-body filtering, the exact eight/twelve-hour windows, readable-site and bad-credential producers, the ADMIN_NOTIFIES_ENABLED gate, and a bounded Free-plan transient-message adapter. |
 | `vendor/nightscout/tests/admintools.test.js` | pass | 14 | The complete locked upstream headless file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. Its original Admin Tools UI loads DeviceStatus/Treatment/Entry counts and exercises delete-all, delete-old and future-record cleanup buttons with the exact status text. Network calls are the locked test's mocks, so this proves shipped client behavior rather than a current credentialed remote cleanup. |
-| `vendor/nightscout/tests/ar2.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/ar2.test.js` | adapted | 0 | All ten locked cone, line, in-range, warning/urgent high and low, predicted-title, long-gap interpolation and virtual-assistant cases are represented by test/ar2-plugin-contract.test.ts. src/plugins/ar2.ts preserves the upstream AR coefficients, six-point loss divisor, 13-step cone, thresholds, exact titles/messages/sounds/debug payload and unit scaling without Node globals. The Workers property registry exposes AR2 in official server order; ALARM_TYPES and AR2_CONE_FACTOR map into status; the SQLite DO scheduler runs AR2 before Simple Alarms and emits it through the persisted /alarm outlet. The complete upstream file also runs unchanged in scripts/run-upstream-server-plugin-contracts.mjs. |
 | `vendor/nightscout/tests/basalprofileplugin.test.js` | adapted | 0 | Represented by both named Workers-runtime cases in test/basal-treatmentnotify-plugin-contract.test.ts and wired into the default-enabled /api/v2/properties dispatcher: exact current-basal pill text, virtual-assistant title/response/priority, Profile schedule selection and active Temp Basal context. The adapter reuses the locked Profile functions and 2.5-day bounded Treatment projection, including Profile Switch, Temp Basal and Combo Bolus grouping, without introducing a dose calculation or recommendation. |
 | `vendor/nightscout/tests/bgnow.test.js` | adapted | 0 | Represented by the named Workers-runtime property-plugin contract in test/plugin-properties-contract.test.ts and wired into /api/v2/properties: exact 5-minute buckets, ordinary and eleven-minute interpolated deltas, mg/dl and mmol scaling/rounding, bucket placement, and locked visualization info payloads. |
 | `vendor/nightscout/tests/boluswizardpreview.test.js` | pass | 0 | The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All ten mg/dl/mmol forecast, range, alarm, snooze and pill cases execute the official Bolus Wizard Preview plugin. NSCF adds no calculation or recommendation; persisted server evaluation remains a separate integration task. |

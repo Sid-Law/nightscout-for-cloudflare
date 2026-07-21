@@ -71,10 +71,24 @@ function enableSimpleAlarms(instance: EntryStore): void {
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: undefined,
     DISABLE: undefined,
+    ALARM_TYPES: "simple",
     BG_HIGH: "200",
     BG_TARGET_TOP: "180",
     BG_TARGET_BOTTOM: "80",
     BG_LOW: "55",
+    HEARTBEAT: "60",
+  });
+}
+
+function enableAr2(instance: EntryStore): void {
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: undefined,
+    DISABLE: "simplealarms treatmentnotify timeago pump openaps loop",
+    ALARM_TYPES: "predict",
+    BG_HIGH: undefined,
+    BG_TARGET_TOP: undefined,
+    BG_TARGET_BOTTOM: undefined,
+    BG_LOW: undefined,
     HEARTBEAT: "60",
   });
 }
@@ -96,6 +110,7 @@ function enableTreatmentNotify(instance: EntryStore, simpleAlarms = false): void
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "careportal",
     DISABLE: simpleAlarms ? "timeago" : "simplealarms timeago",
+    ALARM_TYPES: simpleAlarms ? "simple" : "predict",
     BG_HIGH: simpleAlarms ? "200" : undefined,
     BG_TARGET_TOP: simpleAlarms ? "180" : undefined,
     BG_TARGET_BOTTOM: simpleAlarms ? "80" : undefined,
@@ -109,6 +124,7 @@ function enableTimeAgo(instance: EntryStore): void {
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "timeago",
     DISABLE: "simplealarms treatmentnotify",
+    ALARM_TYPES: "predict",
     BG_HIGH: undefined,
     BG_TARGET_TOP: undefined,
     BG_TARGET_BOTTOM: undefined,
@@ -126,6 +142,7 @@ function enableLoopNotifications(instance: EntryStore): void {
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "loop",
     DISABLE: "simplealarms treatmentnotify timeago pump openaps",
+    ALARM_TYPES: "predict",
     BG_HIGH: undefined,
     BG_TARGET_TOP: undefined,
     BG_TARGET_BOTTOM: undefined,
@@ -144,6 +161,7 @@ function enableOpenApsNotifications(instance: EntryStore): void {
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "openaps",
     DISABLE: "simplealarms treatmentnotify timeago pump loop",
+    ALARM_TYPES: "predict",
     BG_HIGH: undefined,
     BG_TARGET_TOP: undefined,
     BG_TARGET_BOTTOM: undefined,
@@ -162,6 +180,7 @@ function enablePumpNotifications(instance: EntryStore): void {
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "pump",
     DISABLE: "simplealarms treatmentnotify timeago openaps loop",
+    ALARM_TYPES: "predict",
     BG_HIGH: undefined,
     BG_TARGET_TOP: undefined,
     BG_TARGET_BOTTOM: undefined,
@@ -178,6 +197,52 @@ function enablePumpNotifications(instance: EntryStore): void {
 }
 
 describe("SQLite Durable Object background notification scheduler", () => {
+  it("automatically evaluates and emits the locked AR2 forecast alarm", async () => {
+    const name = tenant("background-ar2");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const currentAt = Date.now() - 1_000;
+    const previousAt = currentAt - 5 * 60_000;
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableAr2(instance);
+      await instance.putEntries(parseEntryPayload([
+        {
+          sgv: 150,
+          date: previousAt,
+          dateString: new Date(previousAt).toISOString(),
+          direction: "FortyFiveUp",
+          device: "simulator://scheduler",
+          type: "sgv",
+        },
+        {
+          sgv: 170,
+          date: currentAt,
+          dateString: new Date(currentAt).toISOString(),
+          direction: "FortyFiveUp",
+          device: "simulator://scheduler",
+          type: "sgv",
+        },
+      ]));
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one()).toMatchObject({ kind: PLUGIN_NOTIFICATIONS_TASK, attempt_count: 0 });
+    });
+
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expect.objectContaining({
+        level: 1,
+        title: "Warning, HIGH predicted",
+        message: "BG Now: 170 +20 ↗ mg/dl\nBG 15m: 206 mg/dl",
+        eventName: "high",
+        group: "default",
+        plugin: expect.objectContaining({ name: "ar2" }),
+      })],
+    }]);
+  });
+
   it("automatically emits, multiplexes, avoids early replay, and auto-clears Simple Alarms", async () => {
     const name = tenant("background-simple-alarm");
     const stub = store(name);

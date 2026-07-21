@@ -33,6 +33,7 @@ import {
 } from "./registry";
 import { calculateUploaderBatteryProperty } from "./upbat";
 import { calculateBasalProperty } from "./basal";
+import { calculateAr2Property, type Ar2Settings } from "./ar2";
 
 export interface PluginPropertyContext {
   sgvs: RealtimeDocument[];
@@ -275,6 +276,15 @@ export function calculatePluginProperties(
     upbat: {
       setProperties: () => {
         properties.upbat = calculateUploaderBatteryProperty(context.devicestatus, now);
+      },
+    },
+    ar2: {
+      setProperties: () => {
+        properties.ar2 = calculateAr2Property(
+          context.sgvs,
+          now,
+          settings as Ar2Settings,
+        );
       },
     },
     loop: {

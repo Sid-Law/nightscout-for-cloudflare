@@ -21,6 +21,8 @@ export interface NightscoutStatusEnvironment {
   BG_TARGET_TOP?: string;
   BG_TARGET_BOTTOM?: string;
   BG_LOW?: string;
+  ALARM_TYPES?: string;
+  AR2_CONE_FACTOR?: string;
   DBSIZE_MAX?: string;
   DBSIZE_WARN_PERCENTAGE?: string;
   DBSIZE_URGENT_PERCENTAGE?: string;
@@ -92,7 +94,7 @@ function configuredFeatureNames(value: string | undefined): string[] {
 
 function configuredEnable(
   environment: NightscoutStatusEnvironment,
-  simpleAlarms: boolean,
+  alarmTypes: readonly string[],
 ): string[] | undefined {
   if (environment.ENABLE === undefined && environment.DISABLE === undefined) return undefined;
   const enabled = configuredFeatureNames(environment.ENABLE);
@@ -103,8 +105,10 @@ function configuredEnable(
   for (const feature of DEFAULT_FEATURES) {
     if (!enabled.includes(feature)) enabled.push(feature);
   }
-  const alarmPlugin = simpleAlarms ? "simplealarms" : "ar2";
-  if (!enabled.includes(alarmPlugin)) enabled.push(alarmPlugin);
+  for (const alarmType of alarmTypes) {
+    const alarmPlugin = alarmType === "simple" ? "simplealarms" : "ar2";
+    if (!enabled.includes(alarmPlugin)) enabled.push(alarmPlugin);
+  }
   const disabled = new Set(configuredFeatureNames(environment.DISABLE));
   return enabled.filter((feature) => !disabled.has(feature));
 }
@@ -114,6 +118,7 @@ export interface NightscoutStatusSettingsOverrides {
   authFailDelay?: number;
   /** Test/platform-context override matching a resolved upstream settings.enable array. */
   enable?: string[];
+  alarmTypes?: string[];
   thresholds?: {
     bgHigh: number;
     bgTargetTop: number;
@@ -169,6 +174,7 @@ function platformExtendedSettings(
     }
     if (Object.keys(settings).length > 0) extended[name] = settings;
   }
+  addPlugin("ar2", [["coneFactor", environment.AR2_CONE_FACTOR]]);
   addPlugin("timeago", [["enableAlerts", environment.TIMEAGO_ENABLE_ALERTS]]);
   addPlugin("cage", [
     ["info", environment.CAGE_INFO],
@@ -349,15 +355,21 @@ export function tenantStatusSettings(
     ? profileDisplayUnits(latestProfile) ?? "mg/dl"
     : normalizeConfiguredDisplayUnits(environment.DISPLAY_UNITS);
   const thresholds = configuredThresholds(environment, units);
+  const configuredAlarmTypes = configuredFeatureNames(environment.ALARM_TYPES)
+    .filter((type) => type === "predict" || type === "simple");
+  const alarmTypes = configuredAlarmTypes.length > 0
+    ? configuredAlarmTypes
+    : [thresholds !== undefined ? "simple" : "predict"];
   const base = {
     units,
     authFailDelay: normalizePlatformAuthFailDelay(environment.AUTH_FAIL_DELAY),
-    simpleAlarms: thresholds !== undefined,
+    simpleAlarms: alarmTypes.includes("simple"),
+    alarmTypes,
   };
-  const enable = configuredEnable(environment, base.simpleAlarms);
+  const enable = configuredEnable(environment, alarmTypes);
   const effectiveEnabled = new Set(enable ?? [
     ...DEFAULT_FEATURES,
-    base.simpleAlarms ? "simplealarms" : "ar2",
+    ...alarmTypes.map((type) => type === "simple" ? "simplealarms" : "ar2"),
   ]);
   const settingEnvironment: Record<string, unknown> = {};
   for (const [name, value] of [
@@ -391,7 +403,10 @@ function nightscoutSettings(
   settings.eachSettingAsEnv((name) => {
     if (name === "UNITS") return overrides.units ?? "mg/dl";
     if (name === "AUTH_FAIL_DELAY") return overrides.authFailDelay ?? 5000;
-    if (name === "ALARM_TYPES") return overrides.simpleAlarms === true ? "simple" : "predict";
+    if (name === "ALARM_TYPES") {
+      return overrides.alarmTypes?.join(" ")
+        ?? (overrides.simpleAlarms === true ? "simple" : "predict");
+    }
     const configuredSetting = overrides.settingEnvironment?.[name];
     if (configuredSetting !== undefined) return configuredSetting;
     if (thresholds === undefined) return undefined;
