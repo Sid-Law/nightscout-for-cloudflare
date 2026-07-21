@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 13, adapted: 79, excluded-fixed-scope: 2, unresolved: 17
-- Input fingerprint: `d33e82a6ccb9ca3c0fab6d8ab95f08d3a04286a803e5e460d588d423419db7e9`
+- Statuses: pass: 13, adapted: 80, excluded-fixed-scope: 2, unresolved: 16
+- Input fingerprint: `75f3d85731807330bce6e5292e1eb6cb9c81d53fce828b8b2f85327de19a6a12`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -19,7 +19,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
-| 1-storage-foundation | none | 15 | 4 | 0 |
+| 1-storage-foundation | none | 15 | 3 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 0 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 5 | 0 |
@@ -59,7 +59,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/objectid-cache.test.js` | adapted | 8 | Represented by all seven named Workers-runtime ObjectIdCache cases in test/api-v1-loop-client-contract.test.ts: POST-response cache mapping, cached-ID PUT and DELETE, cache-miss and app-restart duplicate behavior with fresh timestamps, ordered batch identity mapping, temp-basal update, and pump-event hexadecimal syncIdentifier preservation. The contract retains upstream behavior that syncIdentifier is descriptive rather than a server uniqueness key. |
 | `vendor/nightscout/tests/query.test.js` | adapted | 0 | Represented by all five named locked cases plus current UUID coverage in test/query-contract.test.ts: four-day and configurable date defaults, ID-based date-filter bypass, non-ObjectId preservation and ObjectId-shaped normalization. src/server-query.ts ports the upstream walker/date/ID surface without mongodb, traverse or moment; the live Entries parser reuses its ObjectId normalization and default date boundary before translating the query to bounded indexed SQLite filters. |
 | `vendor/nightscout/tests/reportstorage.test.js` | pass | 0 | The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All four report-settings storage cases preserve the default property set, tracked localStorage writes and ignored unknown properties with the original reportstorage module. |
-| `vendor/nightscout/tests/storage.shape-handling.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/storage.shape-handling.test.js` | adapted | 0 | All 26 locked cases are represented by the five named Workers groups in test/storage-shape-contract.test.ts together with the exact subject/role update assertions in test/auth-compat.test.ts: Treatment and DeviceStatus scalar/one/many/20-document writes, Entry arrays, Profile scalar/array/empty/create-or-replace/ObjectId/created_at behavior, Food and Activity create/save behavior, authorization updates without duplicates, and explicit one-versus-many SQLite batch cardinality. The diagnostic raw Mongo insertOne(array) case has no behavioral assertion and is a runtime-only driver observation; NSCF intentionally exposes a typed document-batch RPC instead of a fake raw Mongo collection. Public v1/v2 invalid-ID validation remains unchanged while direct Profile/Food/Activity save now preserves the upstream fresh-ObjectId fallback. |
 | `vendor/nightscout/tests/uuid-handling.test.js` | adapted | 6 | Represented by all fifteen UUID-OFF, UUID-ON and UUID-EDGE Workers-runtime cases in test/api-v1-treatment-identity-matrix.test.ts: locked true-by-default/on/off/invalid parsing, write promotion versus stripping, identifier and legacy-_id GET/DELETE selection, ObjectId preservation, invalid-length/non-hyphen/empty/case-sensitive lookup edges and repeated-identifier upsert. A versioned UUID-aware DO RPC fails closed for explicit false during a rolling old-isolate boundary instead of silently applying true semantics. |
 
 ### 2-authorization

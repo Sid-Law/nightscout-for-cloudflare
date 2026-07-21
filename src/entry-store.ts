@@ -244,6 +244,12 @@ function randomObjectId(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function legacyStorageSaveObjectId(value: unknown): string {
+  return typeof value === "string" && /^[0-9a-fA-F]{24}$/.test(value)
+    ? value.toLowerCase()
+    : randomObjectId();
+}
+
 function toPublicEntry(document: JsonDocument): PublicEntry {
   const id = document._id;
   const date = document.date;
@@ -2825,6 +2831,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           : { ...document, created_at: new Date().toISOString() }
       );
     }
+    if (collection === "activity") {
+      documents = documents.map((document) =>
+        Object.prototype.hasOwnProperty.call(document, "created_at")
+          ? document
+          : { ...document, created_at: new Date().toISOString() }
+      );
+    }
     if (collection === "subjects") {
       await this.ensureAuthorizationSubjectsCurrent();
       const derived: JsonDocument[] = [];
@@ -2955,6 +2968,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           ? document
           : { ...document, created_at: new Date().toISOString() }
       );
+    }
+    if (collection === "activity") {
+      documents = documents.map((document) => ({
+        ...document,
+        _id: legacyStorageSaveObjectId(document._id),
+        ...(Object.prototype.hasOwnProperty.call(document, "created_at")
+          ? {}
+          : { created_at: new Date().toISOString() }),
+      }));
     }
     if (collection === "subjects") {
       await this.ensureAuthorizationSubjectsCurrent();

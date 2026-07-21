@@ -2905,9 +2905,14 @@ export class SqliteDocumentRepository {
     input: JsonDocument,
   ): DocumentMutationResult {
     return this.storage.transactionSync(() => {
-      const document = normalizeTreatmentIdentity(input);
-      const id = requestedId(document);
-      if (id === null) throw new Error("legacy document update requires a valid _id");
+      // Locked Profile/Food storage constructs a fresh ObjectId when save() is
+      // called without an _id or with a value the MongoDB ObjectId constructor
+      // rejects. Keep that internal storage contract here. Public v1/v2 routes
+      // still perform their locked ObjectId validation before reaching this
+      // adapter, so accepting the direct-storage shape does not weaken HTTP
+      // mutation validation.
+      const document = { ...input };
+      const id = requestedId(document) ?? randomObjectId();
       const existing = this.findByIdRow(id, collection);
       return this.writeSnapshot(
         id,

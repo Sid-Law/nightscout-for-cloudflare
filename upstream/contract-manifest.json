@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "d33e82a6ccb9ca3c0fab6d8ab95f08d3a04286a803e5e460d588d423419db7e9",
+  "inputs_sha256": "75f3d85731807330bce6e5292e1eb6cb9c81d53fce828b8b2f85327de19a6a12",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 13,
-      "adapted": 79,
+      "adapted": 80,
       "excluded-fixed-scope": 2,
-      "unresolved": 17
+      "unresolved": 16
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8593,8 +8593,8 @@
     },
     {
       "file": "vendor/nightscout/tests/storage.shape-handling.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "All 26 locked cases are represented by the five named Workers groups in test/storage-shape-contract.test.ts together with the exact subject/role update assertions in test/auth-compat.test.ts: Treatment and DeviceStatus scalar/one/many/20-document writes, Entry arrays, Profile scalar/array/empty/create-or-replace/ObjectId/created_at behavior, Food and Activity create/save behavior, authorization updates without duplicates, and explicit one-versus-many SQLite batch cardinality. The diagnostic raw Mongo insertOne(array) case has no behavioral assertion and is a runtime-only driver observation; NSCF intentionally exposes a typed document-batch RPC instead of a fake raw Mongo collection. Public v1/v2 invalid-ID validation remains unchanged while direct Profile/Food/Activity save now preserves the upstream fresh-ObjectId fallback.",
       "workstream": "1-storage-foundation",
       "depends_on": [],
       "related_routes": [],
