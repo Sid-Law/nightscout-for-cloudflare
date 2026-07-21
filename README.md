@@ -473,6 +473,7 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `data.treatmenttocurve.test.js`, `openaps.test.js`, `pump.test.js`,
 `basalprofileplugin.test.js`, `treatmentnotify.test.js`,
 `simplealarms.test.js`, `notifications.test.js`, `adminnotifies.test.js`,
+`bootevent-debounce.test.js`,
 `websocket.shape-handling.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
 `settings.test.js`, `sandbox.test.js`, `plugins.test.js`, `query.test.js`,
@@ -498,15 +499,15 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 15 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 14 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
-`c4cdce8e69f1fc9910363e0afbfff4ca896e547e`. The 60-file Workers-runtime
-suite passes 663/663 tests, the four audit suites pass 22/22, eleven complete
+`f0beff98a66d3bd1cd2e5cf8ad98786d9a59c95c`. The 61-file Workers-runtime
+suite passes 673/673 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and eighteen locked server/data-plugin
 files pass 122/122 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1162.31 KiB raw / 214.78 KiB gzip and exposes only
+248 official assets, reports 1167.03 KiB raw / 215.55 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -522,6 +523,14 @@ missing or invalid internal ID just as the locked Mongo storage does. The HTTP
 API still rejects invalid IDs before that internal adapter, so this does not
 weaken uploader validation. Raw Mongo `insertOne` is intentionally replaced by
 an explicit typed SQLite document-batch RPC rather than emulated.
+Schema v16 additionally replaces upstream's process-local Lodash timer and
+mutable `dataloadRunning`/`dataloadPending` flags with a per-tenant SQLite
+burst window. The first mutation evaluates immediately, rapid uploads receive
+one final trailing evaluation after one quiet second, and sustained uploads
+are forced through within five seconds. The same Durable Object alarm survives
+isolate eviction, while immediate root/API publication is not delayed. All
+nine locked `bootevent-debounce.test.js` cases plus one real 20-Profile batch
+integration are represented by ten Workers-runtime tests.
 It retains the request-local Worker-safe port of the locked query defaults,
 walker, date and ObjectId/UUID normalization surface; live Entries parsing
 reuses its four-day boundary and ObjectId normalization before bounded SQLite
@@ -597,8 +606,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 15 unresolved plugin/test
-algorithms. The manifest records fourteen direct passes, 80 adapted, 15 unresolved
+Node plugin `require` without fabricating the 14 unresolved plugin/test
+algorithms. The manifest records fourteen direct passes, 81 adapted, 14 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -609,16 +618,15 @@ type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
 remaining plugin evaluators/task kinds, including realtime profile-switch preprocessing,
 remaining BWP/plugin-derived summary fields and their persistence, remain
-missing. No deployed
-credential was read or supplied to remote smoke requests, and no credential
-value is stored or quoted in this repository.
+missing. The user-supplied construction credential is active and was used only
+for the named simulated SGV batch; its value is not stored or quoted in this
+repository.
 Entries migration remains intentionally
 fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
 being imported, while canonical documents and other collections such as
-profile are preserved. A read-only check found zero Entries and one profile in
-the public tenant, and post-deployment reads preserved those counts without
-recording profile contents. This is not a general legacy-data migration
-guarantee.
+profile are preserved. A pre-seeding read found zero Entries and one profile in
+the public tenant. The later 25 `simulator://nscf-demo` rows are new test data,
+not imported history. This is not a general legacy-data migration guarantee.
 
 The planned first-release onboarding path is a fresh deployment for a new
 family. “Fresh” means a new Worker/SQLite Durable Object namespace or an
@@ -639,9 +647,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927` (ordinal 69) was made
-current at `2026-07-21T21:12:16.911Z`; the version was created at
-`2026-07-21T21:12:16.046Z`, with a reported 33 ms startup. No asset bytes needed
+Cloudflare version `f6b730d9-2d80-4929-877b-bb0c240f714e` (ordinal 72) was made
+current at `2026-07-21T23:16:54.596Z`; the version was created at
+`2026-07-21T23:16:53.788Z`, with a reported 40 ms startup. No asset bytes needed
 uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -650,17 +658,15 @@ the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
 missing-token API3 Entries returned the expected 401. The 72-assertion script
-used fresh tenant `public-smoke-1784668353416`, observed 249,856 SQLite bytes and a
+used fresh tenant `public-smoke-1784676187391`, observed 262,144 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
 secure fields and method functions.
-The acceptance run deliberately sent no API secret and did not perform a
-protected mutation. A name-only secret listing returned no encrypted Secrets,
-and credential-free probes show that this active runtime does not currently
-receive a valid `API_SECRET`; no secret value was read, generated, printed or written. Successful
-UUID identity mutation and legacy-row repair therefore remain local contract
-evidence, not a claim about a credentialed remote write.
+The reusable 72-assertion smoke deliberately sent no credential and confirmed
+that anonymous mutation fails closed. A separate authenticated 25-entry
+simulator write/read returned HTTP 200; UUID identity mutation and legacy-row
+repair remain local contract evidence.
 
 The first attempted plugin deployment exposed Cloudflare rolling-upgrade
 behavior: an already-live Durable Object temporarily lacked the newly added
@@ -669,25 +675,24 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real browser run loaded Cloudflare version 69 and rendered the official
-homepage, chart region, empty-data `---`, `mg/dl` units and live `0%` dbsize
+A real browser run loaded Cloudflare version 72 and rendered the official
+homepage, chart region, initial empty-data `---`, `mg/dl` units and live `0%` dbsize
 pill plus the official Admin-notification link. The Settings form opened with
 the complete official language selector
-and the About block reported Nightscout 15.0.7. The preceding version's Admin Tools displayed the
-expected unauthenticated device-authentication dialog without receiving a
-credential, and `clock-color` rendered `-?-` with no JavaScript error. The
-current browser pass did not repeat those two secondary-page checks because the
-shipped assets were unchanged. No protected server mutation or Settings save was attempted.
-The public tenant currently has no
-Entries, so `---` is expected. These checks do not prove every protected
+and the About block reported Nightscout 15.0.7. The same pass opened Admin
+Tools and the official `clock-color` page; both loaded without a console error.
+After the user supplied a valid construction credential, 25 entries from
+`simulator://nscf-demo` were written and read back; the homepage then rendered
+`101 mg/dL`, an upward arrow, `+3` and a populated two-hour chart. No Settings
+save, Food/Profile mutation or real health data was used. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 68 has therefore passed its 72-assertion credential-free remote API,
+Version 72 has therefore passed its 72-assertion credential-free remote API,
 Engine.IO and named real-browser gates. Four fresh-tenant Admin-notification
 probes returned count one while correctly hiding the body from anonymous
 callers. One immediate post-activation request returned the old zero-count
 behavior; the 100% deployment status and same-region retries then converged.
-With no valid deployed API secret, the administrator-body and protected-write
-paths remain for the final user environment test.
+Administrator-body, Profile/Food/Admin mutation and real closed-loop paths
+remain for the final user environment test.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

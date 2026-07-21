@@ -12,35 +12,34 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `c4cdce8e69f1fc9910363e0afbfff4ca896e547e`
-- Runtime source candidate: `c4cdce8e69f1fc9910363e0afbfff4ca896e547e`
-- Git HEAD used by Wrangler: `c4cdce8e69f1fc9910363e0afbfff4ca896e547e`
-- Cloudflare Version ID: `f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927`
-- Cloudflare ordinal version number: `69`
+- Deployed runtime candidate: `f0beff98a66d3bd1cd2e5cf8ad98786d9a59c95c`
+- Runtime source candidate: `f0beff98a66d3bd1cd2e5cf8ad98786d9a59c95c`
+- Git HEAD used by Wrangler: `f0beff98a66d3bd1cd2e5cf8ad98786d9a59c95c`
+- Cloudflare Version ID: `f6b730d9-2d80-4929-877b-bb0c240f714e`
+- Cloudflare ordinal version number: `72`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-21T21:12:16.046Z`
-- Activation: deployment metadata created `2026-07-21T21:12:16.911Z`;
+- Version creation time: `2026-07-21T23:16:53.788Z`
+- Activation: deployment metadata created `2026-07-21T23:16:54.596Z`;
   Wrangler reports this version at 100%
-- Worker startup: 33 ms
+- Worker startup: 40 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
   silence tables, the v11 root-delta baseline and the v12 persisted root-write
   authority columns, the v13 notification last-emission column, the v14
-  persisted background-task table/index and the v15 Admin-notification table
+  persisted background-task table/index, the v15 Admin-notification table and
+  the v16 persisted data-update debounce table/index
 - Static Assets: 248 official v15.0.7 entries; no asset bytes required an
   update in this deployment
-- Upload: 1162.31 KiB raw / 214.78 KiB gzip
+- Upload: 1167.03 KiB raw / 215.55 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
-No credential value was read or supplied to a local or remote smoke request.
-The acceptance pass used a name-only encrypted-secret listing and
-credential-free route behavior to establish that the active runtime does not
-currently receive a valid `API_SECRET`; it did not perform a protected
-mutation. The port must never generate, silently replace, print or commit a
-family credential. Post-deployment
-documentation changes are not part of the already active Worker version.
+The user supplied a construction `API_SECRET`, and version 72 used it for one
+25-entry `simulator://nscf-demo` batch. The value is not committed or recorded
+in this document. Anonymous probes still fail closed, while the credentialed
+batch and follow-up read both returned HTTP 200. Post-deployment documentation
+changes are not part of the already active Worker version.
 Cloudflare's current Wrangler documentation states that dashboard text
 variables are overwritten by a normal deployment unless `keep_vars` is true,
 while encrypted Secrets are not deleted by ordinary deployments. The current
@@ -91,6 +90,10 @@ medical or dosing logic:
 - schema v15 adds per-tenant Admin-notification message aggregation, official
   eight-hour API/twelve-hour cleanup windows, readable-site and failed-auth
   producers, public-count/admin-body filtering and disable-gate persistence;
+- schema v16 adds the upstream one-second trailing/five-second max-wait
+  bootevent debounce as tenant SQLite state. Leading evaluation remains
+  immediate, rapid Profile/Entry/DeviceStatus/Treatment uploads collapse to one
+  final task, and the existing DO alarm survives isolate eviction;
 - a bounded internal `EntryStore` RPC accepts at most one MiB, 128 notification
   requests and 128 snoozes, then persists the decision and publishes the
   selected live `/alarm` object in one SQLite transaction;
@@ -451,8 +454,9 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed runtime candidate is
-`c4cdce8e69f1fc9910363e0afbfff4ca896e547e`. It retains schema-v15 persisted
-Admin notices and adds the complete storage-shape adapter on top of the locked v1/v2 `experiments/test`, complete named API
+`f0beff98a66d3bd1cd2e5cf8ad98786d9a59c95c`. It retains schema-v15 persisted
+Admin notices, adds the complete storage-shape adapter and schema-v16 durable
+bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
 work while retaining
 request-local Basal Profile state and all prior OpenAPS/Pump, IOB/COB/
@@ -480,15 +484,15 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 60 files, 663/663 passed |
-| Worker dry run | 1162.31 KiB raw / 214.78 KiB gzip |
+| Workers integration tests | 61 files, 673/673 passed |
+| Worker dry run | 1167.03 KiB raw / 215.55 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
-| Deployment variables | `keep_vars` audited; no credential was read, supplied, generated, replaced or inspected |
+| Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 663 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 673 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
-run 42/42 unchanged against the shipped official client bundle, while 17
+run 42/42 unchanged against the shipped official client bundle, while 18
 server/data-plugin files run unchanged in a separate 122/122 gate. All 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
@@ -498,12 +502,12 @@ server/data-plugin files run unchanged in a separate 122/122 gate. All 16 API3 f
 `iob.test.js`, `cob.test.js`, `data.treatmenttocurve.test.js`,
 `openaps.test.js`, `pump.test.js`, `basalprofileplugin.test.js`,
 `treatmentnotify.test.js`, `simplealarms.test.js`, `notifications.test.js`,
-`adminnotifies.test.js`, `storage.shape-handling.test.js`,
+`adminnotifies.test.js`, `bootevent-debounce.test.js`, `storage.shape-handling.test.js`,
 `websocket.shape-handling.test.js`, `profile.test.js`,
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js`, `query.test.js`, `language.test.js` and
 25 v1 client/API files and the four named server authentication files are
-classified as direct `pass` or fully `adapted`; fourteen are `pass`, 15 remain unresolved and two bridge files
+classified as direct `pass` or fully `adapted`; fourteen are `pass`, 14 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -514,7 +518,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927` at 100%.
+Wrangler reports version `f6b730d9-2d80-4929-877b-bb0c240f714e` at 100%.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
 
@@ -522,33 +526,33 @@ not only Wrangler command success.
 | --- | --- |
 | GET `/api/v3/version` | HTTP 200 with Nightscout `15.0.7`, API3 `3.0.3-alpha` and SQLite Durable Object marker |
 | GET `/api/v3/entries?limit=1` without JWT | Expected HTTP 401 `Missing or bad access token or JWT` |
-| GET `/api/v1/status.json` plus anonymous `/api/v1|v2/experiments/test` | Status remained HTTP 200; both protected probes converged on the new route and failed closed with HTTP 503 because this deployment currently has no valid `API_SECRET`. One immediate post-activation request briefly reached the prior v1 code and returned 404 while v2 reached the new code; same-region retries converged. |
+| GET `/api/v1/status.json` plus anonymous mutation | Status remained HTTP 200; the configured construction credential makes anonymous mutation fail closed with HTTP 401. The smoke accepts HTTP 503 only for a deliberately unconfigured deployment and verifies that neither branch persists a row. |
 | GET `/api/v1/adminnotifies` on fresh tenants | Four same-region probes returned HTTP 200, public `notifyCount:1` for the readable-site warning and an empty anonymous `notifies` array. One immediate post-activation probe returned the old zero count before deployment status reached 100%; no credential or body was exposed. |
 | GET `/healthz` and `/api/v1/entries.json?count=1` | HTTP 200; healthy SQLite DO marker and empty simulated-data Entries array |
 | GET `/api/v1/status.json` and `/api/v2/status.json` | HTTP 200 with byte-equivalent filtered Settings snapshots: 63 JSON-visible keys, 14 enabled defaults, official title/plugin values and no secure fields or method functions |
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
 | GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and locked `null` IOB/COB fields because both plugins are disabled |
-| GET `/api/v2/ddata/at` | HTTP 200 with real SQLite `dataSize:249856` bytes and `indexSize:0`; the total is not double-counted |
-| GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.24`, `display:"0%"` and `status:"current"` |
+| GET `/api/v2/ddata/at` | HTTP 200 with real SQLite `dataSize:262144` bytes and `indexSize:0`; the total is not double-counted |
+| GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.25`, `display:"0%"` and `status:"current"` |
 | GET `/api/v2/properties/basal` | HTTP 200 on the public simulated profile with `display:"0.100U"`, scheduled `basal:0.1` and no fabricated active treatment contribution |
 | GET `/api/v2/properties/loop` | HTTP 200 with `{}` because Loop is opt-in and the deployed `ENABLE` setting does not enable it; no synthetic property was fabricated |
 | GET `/api/v2/properties/iob,cob` | HTTP 200; property presence exactly follows the deployed opt-in `ENABLE` set and both are absent by default |
 | GET `/api/v2/properties/openaps,pump` | HTTP 200; property presence exactly follows the deployed opt-in `ENABLE` set and both are absent by default |
 | GET `/api/v2/properties/cage,sage,iage,timeago` | HTTP 200; CAGE/SAGE/IAGE presence follows the deployed opt-in `ENABLE` set and all are absent by default, while timeago remains a client/notification plugin rather than a fabricated property |
-| Protected mutation | Deliberately not attempted; no API secret value was sent or inspected, and the active runtime currently reports no valid configured secret |
+| Credentialed simulator mutation | One 25-entry v1 SGV batch from `simulator://nscf-demo` returned HTTP 200; a 30-row read returned all 25 rows and latest `101`/`SingleUp` state |
 
 The reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784668353416` and passed 72 behavior/CORS assertions.
+`public-smoke-1784676187391` and passed 72 behavior/CORS assertions.
 The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
 `pingTimeout:20000`.
 
-No deployed credential value was read or sent. A name-only encrypted-secret
-listing was empty, while failure-closed route behavior confirms no valid API
-secret currently reaches the Worker. Every checked API response carried the complete CORS policy. The
+The reusable smoke itself sends no credential and confirms that anonymous
+mutation fails closed. The separate simulator batch used the user-supplied
+construction credential without recording it. Every checked API response carried the complete CORS policy. The
 full local suite covers authenticated search, ordering, skip, projections,
 limits, srvModified filters and error shapes in addition to inherited mutation
-and transport contracts. Credentialed remote mutation was outside this
+and transport contracts. Real CGM/closed-loop traffic remains outside this
 acceptance run.
 
 An earlier property-plugin increment first attempted version
@@ -578,7 +582,7 @@ remain evidence from the immediately preceding compatible version.
 | Check | Result |
 | --- | --- |
 | Current EIO4 polling open | HTTP 200, a 20-character Engine.IO 4 SID, `pingInterval:25000` and `pingTimeout:20000` |
-| Live database stats/property | ddata published 249,856 SQLite bytes; the default-enabled registry property returned the same total and 953.67 MiB Free-plan maximum |
+| Live database stats/property | ddata published 262,144 SQLite bytes; the default-enabled registry property returned the same total and 953.67 MiB Free-plan maximum |
 | Local plugin registry contract | both named client/server cases plus order, enable/shown gates, hook/error behavior, event aggregation, iterators and settings projection |
 | Direct official client contract | 11 locked client files passed 42/42 unchanged against the byte-identical shipped bundle; Care Portal/Profile Editor/Admin/Reports mutations use locked mocks rather than the public tenant |
 | Local Cloudflare configuration contract | `keep_vars` is true; no plaintext vars, D1, R2, KV, Queues or custom routes are checked in; only `ENTRY_STORE` and `ASSETS` are bound |
@@ -588,7 +592,7 @@ remain evidence from the immediately preceding compatible version.
 | Local IOB/COB/treatment-curve contract | all 24 named upstream cases plus two DO/HTTP integrations: official source precedence/fallback/formulas/display, bounded Profile/Treatment inputs, ddata markers and enabled Summary state |
 | Local OpenAPS/Pump contract | all 16 named upstream cases plus two Workers-runtime integrations: official uploader-state precedence, thresholds, offline suppression, notification requests, pill/forecast visualization, assistant responses and opt-in dispatch |
 | Local Basal/Treatment-Notify contract | all eight named upstream cases plus Workers-runtime integrations: scheduled/temporary/Combo Bolus basal state, property/pill/visualization/assistant behavior, recent Treatment/MBG selection, synchronous SHA-1 hashing, automatic manual-event emit/expiry, snooze arbitration, automated-event exclusion and future activation |
-| Local notification scheduler/core contract | all five named Simple Alarms and all eight named notification-processor cases plus schema-v13 persistence; eleven schema-v14 tests cover Simple high/multiplex/clear, repair/retry, Treatment Notify/Timeago exact activation/expiry/clear behavior, Loop exact stale transitions, OpenAPS Offline start/end suppression and Pump exact stale transitions; three focused closed-loop adapter tests cover ordering, gates and deadlines |
+| Local notification scheduler/core contract | all five named Simple Alarms and all eight named notification-processor cases plus schema-v13 persistence; eleven schema-v14 tests cover Simple high/multiplex/clear, repair/retry, Treatment Notify/Timeago exact activation/expiry/clear behavior, Loop exact stale transitions, OpenAPS Offline start/end suppression and Pump exact stale transitions; ten schema-v16 tests cover all nine upstream bootevent debounce behaviors plus a real 20-Profile leading/trailing integration; three focused closed-loop adapter tests cover ordering, gates and deadlines |
 | Local age/timeago contract | all 17 locked CAGE/SAGE/IAGE/timeago cases, including event selection, display boundaries, notes, alert thresholds, request shapes, enable gates and environment normalization; Timeago scheduler integration additionally proves strict threshold-plus-one-millisecond transitions |
 | Prior-version anonymous-readable root authorize | exact `{read:true,write:false,write_treatment:false}` authority |
 | Prior-version read-only Food `dbAdd` | exact `{result:"Not permitted"}` ACK; follow-up Food read returned no row |
@@ -597,7 +601,7 @@ remain evidence from the immediately preceding compatible version.
 | Local root write contract | six collections and all four events preserve locked validation/permission/ACK order, dedupe and ACK-before-delta behavior |
 | Local v1 SGV root update | an authorized live polling session receives the locked root `dataUpdate`; an unauthorized session remains silent |
 | Local API3 Treatment root update | root and `/storage` delivery share the successful API3 mutation path |
-| Local reconstruction | schema-v11 baseline, schema-v12 write/treatment-write authority, schema-v13 notification emission state and schema-v14 background-task state survive service reconstruction; a Treatment change remains `action:update` |
+| Local reconstruction | schema-v11 baseline, schema-v12 write/treatment-write authority, schema-v13 notification emission state, schema-v14 background-task state and schema-v16 debounce rows survive service reconstruction; a Treatment change remains `action:update` |
 | Prior `/alarm` CONNECT | independent SIO5 namespace connection returned a namespace SID |
 | Prior `/alarm` anonymous web subscribe | ACK exactly `{success:true,message:"Subscribed for alarms",read:true,ack:false}` |
 
@@ -607,8 +611,9 @@ non-empty-only root queueing, connection/read/live filtering, collection filteri
 Settings-admin exception, persisted subscriptions across eviction, API3
 create/deduplicated update/PUT/PATCH/soft/permanent delete events, v1 exclusion,
 tenant/room isolation, hibernated-WebSocket delivery, broken-subscriber
-containment and v8-to-v9 schema repair. No credentialed remote mutation was
-attempted. Separate `/alarm` contracts prove native/web authorization priority,
+containment and v8-to-v9 schema repair. The credentialed remote mutation was
+limited to the named simulator SGV batch; no credentialed `/storage`, root or
+`/alarm` mutation was attempted. Separate `/alarm` contracts prove native/web authorization priority,
 all five event classifications, broadcast to current unsubscribed connections,
 tenant isolation, no disconnected replay, exact ACK/all-clear behavior,
 Urgent-to-Warning snooze, eviction/Hibernation persistence, broken-recipient
@@ -619,32 +624,31 @@ automatic all-clear and atomic live publication. Schema-v14 contracts
 add automatic Simple/Pump/OpenAPS/Loop/Treatment-Notify/Timeago publication, single-alarm
 multiplexing, activation/expiry, in-range/fresh clearing, data-preserving
 partial repair, persistent retry and recovery. The
-remote pass did not use a credential,
-publish a trusted notification or perform an alarm ACK. Neither layer proves
+credential-free remote pass did not publish a trusted notification or perform
+an alarm ACK; the separate simulator batch exercised only v1 SGV upload. Neither layer proves
 polling upgrade, EIO3, profile-switch/plugin preprocessing or automatic task
 execution for the remaining server plugins.
 
 ## Real-browser evidence
 
-A real browser session exercised Cloudflare version 69's official UI without reading
-credential storage or submitting protected mutations:
+A real browser session exercised Cloudflare version 72's official UI:
 
 - the homepage rendered its official chart region, loaded locked
-  `bundle.app.js` and displayed the live database-size pill as `0%`; the
-  public tenant has no Entries, so `---` is expected;
+  `bundle.app.js` and displayed the live database-size pill as `0%`;
+- after the credentialed simulator batch, the official current display showed
+  `101 mg/dL`, an upward arrow, `+3`, one-minute recency and a populated chart;
 - the Settings form exposed the official language selector and About reported
   Nightscout 15.0.7;
 - the official Admin-notification link remained present; four fresh-tenant API
   probes reported the readable-site count while hiding bodies from anonymous callers;
-- the preceding version's Admin Tools and `clock-color` evidence remains valid
-  for the unchanged 248 assets, but those secondary pages were not re-run in
-  this pass;
-- no protected server mutation was attempted.
+- Admin Tools and the official `clock-color` page both loaded in this pass with
+  no captured console error;
+- no real health data or protected Profile/Food/Admin mutation was attempted.
 
 This pass asserted rendered DOM, status text, official-script presence and a
 rendered state for Cloudflare version
-`f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927`. It reused the same 248 unchanged
-official assets. Version 69 has therefore passed credential-free remote API,
+`f6b730d9-2d80-4929-877b-bb0c240f714e`. It reused the same 248 unchanged
+official assets. Version 72 has therefore passed credential-free remote API,
 Engine.IO and the named real-browser acceptance. The immediate old zero-count
 Admin response and later same-region convergence are explicitly retained above.
 
@@ -719,8 +723,9 @@ mutation, report generation or every other protected page workflow.
   opt-in Timeago. CAGE/SAGE/IAGE, BWP/DBSize and plugin-derived summary/activity
   state still need producer/persistence adapters. Alarm ACK/silence state
   originates in schema v10 and schema v13 adds last-emission state consumed by
-  the adapted core processor. API3 pruning and other maintenance jobs are not
-  scheduled yet.
+  the adapted core processor. Schema v16 durably coalesces rapid mutation
+  triggers for that task without delaying realtime publication. API3 pruning
+  and other maintenance jobs are not scheduled yet.
 - Official pages are present, but not every mutation, report, plugin and
   real-time workflow has an upstream-derived browser contract.
 - No medical algorithm or dosing advice was added.

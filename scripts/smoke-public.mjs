@@ -141,9 +141,17 @@ const treatmentWrite = await request("/api/v1/treatments", {
     created_at: new Date().toISOString(),
   }),
 });
-checked(treatmentWrite.status === 503, "missing API_SECRET fails closed");
+checked(
+  treatmentWrite.status === 401 || treatmentWrite.status === 503,
+  "anonymous mutation fails closed with or without a configured API_SECRET",
+);
 const treatmentError = await treatmentWrite.json();
-checked(treatmentError.error?.code === "api_secret_not_configured", "missing secret error code");
+checked(
+  treatmentWrite.status === 503
+    ? treatmentError.error?.code === "api_secret_not_configured"
+    : treatmentError.message === "Unauthorized",
+  "anonymous mutation exposes the matching failure-closed response",
+);
 const treatmentRead = await request("/api/v1/treatments.json?count=1");
 equal(await treatmentRead.json(), [], "failed write did not persist");
 

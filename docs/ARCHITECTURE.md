@@ -7,15 +7,15 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`c4cdce8e69f1fc9910363e0afbfff4ca896e547e` and Cloudflare version
-`f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927`, reported as 100% active. The
-candidate's 60-file Workers-runtime suite passes 663/663 plus 22/22 audit tests,
+`f0beff98a66d3bd1cd2e5cf8ad98786d9a59c95c` and Cloudflare version
+`f6b730d9-2d80-4929-877b-bb0c240f714e`, reported as 100% active. The
+candidate's 61-file Workers-runtime suite passes 673/673 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 122/122 unchanged tests across eighteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1162.31 KiB raw / 214.78 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 69
-reported a 33 ms startup and passed credential-free API, EIO4, Admin-notification
+asset entries; its dry run reported 1167.03 KiB raw / 215.55 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 72
+reported a 40 ms startup and passed credential-free API, EIO4, Admin-notification
 and real-browser gates. One immediate old Admin-notification response during
 activation is explicitly retained; four same-region new-tenant retries converged.
 These are release facts for the named subset, not
@@ -54,6 +54,13 @@ per-tenant SQLite state. It preserves message aggregation, the public count and
 admin-only body split, eight-hour API visibility, twelve-hour transient
 retention, readable-site and failed-auth producers, and the official disable
 gate across DO eviction.
+Schema v16 replaces the upstream process-local Lodash data-update debounce and
+mutable concurrency flags with `data_update_debounce`. A leading mutation
+schedules the plugin-notification task immediately; additional mutations move
+one persisted trailing deadline to one second after the last event, bounded by
+five seconds from burst start. DO request serialization prevents overlapping
+evaluation, and the existing alarm multiplexer survives isolate eviction.
+Root/API realtime publication remains immediate and is not coalesced.
 The legacy document adapter additionally preserves the locked storage-shape
 semantics: scalar and array API writes map to explicit batches, Profile/Food/
 Activity direct saves create a fresh ObjectId when their internal ID is absent
@@ -69,9 +76,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 60 Workers files / 663 tests, 22/22 audits, eleven direct upstream
+evidence is 61 Workers files / 673 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and eighteen direct upstream server/data-plugin files / 122 tests; the
-dry run is 1162.31 KiB raw / 214.78 KiB gzip with the same 248 assets and two bindings.
+dry run is 1167.03 KiB raw / 215.55 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -1076,21 +1083,20 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`f1d460c8-2b5f-4ba6-8e6c-7850fd2d4927`. Current credential-free remote smoke
+`f6b730d9-2d80-4929-877b-bb0c240f714e`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled
 Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE property gates, null disabled IOB/COB Summary
 state, absence of property-only timeago and an EIO4 polling open packet;
 API3 Entries without a token returned the
-expected 401. The acceptance run sent no API secret; the active runtime's
-failure-closed experiment probes and a name-only encrypted-secret listing show
-that no valid API secret currently reaches it. It performed no protected
-mutation. Four fresh-tenant Admin-notification probes returned the readable-site
-count while hiding the body, and the real browser retained the official Admin
-link and Settings/About 15.0.7 surfaces. Successful protected
-uploader and realtime mutation behavior remains covered locally rather than by
-a credentialed remote mutation. The at-most-once dequeue/send
+expected 401. Anonymous mutation and experiment probes fail closed with the
+configured construction credential. A separate credentialed 25-entry
+`simulator://nscf-demo` batch wrote and read back successfully, after which the
+official homepage rendered `101 mg/dL`, its upward trend and a populated chart.
+No real CGM or closed-loop traffic was used. Four fresh-tenant Admin-notification probes returned the readable-site
+count while hiding the body, and the real browser retained the official Admin,
+clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage
 intentionally still uses the REST polling shim. The inherited local transport
 contracts and the prior public EIO4 smoke prove only the separate server slice,
@@ -1125,6 +1131,12 @@ Schema v15 adds `admin_notifies(message, body, count, last_recorded,
 persistent)`. The exact upstream eight-hour API and twelve-hour cleanup windows
 are evaluated from persisted timestamps; persistent warnings survive, while an
 explicitly disabled Admin-notification setting clears the tenant drawer.
+Schema v16 adds `data_update_debounce(kind, burst_started_at, last_event_at,
+due_at, pending)` plus a pending/deadline index. A lone event keeps only a
+leading-edge cooldown row and consumes no platform alarm; a second event marks
+one durable trailing run. Due rows are claimed and deleted synchronously before
+the corresponding background task is promoted, so repeated alarms cannot run
+the same trailing evaluation twice.
 The task projection is bounded to 64 SGVs, ten MBGs, up to 1,000 matching
 current DeviceStatus rows plus the earliest future matching DeviceStatus, the
 latest Profile and the newest 1,000 Treatments in the existing window and
