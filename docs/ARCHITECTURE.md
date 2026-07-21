@@ -7,23 +7,25 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`f0d442ca79fce67c2a2a118b9944ee5c2738f426` and Cloudflare version
-`1841cdc5-b06b-4ab4-94f1-742bef1e4e24`, reported as 100% active. The
-candidate's 58-file Workers-runtime suite passes 652/652 plus 22/22 audit tests,
-30/30 unchanged direct upstream client tests across seven files and 90/90 unchanged tests across fifteen
+`b4eda4cc9014edb4ac8983f805f1c2f61cbb1e0d` and Cloudflare version
+`5abd2045-6f0b-426b-a7e3-0b0eb19e2de2`, reported as 100% active. The
+candidate's 58-file Workers-runtime suite passes 653/653 plus 22/22 audit tests,
+35/35 unchanged direct upstream client tests across eight files and 90/90 unchanged tests across fifteen
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1154.98 KiB raw / 213.27 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 66
-reported a 31 ms startup and passed credential-free API, EIO4 and the named
-real-browser gates, with one activation-time ddata transient explicitly retained.
+asset entries; its dry run reported 1155.18 KiB raw / 213.31 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 67
+reported a 28 ms startup and passed credential-free API, EIO4 and the named
+real-browser gates. One immediate old/new route split during activation is
+explicitly retained; same-region retries converged.
 These are release facts for the named subset, not
 evidence of a complete port.
 
 The deployed platform configuration sets Wrangler `keep_vars: true` so a
 dashboard-managed lab variable survives later code deployments. A Node audit locks that behavior while
 rejecting checked-in plaintext vars and prohibited product bindings. The
-current runtime retains `src/server-query.ts`, which replaces Mongo ObjectId,
+current runtime adds the exact v1/v2 `experiments/test` authorization probe and
+retains `src/server-query.ts`, which replaces Mongo ObjectId,
 `traverse` and `moment` mechanics while preserving the locked query contract,
 and `src/language.ts`, which replaces server `fs` with request-local Static
 Assets loading while preserving official translations. It also retains
@@ -54,11 +56,11 @@ official treatment-marker curve placement. It retains the age/timeago,
 `src/data-loader.ts` and
 `src/plugins/dbsize.ts`, so real SQLite file bytes flow through ddata and the
 official database-size calculation. The
-seven complete official client files run 30/30 unchanged only after a byte-equality
+eight complete official client files run 35/35 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 58 Workers files / 652 tests, 22/22 audits, seven direct upstream
-client files / 30 tests and fifteen direct upstream server/data-plugin files / 90 tests; the
-dry run is 1154.98 KiB raw / 213.27 KiB gzip with the same 248 assets and two bindings.
+evidence is 58 Workers files / 653 tests, 22/22 audits, eight direct upstream
+client files / 35 tests and fifteen direct upstream server/data-plugin files / 90 tests; the
+dry run is 1155.18 KiB raw / 213.31 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -1060,15 +1062,17 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`1841cdc5-b06b-4ab4-94f1-742bef1e4e24`. Current credential-free remote smoke
+`5abd2045-6f0b-426b-a7e3-0b0eb19e2de2`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal property and the opt-in-disabled
 Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE property gates, null disabled IOB/COB Summary
 state, absence of property-only timeago and an EIO4 polling open packet;
 API3 Entries without a token returned the
-expected 401. The acceptance run sent no API secret, did not inspect dashboard
-credential state and performed no protected mutation. Successful protected
+expected 401. The acceptance run sent no API secret; the active runtime's
+failure-closed experiment probes and a name-only encrypted-secret listing show
+that no valid API secret currently reaches it. It performed no protected
+mutation. Successful protected
 uploader and realtime mutation behavior remains covered locally rather than by
 a credentialed remote mutation. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official homepage

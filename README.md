@@ -474,10 +474,10 @@ compatibility. All 16 locked `api3.*` files, `notifications-api.test.js`,
 `profile.test.js`, `concurrent-writes.test.js`, `loop.test.js`,
 `settings.test.js`, `sandbox.test.js`, `plugins.test.js`, `query.test.js`,
 `language.test.js` and 25 v1 client/API
-files are classified as fully `adapted`. Seven complete locked client files
+files are classified as fully `adapted`. Eight complete locked client files
 (`pluginbase.test.js`, `client.renderer.test.js`, `errorcodes.test.js`,
 `utils.test.js`, `careportal.test.js`, `boluswizardpreview.test.js` and
-`profileeditor.test.js`) run unchanged for 30/30 tests against the
+`profileeditor.test.js`, plus `hashauth.test.js`) run unchanged for 35/35 tests against the
 byte-identical official client bundle and are classified as `pass`.
 The latest two complete upstream additions are `query.test.js` and
 `language.test.js`. The preceding two are `simplealarms.test.js` and
@@ -494,20 +494,23 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 27 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 22 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
-`f0d442ca79fce67c2a2a118b9944ee5c2738f426`. The 58-file Workers-runtime
-suite passes 652/652 tests, the four audit suites pass 22/22, seven complete
-official client files pass 30/30 unchanged, and fifteen locked server/data-plugin
+`b4eda4cc9014edb4ac8983f805f1c2f61cbb1e0d`. The 58-file Workers-runtime
+suite passes 653/653 tests, the four audit suites pass 22/22, eight complete
+official client files pass 35/35 unchanged, and fifteen locked server/data-plugin
 files pass 90/90 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1154.98 KiB raw / 213.27 KiB gzip and exposes only
+248 official assets, reports 1155.18 KiB raw / 213.31 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
-This increment adds a request-local Worker-safe port of the locked query
-defaults, walker, date and ObjectId/UUID normalization surface; live Entries
-parsing reuses its four-day boundary and ObjectId normalization before bounded
-SQLite execution. It also adds the locked server language surface without
+This increment adds the exact v1/v2 `experiments/test` permission probe and
+completes the named API security, API verifyauth, verifyauth and server
+API_SECRET mappings. The original client Hashauth file now also runs unchanged.
+It retains the request-local Worker-safe port of the locked query defaults,
+walker, date and ObjectId/UUID normalization surface; live Entries parsing
+reuses its four-day boundary and ObjectId normalization before bounded SQLite
+execution. It also retains the locked server language surface without
 bundling 1.5 MiB of dictionaries into the Worker: localization is fetched from
 Workers Static Assets, all 33 JSON files are audited as valid and byte-identical
 to v15.0.7, `LANGUAGE` reaches HTTP/Socket settings, and the default Sandbox
@@ -579,8 +582,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 27 unresolved plugin/test
-algorithms. The manifest records seven direct passes, 75 adapted, 27 unresolved
+Node plugin `require` without fabricating the 22 unresolved plugin/test
+algorithms. The manifest records eight direct passes, 79 adapted, 22 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -621,10 +624,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `1841cdc5-b06b-4ab4-94f1-742bef1e4e24` (ordinal 66) was made
-current by deployment `35700469-468c-499b-8c6f-91c6a81b5290` at
-`2026-07-21T19:45:24.998Z`; the version was created at
-`2026-07-21T19:45:23.975Z`, with a reported 31 ms startup. No asset bytes needed
+Cloudflare version `5abd2045-6f0b-426b-a7e3-0b0eb19e2de2` (ordinal 67) was made
+current at `2026-07-21T20:11:18.751Z`; the version was created at
+`2026-07-21T20:11:17.895Z`, with a reported 28 ms startup. No asset bytes needed
 uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -633,14 +635,15 @@ the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
 missing-token API3 Entries returned the expected 401. The 72-assertion script
-used fresh tenant `public-smoke-1784663163199`, observed 237,568 SQLite bytes and a
+used fresh tenant `public-smoke-1784664689292`, observed 237,568 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
 secure fields and method functions.
 The acceptance run deliberately sent no API secret and did not perform a
-protected mutation. Dashboard credential presence and value were not
-inspected; no secret value was read, generated, printed or written. Successful
+protected mutation. A name-only secret listing returned no encrypted Secrets,
+and credential-free probes show that this active runtime does not currently
+receive a valid `API_SECRET`; no secret value was read, generated, printed or written. Successful
 UUID identity mutation and legacy-row repair therefore remain local contract
 evidence, not a claim about a credentialed remote write.
 
@@ -651,23 +654,23 @@ the bounded new RPC but falls back only for Cloudflare's precise
 missing-method error to the previously deployed snapshot RPC. The same old DO
 then returned 200 immediately; real storage/parser failures are still surfaced.
 
-A real browser run reloaded Cloudflare version 66 and rendered the official
+A real browser run loaded Cloudflare version 67 and rendered the official
 homepage, chart region, empty-data `---`, `mg/dl` units and live `0%` dbsize
 pill. The Settings form opened with the complete official language selector
-and the About block reported Nightscout 15.0.7. Admin Tools displayed the
+and the About block reported Nightscout 15.0.7. The preceding version's Admin Tools displayed the
 expected unauthenticated device-authentication dialog without receiving a
 credential, and `clock-color` rendered `-?-` with no JavaScript error. The
-first reload immediately after activation retained one timestamped ddata 500
-console entry; a direct `/api/v2/ddata/at?tenant=demo` check and a second reload
-returned 200 and produced no new error, so the transient is recorded rather
-than hidden. No protected server mutation or Settings save was attempted. The
-user's existing homepage tab was returned to `/` and kept open.
+current browser pass did not repeat those two secondary-page checks because the
+shipped assets were unchanged. No protected server mutation or Settings save was attempted.
 The public tenant currently has no
 Entries, so `---` is expected. These checks do not prove every protected
 mutation, report, plugin or realtime workflow.
-Version 66 has therefore passed its credential-free remote API, Engine.IO and
-the named real-browser acceptance gates, with the activation-time transient
-above retained as an explicit observation.
+Version 67 has therefore passed its 72-assertion credential-free remote API,
+Engine.IO and named real-browser gates. One immediate post-activation probe
+briefly split across old/new code (v1 404 while v2 used the new guard); a
+same-region retry converged with both versions using the new route. With no
+valid deployed API secret, both correctly fail closed rather than proving an
+authenticated write.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
