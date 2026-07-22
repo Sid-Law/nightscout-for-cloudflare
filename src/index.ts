@@ -70,6 +70,7 @@ import {
   calculatePluginProperties,
   loadPluginPropertyContext,
 } from "./plugins/properties";
+import { buildNightscoutPebbleResponse } from "./pebble";
 
 export { EntryStore };
 
@@ -3040,6 +3041,61 @@ async function handleSimulatedCgm(
   ) as unknown);
 }
 
+async function handlePebble(
+  request: Request,
+  env: AppEnv,
+  url: URL,
+): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    throw new ApiError(405, "method_not_allowed", "Pebble accepts GET and HEAD");
+  }
+  if (env.ENTRY_STORE === undefined) {
+    throw new ApiError(
+      503,
+      "entry_store_not_configured",
+      "ENTRY_STORE must be configured before Pebble data can be served",
+    );
+  }
+  await requirePermission(request, env, url, "api:pebble,entries:read");
+  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+  const now = Date.now();
+  const [context, statusJson] = await Promise.all([
+    loadPluginPropertyContext(store, now),
+    store.nightscoutHttpStatus(now),
+  ]);
+  const status = JSON.parse(statusJson) as {
+    settings?: { units?: unknown; enable?: unknown };
+    extendedSettings?: Record<string, unknown>;
+  };
+  const enabled = new Set(
+    Array.isArray(status.settings?.enable)
+      ? status.settings.enable.filter((value): value is string => typeof value === "string")
+      : [],
+  );
+  const requestedUnits = url.searchParams.get("units") || status.settings?.units;
+  const units: NightscoutGlucoseUnits = requestedUnits === "mmol" ? "mmol" : "mg/dl";
+  const parsedCount = Number.parseInt(url.searchParams.get("count") ?? "", 10) || 1;
+  const count = Math.max(1, Math.min(1_000, parsedCount));
+  const properties = calculatePluginProperties(
+    context,
+    units,
+    now,
+    enabled,
+    status.extendedSettings ?? {},
+    status.settings ?? {},
+  );
+  const response = buildNightscoutPebbleResponse(context, {
+    now,
+    count,
+    mmol: units === "mmol",
+    rawbg: enabled.has("rawbg"),
+    iob: enabled.has("iob"),
+    cob: enabled.has("cob"),
+    properties,
+  });
+  return withoutBodyForHead(request, json(response));
+}
+
 export default {
   async fetch(request: Request, env: AppEnv): Promise<Response> {
     const url = new URL(request.url);
@@ -3049,6 +3105,9 @@ export default {
       }
       if (url.pathname === "/_nscf/simulated-cgm") {
         return await handleSimulatedCgm(request, env, url);
+      }
+      if (url.pathname === "/pebble" || url.pathname === "/pebble/") {
+        return await handlePebble(request, env, url);
       }
       if (url.pathname === "/socket.io" || url.pathname === "/socket.io/") {
         const tenant = resolveTenant(request, url);

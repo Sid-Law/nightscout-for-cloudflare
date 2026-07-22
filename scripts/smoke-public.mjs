@@ -63,6 +63,13 @@ for (const [path, expected] of [
   equal(await response.json(), expected, `${path} empty tenant`);
 }
 
+const pebbleResponse = await request("/pebble?count=2");
+checked(pebbleResponse.status === 200, "Pebble status");
+const pebble = await pebbleResponse.json();
+checked(Array.isArray(pebble.status) && typeof pebble.status[0]?.now === "number", "Pebble clock");
+equal(pebble.bgs, [], "Pebble empty-tenant SGVs");
+equal(pebble.cals, [], "Pebble empty-tenant calibrations");
+
 const ddataResponse = await request("/api/v2/ddata/at");
 checked(ddataResponse.status === 200, "v2 ddata status");
 const ddata = await ddataResponse.json();

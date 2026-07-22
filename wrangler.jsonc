@@ -34,6 +34,7 @@
       "/socket.io",
       "/socket.io/*",
       "/_nscf/*",
+      "/pebble*",
       "/api/*",
       "/healthz"
     ]

@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "7ac3e1513f0b8bd7cfb88c5922fbea19839b070f664453b7936d309ada54fb96",
+  "inputs_sha256": "ef0ed89e149958c472a209d12689d9a79697effc1f1cefd427956a41866d65a8",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -39,9 +39,9 @@
     "test_file_count": 111,
     "tests_by_status": {
       "pass": 15,
-      "adapted": 82,
+      "adapted": 83,
       "excluded-fixed-scope": 2,
-      "unresolved": 12
+      "unresolved": 11
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8346,8 +8346,8 @@
     },
     {
       "file": "vendor/nightscout/tests/pebble.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "adapted",
+      "reason": "All nine locked endpoint cases are represented by test/pebble-contract.test.ts: default and two-reading counts, mmol scaling, missing/negative/false uploader battery suppression, raw fields/calibration projection, Treatment IOB/COB fallbacks and DeviceStatus IOB. src/pebble.ts preserves the official response shape and direction mapping over a request-local bounded Durable Object snapshot; the live /pebble route retains readable authorization, query-unit override and HEAD parity while capping one response at 1000 readings for Workers Free safety. Existing IOB/COB formula contracts remain authoritative and no dose recommendation was added.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

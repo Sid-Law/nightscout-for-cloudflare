@@ -350,6 +350,10 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/pebble.test.js": {
+      "status": "adapted",
+      "reason": "All nine locked endpoint cases are represented by test/pebble-contract.test.ts: default and two-reading counts, mmol scaling, missing/negative/false uploader battery suppression, raw fields/calibration projection, Treatment IOB/COB fallbacks and DeviceStatus IOB. src/pebble.ts preserves the official response shape and direction mapping over a request-local bounded Durable Object snapshot; the live /pebble route retains readable authorization, query-unit override and HEAD parity while capping one response at 1000 readings for Workers Free safety. Existing IOB/COB formula contracts remain authoritative and no dose recommendation was added."
+    },
     "vendor/nightscout/tests/ar2.test.js": {
       "status": "adapted",
       "reason": "All ten locked cone, line, in-range, warning/urgent high and low, predicted-title, long-gap interpolation and virtual-assistant cases are represented by test/ar2-plugin-contract.test.ts. src/plugins/ar2.ts preserves the upstream AR coefficients, six-point loss divisor, 13-step cone, thresholds, exact titles/messages/sounds/debug payload and unit scaling without Node globals. The Workers property registry exposes AR2 in official server order; ALARM_TYPES and AR2_CONE_FACTOR map into status; the SQLite DO scheduler runs AR2 before Simple Alarms and emits it through the persisted /alarm outlet. The complete upstream file also runs unchanged in scripts/run-upstream-server-plugin-contracts.mjs."
