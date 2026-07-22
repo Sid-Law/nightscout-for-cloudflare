@@ -563,8 +563,44 @@ describe("API v1/v2 Entries uploader and read contract", () => {
       storage: "entries",
     });
 
+    const beforeDefaultWindow = Date.now() - 4 * 24 * 60 * 60_000 - 2_000;
+    const treatmentEcho = await SELF.fetch(withTenant(
+      "/api/v1/echo/treatments/Bolus.json?find[insulin]=4.9&find[notes]=%2Floop%2F",
+      name,
+    ));
+    expect(treatmentEcho.status).toBe(200);
+    const treatmentBody = await treatmentEcho.json<JsonObject>();
+    expect(treatmentBody).toMatchObject({
+      query: {
+        insulin: 4,
+        notes: {},
+        type: "Bolus",
+        created_at: { $gte: expect.any(String) },
+      },
+      input: {
+        find: { insulin: "4.9", notes: "/loop/", type: "Bolus" },
+      },
+      params: { echo: "treatments", model: "Bolus" },
+      storage: "treatments",
+    });
+    expect(Date.parse(String((treatmentBody.query as JsonObject).created_at
+      && ((treatmentBody.query as JsonObject).created_at as JsonObject).$gte)))
+      .toBeGreaterThanOrEqual(beforeDefaultWindow);
+
+    const statusEcho = await SELF.fetch(withTenant(
+      "/api/v2/echo/devicestatus/status.json?find[created_at][$gte]=2026-07-01T00:00:00Z",
+      name,
+    ));
+    expect(statusEcho.status).toBe(200);
+    expect(await statusEcho.json()).toEqual({
+      query: { created_at: { $gte: "2026-07-01T00:00:00.000Z" }, type: "status" },
+      input: { find: { created_at: { $gte: "2026-07-01T00:00:00Z" }, type: "status" } },
+      params: { echo: "devicestatus", model: "status" },
+      storage: "devicestatus",
+    });
+
     const unsupported = await SELF.fetch(withTenant(
-      "/api/v1/echo/treatments/sgv.json",
+      "/api/v1/echo/activity/sgv.json",
       name,
     ));
     expect(unsupported.status).toBe(400);

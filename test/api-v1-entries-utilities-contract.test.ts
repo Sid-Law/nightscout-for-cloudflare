@@ -35,6 +35,21 @@ async function postEntries(tenantName: string, payload: unknown): Promise<Respon
   });
 }
 
+async function postDocuments(
+  tenantName: string,
+  path: "/api/v1/treatments/" | "/api/v1/devicestatus/",
+  payload: unknown,
+): Promise<Response> {
+  return SELF.fetch(withTenant(path, tenantName), {
+    method: "POST",
+    headers: {
+      "api-secret": await secretDigest(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 function encodedSegment(value: string): string {
   return encodeURIComponent(value);
 }
@@ -113,6 +128,94 @@ describe("locked v1 Entries times and slice utilities", () => {
     ));
     expect(modalMinutes.status).toBe(200);
     expect(await modalMinutes.json<JsonObject[]>()).toHaveLength(10);
+  });
+
+  it("selects the locked treatments/devicestatus stores, arbitrary fields and Entries fallback", async () => {
+    const name = tenant("v1-slice-storages");
+    const now = Math.floor(Date.now() / 1_000) * 1_000;
+    const treatments = await postDocuments(name, "/api/v1/treatments/", [
+      {
+        created_at: new Date(now - 3_000).toISOString(),
+        eventType: "Note",
+        type: "note",
+        enteredBy: "loop-alpha",
+        carbs: "12.7",
+      },
+      {
+        created_at: new Date(now - 2_000).toISOString(),
+        eventType: "Note",
+        type: "note",
+        enteredBy: "loop-beta",
+        carbs: "15",
+      },
+      {
+        created_at: new Date(now - 1_000).toISOString(),
+        eventType: "Note",
+        type: "note",
+        enteredBy: "manual",
+        carbs: "20",
+      },
+    ]);
+    expect(treatments.status).toBe(200);
+
+    const treatmentSlice = await SELF.fetch(withTenant(
+      `/api/v1/slice/treatments/enteredBy/note/${encodedSegment("loop-")}.json?count=2`,
+      name,
+    ));
+    expect(treatmentSlice.status).toBe(200);
+    expect(await treatmentSlice.json<JsonObject[]>()).toMatchObject([
+      { enteredBy: "loop-beta", type: "note", carbs: 15 },
+      { enteredBy: "loop-alpha", type: "note", carbs: 12.7 },
+    ]);
+
+    const statuses = await postDocuments(name, "/api/v1/devicestatus/", [
+      {
+        created_at: new Date(now - 3_000).toISOString(),
+        type: "status",
+        device: "openaps://alpha",
+        uploaderBattery: 80,
+      },
+      {
+        created_at: new Date(now - 2_000).toISOString(),
+        type: "status",
+        device: "openaps://beta",
+        uploaderBattery: 81,
+      },
+      {
+        created_at: new Date(now - 1_000).toISOString(),
+        type: "status",
+        device: "loop://phone",
+        uploaderBattery: 82,
+      },
+    ]);
+    expect(statuses.status).toBe(200);
+
+    const statusSlice = await SELF.fetch(withTenant(
+      `/api/v2/slice/devicestatus/device/status/${encodedSegment("openaps://")}.json?count=5`,
+      name,
+    ));
+    expect(statusSlice.status).toBe(200);
+    expect(await statusSlice.json<JsonObject[]>()).toMatchObject([
+      { device: "openaps://beta", type: "status", uploaderBattery: 81 },
+      { device: "openaps://alpha", type: "status", uploaderBattery: 80 },
+    ]);
+
+    expect((await postEntries(name, {
+      type: "sgv",
+      sgv: 123,
+      date: now,
+      dateString: new Date(now).toISOString(),
+      device: "fallback-device",
+      direction: "Flat",
+    })).status).toBe(200);
+    const fallback = await SELF.fetch(withTenant(
+      "/api/v1/slice/unknown/device/sgv/fallback-.json?count=5",
+      name,
+    ));
+    expect(fallback.status).toBe(200);
+    expect(await fallback.json<JsonObject[]>()).toMatchObject([
+      { device: "fallback-device", type: "sgv", sgv: 123 },
+    ]);
   });
 
   it("supports the locked exact-date and open dateString-range delete selectors", async () => {

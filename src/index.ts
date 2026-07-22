@@ -36,7 +36,7 @@ import {
   parseHistoryCountQuery,
   parseHistoryQuery,
 } from "./model";
-import type { HistoryQuery, PublicEntry } from "./model";
+import type { PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
 import { handleSocketIo } from "./realtime/http-adapter";
 import { normalizePlatformAuthFailDelay } from "./status";
@@ -76,6 +76,19 @@ import {
   prepareLoopPush,
   sendPreparedLoopPush,
 } from "./loop-push";
+import {
+  createLegacyMongoQuery,
+  LegacyObjectId,
+  parseLegacyRegularExpression,
+  type LegacyQueryObject,
+  type LegacyQueryOptions,
+} from "./server-query";
+import type {
+  Api3CollectionName,
+  DocumentFilter,
+  DocumentQuery,
+  DocumentSort,
+} from "./document-repository";
 
 export { EntryStore };
 
@@ -1368,34 +1381,56 @@ async function legacyEntryJson(data: unknown, status = 200): Promise<Response> {
   return new Response(body, { status, headers });
 }
 
-function legacyEchoMongoQuery(query: HistoryQuery): Record<string, unknown> {
-  const output: Record<string, unknown> = {};
-  const operatorNames = {
-    eq: "$eq",
-    ne: "$ne",
-    gt: "$gt",
-    gte: "$gte",
-    lt: "$lt",
-    lte: "$lte",
-  } as const;
-  for (const filter of query.filters) {
-    if (filter.operator === "eq" && output[filter.field] === undefined) {
-      output[filter.field] = filter.value;
-      continue;
-    }
-    const existing = output[filter.field];
-    const operators: Record<string, unknown> = typeof existing === "object"
-      && existing !== null
-      && !Array.isArray(existing)
-      ? { ...(existing as Record<string, unknown>) }
-      : existing === undefined
-        ? {}
-        : { $eq: existing };
-    operators[operatorNames[filter.operator]] = filter.value;
-    output[filter.field] = operators;
+type LegacyUtilityStorage = "entries" | "treatments" | "devicestatus";
+
+function legacyInteger(value: unknown): number {
+  return Number.parseInt(String(value), 10);
+}
+
+function legacyStorageQueryOptions(
+  storage: LegacyUtilityStorage,
+  uuidHandling: boolean,
+): LegacyQueryOptions {
+  if (storage === "entries") {
+    return {
+      walker: {
+        date: legacyInteger,
+        sgv: legacyInteger,
+        filtered: legacyInteger,
+        unfiltered: legacyInteger,
+        rssi: legacyInteger,
+        noise: legacyInteger,
+        mbg: legacyInteger,
+      },
+      useEpoch: true,
+      uuidHandling,
+    };
   }
-  if (query.type !== null && query.type !== undefined) output.type = query.type;
-  return output;
+  if (storage === "treatments") {
+    return {
+      walker: {
+        insulin: legacyInteger,
+        carbs: legacyInteger,
+        glucose: legacyInteger,
+        notes: (value) => parseLegacyRegularExpression(String(value)),
+        eventType: (value) => parseLegacyRegularExpression(String(value)),
+        enteredBy: (value) => parseLegacyRegularExpression(String(value)),
+      },
+      dateField: "created_at",
+      uuidHandling,
+    };
+  }
+  return { walker: {}, dateField: "created_at", uuidHandling };
+}
+
+function legacyJsonSafeQuery(value: unknown): unknown {
+  if (value instanceof LegacyObjectId) return value.toString();
+  if (value instanceof RegExp) return value;
+  if (Array.isArray(value)) return value.map(legacyJsonSafeQuery);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [key, legacyJsonSafeQuery(nested)]),
+  );
 }
 
 function legacyEchoInput(
@@ -1439,29 +1474,16 @@ function legacyEchoInput(
   return input;
 }
 
-function legacyEchoHistoryQuery(
-  url: URL,
-  model: string | undefined,
-  spec: string | undefined,
-): HistoryQuery {
-  const normalized = new URL(url);
-  for (const name of ["tenant", "secret", "token", "api-secret"]) {
-    normalized.searchParams.delete(name);
-  }
-  for (const name of new Set(normalized.searchParams.keys())) {
-    if (name === "pipeline" || name.startsWith("pipeline[")) {
-      normalized.searchParams.delete(name);
-    }
-  }
-  if (spec !== undefined && /^[a-f\d]{24}$/.test(spec)) {
-    normalized.search = "";
-    normalized.searchParams.set("find[_id]", spec);
-  } else if (model !== undefined) {
-    normalized.searchParams.delete("find[type]");
-    normalized.searchParams.delete("find[type][$eq]");
-    normalized.searchParams.set("find[type]", model);
-  }
-  return parseHistoryCountQuery(normalized);
+function legacyEchoMongoQuery(
+  input: Record<string, unknown>,
+  storage: LegacyUtilityStorage,
+  uuidHandling: boolean,
+): Record<string, unknown> {
+  const query = createLegacyMongoQuery(
+    structuredClone(input) as LegacyQueryObject,
+    legacyStorageQueryOptions(storage, uuidHandling),
+  );
+  return legacyJsonSafeQuery(query) as Record<string, unknown>;
 }
 
 const MAX_LEGACY_PATTERN_PREFIXES = 8;
@@ -1539,6 +1561,222 @@ function legacyPatternMatches(value: string, plan: LegacyPatternPlan): boolean {
   if (!plan.prefixes.some((prefix) => prefix === ".*" || value.startsWith(prefix))) return false;
   if (plan.patterns.length === 1 && plan.patterns[0] === "") return true;
   return plan.patterns.some((pattern) => new RegExp(pattern).test(value));
+}
+
+function legacyDocumentCount(parameters: Record<string, unknown>): number {
+  if (parameters.count === undefined || parameters.count === null || parameters.count === "") return 10;
+  const count = Number.parseInt(String(parameters.count), 10);
+  // Mongo cursor.limit(0) is unbounded. Keep that spelling useful while
+  // mapping it to the documented Workers candidate ceiling.
+  if (count === 0) return MAX_LEGACY_PATTERN_CANDIDATES;
+  if (!Number.isInteger(count) || count < 1 || count > MAX_LEGACY_PATTERN_CANDIDATES) {
+    throw new ApiError(
+      400,
+      "invalid_query",
+      `count must be 0 or an integer from 1 to ${MAX_LEGACY_PATTERN_CANDIDATES}`,
+    );
+  }
+  return count;
+}
+
+function legacyFilterValue(value: unknown): JsonDocument[string] {
+  if (value instanceof LegacyObjectId) return value.toString();
+  if (
+    value === null
+    || typeof value === "string"
+    || typeof value === "number"
+    || typeof value === "boolean"
+  ) return value;
+  if (Array.isArray(value)) return value.map(legacyFilterValue);
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, legacyFilterValue(nested)]),
+    );
+  }
+  throw new ApiError(400, "invalid_query", "query contains an unsupported value");
+}
+
+function legacyRegexFilter(field: string, value: unknown, flags = ""): DocumentFilter {
+  const expression = value instanceof RegExp ? value : new RegExp(String(value), flags);
+  if (expression.flags !== "") {
+    throw new ApiError(
+      400,
+      "unsupported_query_regex",
+      "case-insensitive or stateful Mongo regex flags are not supported by the bounded SQLite adapter",
+    );
+  }
+  return { field, operator: "re", value: expression.source };
+}
+
+function legacyUuidOrFilter(value: unknown): DocumentFilter | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const objects = value.filter(
+    (candidate): candidate is Record<string, unknown> =>
+      typeof candidate === "object" && candidate !== null && !Array.isArray(candidate),
+  );
+  if (objects.length !== 2) return null;
+  const identifier = objects.find((candidate) => Object.hasOwn(candidate, "identifier"))?.identifier;
+  const id = objects.find((candidate) => Object.hasOwn(candidate, "_id"))?._id;
+  if (typeof identifier !== "string" || identifier !== id) return null;
+  return { field: "_id", operator: "eq", value: identifier };
+}
+
+function legacyMongoDocumentQuery(
+  mongoQuery: LegacyQueryObject,
+  parameters: Record<string, unknown>,
+  patternField: string,
+  uuidHandling: boolean,
+): DocumentQuery {
+  const filters: DocumentFilter[] = [];
+  const operatorMap = {
+    $eq: "eq",
+    $ne: "ne",
+    $gt: "gt",
+    $gte: "gte",
+    $lt: "lt",
+    $lte: "lte",
+    $in: "in",
+    $nin: "nin",
+    $exists: "exists",
+  } as const;
+  for (const [field, value] of Object.entries(mongoQuery)) {
+    if (field === "$or") {
+      const filter = legacyUuidOrFilter(value);
+      if (filter === null) {
+        throw new ApiError(400, "unsupported_query_or", "this Mongo $or shape is not supported");
+      }
+      filters.push(filter);
+      continue;
+    }
+    if (value instanceof RegExp) {
+      if (field !== patternField) filters.push(legacyRegexFilter(field, value));
+      continue;
+    }
+    if (typeof value !== "object" || value === null || value instanceof LegacyObjectId) {
+      filters.push({ field, operator: "eq", value: legacyFilterValue(value) });
+      continue;
+    }
+    if (Array.isArray(value)) {
+      filters.push({ field, operator: "eq", value: legacyFilterValue(value) });
+      continue;
+    }
+    const operators = value as Record<string, unknown>;
+    const flags = typeof operators.$options === "string" ? operators.$options : "";
+    const names = Object.keys(operators).filter((name) => name !== "$options");
+    if (names.length === 0) {
+      filters.push({ field, operator: "eq", value: legacyFilterValue(value) });
+      continue;
+    }
+    for (const [operator, operand] of Object.entries(operators)) {
+      if (operator === "$options") continue;
+      if (field === patternField && (operator === "$in" || operator === "$regex")) continue;
+      if (operator === "$regex") {
+        filters.push(legacyRegexFilter(field, operand, flags));
+        continue;
+      }
+      const mapped = operatorMap[operator as keyof typeof operatorMap];
+      if (mapped === undefined) {
+        throw new ApiError(400, "unsupported_query_operator", `Mongo operator ${operator} is not supported`);
+      }
+      const converted = mapped === "in" || mapped === "nin"
+        ? Array.isArray(operand)
+          ? operand.map(legacyFilterValue)
+          : String(operand).split(",").map((item) => legacyFilterValue(item.trim()))
+        : legacyFilterValue(operand);
+      filters.push({ field, operator: mapped, value: converted });
+    }
+  }
+
+  const sorts: DocumentSort[] = [];
+  const rawSort = parameters.sort;
+  if (typeof rawSort === "object" && rawSort !== null && !Array.isArray(rawSort)) {
+    for (const [field, direction] of Object.entries(rawSort)) {
+      if (String(direction) !== "1" && String(direction) !== "-1") {
+        throw new ApiError(400, "invalid_query", `sort[${field}] must be 1 or -1`);
+      }
+      sorts.push({ field, direction: String(direction) === "1" ? "asc" : "desc" });
+    }
+  }
+  return {
+    filters,
+    ...(sorts.length === 0 ? {} : { sort: sorts }),
+    limit: MAX_LEGACY_PATTERN_CANDIDATES,
+    includeDeleted: true,
+    legacyUuidHandling: uuidHandling,
+  };
+}
+
+function legacySliceParameters(
+  url: URL,
+  field: string,
+  type: string | undefined,
+  plan: LegacyPatternPlan,
+): Record<string, unknown> {
+  const parameters = legacyEchoInput(url, undefined, undefined);
+  const rawFind = parameters.find;
+  const find = typeof rawFind === "object" && rawFind !== null && !Array.isArray(rawFind)
+    ? { ...(rawFind as Record<string, unknown>) }
+    : {};
+  const rawField = find[field];
+  const fieldQuery = typeof rawField === "object" && rawField !== null && !Array.isArray(rawField)
+    ? { ...(rawField as Record<string, unknown>) }
+    : {};
+  fieldQuery.$in = plan.patterns.map((pattern) => new RegExp(pattern));
+  if (plan.prefixes.length === 1) fieldQuery.$regex = new RegExp(`^${plan.prefixes[0]}`);
+  find[field] = fieldQuery;
+  if (type !== undefined) find.type = type;
+  parameters.find = find;
+  return parameters;
+}
+
+function legacyDocumentField(document: JsonDocument, field: string): JsonDocument[string] | undefined {
+  let value: JsonDocument[string] | undefined = document;
+  for (const segment of field.split(".")) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+    if (!Object.hasOwn(value, segment)) return undefined;
+    value = value[segment];
+  }
+  return value;
+}
+
+async function queryLegacyPatternDocuments(
+  request: Request,
+  env: AppEnv,
+  url: URL,
+  storage: LegacyUtilityStorage,
+  field: string,
+  type: string | undefined,
+  plan: LegacyPatternPlan,
+): Promise<JsonDocument[]> {
+  const uuidHandling = parseLegacyUuidHandling(env.UUID_HANDLING);
+  const parameters = legacySliceParameters(url, field, type, plan);
+  const requestedCount = legacyDocumentCount(parameters);
+  const mongoQuery = createLegacyMongoQuery(
+    structuredClone(parameters) as LegacyQueryObject,
+    legacyStorageQueryOptions(storage, uuidHandling),
+  );
+  const query = legacyMongoDocumentQuery(mongoQuery, parameters, field, uuidHandling);
+  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+  const decision = JSON.parse(
+    await store.queryLegacyDocumentsJson(storage as Api3CollectionName, JSON.stringify(query)),
+  ) as
+    | { ok: true; result: JsonDocument[] }
+    | { ok: false; status?: number; message: string };
+  if (!decision.ok) {
+    if (decision.status === 400 || decision.status === 413) {
+      throw new ApiError(
+        decision.status,
+        decision.status === 413 ? "entry_query_limit" : "invalid_query",
+        decision.message,
+      );
+    }
+    throw new Error(decision.message);
+  }
+  const selected = decision.result.filter((document) => {
+    const value = legacyDocumentField(document, field);
+    return typeof value === "string" && legacyPatternMatches(value, plan);
+  }).slice(0, requestedCount);
+  return storage === "treatments" ? normalizeTreatmentNumbers(selected) : selected;
 }
 
 async function queryLegacyPatternEntries(
@@ -1714,20 +1952,20 @@ async function handleEntriesApi(
     } catch {
       throw new ApiError(400, "invalid_query", "echo path contains invalid encoding");
     }
-    if (storage !== "entries") {
+    if (storage !== "entries" && storage !== "treatments" && storage !== "devicestatus") {
       throw new ApiError(
         400,
         "unsupported_echo_storage",
-        "the current echo adapter supports entries storage only",
+        "echo storage must be entries, treatments or devicestatus",
       );
     }
-    const query = legacyEchoHistoryQuery(url, model, spec);
+    const input = legacyEchoInput(url, model, spec);
     const params: Record<string, string> = { echo: storage };
     if (model !== undefined) params.model = model;
     if (spec !== undefined) params.spec = spec;
     const response = await legacyEntryJson({
-      query: legacyEchoMongoQuery(query),
-      input: legacyEchoInput(url, model, spec),
+      query: legacyEchoMongoQuery(input, storage, parseLegacyUuidHandling(env.UUID_HANDLING)),
+      input,
       params,
       storage,
     });
@@ -1845,30 +2083,44 @@ async function handleEntriesApi(
     } catch {
       throw new ApiError(400, "invalid_query", "slice path contains invalid encoding");
     }
-    if (storage !== "entries") {
-      throw new ApiError(
-        400,
-        "unsupported_slice_storage",
-        "the current slice adapter supports entries storage only",
-      );
-    }
-    if (field !== "dateString") {
-      throw new ApiError(
-        400,
-        "unsupported_slice_field",
-        "the current pattern slice adapter supports dateString only",
-      );
-    }
-    if (prefix === undefined || prefix.length === 0) {
-      throw new ApiError(400, "invalid_query", "slice requires a dateString prefix");
+    // Locked prep_storage recognizes these three names and falls back to
+    // Entries for every other route value.
+    const selectedStorage: LegacyUtilityStorage = storage === "treatments"
+      ? "treatments"
+      : storage === "devicestatus"
+        ? "devicestatus"
+        : "entries";
+    if (field.length === 0 || field.length > 512) {
+      throw new ApiError(400, "invalid_query", "slice field must contain from 1 to 512 characters");
     }
     if (type !== undefined && !/^[A-Za-z0-9_-]{1,32}$/.test(type)) {
       throw new ApiError(400, "invalid_entry", "entry model has an invalid format");
     }
     const plan = legacyPatternPlan(prefix, regex);
+    if (
+      selectedStorage === "entries"
+      && field === "dateString"
+      && prefix !== undefined
+      && prefix.length > 0
+    ) {
+      return renderLegacyEntries(
+        request,
+        await queryLegacyPatternEntries(request, env, url, type, plan),
+        splitPath.extension,
+        type,
+      );
+    }
     return renderLegacyEntries(
       request,
-      await queryLegacyPatternEntries(request, env, url, type, plan),
+      await queryLegacyPatternDocuments(
+        request,
+        env,
+        url,
+        selectedStorage,
+        field,
+        type,
+        plan,
+      ) as unknown as PublicEntry[],
       splitPath.extension,
       type,
     );

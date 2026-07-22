@@ -131,6 +131,47 @@ for (const [path, expected] of [
   equal(await response.json(), expected, `${path} empty tenant`);
 }
 
+const treatmentEchoResponse = await request(
+  "/api/v1/echo/treatments/Note.json?find[created_at][$gte]=2026-07-01T00:00:00Z&find[notes]=%2Fsmoke%2F",
+);
+checked(treatmentEchoResponse.status === 200, "v1 Treatment echo status");
+equal(await treatmentEchoResponse.json(), {
+  query: {
+    created_at: { $gte: "2026-07-01T00:00:00.000Z" },
+    notes: {},
+    type: "Note",
+  },
+  input: {
+    find: {
+      created_at: { $gte: "2026-07-01T00:00:00Z" },
+      notes: "/smoke/",
+      type: "Note",
+    },
+  },
+  params: { echo: "treatments", model: "Note" },
+  storage: "treatments",
+}, "v1 Treatment echo query shape");
+
+const statusEchoResponse = await request(
+  "/api/v2/echo/devicestatus/status.json?find[created_at][$gte]=2026-07-01T00:00:00Z",
+);
+checked(statusEchoResponse.status === 200, "v2 DeviceStatus echo status");
+equal(await statusEchoResponse.json(), {
+  query: { created_at: { $gte: "2026-07-01T00:00:00.000Z" }, type: "status" },
+  input: { find: { created_at: { $gte: "2026-07-01T00:00:00Z" }, type: "status" } },
+  params: { echo: "devicestatus", model: "status" },
+  storage: "devicestatus",
+}, "v2 DeviceStatus echo query shape");
+
+for (const path of [
+  "/api/v1/slice/treatments/enteredBy/note/loop-.json?count=5",
+  "/api/v2/slice/devicestatus/device/status/openaps%3A%2F%2F.json?count=5",
+]) {
+  const response = await request(path);
+  checked(response.status === 200, `${path} status`);
+  equal(await response.json(), [], `${path} empty selected storage`);
+}
+
 for (const path of [
   "/api/v1/food/not-a-route",
   "/api/v2/profile/not-a-route",

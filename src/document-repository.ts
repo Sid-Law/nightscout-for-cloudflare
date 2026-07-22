@@ -2315,7 +2315,9 @@ export class SqliteDocumentRepository {
     }
 
     let order = policy === "legacy"
-      ? "json_extract(body, '$.created_at') DESC, id ASC"
+      ? collection === ENTRIES
+        ? "sort_time DESC, id ASC"
+        : "json_extract(body, '$.created_at') DESC, id ASC"
       : "sort_time DESC, srv_modified DESC, id ASC";
     if (query.sort !== undefined) {
       const sorts = orderedSorts(query.sort);
@@ -2361,10 +2363,17 @@ export class SqliteDocumentRepository {
       .map((document) => project(document, query.fields));
   }
 
-  queryLegacyTreatments(query: DocumentQuery = {}): JsonDocument[] {
-    return this.queryTreatmentRows(query, "legacy")
+  queryLegacyDocuments(
+    collection: Api3CollectionName,
+    query: DocumentQuery = {},
+  ): JsonDocument[] {
+    return this.queryTreatmentRows(query, "legacy", collection)
       .map(materializeLegacy)
       .map((document) => project(document, query.fields));
+  }
+
+  queryLegacyTreatments(query: DocumentQuery = {}): JsonDocument[] {
+    return this.queryLegacyDocuments(TREATMENTS, query);
   }
 
   private upsertLegacyEntry(entry: ValidatedEntry): DocumentMutationResult {

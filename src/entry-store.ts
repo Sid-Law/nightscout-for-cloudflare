@@ -4386,6 +4386,27 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return this.queryLegacyTreatmentsWithUuidHandling(queryJson, true);
   }
 
+  async queryLegacyDocumentsJson(
+    collection: Api3CollectionName,
+    queryJson = "{}",
+  ): Promise<string> {
+    try {
+      const query = JSON.parse(queryJson) as DocumentQuery;
+      return JSON.stringify({
+        ok: true,
+        result: this.documentRepository().queryLegacyDocuments(collection, query),
+      });
+    } catch (error) {
+      return JSON.stringify({
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof DocumentQueryError
+          ? { status: error.code === "QUERY_SCAN_LIMIT" ? 413 : 400 }
+          : {}),
+      });
+    }
+  }
+
   async queryLegacyTreatmentsWithUuidHandling(
     queryJson: string,
     uuidHandling: boolean,
