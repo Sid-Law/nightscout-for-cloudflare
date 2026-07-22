@@ -39,7 +39,12 @@ import {
   type DocumentHistoryQuery,
   type DocumentQuery,
 } from "./document-repository";
-import type { HistoryQuery, PublicEntry, ValidatedEntry } from "./model";
+import {
+  parseEntryPayload,
+  type HistoryQuery,
+  type PublicEntry,
+  type ValidatedEntry,
+} from "./model";
 import { sqliteNightscoutDatabaseStats } from "./data-loader";
 import {
   normalizeLegacyDeviceStatusDocument,
@@ -140,6 +145,14 @@ interface DbSecret {
   value: string;
 }
 
+interface DbSimulatedCgmState {
+  [key: string]: SqlStorageValue;
+  enabled: number;
+  next_at: number | null;
+  sequence: number;
+  updated_at: number;
+}
+
 export interface WriteResult {
   inserted: number;
   duplicates: number;
@@ -184,6 +197,34 @@ const NOTIFICATION_REQUEST_BATCH_LIMIT = 128;
 const BACKGROUND_TASK_BATCH_LIMIT = 4;
 const MIN_NOTIFICATION_HEARTBEAT_SECONDS = 15;
 const MAX_NOTIFICATION_HEARTBEAT_SECONDS = 24 * 60 * 60;
+const SIMULATED_CGM_INTERVAL_MS = 5 * 60 * 1_000;
+const SIMULATED_CGM_HISTORY_POINTS = 12;
+const SIMULATED_CGM_DEVICE = "simulator://nscf-test";
+const SIMULATED_CGM_VALUES = [
+  112, 114, 117, 121, 125, 128, 130, 129, 127, 124, 121, 118,
+  116, 114, 113, 115, 118, 122, 126, 129, 131, 130, 127, 123,
+] as const;
+
+function simulatedCgmDocument(at: number, sequence: number): Record<string, unknown> {
+  const index = sequence % SIMULATED_CGM_VALUES.length;
+  const previousIndex = (index + SIMULATED_CGM_VALUES.length - 1)
+    % SIMULATED_CGM_VALUES.length;
+  const sgv = SIMULATED_CGM_VALUES[index]!;
+  const difference = sgv - SIMULATED_CGM_VALUES[previousIndex]!;
+  const direction = difference >= 3
+    ? "FortyFiveUp"
+    : difference <= -3
+      ? "FortyFiveDown"
+      : "Flat";
+  return {
+    type: "sgv",
+    sgv,
+    direction,
+    date: at,
+    dateString: new Date(at).toISOString(),
+    device: SIMULATED_CGM_DEVICE,
+  };
+}
 const AGE_TREATMENT_EVENT_TYPES = [
   "Sensor Start",
   "Sensor Change",
@@ -685,6 +726,22 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       migrateDataUpdateDebounceV16(this.ctx.storage);
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (16)",
+      );
+
+      // The Cloudflare test deployment can opt one tenant into a deterministic
+      // CGM feed. It is disabled by default and stores only scheduling state;
+      // generated readings still use the official entries collection.
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS simulated_cgm_state (
+          singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+          enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+          next_at INTEGER,
+          sequence INTEGER NOT NULL CHECK (sequence >= 0),
+          updated_at INTEGER NOT NULL
+        );
+      `);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (17)",
       );
 
       // This named, idempotent auth state is intentionally independent of the
@@ -2625,6 +2682,112 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     await this.flushRealtimeMutation();
   }
 
+  private simulatedCgmState(): DbSimulatedCgmState | undefined {
+    return this.ctx.storage.sql.exec<DbSimulatedCgmState>(
+      `SELECT enabled, next_at, sequence, updated_at
+       FROM simulated_cgm_state WHERE singleton = 1 LIMIT 1`,
+    ).toArray()[0];
+  }
+
+  private simulatedCgmDeadline(): number | null {
+    const state = this.simulatedCgmState();
+    return state?.enabled === 1
+      && state.next_at !== null
+      && Number.isSafeInteger(state.next_at)
+      ? state.next_at
+      : null;
+  }
+
+  private processDueSimulatedCgm(now: number): boolean {
+    const state = this.simulatedCgmState();
+    if (
+      state?.enabled !== 1
+      || state.next_at === null
+      || state.next_at > now
+      || !Number.isSafeInteger(state.sequence)
+    ) return false;
+
+    // A suspended/evicted object emits one fresh reading when it wakes instead
+    // of fabricating an arbitrarily large historical backlog.
+    const readingAt = now;
+    this.documentRepository().upsertLegacyEntries(
+      parseEntryPayload(simulatedCgmDocument(readingAt, state.sequence)),
+    );
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(
+        `UPDATE simulated_cgm_state
+         SET next_at = ?, sequence = ?, updated_at = ?
+         WHERE singleton = 1`,
+        readingAt + SIMULATED_CGM_INTERVAL_MS,
+        state.sequence + 1,
+        now,
+      );
+      this.realtime.recordRootDataUpdateInTransaction();
+    });
+    return true;
+  }
+
+  async simulatedCgmStatusJson(): Promise<string> {
+    const state = this.simulatedCgmState();
+    return JSON.stringify({
+      enabled: state?.enabled === 1,
+      intervalMs: SIMULATED_CGM_INTERVAL_MS,
+      nextAt: state?.enabled === 1 ? state.next_at : null,
+      device: SIMULATED_CGM_DEVICE,
+    });
+  }
+
+  async configureSimulatedCgm(enabled: boolean, now: number): Promise<string> {
+    if (!Number.isSafeInteger(now) || now < 0) {
+      throw new Error("invalid simulated CGM timestamp");
+    }
+    const prior = this.simulatedCgmState();
+    let seeded = false;
+    if (enabled && prior?.enabled !== 1) {
+      const sequence = Number.isSafeInteger(prior?.sequence) ? prior!.sequence : 0;
+      const startedAt = now - (SIMULATED_CGM_HISTORY_POINTS - 1)
+        * SIMULATED_CGM_INTERVAL_MS;
+      const documents = Array.from(
+        { length: SIMULATED_CGM_HISTORY_POINTS },
+        (_value, index) => simulatedCgmDocument(
+          startedAt + index * SIMULATED_CGM_INTERVAL_MS,
+          sequence + index,
+        ),
+      );
+      this.documentRepository().upsertLegacyEntries(parseEntryPayload(documents));
+      this.ctx.storage.sql.exec(
+        `INSERT INTO simulated_cgm_state
+          (singleton, enabled, next_at, sequence, updated_at)
+         VALUES (1, 1, ?, ?, ?)
+         ON CONFLICT(singleton) DO UPDATE SET
+           enabled = 1,
+           next_at = excluded.next_at,
+           sequence = excluded.sequence,
+           updated_at = excluded.updated_at`,
+        now + SIMULATED_CGM_INTERVAL_MS,
+        sequence + SIMULATED_CGM_HISTORY_POINTS,
+        now,
+      );
+      seeded = true;
+    } else if (!enabled) {
+      this.ctx.storage.sql.exec(
+        `INSERT INTO simulated_cgm_state
+          (singleton, enabled, next_at, sequence, updated_at)
+         VALUES (1, 0, NULL, ?, ?)
+         ON CONFLICT(singleton) DO UPDATE SET
+           enabled = 0,
+           next_at = NULL,
+           updated_at = excluded.updated_at`,
+        Number.isSafeInteger(prior?.sequence) ? prior!.sequence : 0,
+        now,
+      );
+    }
+
+    if (seeded) await this.publishRootDataUpdate();
+    else await this.synchronizeRealtimeAlarm();
+    return this.simulatedCgmStatusJson();
+  }
+
   private async synchronizeRealtimeAlarm(): Promise<void> {
     // Cloudflare persists one alarm per Durable Object. Derive that alarm from
     // SQL after every state transition so eviction never makes in-memory timer
@@ -2633,11 +2796,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const authorizationDeadline = this.authorizationFailureCleanupDeadline();
     const backgroundDeadline = this.backgroundTasks().nextDeadline();
     const dataUpdateDeadline = this.dataUpdateDebounce().nextDeadline();
+    const simulatedCgmDeadline = this.simulatedCgmDeadline();
     const deadlines = [
       realtimeDeadline,
       authorizationDeadline,
       backgroundDeadline,
       dataUpdateDeadline,
+      simulatedCgmDeadline,
     ]
       .filter((deadline): deadline is number => deadline !== null);
     const nextDeadline = deadlines.length === 0 ? null : Math.min(...deadlines);
@@ -2694,8 +2859,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     // transition transactionally before this derived schedule is replaced.
     const now = Date.now();
     this.cleanupAuthorizationFailures(now);
+    const simulatedCgmUpdated = this.processDueSimulatedCgm(now);
     this.realtime.processAlarm();
     this.processDueBackgroundTasks(now);
+    if (simulatedCgmUpdated) this.realtime.flushApplicationWakes();
     this.flushRealtimeWebSockets();
     await this.synchronizeRealtimeAlarm();
   }

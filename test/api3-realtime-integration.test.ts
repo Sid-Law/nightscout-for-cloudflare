@@ -169,6 +169,35 @@ describe("API3 and realtime integrated tenant contract", () => {
     ]);
   });
 
+  it("pushes the opt-in test CGM seed through the official root dataUpdate contract", async () => {
+    const tenantName = tenant("simulated-cgm-root-delta");
+    const realtime = await openAuthorizedPollingSession(tenantName);
+    expect(snapshotFrom(realtime.packets).sgvs).toEqual([]);
+
+    const configured = await adminWrite(
+      tenantName,
+      "/_nscf/simulated-cgm",
+      { enabled: true },
+    );
+    expect(configured.status).toBe(200);
+
+    const packets = await realtime.poll();
+    const update = packets.find((packet) =>
+      packet.type === "event"
+      && packet.namespace === "/"
+      && packet.data[0] === "dataUpdate"
+    );
+    expect(update).toBeDefined();
+    const delta = (
+      update as Extract<SocketIoV5Packet, { type: "event" }>
+    ).data[1] as JsonObject;
+    expect(delta.delta).toBe(true);
+    expect(delta.sgvs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ device: "simulator://nscf-test" }),
+    ]));
+    expect(delta.sgvs).toHaveLength(12);
+  });
+
   it("pushes the locked root calcdelta to an already-authorized DataReceiver", async () => {
     const tenantName = tenant("api3-root-delta");
     const jwt = await issueTreatmentCreator(tenantName);

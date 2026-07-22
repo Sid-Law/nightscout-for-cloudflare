@@ -33,6 +33,7 @@
       "/api3-swagger.json",
       "/socket.io",
       "/socket.io/*",
+      "/_nscf/*",
       "/api/*",
       "/healthz"
     ]
