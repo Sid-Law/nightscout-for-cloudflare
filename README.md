@@ -543,11 +543,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `ae88ba1`. The 66-file Workers-runtime
-suite passes 719/719 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `99cfe78`. The 66-file Workers-runtime
+suite passes 720/720 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1209.27 KiB raw / 223.51 KiB gzip and exposes only
+reports 1210.58 KiB raw / 223.75 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -805,6 +805,20 @@ automatically clears an already-emitted stale-data alarm. The 66-file,
 719-test Workers gate, 77-assertion public smoke and real browser all passed;
 the unchanged homepage displayed `121 mg/dL`, `+4`, `FortyFiveUp`, four minutes
 ago, with no dialog, console warning or console error.
+
+Version 82 (`baade90c-d738-4a8b-a6c2-f1b19af68d9b`) deploys commit `99cfe78`
+and restores the locked realtime Profile Switch status chain. The latest
+zero-duration Profile Switch from the official one-year window now appears as
+`status.activeProfile` during initial Socket.IO authorization; changing that
+profile adds a fresh complete status object to the root `dataUpdate`. The
+comparison marker is stored in the existing SQLite root baseline so the
+behavior survives Durable Object eviction, while ordinary updates do not gain
+an extra status payload. The 66-file, 720-test Workers gate and 77-assertion
+public smoke passed. The public simulator continued at five-minute intervals;
+the official homepage refreshed to `127 mg/dL`, four minutes old, with no
+dialog or console warning/error. A protected remote Profile Switch mutation was
+not claimed because no construction credential was injected into the local
+test shell; the real SQLite DO reconstruction contract covers that write path.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

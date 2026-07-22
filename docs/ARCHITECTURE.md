@@ -6,14 +6,14 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `ae88ba1` and
-Cloudflare version `5f0c3898-7d92-4164-af78-55b64cc46517`. The
-candidate's 66-file Workers-runtime suite passes 719/719 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `99cfe78` and
+Cloudflare version `baade90c-d738-4a8b-a6c2-f1b19af68d9b`. The
+candidate's 66-file Workers-runtime suite passes 720/720 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1209.27 KiB
-raw / 223.51 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 81 reported a 36 ms startup and passed the
+Wrangler processed 250 Static Assets entries; its dry run reported 1210.58 KiB
+raw / 223.75 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 82 reported a 30 ms startup and passed the
 77-assertion credential-free API, official Socket.IO-client, EIO4, Pebble and
 authenticated official-page browser gates.
 These are release facts for the named subset, not
@@ -93,9 +93,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 66 Workers files / 719 tests, 22/22 audits, eleven direct upstream
+evidence is 66 Workers files / 720 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1209.27 KiB raw / 223.51 KiB gzip with 250 assets and two bindings.
+dry run is 1210.58 KiB raw / 223.75 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -1111,12 +1111,15 @@ plus a 24-level per-document depth cap; collection priority is profiles, device
 status, SGVs, treatments, then food. Reaching that budget still retains only a
 deterministic time-descending cursor prefix and may omit older groups. Websocket
 status preserves the locked key set/order, with fixed platform assumptions for
-API/careportal/boluscalc enablement and no active profile. `authorize` and
+API/careportal/boluscalc enablement. The latest one-year zero-duration Profile
+Switch supplies `activeProfile` on initial authorization; changes compare
+against the persisted root baseline and attach a fresh status after eviction.
+`authorize` and
 `loadRetro` require exactly one object payload; this is a resource/safety
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`5f0c3898-7d92-4164-af78-55b64cc46517`. Current credential-free remote smoke
+`baade90c-d738-4a8b-a6c2-f1b19af68d9b`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal and AR2 properties and the opt-in-disabled
@@ -1201,7 +1204,7 @@ shared 900-KB/8,000-node/2,000-document budget. It retains exact strict warn/
 urgent threshold-plus-one-millisecond deadlines, source expiry, future status
 activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
-The remaining transport work is profile-switch status/plugin preprocessing,
+The remaining transport work is non-Profile-Switch plugin preprocessing,
 EIO3, polling upgrade and the direct-send replay/acknowledgement boundary;
 automatic alarm producers for BWP and other remaining plugins stay as
 background work. CAGE/SAGE/IAGE and DBSize are complete producers.

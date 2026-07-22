@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `ae88ba1`
-- Runtime source candidate: `ae88ba1`
-- Git commit matching the deployed worktree: `ae88ba1`
-- Cloudflare Version ID: `5f0c3898-7d92-4164-af78-55b64cc46517`
-- Cloudflare ordinal version number: `81`
+- Deployed runtime candidate: `99cfe78`
+- Runtime source candidate: `99cfe78`
+- Git commit matching the deployed worktree: `99cfe78`
+- Cloudflare Version ID: `baade90c-d738-4a8b-a6c2-f1b19af68d9b`
+- Cloudflare ordinal version number: `82`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T02:57:21.637Z`
+- Version creation time: `2026-07-22T03:20:47.618975Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 36 ms
+- Worker startup: 30 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -32,8 +32,8 @@ is not counted as API, plugin or real-time compatibility.
   simulated-CGM scheduling row and the v18 push dedupe/receipt/Maker state
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–81 reused them unchanged
-- Upload: 1209.27 KiB raw / 223.51 KiB gzip
+  versions 76–82 reused them unchanged
+- Upload: 1210.58 KiB raw / 223.75 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -145,6 +145,31 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 - The seven unresolved files are Mongo connection/retry, destructive Mongo test
   cleanup/production-safety and Mocha flakiness/self-test files. They are not
   ordinary-family Nightscout page, uploader or closed-loop API features.
+
+## Version 82 Profile Switch realtime-status increment
+
+- Commit `99cfe78` ports the locked `websocket.js` Profile Switch status
+  behavior. Initial root authorization with `status:true` now includes the
+  latest one-year, zero-duration Profile Switch as `status.activeProfile`.
+- The active-profile comparison marker is stored in the existing SQLite
+  `realtime_root_state` JSON. A later Profile Switch emits its Treatment delta
+  plus a fresh complete status object, including `activeProfile`, after Durable
+  Object eviction. Ordinary Treatment/SGV updates retain their prior compact
+  delta without a status object.
+- The Workers suite increased to 720/720 across the same 66 files. The final
+  all-green run also passed 22/22 audits, 42/42 unchanged client tests, 143/143
+  unchanged server/data-plugin tests, TypeScript and the Wrangler dry run.
+- Cloudflare version `baade90c-d738-4a8b-a6c2-f1b19af68d9b` is ordinal 82,
+  created at `2026-07-22T03:20:47.618975Z`; startup was 30 ms.
+- Public smoke passed 77 assertions on isolated tenant
+  `public-smoke-1784690470717`. The public `demo` simulator remained enabled,
+  returned current five-minute readings and the unchanged homepage refreshed
+  to `127 mg/dL`, four minutes old, without a dialog or console warning/error.
+- No protected remote Profile Switch mutation is claimed for this version:
+  the deployment shell had no API_SECRET injection. The real SQLite DO test
+  performs the write, evicts the object, writes the next switch and observes
+  the pushed status; remote evidence here is read-only API/protocol/browser
+  smoke.
 
 ## Release content
 
@@ -562,7 +587,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `ae88ba1`. It retains schema-v15 persisted
+The deployed runtime candidate is `99cfe78`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -594,13 +619,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 66 files, 719/719 passed |
-| Worker dry run | 1209.27 KiB raw / 223.51 KiB gzip |
+| Workers integration tests | 66 files, 720/720 passed |
+| Worker dry run | 1210.58 KiB raw / 223.75 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 719 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 720 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 21
 server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 files,
@@ -617,7 +642,7 @@ server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 f
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js`, `query.test.js`, `language.test.js` and
 25 v1 client/API files, `pebble.test.js` and the four named server authentication files are
-classified as direct `pass` or fully `adapted`; fifteen are `pass`, eight remain unresolved and two bridge files
+classified as direct `pass` or fully `adapted`; sixteen are `pass`, seven remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -628,7 +653,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `5f0c3898-7d92-4164-af78-55b64cc46517` as the current
+Wrangler reports version `baade90c-d738-4a8b-a6c2-f1b19af68d9b` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -656,8 +681,8 @@ not only Wrangler command success.
 | Cloudflare bodyless DELETE | An isolated tenant created one simulated SGV, deleted it with a genuinely bodyless v1 request and returned HTTP 200 with `deletedCount:1`; a follow-up read returned zero rows |
 | GET/POST `/_nscf/simulated-cgm` | Public `demo` reported enabled with `intervalMs:300000`; twelve deterministic seed rows used `simulator://nscf-test`. Fresh smoke tenants remained disabled/empty. |
 
-The reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784684130172` and passed 72 behavior/CORS assertions.
+The latest reusable `scripts/smoke-public.mjs` run used isolated tenant
+`public-smoke-1784690470717` and passed 77 behavior/CORS assertions.
 The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
 `pingTimeout:20000`.
 
@@ -744,9 +769,10 @@ partial repair, persistent retry and recovery. The
 schema-v17 contracts add default-off tenant isolation, protected
 enable/disable, a twelve-point seed, idempotent re-enable, root `dataUpdate`,
 alarm continuation and eviction recovery. The
-credential-free remote pass did not publish a trusted notification or perform
-an alarm ACK; the separate simulator batch exercised only v1 SGV upload. Neither layer proves
-polling upgrade, EIO3, profile-switch/plugin preprocessing or automatic task
+credential-free remote pass did not publish a trusted notification, perform
+an alarm ACK or mutate a Profile Switch; the separate simulator batch exercised only v1 SGV upload.
+The real DO reconstruction test covers the active-Profile push. Remote evidence does not yet prove
+polling upgrade, EIO3, remaining plugin preprocessing or automatic task
 execution for the remaining server plugins.
 
 ## Real-browser evidence
@@ -780,13 +806,14 @@ broader version-72/73/74 page checks:
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `5f0c3898-7d92-4164-af78-55b64cc46517` reused the same
+Cloudflare version `baade90c-d738-4a8b-a6c2-f1b19af68d9b` reused the same
 250 Static Assets entries and passed the 77-assertion credential-free remote
 API/Engine.IO/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
 81 adds persisted push-provider contracts/callback state and the fresh-data
-All Clear/browser acceptance.
+All Clear/browser acceptance; version 82 adds persisted active-Profile
+comparison and locked `status.activeProfile` publication.
 
 This does not prove longer-running stability, a protected mutation observed
 through the pushed live-update path, every plugin workflow or real closed-loop
