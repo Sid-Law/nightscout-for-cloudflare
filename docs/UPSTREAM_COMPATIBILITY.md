@@ -236,7 +236,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Collections and indexes | `lib/storage/mongo-storage.js`, server storage modules | **Partial platform surface; complete locked storage-shape file adapted.** SQLite generic documents cover all six official collections with indexed metadata, an API3 allocation clock and atomic change snapshots. The 26-case storage-shape adapter locks Treatment/DeviceStatus scalar/one/many/20-document writes, Entry arrays, Profile/Food/Activity create/save/created-at behavior, fresh ObjectId fallback for missing or invalid direct-storage save IDs, authorization replacement without duplicates and explicit one/many SQLite batch cardinality. Public v1/v2 invalid-ID checks still run before that internal fallback. Raw Mongo `insertOne` is a runtime-only driver observation and is not exposed as a fake collection façade. The complete concurrent-write file additionally proves simultaneous writes, unique IDs and bounded AAPS/AndroidAPS recovery through one tenant DO. Older Profile/Food rows receive idempotent metadata/fallback repair. Settings preserves the upstream no-fallback rule. Entries has date/dateString/type indexes plus a narrow compatibility shadow. Its v6 probe resets only an incompatible pre-1.0 shadow and preserves canonical documents/profile; it is deliberately not a legacy importer. Healthy activation is a read-only probe. This does not import an external Nightscout/MongoDB database. | Prove in-place activation from every supported NSCF schema while preserving canonical data, and complete mixed-type/index/query differential behavior. Keep external Nightscout/MongoDB history import as separately scoped future work; make no first-release import claim. |
 | ObjectId, UUID and dedupe | `lib/server/query.js`, `lib/server/treatments.js`, `lib/api3/storage/mongoCollection/utils.js` | **Locked Query, validation, UUID, issue-6923, identity-matrix, GAP-TREAT-012, ObjectIdCache, deduplication and partial-failure files adapted; broader BSON behavior partial.** `src/server-query.ts` replaces Mongo's ObjectId class with a Worker-safe 24-hex value object at the adapter boundary while preserving the locked `toString()` result, non-ObjectId strings and current UUID identifier fallback. Generated IDs remain random 24-hex strings. Treatments match exact true-by-default `UUID_HANDLING` parsing and legacy repair. Identifier-first upsert, AAPS/Loop/xDrip field isolation, repeated-identifier dedupe and MongoDB 5 `{acknowledged,deletedCount}` deletes are locked. Entries use `sysTime + type`; Treatments prefer `identifier`/`_id`, then `created_at + eventType`. Descriptive `pump`, `sync` and generic `id` fields do not become invented unique indexes. Profile/Food and API3 retain their tested selectors; Settings has no fallback. | Extend mixed BSON/type and remaining collection fixtures. The 4,096-character identity and 100-item v1 batch caps are Free-plan controls. |
 | Mongo query behavior | `lib/server/query.js`, `lib/api3/storage/mongoCollection/**` | **Complete locked `query.test.js`; wider Mongo surface partial.** A request-local adapter preserves the four-day default, configurable date field/window, ID date-filter bypass, non-ObjectId strings and ObjectId-shaped normalization without `mongodb`, `traverse` or `moment`; live Entries parsing reuses its default and ID normalization. V1 Entries supports equality/comparison for numeric and bounded string fields, supported-field sort-before-limit and final time ordering. Legal shapes above SQLite limits fail as controlled 400. API3 supports locked scalar operators, safe nested/unknown fields, projection/paging, ordered sort chains and a bounded case-sensitive `$re` subset compiled to GLOB. Mixed types, arrays, projections and collation remain incomplete. | Add `$in`/`$nin`/regex/exists and nested/array/mixed-type differential coverage before widening the v1 allowlist or calling generic search compatible. Other v1 collections still use limited filtering. |
-| API v1 entries | `lib/api/entries/index.js`, `lib/server/entries.js` | **Complete locked Entries, Entries UUID, deduplication and partial-failure mappings; broader route semantics partial.** Create/list/current/model/ID/delete include single/array/extended-urlencoded uploads, preview, uploader identity, ordered-prefix failures, collection-specific dedupe, bounded query/sort, four-day reads, JSON/plain/CSV/TSV, validators and HEAD. Exact numeric-date, exact `dateString` and open dateString-range deletion are implemented. Cloudflare zero-byte DELETE streams normalize to the same absent body as upstream/local requests, with a public-edge create/delete/read contract. Entries `echo` plus SQL count are inherited by v2. The locked numeric-brace `times/echo`, `times` and dateString `slice` fixtures run through at most eight prefixes, 256 expansions and 10,000 candidates per prefix. Non-Entries echo, arbitrary aggregation, arbitrary regex/slice fields, large-detail materialization control and wider Mongo/document semantics remain incomplete. | Port the remaining related route/error surface while retaining explicit Free-plan pattern/query bounds and the fresh-only pre-1.0 reset. |
+| API v1 entries | `lib/api/entries/index.js`, `lib/server/{entries,treatments,devicestatus}.js` | **Complete locked Entries, Entries UUID, deduplication and partial-failure mappings; broader route semantics partial.** Create/list/current/model/ID/delete include single/array/extended-urlencoded uploads, preview, uploader identity, ordered-prefix failures, collection-specific dedupe, bounded query/sort, four-day reads, JSON/plain/CSV/TSV, validators and HEAD. Exact numeric-date, exact `dateString` and open dateString-range deletion are implemented. Cloudflare zero-byte DELETE streams normalize to the same absent body as upstream/local requests, with a public-edge create/delete/read contract. V1 and inherited v2 `echo` apply the locked Entries, Treatments and DeviceStatus query options; SQL count and `slice` select those same stores, with unknown names falling back to Entries. The locked numeric-brace `times/echo`, `times` and arbitrary bounded string-field `slice` fixtures run through at most eight prefixes, 256 expansions and 10,000 candidates. Arbitrary aggregation, unrestricted regex/large-detail materialization and wider Mongo/document semantics remain incomplete. | Port the remaining related route/error surface while retaining explicit Free-plan pattern/query bounds and the fresh-only pre-1.0 reset. |
 | API v1 document CRUD | food/profile/treatments/devicestatus modules | **Food/Profile/DeviceStatus and the named Treatment/Loop uploader files adapted.** Food and Profile cover their complete named upstream files. Food root/regular reads ignore unused query options, while quickpicks applies exact `type:quickpick` plus string `hidden:false` matching and Mongo-like position order. Profile preserves the distinct singular count-only, plural query/read-only and current routes; invalid children return 404. Non-Treatment reads preserve stored fields instead of receiving the Treatment numeric mapper. DeviceStatus covers both its base and Loop SGV/DeviceStatus files plus the locked prediction policy. Treatments maps XSS/time/numeric/upload/query behavior plus complete `api.treatments`, UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, carb/dose and ObjectIdCache contracts, including exact flag parsing, UUID repair, ordered server-ID responses, cached-ID mutations and MongoDB 5 delete results. Its Worker sanitizer retains reviewed safe tags but strips all attributes, deliberately stricter than DOMPurify beyond the locked malicious fixture. `api.shape-handling.test.js` locks cross-collection scalar/array and NightscoutKit shapes. Version 93 adds protected Profile save/reload/restore and pushed-page evidence. | Keep bounded count limits and safe-attribute DOMPurify byte parity as documented platform differences; add broader collection/page workflows incrementally. |
 | API v1 activity | `lib/api/activity/index.js`, `lib/server/activity.js`, `tests/api.activity.test.js` | **Locked upstream file adapted.** Create/list/filter/conditional GET/update/delete, empty-array create, ID validation and the official `{}` delete response follow the complete named upstream file. | Add credentialed remote CRUD evidence when a test credential is explicitly supplied; retain the current bounded platform controls. |
 | Remaining API v1 | notifications, Alexa, Google Home and remaining utilities | **Partial.** Inherited GET `/notifications/ack` is adapted on v1 and v2 with durable repeat suppression, Urgent-to-Warning silence and live `clear_alarm` delivery. Admin notices preserve the public count/admin-body split and persisted readable-site/failed-auth producers. The locked Alexa test file is adapted as a local en-US REST/Speechlet envelope for LaunchRequest, unknown intent and SessionEndedRequest; it performs no Amazon call. Pushover/Google Home/external Alexa connectivity remain disabled. | Port remaining scope-allowed routes from the generated inventory. Keep external integrations disabled in the simulated-data deployment, but retain mocked internal contracts. |
@@ -312,10 +312,11 @@ compatibility. Its controlled differences and remaining gaps are:
   default HTTP 200, while `tests/api.unauthorized.test.js` contains a stale 201
   assertion. NSCF follows the executable locked source and records the
   contradiction instead of changing the route to satisfy that assertion;
-- Entries `echo` is implemented for the bounded query subset and returns the
-  locked `query`, `input`, `params` and `storage` envelope. It strips tenant and
-  credential transport parameters from reflected input. Echo for other storage
-  modules remains unsupported with a controlled 400.
+- Entries, Treatments and DeviceStatus `echo` return the locked `query`,
+  `input`, `params` and `storage` envelope and apply each module's exact numeric
+  or regex walkers, date field/default and UUID option. Tenant and credential
+  transport parameters are removed from reflected input. Storage modules not
+  selectable by the locked Entries router return a controlled 400.
 - `count/:storage/where` performs direct SQL `COUNT(*)` aggregation for entries,
   treatments and device status. Like the locked `$match` plus `$group` utility,
   result `count` and `sort[...]` options do not affect the aggregate; zero rows
@@ -327,10 +328,14 @@ compatibility. Its controlled differences and remaining gaps are:
   the ordinary 10,000-row response limit. This does not remove the limit from
   detailed Entries reads or exports: long histories still require date-bounded
   partitions.
-- `times/echo`, `times` and dateString `slice` now compile the locked numeric-
-  brace fixtures through a bounded protocol adapter: no more than eight literal
-  prefixes, 256 expansions and 10,000 candidates per prefix. Arbitrary regex
-  syntax and other slice storage/field combinations remain unsupported.
+- `times/echo`, `times` and `slice` compile the locked numeric-brace fixtures
+  through a bounded protocol adapter: no more than eight literal prefixes, 256
+  expansions and 10,000 candidates. The indexed Entries/dateString route keeps
+  its range plan; release 97 additionally selects Treatments/DeviceStatus,
+  arbitrary bounded string fields and the upstream unknown-storage Entries
+  fallback. Pattern execution accepts only the reviewed linear regex subset;
+  non-empty Mongo regex flags and wider JavaScript regex syntax remain
+  controlled differences.
 - the ordinary compact-SGV path retains `count=10000`, but an artificial
   selection of thousands of documents containing abnormally large custom
   fields is still materialized across DO RPC, sorting, formatting and ETag
@@ -402,7 +407,7 @@ controls, not upstream claims.
 
 ## Current deployed integration evidence
 
-Runtime candidate `c0340fe` passes 789/789 tests in 71
+Runtime candidate `a176f4c` passes 790/790 tests in 71
 Workers-runtime files plus 23/23 audit tests, 42/42 unchanged direct upstream
 client tests across eleven complete files and 143/143 unchanged tests across twenty-one locked server/data-plugin
 files. It connects schema-v14 background work to automatic Uploader Battery, AR2, Simple Alarm,
@@ -416,10 +421,10 @@ dataloader/database-size, Sandbox, Settings, Loop, Profile, uploader, identity,
 root-delta/write, API3, authorization, realtime and notification-ACK slices.
 Schema v17 adds the disabled-by-default, per-tenant lab-CGM schedule described
 above and its official Entries/root-delta integration tests.
-Cloudflare version `dd737733-764d-4151-959e-10067308f3ed` is current as
-project release 96 and reported a 34 ms startup. Wrangler 4.113.0 did not
-print a numeric Cloudflare ordinal. It processed 250 Static Assets entries; the
-final dry run reported 1300.86 KiB raw / 238.91 KiB gzip, with only
+Cloudflare version `2fe3ad83-08e7-45a2-90e6-3b86f54a6286` is current as
+project release and Cloudflare ordinal 97 and reported a 23 ms startup. It
+processed 250 Static Assets entries; the final dry run reported 1313.61 KiB raw
+/ 241.57 KiB gzip, with only
 `ENTRY_STORE` and `ASSETS`.
 This deployment had no explicit version annotation; none is invented.
 The clean-source build installs the locked Nightscout build dependencies before
@@ -430,8 +435,10 @@ exact `build`/`deploy` scripts and requires `.dev.vars.example` to contain only
 repository has no public GitHub/GitLab remote and no fresh-account acceptance
 has run.
 
-The reusable credential-free remote smoke passed 165 assertions for health,
+The reusable credential-free remote smoke passed 177 assertions for health,
 bounded v1 Entries/Treatments and Food helper reads, fresh Profile/current,
+v1/v2 Treatment and DeviceStatus echo query shapes, empty selected-storage
+slice reads,
 unknown Food/Profile 404s, plural-Profile read-only behavior and v2 Summary,
 API3 version, matching v1/v2 filtered Settings and database-size settings,
 real ddata SQLite bytes, current/explicit-frame Activity buckets and frame
@@ -445,7 +452,7 @@ configuration plus empty property output, default-disabled Uploader Battery
 alerts, xDrip-js and BAGE properties, plus the v2-only Loop push permission
 boundary and v1 non-route,
 and missing-token API3 Entries returned 401. Isolated tenant
-`public-smoke-1784718918966` reported
+`public-smoke-1784720399510` reported
 307,200 SQLite bytes,
 `indexSize:0`, a 953.67 MiB maximum and `0%`/`current` state. This run sent no
 API secret value and performed no protected mutation. A name-only encrypted-
@@ -480,6 +487,13 @@ it displayed `129 mg/dL`, two-minute-old simulated data, two SVGs, 129 circles
 and a populated chart without console errors. Admin Tools loaded zero subjects,
 all seven system roles, eight action buttons, three tables and reported `Admin
 authorized`. No real health data or closed-loop instruction was used.
+Release 97 reloaded the unchanged official homepage after the legacy utility
+storage increment: it displayed `116 mg/dL`, a flat arrow, one-minute-old
+simulated data and two SVG charts without a dialog or console error. Admin
+Tools again loaded zero subjects, all seven roles, eight buttons and three
+tables and reported `Admin authorized`; its two known upstream chartless-page
+warnings remained non-errors. No real health data or closed-loop instruction
+was used.
 Version 81 retained those assets and workflows, rejected unknown provider
 receipts on both v1 and v2 with the locked 500 body, and kept the public
 simulator current. The real homepage displayed `121 mg/dL`, `+4`, four minutes

@@ -27,7 +27,8 @@ for diagnosis, dosing, or medical decisions.
   `identifier`, bounded numeric/string filters and request sorting,
   current/model/ID reads, JSON/plain/CSV/TSV representations, weak ETags,
   result/runtime-SGV Last-Modified/conditional 304 and HEAD. The Entries
-  `echo` query debugger is adapted for the supported filter subset, and
+  `echo` query debugger selects Entries, Treatments or DeviceStatus with their
+  locked walkers/default windows, and
   `count/{entries,treatments,devicestatus}/where` performs a server-side SQLite
   aggregate without materializing matching documents. HTML-like upload leaves
   are recursively and idempotently entity-encoded before preview or
@@ -244,10 +245,10 @@ v15.0.7 client source. Standard EIO3 and EIO4 polling-to-WebSocket upgrades
 pass local and public WSS contracts. The page does not yet prove every pushed mutation workflow or the still-missing server-side plugin
 preprocessing pipeline.
 Entries also remains incomplete beyond its now-adapted locked test file:
-`times/echo`, `times` and dateString `slice` support only the bounded numeric-
-brace fixtures, while non-Entries `echo`, client-supplied count aggregation
-pipelines, arbitrary regex/slice fields, Mongo operators, nested/array/mixed-
-type behavior and collation extend beyond the fail-closed subset. Treatment
+`times/echo`, `times` and the three-store arbitrary-string-field `slice` use a
+bounded numeric-brace/linear-regex adapter, while client-supplied count
+aggregation pipelines, unrestricted regex, broader Mongo operators and nested/
+array/mixed-type behavior and collation extend beyond the fail-closed subset. Treatment
 safe attributes are stripped, so the Workers sanitizer is not generally byte-
 equivalent to upstream DOMPurify. The 512 KiB body, 100-item batch, eight-prefix,
 256-expansion and 10,000-row result/candidate bounds are explicit Free-plan
@@ -684,8 +685,8 @@ Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
 Its Node configuration audit rejects stored plaintext vars and prohibited
 D1/R2/KV/Queues/routes while locking the existing footprint.
-Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
-type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
+Arbitrary aggregation pipelines, unrestricted Mongo mixed-type/nested/array and
+BSON numeric/object-ID semantics, safe-attribute DOMPurify
 byte parity, Engine.IO JSONP/binary, server-side
 summary/activity persistence and remaining non-plugin task kinds remain
 missing. The user-supplied construction credential is active and was used only
@@ -1092,6 +1093,26 @@ tests; the dry bundle was 1300.86 KiB raw / 238.91 KiB gzip. The accepted
 official homepage displayed `129 mg/dL`, two-minute-old simulated data and its
 SVG chart without console errors; Admin Tools loaded all seven system roles and
 reported `Admin authorized`. No real health data or closed-loop instruction was
+used.
+
+Project release 97 (`2fe3ad83-08e7-45a2-90e6-3b86f54a6286`) deploys commit
+`a176f4c` and completes the selectable-storage surface of the legacy Entries
+query utilities. `/api/v1|v2/echo` now uses the locked Entries, Treatments or
+DeviceStatus `query_for()` options, including numeric walkers, Treatment regex
+walkers, ObjectId/UUID handling and the correct epoch/`created_at` default
+windows. `/api/v1|v2/slice` selects those same three stores, accepts arbitrary
+bounded string fields and preserves upstream's unknown-store fallback to
+Entries. The SQLite adapter translates ordinary Mongo comparison, membership,
+existence, sort and UUID-fallback shapes, then applies the reviewed pattern
+subset inside a 10,000-candidate Workers ceiling. The full local gate passed 71
+Workers files / 790 tests, 23/23 audits, 42/42 unchanged client tests and
+143/143 unchanged server/data-plugin tests; the dry bundle was 1313.61 KiB raw
+/ 241.57 KiB gzip. A 177-assertion public smoke passed on
+`public-smoke-1784720399510`, including the new v1/v2 utility routes and all
+prior EIO3/EIO4 WebSocket gates. The official browser displayed `116 mg/dL`,
+one-minute-old simulated data and two SVG charts with no console error; Admin
+Tools retained zero subjects, seven system roles, eight buttons, three tables
+and `Admin authorized`. No real health data or closed-loop instruction was
 used.
 
 The APNs transport follows Apple's current provider-token and notification

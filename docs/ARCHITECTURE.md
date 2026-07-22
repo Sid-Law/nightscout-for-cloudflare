@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `c0340fe` and
-Cloudflare version `dd737733-764d-4151-959e-10067308f3ed`. The
-candidate's 71-file Workers-runtime suite passes 789/789 plus 23/23 audit tests,
+“Current” below describes deployed evidence candidate `a176f4c` and
+Cloudflare version `2fe3ad83-08e7-45a2-90e6-3b86f54a6286`. The
+candidate's 71-file Workers-runtime suite passes 790/790 plus 23/23 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1300.86 KiB
-raw / 238.91 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Project release 96 reported a 34 ms startup and passed the
-165-assertion credential-free API, real EIO3/EIO4 direct-or-upgraded WSS, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1313.61 KiB
+raw / 241.57 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Project release 97 reported a 23 ms startup and passed the
+177-assertion credential-free API, real EIO3/EIO4 direct-or-upgraded WSS, Pebble and
 real-browser gates. The authenticated Profile save/reload/restore and its
 live-page `dataUpdate`/`retroUpdate` observation are current release evidence;
 the broader Food/Admin/Reports acceptance remains version-80 evidence.
@@ -590,15 +590,18 @@ not allocate the matching document bodies and is not subject to the ordinary
 10,000-row response limit. Zero matches serialize as `[]`; nonzero matches use
 Mongo's `[{"_id":null,"count":N}]` group shape. Count/sort result options are
 ignored as upstream does, while client-supplied aggregation pipelines are
-rejected rather than translated into executable SQL. The bounded Entries
-`echo` adapter renders the supported Mongo query shape plus input/params/storage
+rejected rather than translated into executable SQL. The bounded Entries-router
+`echo` adapter renders the locked Mongo query shape plus input/params/storage
 debug envelope without reflecting Cloudflare tenant or credential parameters.
+Release 97 selects the exact Entries, Treatments or DeviceStatus query options.
 `times/echo`, `times` and `slice` expand the locked numeric-brace fixtures into
-at most 256 linear patterns and eight literal dateString prefixes. Each prefix
-becomes an indexed SQLite range read capped at 10,000 candidates; merged results
-are deduplicated and time-sorted before the requested count is applied.
-Arbitrary JavaScript regex syntax, other slice storage/field combinations and
-non-Entries echo remain outside this slice.
+at most 256 linear patterns and eight literal prefixes. Entries/dateString
+retains its indexed prefix ranges; other supported store/field combinations
+translate non-pattern Mongo filters and sort to the generic SQLite repository,
+materialize at most 10,000 candidates, and apply the final string pattern/count
+in stable storage order. Unknown stores fall back to Entries. Arbitrary
+JavaScript regex syntax and non-empty Mongo regex flags remain outside this
+slice.
 
 Entries upload and preview share one recursive sanitizer before normalization
 or persistence. The locked server uses DOMPurify with JSDOM; neither DOM runtime
@@ -1456,9 +1459,14 @@ object as well as every out-of-scope product binding.
   to that result cap; long detail exports still require date partitioning.
 - Entries unindexed/dateString candidates are capped at 10,000 with controlled
   HTTP 413; synchronous deletion and stored-revision cleanup are capped at 128.
-- Entries pattern utilities accept at most eight expanded dateString prefixes,
-  256 numeric-brace expansions and 10,000 candidates per prefix, using only the
-  locked fixture's reviewed linear regex subset.
+- Legacy Entries pattern utilities accept at most eight expanded prefixes, 256
+  numeric-brace expansions and 10,000 candidates. Release 97 keeps the indexed
+  `entries/dateString` path and adds the locked selectable Treatments and
+  DeviceStatus stores plus arbitrary bounded string fields; an unknown store
+  falls back to Entries as upstream `prep_storage` does. Mongo query shapes are
+  converted to the shared SQLite document filter before the bounded final
+  pattern pass. Only the reviewed linear regex subset is executed; non-empty
+  Mongo regex flags return a controlled unsupported-query response.
 - A selected Entries set is currently materialized across DO RPC, final sort,
   representation and ETag hashing. Compact SGV records at ordinary client
   counts are the supported path; thousands of abnormally large custom

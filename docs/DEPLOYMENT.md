@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `c0340fe`
-- Runtime source candidate: `c0340fe`
-- Git commit matching the deployed runtime worktree: `c0340fe`
-- Cloudflare Version ID: `dd737733-764d-4151-959e-10067308f3ed`
-- Project release sequence: `96`; Wrangler 4.113.0 did not print a numeric
-  Cloudflare ordinal for this deployment
+- Deployed runtime candidate: `a176f4c`
+- Runtime source candidate: `a176f4c`
+- Git commit matching the deployed runtime worktree: `a176f4c`
+- Cloudflare Version ID: `2fe3ad83-08e7-45a2-90e6-3b86f54a6286`
+- Project release sequence and Cloudflare ordinal: `97`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T11:15:04.593Z`
+- Version creation time: `2026-07-22T11:39:43.541Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Deployment creation time: `2026-07-22T11:15:05.550Z`
-- Worker startup: 34 ms
+- Deployment creation time: `2026-07-22T11:39:44.351Z`; 100% of traffic is on
+  the named version
+- Worker startup: 23 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -381,6 +381,37 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   live delta update. Settings/About reported Nightscout 15.0.7 and captured
   browser logs contained zero warnings/errors. No real health data or
   closed-loop client was used.
+
+## Project release 97 legacy Entries storage utilities
+
+- Commit `a176f4c` completes the locked selectable storage behavior for
+  `/api/v1|v2/echo` and `/api/v1|v2/slice`. Echo now applies the exact
+  Entries, Treatments or DeviceStatus query walker/date options. Slice selects
+  those same stores, supports arbitrary bounded string fields and falls back
+  to Entries for unknown storage names as upstream `prep_storage` does.
+- The Cloudflare boundary reuses the locked Mongo-shaped query compiler, then
+  translates ordinary comparisons, membership, existence, sorts and the
+  UUID-fallback shape to the shared SQLite document query. The final pattern
+  pass is capped at 10,000 candidates and uses the existing reviewed linear
+  regex subset; this is a recorded Workers Free control, not an upstream claim.
+- Local gates passed: 71 Workers files / 790 tests, 23/23 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript and dry run. The dry bundle is 1313.61 KiB raw / 241.57 KiB gzip
+  with 250 unchanged assets and only `ENTRY_STORE` plus `ASSETS`.
+- Cloudflare ordinal/version 97, ID
+  `2fe3ad83-08e7-45a2-90e6-3b86f54a6286`, was created at
+  `2026-07-22T11:39:43.541Z`, deployed at `2026-07-22T11:39:44.351Z`, receives
+  100% traffic and starts in 23 ms.
+- The 177-assertion public smoke passed on isolated tenant
+  `public-smoke-1784720399510`, including Treatment/DeviceStatus echo shapes,
+  empty selected-storage slices and all prior API, EIO3/EIO4 polling, direct
+  WSS and upgrade gates. It reported 307,200 SQLite bytes and sent no protected
+  mutation, real health data or closed-loop instruction.
+- The official homepage displayed `116 mg/dL`, a flat arrow, one-minute-old
+  simulated data and two SVG charts with no console error or dialog. Admin
+  Tools loaded zero subjects, all seven system roles, eight buttons, three
+  tables and `Admin authorized`; its two known upstream `#chartContainer`
+  warnings remain harmless on the chartless Admin page.
 
 ## Project release 96 full v2 ddata split
 
@@ -1320,11 +1351,16 @@ broader version-72/73/74 page checks:
   two-minute-old simulated data and the populated SVG chart without console
   errors. Admin Tools loaded all seven system roles and remained `Admin
   authorized` after the full v2 ddata/root split.
+- project release 97 reloaded the unchanged homepage showing `116 mg/dL`, a
+  flat arrow, one-minute-old simulated data and two SVG charts without a dialog
+  or console error. Admin Tools loaded zero subjects, all seven roles, eight
+  buttons, three tables and `Admin authorized`; its two known chartless-page
+  warnings remained non-errors.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `dd737733-764d-4151-959e-10067308f3ed` reused the same
-250 Static Assets entries and passed the 165-assertion credential-free remote
+Cloudflare version `2fe3ad83-08e7-45a2-90e6-3b86f54a6286` reused the same
+250 Static Assets entries and passed the 177-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
@@ -1348,7 +1384,8 @@ Profile save/pushed-page evidence; project release 94 adds direct and upgraded
 EIO3 WebSocket compatibility; project release 95 adds the locked v2 ddata
 Activity/frame projection; project release 96 separates the full v2 ddata clone
 from the root authorization projection and adds every enumerable Treatment
-bucket.
+bucket; project release 97 completes the selectable Entries/Treatments/
+DeviceStatus echo and bounded arbitrary-string-field slice tools.
 
 This does not prove longer-running stability, every plugin workflow or real
 closed-loop client compatibility.
@@ -1372,11 +1409,11 @@ closed-loop client compatibility.
   test files have named Workers-runtime adaptations. Broad large-response
   resource handling and Mongo mixed-type/nested/array semantics remain
   controlled platform differences beyond that locked test-file evidence.
-- Entries `times/echo`, `times` and dateString `slice` implement the locked
-  numeric-brace fixtures, but intentionally reject arbitrary regex syntax,
-  more than eight prefixes, more than 256 expansions, other storage/field
-  combinations and candidate sets above 10,000 per prefix. Echo supports
-  Entries storage only and count rejects client-supplied aggregation pipelines.
+- Entries `times/echo`, `times` and three-store arbitrary-string-field `slice`
+  implement the locked numeric-brace fixtures, but intentionally reject
+  arbitrary regex syntax, more than eight prefixes, more than 256 expansions
+  and candidate sets above 10,000. Echo supports Entries, Treatments and
+  DeviceStatus; count still rejects client-supplied aggregation pipelines.
   Treatment safe attributes are stripped, so general DOMPurify byte parity and
   wider Mongo query/mixed-type behavior remain incomplete.
 - An Entries request selecting thousands of documents with abnormally large
@@ -1437,10 +1474,11 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`117d0d35-e696-41b5-a12f-06a7e0e274c4` (project release 93). It has its own
-139-case remote API/Engine.IO/WSS and browser acceptance and differs from
-release 94 primarily by lacking EIO3 direct WebSocket/polling upgrade. A much
-older conservative fallback is
+`dd737733-764d-4151-959e-10067308f3ed` (project release 96). It has its own
+165-case remote API/Engine.IO/WSS and browser acceptance and differs from
+release 97 primarily by lacking selectable Treatment/DeviceStatus echo and
+slice support. Release 93 (`117d0d35-e696-41b5-a12f-06a7e0e274c4`) remains a
+pre-EIO3-WebSocket rollback point. A much older conservative fallback is
 `de66cb8c-f9b6-464e-8741-8aed362d7955` (version 64); it retains schema-v14
 automatic Simple Alarms, Treatment Notify and Timeago but lacks later
 Pump/OpenAPS/Loop scheduling and many subsequent adapters. Version 63
