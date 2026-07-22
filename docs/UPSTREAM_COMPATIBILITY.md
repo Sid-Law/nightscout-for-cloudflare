@@ -17,8 +17,7 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-Deployed runtime candidate
-`1ffa2ab86234ed31d66f5dd8161566453651909a` passes 695/695 tests across 63
+Deployed runtime candidate `7fe1880f580a` passes 700/700 tests across 64
 Workers-runtime files plus 22/22 audit tests, 42/42 unchanged tests across
 eleven complete upstream-client files and 134/134 unchanged tests across twenty locked upstream
 server/data-plugin files. The suite retains focused EIO4,
@@ -30,6 +29,7 @@ files and 25 locked v1 client/API files, and now completely maps locked
 `iob.test.js`, `cob.test.js`, `data.treatmenttocurve.test.js`,
 `openaps.test.js`, `pump.test.js`, `basalprofileplugin.test.js`,
 `treatmentnotify.test.js`, `simplealarms.test.js`, `notifications.test.js`,
+`pebble.test.js`,
 `adminnotifies.test.js`, `bootevent-debounce.test.js`,
 `expressextensions.test.js`,
 `rawbg.test.js`, `times.test.js`, `units.test.js`, `upbat.test.js` and
@@ -48,16 +48,17 @@ utility, Care Portal, Bolus Wizard Preview and Profile Editor files run
 unchanged alongside client Hashauth, Admin Tools, report-settings and Reports
 against the byte-identical shipped client bundle. The editor/admin/report
 workflows use locked mock transports and do not prove public credentialed
-mutation. This is not
-full-port evidence.
+mutation by themselves; version 80's separate authenticated browser pass does
+cover the named Profile/Food/Admin/Reports workflows. This is not full-port
+evidence.
 The runtime code is deployed as Cloudflare version
-`d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930`; exact release
+`407dbd03-4a4f-454a-b9a2-1304deb19ac2`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
 
-The candidate Wrangler dry-run reports 250 Static Assets entries, 1190.22 KiB raw /
-219.90 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The candidate Wrangler dry-run reports 250 Static Assets entries, 1194.89 KiB raw /
+220.95 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 The deployed increment connects AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE,
@@ -222,6 +223,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v2 authorization | `lib/authorization/**`, `lib/api/verifyauth.js`, `lib/api/experiments/index.js` | **Four named server auth files plus Admin notices adapted with documented hardening.** Role/subject CRUD, per-tenant signing keys, eight-hour HS256 issuance/refresh, derived access tokens and prefix matching, body/query/header precedence, signature/expiry verification, live role lookup, persisted per-IP failure delay, Shiro 0.4.10 and `verifyauth` are implemented. The exact `authorization:debug:test` probe is inherited through v1/v2. Complete Workers mappings cover `api.security`, `api.verifyauth`, `verifyauth` and all three active `security.test.js` cases; client `hashauth.test.js` and server `adminnotifies.test.js` run unchanged. Failed attempts emit the upstream warning without retaining credentials. Enforced delay is capped at 60 seconds, transient Admin messages at 128 per tenant, and repeated/bracket `secret` arrays are safely resolved or rejected instead of reproducing the locked unhandled rejection. | Set a valid deployment API secret before final credentialed smoke; preserve the named platform caps and array hardening as explicit differences. |
 | Settings, language and status configuration | `lib/settings.js`, `lib/language.js`, `lib/server/env.js`, v1/v2 Status and Socket authorize | **Complete Settings and Language test-file adapters; process configuration partial.** Fresh request-local objects preserve locked defaults, environment accessors, feature/alarm rules, recursive secure filtering, English identity, positional/object placeholders, supported language metadata, case-sensitive/insensitive lookup and filename fallback. Static Assets replaces server `fs`; all 33 deployed translation JSON files are valid and byte-identical to v15.0.7. `LANGUAGE` reaches HTTP/Socket settings so the unchanged browser loader selects the official dictionary. The broader Node process/filesystem discovery and generic extended-settings loader are not ported. | Map remaining supported Worker variables through a deterministic tenant context, use the same request-local translator in every remaining server plugin/notification path, and keep secret fields out of status/logs. |
 | API v2 summary/notifications | `lib/api2/summary/**`, `lib/profilefunctions.js`, `lib/plugins/{iob,cob}.js`, `lib/api2/notifications-v2.js` | **Core summary mapper, complete Profile and IOB/COB calculation contracts and inherited ACK adapted; remaining plugin state partial.** `/summary/` ports the locked hour filter, SGV/noise mapping, carb/insulin events, temporary targets, temp-basal/profile schedule processor and recursive `timeAsSeconds` removal. Its current-profile path uses the 24-assertion Profile adapter. The route now executes enabled request-local registry properties, so official IOB/COB populate state when enabled and remain `null` when disabled. Workers-native arrays, `Map` and `Intl` replace only runtime mechanics. BWP and remaining age/battery persistence are not fabricated. API v2 also inherits the adapted v1 `/notifications/ack`; `/notifications/loop` external APNs delivery is disabled. | Reuse remaining official plugin modules to supply BWP/other summary state and persistence without rewriting formulas; keep external delivery disabled while adapting internal notification contracts. |
+| Legacy Pebble endpoint | `lib/server/pebble.js`, `tests/pebble.test.js` | **Complete locked endpoint contract adapted with bounded platform context.** `/pebble` and `/pebble/` preserve newest-first count selection, mg/dL/mmol formatting, direction/trend, delta, uploader battery, raw filtered/unfiltered/noise/calibration fields and official IOB/COB display mapping. The live route applies `api:pebble,entries:read`, tenant routing and HEAD behavior. Cloudflare bounds `count` to 1,000 and replaces process-global `ddata`/dynamic plugin access with request-local DO context. | Keep the nine-case locked contract and remote smoke green. BWP output remains absent until its official server plugin adapter exists; do not invent it inside Pebble. |
 | API v3 version/status/security | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.{basic,security}.test.js` | **Two adapted whole-file contracts.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. Missing and invalid Bearer errors, denied/allowed permissions, API OPTIONS and implicit HEAD are locked. | Named Workers-runtime coverage adapts the complete locked `api3.basic.test.js` and `api3.security.test.js`; the security fixture uses its exact empty default-role setting. Current-version remote GET/HEAD/OPTIONS and missing-token smoke confirm the public boundary. |
 | API v3 generic collections/lastModified/history/rendering | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js`, `tests/api3.*.test.js` | **Locked 16-file API3 test set adapted; bounded platform parity.** All eight generic routes are wired for entries, treatments, device status, profile, food and settings, and all six participate independently in `/lastModified`. JWT auth, validation/permission order, shape handling, UUID/ObjectId/fallback identity, dedupe/resurrection, conditional/projection reads, complete CRUD/history/tombstone/permanent-delete workflow, v1-created reads, AAPS patterns, ordered search, storage paging/mutation metadata and locked JSON/CSV/XML negotiation are represented. Settings retains its admin/read exception. Search/history share the configured lower `API3_MAX_LIMIT` under a hard 1,000-row Workers ceiling. | All 16 locked `api3.*` files have complete named Workers-runtime contract mappings. Keep large-result CPU/memory controls and broader Mongo mixed-type/nested/array/regex differential behavior documented as controlled platform work; do not infer unrestricted behavior beyond the locked suite. |
 | Main Socket.IO namespace | `lib/server/websocket.js`, `lib/data/calcdelta.js` | **Partial EIO4 polling + direct WebSocket slice; official polling client and locked root write shape adapted.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted sessions/queues, heartbeat, SIO5 root CONNECT, `clients`, read/write/treatment-write authorize/ACK, initial/retro data and subsequent locked `dataUpdate` deltas are tested across polling, reconstruction and tenant/authorization boundaries. The byte-identical official Socket.IO 4.5.4 page client now connects root and `/alarm`; a separate adapter only appends NSCF's optional test-tenant query. The complete named `websocket.shape-handling.test.js` contract covers all four write events across six collections and ACK-before-delta delivery. A SQL-derived alarm persists transport deadlines. Polling upgrade, EIO3 and profile-switch/plugin preprocessing remain missing, a crash between durable dequeue and direct `send()` can lose one frame, and broader Mongo/BSON semantics remain bounded work. | Add profile-switch/plugin preprocessing, close the direct-send crash window and add polling upgrade/EIO3 plus a pushed protected browser mutation; extend Mongo/BSON differential coverage without removing Free-plan bounds. |
@@ -230,8 +232,8 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Generic scheduler and a unified automatic notification task implemented; remaining jobs partial.** Schema v14 stores task kind, due time, attempt count and update time. Schema v16 persists the upstream one-second trailing/five-second max-wait data-update burst. The DO derives one Cloudflare alarm from persisted transport/session/lease/closure, authorization-cleanup, debounce, task and optional schema-v17 lab-CGM deadlines. Early at-least-once delivery is a no-op; failures persist two-second exponential retries capped at five minutes. The lab feed is separately opt-in per tenant and uses ordinary Entries/root deltas. API3 pruning and other plugin ticks are not scheduled. | Add bounded producers for the remaining official plugins, summary/activity persistence and future maintenance/pruning; retain idempotent repair and Free-plan alarm tests. |
 | Server plugins and calculations | `lib/plugins/index.js`, `lib/sandbox.js`, `lib/data/{dataloader,treatmenttocurve}.js`, `lib/profilefunctions.js` | **Static registry, complete Sandbox/dataloader/dbsize/age/timeago/AR2/Basal/Treatment-Notify/Simple-Alarms/OpenAPS/Pump/IOB/COB/treatment-curve surfaces and eleven automatic producers; broader background execution partial.** Pure ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `ar2`, `basal`, `treatmentnotify`, `simplealarms`, `loop`, `openaps`, `pump`, `iob`, `cob`, `dbsize`, age/timeago, treatment-to-curve, shared runtime helpers and Profile calculations support v2 without rewriting formulas. AR2 maps all ten named cases; Simple Alarms maps all five; Basal maps two and Treatment Notify six; OpenAPS/Pump map all 16 and IOB/COB/treatment-to-curve all 24 named cases plus DO/HTTP integration. The request-local Sandbox and static registry retain their complete contracts. Eleven complete client files run 42/42 unchanged, and twenty server/data-plugin files run 134/134 unchanged, against the locked upstream. AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, enabled Treatment Notify, opt-in Timeago and opt-in DBSize alerts share the persisted scheduler; unported algorithms are not fabricated. | Adapt the remaining plugin files through the Sandbox and deterministic tenant platform context, then add their automatic producers without inventing algorithms. |
 | Notifications/admin state | `lib/notifications.js`, `lib/api/notifications-api.js`, `lib/adminnotifies.js`, push modules | **Core notification processor, ACK/outlet persistence, eleven automatic producers and Admin notices adapted; other evaluation/providers missing.** `/api/v1` and inherited `/api/v2` notification ACK plus Socket.IO ACK share bounded group/level snoozes, exact all-clear broadcasts and tenant-local current-connection delivery across eviction. The core engine retains request reset, first urgent then warning, information/announcement, snooze and all-clear behavior; schema v13 preserves last-emission state. Schema v14 evaluates eleven official producers atomically. Schema v15 persists Admin-notification aggregation, eight/twelve-hour windows, public count/admin-only bodies, readable-site and failed-auth sources and the official disable gate across eviction. `adminnotifies.test.js` runs unchanged. BWP, activity/summary state, plugin-bus integration and push-provider processing remain missing from automatic execution. | Add the remaining alarm producers and activity/summary persistence; keep external delivery disabled in simulated scope unless separately authorized. |
-| Official page workflows | `views/**`, browser client/admin/report modules | **Partial.** Versions 72–74 established the official homepage/chart, dbsize, Settings/About 15.0.7, Admin/clock, AR2 and unchanged Save workflows. Version 75 switched the pages to the byte-identical official Socket.IO 4.5.4 client. Version 78's clean browser loaded both content-addressed transport assets, connected/authorized root, received `dataUpdate`, subscribed to `/alarm` and reported zero console errors or warnings. Version 79 displayed the explicitly enabled one-hour lab feed in the unchanged official homepage. Protected Profile/Food/Admin mutations, report generation and a pushed protected live update are not complete. | Add authenticated Profile Save/Food/profile-delete/admin/report workflows and a pushed mutation with console/network assertions in the final environment; keep real CGM/closed-loop traffic out of the simulated lab. |
-| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; fifteen direct passes and 82 adapted files.** All 111 files are tracked with strict status/reason and heuristic route candidates: eleven complete client files run 42/42 unchanged, while all 16 API3 files, the complete 26-case storage-shape file, the complete nine-case bootevent-debounce file, four named server authentication files, the named storage/concurrency/notification/data/dataloader/database-size/age/timeago/AR2/Basal/Treatment-Notify/Simple-Alarms/OpenAPS/Pump/IOB/COB/treatment-curve/property/Loop/Profile/Settings/Language/Query/Sandbox/registry/realtime foundations and 25 v1 client/API files are adapted; 12 remain unresolved and two real-CGM bridges are fixed-scope exclusions. Care Portal/Profile Editor/Admin/Reports use locked mock mutations, so final credentialed environment testing remains separate. Twenty locked server/data-plugin files, including AR2, Admin notices, ObjectId cache compatibility and the upstream environment parser, also run unchanged as a separate 134/134-test gate. The env pass proves the locked parser, not complete Workers mapping or external delivery. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
+| Official page workflows | `views/**`, browser client/admin/report modules | **Named daily workflows accepted; pushed protected update still partial.** Versions 72–79 established the official homepage/chart, dbsize, Settings/About 15.0.7, Admin/clock, AR2, unchanged Save workflows, the byte-identical Socket.IO 4.5.4 client and the opt-in lab feed. Version 80 authenticated Profile rename/save/reload/restore, Food create/read/delete, Admin role create/delete and Reports generation (30 SVGs/eight canvases); temporary values were restored or removed. | Add one protected mutation observed through the pushed live page-update path with console/network assertions; keep real CGM/closed-loop traffic out of the simulated lab. |
+| Upstream test tracking | `tests/**`, `upstream/contract-manifest.json`, `scripts/audit-upstream-contracts.mjs` | **Inventory complete; fifteen direct passes and 83 adapted files.** All 111 files are tracked with strict status/reason and heuristic route candidates: eleven complete client files run 42/42 unchanged, while all 16 API3 files, Pebble, the complete 26-case storage-shape file, the complete nine-case bootevent-debounce file, four named server authentication files, the named storage/concurrency/notification/data/dataloader/database-size/age/timeago/AR2/Basal/Treatment-Notify/Simple-Alarms/OpenAPS/Pump/IOB/COB/treatment-curve/property/Loop/Profile/Settings/Language/Query/Sandbox/registry/realtime foundations and 25 v1 client/API files are adapted; 11 remain unresolved and two real-CGM bridges are fixed-scope exclusions. Version 80 separately completed credentialed Profile/Food/Admin/Reports browser acceptance. Twenty locked server/data-plugin files, including AR2, Admin notices, ObjectId cache compatibility and the upstream environment parser, also run unchanged as a separate 134/134-test gate. The env pass proves the locked parser, not complete Workers mapping or external delivery. | Manually confirm route links. Update status only with whole-file upstream execution (`pass`) or complete named Workers-runtime contract coverage (`adapted`); keep generator/check green. |
 
 ## Locked-upstream discrepancy decisions
 
@@ -378,8 +380,7 @@ controls, not upstream claims.
 
 ## Current deployed integration evidence
 
-Runtime candidate
-`1ffa2ab86234ed31d66f5dd8161566453651909a` passes 695/695 tests in 63
+Runtime candidate `7fe1880f580a` passes 700/700 tests in 64
 Workers-runtime files plus 22/22 audit tests, 42/42 unchanged direct upstream
 client tests across eleven complete files and 134/134 unchanged tests across twenty locked server/data-plugin
 files. It connects schema-v14 background work to automatic AR2, Simple Alarm,
@@ -393,14 +394,14 @@ dataloader/database-size, Sandbox, Settings, Loop, Profile, uploader, identity,
 root-delta/write, API3, authorization, realtime and notification-ACK slices.
 Schema v17 adds the disabled-by-default, per-tenant lab-CGM schedule described
 above and its official Entries/root-delta integration tests.
-Cloudflare version `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930` (ordinal 79) is
-current; deployment metadata was created at `2026-07-22T01:34:33.270Z`, and it
-reported a 33 ms startup. Wrangler processed 250 Static Assets entries; the
-final dry run reported 1190.22 KiB raw / 219.90 KiB gzip, with only
+Cloudflare version `407dbd03-4a4f-454a-b9a2-1304deb19ac2` (ordinal 80) is
+current; deployment metadata was created at `2026-07-22T02:15:52.364Z`, and it
+reported a 25 ms startup. Wrangler processed 250 Static Assets entries; the
+final dry run reported 1194.89 KiB raw / 220.95 KiB gzip, with only
 `ENTRY_STORE` and `ASSETS`.
 This deployment had no explicit version annotation; none is invented.
 
-The reusable credential-free remote smoke passed 72 assertions for health,
+The reusable credential-free remote smoke passed 77 assertions for health,
 bounded v1 Entries/Treatments reads, fresh Profile/current and v2 Summary,
 API3 version, matching v1/v2 filtered Settings and database-size settings,
 real ddata SQLite bytes, the default-enabled `dbsize` and Basal properties,
@@ -415,11 +416,15 @@ credentialed 25-entry simulator batch proved v1 write/read and was later
 deleted by exact device/type matching. A second isolated remote contract
 created one simulated SGV, sent a genuinely bodyless DELETE through the public
 edge, observed HTTP 200/`deletedCount:1` and confirmed zero remaining rows.
-Other protected page/admin/realtime paths remain local evidence until the final
-environment. The protected platform switch then enabled the durable lab feed
+The protected platform switch then enabled the durable lab feed
 only for public tenant `demo`; alarms appended the `01:40` and `01:45` readings
 and the already-open official page advanced without a manual reload.
 Ordinary/fresh tenants remain disabled.
+Version 80 then used the current deployment for authenticated official-page
+acceptance: Profile rename/save/reload/restore, Food create/read/delete, Admin
+role create/delete and Reports generation all passed; all temporary values were
+restored or removed. The continuing simulator homepage displayed `129 mg/dL`,
+`+3` and `FortyFiveUp`. No real health data or closed-loop client was used.
 
 The deployed platform configuration preserves any dashboard-managed text
 variables on future Wrangler deploys. Cloudflare documents that encrypted
@@ -541,8 +546,8 @@ Entries and Treatments reads, fresh Profile/current and v2 Summary, API3
 version, matching v1/v2 filtered Settings snapshots, real ddata/database-size
 values, default-enabled `dbsize` and Basal, opt-in-disabled Loop/OpenAPS/Pump/IOB/COB and an EIO4
 polling open packet;
-missing-token API3 Entries returned its expected 401. The 72-assertion run used
-fresh tenant `public-smoke-1784684130172` and observed 270,336 SQLite bytes. It
+missing-token API3 Entries returned its expected 401. The 77-assertion run used
+fresh tenant `public-smoke-1784686572692` and observed 270,336 SQLite bytes. It
 sent no API secret and performed no protected mutation. A name-only encrypted-
 secret listing was empty. With the construction credential configured,
 anonymous mutation now fails closed with 401; a separate 25-entry simulator
@@ -596,16 +601,16 @@ reported 15.0.7; Admin Tools and `clock-color` loaded without console errors.
 Four fresh-tenant API
 probes returned the readable-site count while hiding bodies from anonymous
 callers; the immediate old zero-count response before convergence is retained.
-No real health data or authenticated Profile/Food/Admin mutation was attempted.
+No real health data was used. Version 80 subsequently completed authenticated
+Profile/Food/Admin/Reports acceptance with temporary values restored or deleted.
 The prior version-65
 unchanged-default Settings save remains historical regression evidence.
 
 An earlier deployed version completed an authenticated Profile Editor save and
 introduced the content-addressed shim/service-worker cache fix after reproducing
-the original post-save redirect loop. This release did not repeat an
-authenticated mutation, so the earlier result remains
-historical regression context rather than evidence that the current protected
-Profile/Food workflows are complete.
+the original post-save redirect loop. Version 80 repeated that workflow on the
+current deployment and added Food, Admin-role and Reports acceptance, so those
+named current workflows are no longer only historical evidence.
 
 These observations prove only the named increment. They are not a full-port
 completion claim.

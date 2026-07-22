@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `1ffa2ab86234ed31d66f5dd8161566453651909a`
-- Runtime source candidate: `1ffa2ab86234ed31d66f5dd8161566453651909a`
-- Git commit matching the deployed worktree: `1ffa2ab86234ed31d66f5dd8161566453651909a`
-- Cloudflare Version ID: `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930`
-- Cloudflare ordinal version number: `79`
+- Deployed runtime candidate: `7fe1880f580a`
+- Runtime source candidate: `7fe1880f580a`
+- Git commit matching the deployed worktree: `7fe1880f580a`
+- Cloudflare Version ID: `407dbd03-4a4f-454a-b9a2-1304deb19ac2`
+- Cloudflare ordinal version number: `80`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T01:34:33.270Z`
+- Version creation time: `2026-07-22T02:15:52.364Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 33 ms
+- Worker startup: 25 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -32,8 +32,8 @@ is not counted as API, plugin or real-time compatibility.
   simulated-CGM scheduling row
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–79 reused them unchanged
-- Upload: 1190.22 KiB raw / 219.90 KiB gzip
+  versions 76–80 reused them unchanged
+- Upload: 1194.89 KiB raw / 220.95 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -88,6 +88,26 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 - This mechanism contains no real CGM bridge, dose recommendation, user-facing
   substitute UI or new medical calculation. Disabling stops future writes but
   does not secretly delete ordinary Entries.
+
+## Version 80 Pebble and official-page acceptance increment
+
+- `/pebble` and `/pebble/` adapt the locked v15.0.7
+  `lib/server/pebble.js` endpoint. They preserve newest-first count handling,
+  mg/dL/mmol display, trend/direction, delta, uploader battery, raw/calibration
+  and IOB/COB display fields. The Cloudflare adapter caps one request at 1,000
+  Entries and uses request-local bounded plugin context.
+- The local Workers gate is now 64 files / 700 tests. The upstream manifest is
+  15 direct pass, 83 adapted, 11 unresolved and two fixed-scope exclusions.
+- The 77-assertion public smoke passed on fresh tenant
+  `public-smoke-1784686572692`; a `demo` Pebble read returned the two newest
+  continuing simulated Entries.
+- Authenticated browser acceptance used only temporary test values: Profile
+  rename/save/reload/restore passed; Food create/read/delete passed; Admin role
+  create/delete passed; Reports generated 30 SVGs and eight canvases. All
+  temporary values were removed or restored.
+- The unchanged homepage displayed the continuing simulator at `129 mg/dL`,
+  `+3` and `FortyFiveUp`. No real health data, CGM credential or closed-loop
+  client was used.
 
 ## Release content
 
@@ -505,8 +525,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is
-`1ffa2ab86234ed31d66f5dd8161566453651909a`. It retains schema-v15 persisted
+The deployed runtime candidate is `7fe1880f580a`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -538,13 +557,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 63 files, 695/695 passed |
-| Worker dry run | 1190.22 KiB raw / 219.90 KiB gzip |
+| Workers integration tests | 64 files, 700/700 passed |
+| Worker dry run | 1194.89 KiB raw / 220.95 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 695 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 700 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 20
 server/data-plugin files run unchanged in a separate 134/134 gate. All 16 API3 files,
@@ -560,8 +579,8 @@ server/data-plugin files run unchanged in a separate 134/134 gate. All 16 API3 f
 `websocket.shape-handling.test.js`, `profile.test.js`,
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js`, `query.test.js`, `language.test.js` and
-25 v1 client/API files and the four named server authentication files are
-classified as direct `pass` or fully `adapted`; fifteen are `pass`, 12 remain unresolved and two bridge files
+25 v1 client/API files, `pebble.test.js` and the four named server authentication files are
+classified as direct `pass` or fully `adapted`; fifteen are `pass`, 11 remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -572,7 +591,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930` as the current
+Wrangler reports version `407dbd03-4a4f-454a-b9a2-1304deb19ac2` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -717,23 +736,22 @@ broader version-72/73/74 page checks:
   `/platform/socket-tenant-adapter.js?a083f014e6e1`, completed real EIO4
   polling, logged connected/authorize/`dataUpdate`/alarm-subscribe and reported
   zero console errors or warnings;
-- no real health data or protected Profile/Food/Admin mutation was attempted.
+- no real health data was used; version 80's authenticated Profile/Food/Admin
+  acceptance used temporary values that were restored or deleted.
 - version 79 then rendered the explicitly enabled `demo` tenant's twelve-point
   one-hour lab seed in the same unchanged official chart.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930` reused the same
-250 Static Assets entries and passed the 72-assertion credential-free remote
-API/Engine.IO gate. Version 78 retains the named official-client and clean-
-browser transport acceptance; version 79 adds the displayed lab feed.
+Cloudflare version `407dbd03-4a4f-454a-b9a2-1304deb19ac2` reused the same
+250 Static Assets entries and passed the 77-assertion credential-free remote
+API/Engine.IO/Pebble gate. Version 78 retains the named official-client and
+clean-browser transport acceptance; version 79 adds the displayed lab feed;
+version 80 adds the authenticated Profile/Food/Admin/Reports acceptance.
 
-Authenticated Profile Save remains historical evidence from an earlier
-version; the current load is recorded above, but no authenticated Food/Profile
-write was attempted in this release.
-
-This does not prove longer-running stability, authenticated Profile Save, Food/Admin
-mutation, report generation or every other protected page workflow.
+This does not prove longer-running stability, a protected mutation observed
+through the pushed live-update path, every plugin workflow or real closed-loop
+client compatibility.
 
 ## Known limitations
 

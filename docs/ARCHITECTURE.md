@@ -6,15 +6,16 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `1ffa2ab` and Cloudflare
-version `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930`. The
-candidate's 63-file Workers-runtime suite passes 695/695 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `7fe1880f580a` and
+Cloudflare version `407dbd03-4a4f-454a-b9a2-1304deb19ac2`. The
+candidate's 64-file Workers-runtime suite passes 700/700 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 134/134 unchanged tests across twenty
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1190.22 KiB
-raw / 219.90 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 79 reported a 33 ms startup and passed credential-free
-API, official Socket.IO-client, EIO4 and clean-profile real-browser gates.
+Wrangler processed 250 Static Assets entries; its dry run reported 1194.89 KiB
+raw / 220.95 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 80 reported a 25 ms startup and passed the
+77-assertion credential-free API, official Socket.IO-client, EIO4, Pebble and
+authenticated official-page browser gates.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -85,9 +86,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 63 Workers files / 695 tests, 22/22 audits, eleven direct upstream
+evidence is 64 Workers files / 700 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty direct upstream server/data-plugin files / 134 tests; the
-dry run is 1190.22 KiB raw / 219.90 KiB gzip with 250 assets and two bindings.
+dry run is 1194.89 KiB raw / 220.95 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -107,6 +108,8 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - v2 ddata/properties/summary stateless response adaptation
   - request-local locked Settings defaults, accessors, feature/alarm resolution
     and secure status filtering
+  - request-local locked legacy `/pebble` response adaptation over bounded
+    Entries/plugin context
   - inherited v1/v2 notification ACK authorization and HTTP adaptation
   - byte-identical official Socket.IO browser client plus optional test-tenant query adapter
   - strict `/socket.io/` EIO4 polling and direct-WebSocket adapters
@@ -1106,7 +1109,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930`. Current credential-free remote smoke
+`407dbd03-4a4f-454a-b9a2-1304deb19ac2`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal and AR2 properties and the opt-in-disabled
@@ -1132,6 +1135,16 @@ tenant. The official homepage rendered its one-hour seed through the existing
 Entries/root-delta path; the `01:40` and `01:45` alarm turns appended new rows
 and the open page advanced without reload. All other tenants remain disabled
 by default.
+Version 80 added `src/pebble.ts`, a request-local adapter for the locked
+`lib/server/pebble.js` contract. It preserves count/order, units, trend/delta,
+uploader battery, raw/calibration and IOB/COB display shapes while capping a
+request at 1,000 Entries. The 77-assertion smoke read the endpoint on a fresh
+tenant, and the public `demo` tenant returned the newest two continuing
+simulated Entries. The authenticated browser pass saved/reloaded/restored the
+current Profile, created/read/deleted one temporary Food row, created/removed
+one temporary Admin role and generated the Report output (30 SVGs and eight
+canvases). The official homepage then displayed `129 mg/dL`, `+3` and
+`FortyFiveUp`; all temporary mutations were restored or removed.
 No real CGM or closed-loop traffic was used. Four fresh-tenant Admin-notification probes returned the readable-site
 count while hiding the body, and the real browser retained the official Admin,
 clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send

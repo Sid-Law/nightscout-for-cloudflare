@@ -114,6 +114,10 @@ for diagnosis, dosing, or medical decisions.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
+- The locked legacy `/pebble` endpoint, including newest-first/count behavior,
+  mg/dL and mmol/L formatting, direction/trend, delta, uploader battery, raw
+  calibration fields and the official IOB/COB display mapping. Its request-local
+  data projection and 1,000-row ceiling are Cloudflare adapter boundaries.
 - The byte-identical official Nightscout Socket.IO 4.5.4 browser client from
   the locked v15.0.7 tree. The official homepage, Admin, Profile, Food and
   Reporting pages now connect it directly to NSCF's EIO4 polling root and
@@ -228,7 +232,8 @@ the direct-WebSocket at-most-once crash window, profile-switch/plugin
 preprocessing on root updates, remaining background-task kinds, general server
 plugin execution, automatic BWP and remaining plugin alarm generation,
 external push providers, plugin-derived v2 summary
-state/persistence, and end-to-end verification of every official page workflow.
+state/persistence, and a protected mutation observed through the pushed live
+page update path.
 The official homepage now uses the implemented EIO4 polling endpoint and
 `/alarm` namespace. It does not yet prove polling-to-WebSocket upgrade, EIO3,
 every pushed mutation workflow or the still-missing server-side plugin
@@ -532,14 +537,14 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 12 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 11 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `1ffa2ab`. The 63-file Workers-runtime
-suite passes 695/695 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `7fe1880`. The 64-file Workers-runtime
+suite passes 700/700 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty locked server/data-plugin
 files pass 134/134 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1190.22 KiB raw / 219.90 KiB gzip and exposes only
+reports 1194.89 KiB raw / 220.95 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -644,8 +649,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 12 unresolved plugin/test
-algorithms. The manifest records fifteen direct passes, 82 adapted, 12 unresolved
+Node plugin `require` without fabricating the 11 unresolved plugin/test
+algorithms. The manifest records fifteen direct passes, 83 adapted, 11 unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -699,13 +704,13 @@ version, matching v1/v2 Settings snapshots, real ddata/database-size values,
 the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB,
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
-missing-token API3 Entries returned the expected 401. The current 72-assertion script
-used fresh tenant `public-smoke-1784684130172`, observed 270,336 SQLite bytes and a
+missing-token API3 Entries returned the expected 401. The current 77-assertion script
+used fresh tenant `public-smoke-1784686572692`, observed 270,336 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
 secure fields and method functions.
-The reusable 72-assertion smoke deliberately sent no credential and confirmed
+The reusable 77-assertion smoke deliberately sent no credential and confirmed
 that anonymous mutation fails closed. A separate authenticated 25-entry
 simulator write/read returned HTTP 200; UUID identity mutation and legacy-row
 repair remain local contract evidence.
@@ -767,6 +772,20 @@ deployment: twelve one-hour seed points appeared in the official chart and the
 same DO appended the `01:40` and `01:45` readings. The already-open official
 page advanced to the newest value without a reload. Fresh or ordinary tenants
 remain disabled, so this does not fabricate glucose for normal deployments.
+
+Version 80 (`407dbd03-4a4f-454a-b9a2-1304deb19ac2`) deploys the locked legacy
+`/pebble` adapter. The 77-assertion credential-free remote smoke passed against
+fresh tenant `public-smoke-1784686572692`; a live `demo` Pebble read returned
+the newest two ordinary Entries with the official display shape. An
+authenticated real-browser acceptance renamed, saved and reloaded the current
+Profile and then restored its original name; created/read/deleted a temporary
+Food item; created and removed a temporary Admin role; and generated the
+official Report page output (30 SVGs and eight canvases). The homepage then
+rendered the continuing simulated stream at `129 mg/dL`, `+3` and
+`FortyFiveUp`. All temporary acceptance records were removed or restored. No
+real health data, CGM credential or closed-loop traffic was used, and a
+protected mutation observed through the pushed live-update path remains a
+separate gate.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
