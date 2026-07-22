@@ -575,10 +575,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       retroDeviceStatus: (now) => this.realtimeRetroDeviceStatus(now),
       status: (now) => nightscoutWebsocketStatus(
         new Date(now),
-        undefined,
+        this.activeProfileFromSwitch(now),
         this.env.AUTH_DEFAULT_ROLES ?? "readable",
         this.tenantStatusSettings(),
       ),
+      activeProfile: (now) => this.activeProfileFromSwitch(now),
       authorize: (message) => this.realtimeAuthorize(message),
       authorizeStorage: (message) => this.realtimeStorageAuthorize(message),
       authorizeAlarm: (message) => this.realtimeAlarmAuthorize(message),
@@ -1873,6 +1874,29 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
   private tenantStatusSettings(): NightscoutStatusSettingsOverrides {
     return deriveTenantStatusSettings(this.env, this.latestStatusProfile());
+  }
+
+  /** Locked dataloader's latest one-year zero-duration Profile Switch marker. */
+  private activeProfileFromSwitch(now: number): string | null {
+    for (const row of this.ctx.storage.sql.exec<{ profile: SqlStorageValue }>(
+      `SELECT json_extract(body, '$.profile') AS profile
+       FROM documents
+       WHERE collection = 'treatments'
+         AND json_extract(body, '$.eventType') = 'Profile Switch'
+         AND json_type(body, '$.duration') IN ('integer', 'real')
+         AND CAST(json_extract(body, '$.duration') AS REAL) = 0
+         AND sort_time >= ?
+         AND sort_time <= ?
+       ORDER BY sort_time DESC, updated_at DESC, id ASC
+       LIMIT 1`,
+      now - PROFILE_SWITCH_WINDOW_MS,
+      now,
+    )) {
+      return typeof row.profile === "string" && row.profile.length > 0
+        ? row.profile
+        : null;
+    }
+    return null;
   }
 
   nightscoutHttpStatus(now: number): string {

@@ -127,6 +127,7 @@ export interface RealtimeServiceOptions {
   snapshot?: (now: number) => RealtimeSnapshot | null;
   retroDeviceStatus?: (now: number) => unknown[] | null;
   status?: (now: number) => Record<string, unknown>;
+  activeProfile?: (now: number) => string | null;
 }
 
 export class RealtimeSessionError extends Error {
@@ -301,7 +302,11 @@ function deltaDocuments(values: unknown[]): RealtimeDeltaDocument[] {
   });
 }
 
-function deltaState(snapshot: RealtimeSnapshot, now: number): RealtimeDeltaState {
+function deltaState(
+  snapshot: RealtimeSnapshot,
+  now: number,
+  activeProfile: string | null,
+): RealtimeDeltaState {
   return {
     sgvs: deltaDocuments(snapshot.sgvs),
     treatments: deltaDocuments(snapshot.treatments),
@@ -313,6 +318,7 @@ function deltaState(snapshot: RealtimeSnapshot, now: number): RealtimeDeltaState
     activity: [],
     dbstats: snapshot.dbstats,
     lastUpdated: now,
+    activeProfile,
   };
 }
 
@@ -327,6 +333,7 @@ export class RealtimeSessionService {
   private readonly snapshot: NonNullable<RealtimeServiceOptions["snapshot"]>;
   private readonly retroDeviceStatus: NonNullable<RealtimeServiceOptions["retroDeviceStatus"]>;
   private readonly status: RealtimeServiceOptions["status"];
+  private readonly activeProfile: NonNullable<RealtimeServiceOptions["activeProfile"]>;
   private readonly waiters = new Map<string, PollWaiter>();
   private readonly pendingApplicationWakeSids = new Set<string>();
 
@@ -346,6 +353,7 @@ export class RealtimeSessionService {
       this.snapshot(now)?.devicestatus ?? null
     );
     this.status = options.status;
+    this.activeProfile = options.activeProfile ?? (() => null);
   }
 
   createHandshake(): { sid: string; payload: string } {
@@ -809,7 +817,7 @@ export class RealtimeSessionService {
     const now = this.now();
     const snapshot = this.snapshot(now);
     if (snapshot === null) return;
-    const encoded = JSON.stringify(deltaState(snapshot, now));
+    const encoded = JSON.stringify(deltaState(snapshot, now, this.activeProfile(now)));
     this.storage.transactionSync(() => {
       this.repository.initializeRootDataState(encoded, now);
     });
@@ -825,7 +833,7 @@ export class RealtimeSessionService {
     const now = this.now();
     const snapshot = this.snapshot(now);
     if (snapshot === null) return;
-    const current = deltaState(snapshot, now);
+    const current = deltaState(snapshot, now, this.activeProfile(now));
     const currentJson = JSON.stringify(current);
     const previousJson = this.repository.rootDataStateJson();
     this.repository.replaceRootDataState(currentJson, now);
@@ -842,7 +850,23 @@ export class RealtimeSessionService {
       return;
     }
 
-    const delta = calculateRealtimeDelta(previous, current);
+    let delta = calculateRealtimeDelta(previous, current);
+    if (
+      previous.activeProfile !== current.activeProfile &&
+      this.status !== undefined
+    ) {
+      // Locked websocket.js adds a fresh status object only when the latest
+      // zero-duration Profile Switch changes. Keep the active-profile marker
+      // in the durable baseline, but never expose that private comparison key
+      // as an extra root payload field.
+      delta = delta.delta === true
+        ? { ...delta, status: this.status(now) }
+        : {
+            delta: true,
+            lastUpdated: now,
+            status: this.status(now),
+          };
+    }
     if (delta.delta !== true) return;
 
     let frame: string;

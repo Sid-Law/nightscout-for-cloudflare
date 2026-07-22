@@ -140,6 +140,70 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       .toMatchObject({ type: "connect", namespace: "/" });
   });
 
+  it("publishes the active Profile Switch in initial and reconstructed root status", async () => {
+    const stub = store("realtime-profile-switch-status");
+    const firstAt = Date.now() - 60_000;
+    await stub.saveDocuments("treatments", JSON.stringify([{
+      eventType: "Profile Switch",
+      profile: "School",
+      duration: 0,
+      mills: firstAt,
+      created_at: new Date(firstAt).toISOString(),
+    }]));
+
+    const opened = await stub.realtimeHandshake();
+    if (!opened.ok) throw new Error(opened.error.message);
+    await rpcPost(
+      stub,
+      opened.value.sid,
+      clientPayload({ type: "connect", namespace: "/" }),
+    );
+    await stub.realtimePoll(opened.value.sid);
+    await rpcPost(stub, opened.value.sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 2,
+      data: ["authorize", { client: "web", status: true }],
+    }));
+    const authorized = await stub.realtimePoll(opened.value.sid);
+    if (!authorized.ok) throw new Error(authorized.error.message);
+    const authorizedPackets = decodeEngineIoV4PollingPayload(authorized.value)
+      .map((packet) => unwrapSocketIoV5Packet(packet));
+    expect(authorizedPackets).toContainEqual(expect.objectContaining({
+      type: "event",
+      namespace: "/",
+      data: ["dataUpdate", expect.objectContaining({
+        status: expect.objectContaining({ activeProfile: "School" }),
+      })],
+    }));
+
+    await evictDurableObject(stub);
+    const resumed = env.ENTRY_STORE.getByName(stub.name!);
+    const secondAt = firstAt + 30_000;
+    await resumed.saveDocuments("treatments", JSON.stringify([{
+      eventType: "Profile Switch",
+      profile: "Weekend",
+      duration: 0,
+      mills: secondAt,
+      created_at: new Date(secondAt).toISOString(),
+    }]));
+    const pushed = await resumed.realtimePoll(opened.value.sid);
+    if (!pushed.ok) throw new Error(pushed.error.message);
+    const pushedPackets = decodeEngineIoV4PollingPayload(pushed.value)
+      .map((packet) => unwrapSocketIoV5Packet(packet));
+    expect(pushedPackets).toContainEqual(expect.objectContaining({
+      type: "event",
+      namespace: "/",
+      data: ["dataUpdate", expect.objectContaining({
+        delta: true,
+        status: expect.objectContaining({ activeProfile: "Weekend" }),
+        treatments: expect.arrayContaining([
+          expect.objectContaining({ eventType: "Profile Switch", profile: "Weekend" }),
+        ]),
+      })],
+    }));
+  });
+
   it("accepts only tenant-valid explicit realtime credentials and ACKs resolved permissions", async () => {
     const stub = store("realtime-explicit-auth");
     const createdJson = await stub.createDocuments(
