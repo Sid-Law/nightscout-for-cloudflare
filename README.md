@@ -1056,6 +1056,25 @@ chart; Admin Tools loaded seven default roles and reported `Admin authorized`.
 JSONP/binary and the direct-send crash window remain explicit gaps; no real
 device or closed-loop instruction was used.
 
+Project release 95 (`607733cc-2c05-44bc-bde3-17c94be68aff`) deploys commit
+`a4e2267` and closes a separate API v2 ddata omission without changing the
+root page protocol. Locked `dataloader.loadActivity()` projects the newest two
+days of Activity as oldest-first `{mills, heartrate, steps, activitylevel}`
+rows, de-duplicates equal instants and caps an explicit historical frame at
+its requested time. NSCF now preserves that shape, including ISO `mills` and
+the locked `page:{frame:true,after}` metadata. The official root
+`dataWithRecentStatuses()` still omits Activity, exactly as upstream does.
+The full local gate passed 71 Workers files / 787 tests, 23/23 audits, 42/42
+unchanged client tests and 143/143 unchanged server/data-plugin tests; the dry
+bundle was 1291.33 KiB raw / 237.34 KiB gzip. After an immediate old-edge
+propagation response, the accepted 156-assertion public smoke passed on
+`public-smoke-1784717472600`, including the new current/frame ddata fields and
+all EIO3/EIO4 WebSocket gates. The official browser displayed `117 mg/dL`, its
+trend and chart with no dialog or console error; Admin Tools remained loaded
+and authorized. Derived summary/plugin Activity persistence remains a separate
+unfinished background feature; no real health data or closed-loop instruction
+was used.
+
 The APNs transport follows Apple's current provider-token and notification
 request specifications and Cloudflare's current Web Crypto/fetch APIs:
 [Apple token authentication](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns),

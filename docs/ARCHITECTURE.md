@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `329aaca` and
-Cloudflare version `1f7badbb-cdab-4031-8f55-f350c5277ae2`. The
-candidate's 71-file Workers-runtime suite passes 785/785 plus 23/23 audit tests,
+“Current” below describes deployed evidence candidate `a4e2267` and
+Cloudflare version `607733cc-2c05-44bc-bde3-17c94be68aff`. The
+candidate's 71-file Workers-runtime suite passes 787/787 plus 23/23 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1289.67 KiB
-raw / 237.03 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Project release 94 reported a 24 ms startup and passed the
-150-assertion credential-free API, real EIO3/EIO4 direct-or-upgraded WSS, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1291.33 KiB
+raw / 237.34 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Project release 95 reported a 28 ms startup and passed the
+156-assertion credential-free API, real EIO3/EIO4 direct-or-upgraded WSS, Pebble and
 real-browser gates. The authenticated Profile save/reload/restore and its
 live-page `dataUpdate`/`retroUpdate` observation are current release evidence;
 the broader Food/Admin/Reports acceptance remains version-80 evidence.
@@ -1219,6 +1219,18 @@ save/pushed-page path passed in project release 93. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
+
+Project release 95 separates the two upstream Activity surfaces instead of
+inventing one shared payload. `/api/v2/ddata/at` is based on `ddata.clone()`
+and now receives a SQLite projection of the locked two-day oldest-first
+Activity loader: equal instants collapse, `mills` serializes as normalized ISO,
+and explicit historical frames apply the upper bound and expose
+`page:{frame:true,after}`. Root Socket.IO authorization remains based on
+`dataWithRecentStatuses()` and intentionally has no Activity field. The query
+is streamed through the existing 900-KB/8,000-node/2,000-document budget so an
+oversized lower-priority Activity set cannot erase the glucose-first snapshot.
+This is collection/query compatibility; derived summary/plugin Activity
+persistence remains unfinished background behavior.
 
 Project release 94 completes EIO3 direct WebSocket and polling upgrade without
 changing the official page transport. The locked Socket.IO 4.5.4

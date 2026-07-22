@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `329aaca`
-- Runtime source candidate: `329aaca`
-- Git commit matching the deployed runtime worktree: `329aaca`
-- Cloudflare Version ID: `1f7badbb-cdab-4031-8f55-f350c5277ae2`
-- Project release sequence: `94`; Wrangler 4.113.0 did not print a numeric
+- Deployed runtime candidate: `a4e2267`
+- Runtime source candidate: `a4e2267`
+- Git commit matching the deployed runtime worktree: `a4e2267`
+- Cloudflare Version ID: `607733cc-2c05-44bc-bde3-17c94be68aff`
+- Project release sequence: `95`; Wrangler 4.113.0 did not print a numeric
   Cloudflare ordinal for this deployment
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T09:48:26.172Z`
+- Version creation time: `2026-07-22T10:50:47.009Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Deployment creation time: `2026-07-22T09:48:27.199Z`
-- Worker startup: 24 ms
+- Deployment creation time: `2026-07-22T10:50:48.095Z`
+- Worker startup: 28 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -36,8 +36,8 @@ is not counted as API, plugin or real-time compatibility.
   plugin-runtime-state table used by xDrip-js notification throttling
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–94 reused them unchanged
-- Upload: 1289.67 KiB raw / 237.03 KiB gzip
+  versions 76–95 reused them unchanged
+- Upload: 1291.33 KiB raw / 237.34 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -381,6 +381,38 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   live delta update. Settings/About reported Nightscout 15.0.7 and captured
   browser logs contained zero warnings/errors. No real health data or
   closed-loop client was used.
+
+## Project release 95 v2 ddata Activity increment
+
+- Commit `a4e2267` ports the locked `dataloader.loadActivity()` projection to
+  `/api/v2/ddata/at`: two-day oldest-first selection, equal-instant
+  de-duplication, normalized ISO `mills`, and the exact four projected fields.
+  Explicit historical frames apply the upper bound and expose
+  `page:{frame:true,after}`. Root Socket.IO authorization deliberately remains
+  based on `dataWithRecentStatuses()` and does not gain an Activity field.
+- Local gates passed: 71 Workers files / 787 tests, 23/23 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript and dry run. The dry bundle is 1291.33 KiB raw / 237.34 KiB gzip
+  with 250 assets and only `ENTRY_STORE` plus `ASSETS`. Wrangler 4.113.0 and
+  Workers types 5.20260722.1 were still the latest published versions.
+- Cloudflare version `607733cc-2c05-44bc-bde3-17c94be68aff` was created at
+  `2026-07-22T10:50:47.009Z`, deployed at `2026-07-22T10:50:48.095Z`, receives
+  100% traffic and starts in 28 ms. The first immediate smoke reached an old
+  propagation edge that lacked `activity`; the repeated clean-tenant run is
+  the accepted result.
+- The 156-assertion public smoke passed on isolated tenant
+  `public-smoke-1784717472600`. It checked empty current and historical
+  Activity buckets, explicit frame metadata, every prior API gate, real EIO3
+  direct WSS and both EIO3/EIO4 polling upgrades. It reported 307,200 SQLite
+  bytes and sent no credential or protected mutation.
+- The unchanged official homepage displayed `117 mg/dL`, its trend, two SVGs
+  and eleven chart paths with no dialog or console error. Admin Tools displayed
+  eight action buttons and `Admin authorized`; the locked secondary page still
+  logs its two known missing-`#chartContainer` warnings. No real CGM, pump or
+  closed-loop instruction was used.
+- This closes Activity collection projection in ddata, not derived
+  summary/plugin Activity persistence; the latter remains explicit background
+  work.
 
 ## Project release 94 EIO3 WebSocket increment
 
@@ -1249,11 +1281,15 @@ broader version-72/73/74 page checks:
   one-minute-old simulated data and the populated chart. Admin Tools loaded
   all seven default roles, every cleanup group and `Admin authorized` after
   the EIO3 WebSocket deployment.
+- project release 95 reloaded the unchanged homepage showing `117 mg/dL`, its
+  trend and the two-SVG/eleven-path chart with no dialog or console error.
+  Admin Tools showed eight visible action buttons and `Admin authorized` after
+  the v2 ddata Activity deployment.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `1f7badbb-cdab-4031-8f55-f350c5277ae2` reused the same
-250 Static Assets entries and passed the 150-assertion credential-free remote
+Cloudflare version `607733cc-2c05-44bc-bde3-17c94be68aff` reused the same
+250 Static Assets entries and passed the 156-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
@@ -1274,7 +1310,8 @@ notification-producer registry; version 92 restores the separate protected
 Loop APNs route with Workers-native ES256/fetch transport and no lab delivery;
 project release 93 adds clean-source deployment preparation and protected
 Profile save/pushed-page evidence; project release 94 adds direct and upgraded
-EIO3 WebSocket compatibility.
+EIO3 WebSocket compatibility; project release 95 adds the locked v2 ddata
+Activity/frame projection.
 
 This does not prove longer-running stability, every plugin workflow or real
 closed-loop client compatibility.
@@ -1346,7 +1383,9 @@ closed-loop client compatibility.
 - The generic alarm-driven background scheduler is deployed in schema v14. One
   task covers AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
   enabled Treatment Notify, opt-in Timeago and opt-in DBSize. Remaining
-  plugin-derived summary/activity state still needs producer/persistence adapters. Alarm ACK/silence state
+  plugin-derived summary/Activity state still needs producer/persistence
+  adapters; the separate ddata Activity collection projection is complete.
+  Alarm ACK/silence state
   originates in schema v10 and schema v13 adds last-emission state consumed by
   the adapted core processor. Schema v16 durably coalesces rapid mutation
   triggers for that task without delaying realtime publication. API3 pruning
