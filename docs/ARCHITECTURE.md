@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `a4e2267` and
-Cloudflare version `607733cc-2c05-44bc-bde3-17c94be68aff`. The
-candidate's 71-file Workers-runtime suite passes 787/787 plus 23/23 audit tests,
+“Current” below describes deployed evidence candidate `c0340fe` and
+Cloudflare version `dd737733-764d-4151-959e-10067308f3ed`. The
+candidate's 71-file Workers-runtime suite passes 789/789 plus 23/23 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1291.33 KiB
-raw / 237.34 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Project release 95 reported a 28 ms startup and passed the
-156-assertion credential-free API, real EIO3/EIO4 direct-or-upgraded WSS, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1300.86 KiB
+raw / 238.91 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Project release 96 reported a 34 ms startup and passed the
+165-assertion credential-free API, real EIO3/EIO4 direct-or-upgraded WSS, Pebble and
 real-browser gates. The authenticated Profile save/reload/restore and its
 live-page `dataUpdate`/`retroUpdate` observation are current release evidence;
 the broader Food/Admin/Reports acceptance remains version-80 evidence.
@@ -1219,6 +1219,20 @@ save/pushed-page path passed in project release 93. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
+
+Project release 96 stops treating root authorization and v2 ddata as aliases.
+The `/api/v2/ddata/at` adapter now represents the full enumerable
+`ddata.clone()` surface: complete latest Profile store, full bounded one-day
+DeviceStatus loader, raw Food, the ordinary 2.5-day Treatment window plus
+one-year zero-duration Profile Switch and 62-day age-event markers,
+`lastProfileFromSwitch`, Activity and all eight `processTreatments(true)`
+arrays. The root `dataWithRecentStatuses()` projection independently removes
+`@@@@@` Profile stores, retains ten statuses per device/type and omits Activity
+and derived buckets. Current requests additionally read at most 100 Treatments
+whose durable `updated_at` is within 15 minutes, reproducing the Node hot-cache
+visibility of freshly submitted backdated data across DO eviction. Explicit
+historical frames never use this recent-mutation path. Every cursor remains
+inside the shared 900-KB/8,000-node/2,000-document payload budget.
 
 Project release 95 separates the two upstream Activity surfaces instead of
 inventing one shared payload. `/api/v2/ddata/at` is based on `ddata.clone()`

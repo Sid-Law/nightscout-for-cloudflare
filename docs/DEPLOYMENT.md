@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `a4e2267`
-- Runtime source candidate: `a4e2267`
-- Git commit matching the deployed runtime worktree: `a4e2267`
-- Cloudflare Version ID: `607733cc-2c05-44bc-bde3-17c94be68aff`
-- Project release sequence: `95`; Wrangler 4.113.0 did not print a numeric
+- Deployed runtime candidate: `c0340fe`
+- Runtime source candidate: `c0340fe`
+- Git commit matching the deployed runtime worktree: `c0340fe`
+- Cloudflare Version ID: `dd737733-764d-4151-959e-10067308f3ed`
+- Project release sequence: `96`; Wrangler 4.113.0 did not print a numeric
   Cloudflare ordinal for this deployment
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T10:50:47.009Z`
+- Version creation time: `2026-07-22T11:15:04.593Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Deployment creation time: `2026-07-22T10:50:48.095Z`
-- Worker startup: 28 ms
+- Deployment creation time: `2026-07-22T11:15:05.550Z`
+- Worker startup: 34 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -36,8 +36,8 @@ is not counted as API, plugin or real-time compatibility.
   plugin-runtime-state table used by xDrip-js notification throttling
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–95 reused them unchanged
-- Upload: 1291.33 KiB raw / 237.34 KiB gzip
+  versions 76–96 reused them unchanged
+- Upload: 1300.86 KiB raw / 238.91 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -381,6 +381,37 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   live delta update. Settings/About reported Nightscout 15.0.7 and captured
   browser logs contained zero warnings/errors. No real health data or
   closed-loop client was used.
+
+## Project release 96 full v2 ddata split
+
+- Commit `c0340fe` separates `/api/v2/ddata/at`'s full enumerable
+  `ddata.clone()` from root Socket.IO authorization's
+  `dataWithRecentStatuses()`. Ddata now keeps the complete latest Profile store,
+  full bounded one-day DeviceStatus loader, raw Food, the official Treatment
+  ordinary/Profile-Switch/age-event loaders, `lastProfileFromSwitch`, Activity
+  and all eight `processTreatments(true)` arrays. Root authorization retains its
+  official private-Profile removal, ten-status-per-device/type compression and
+  omission of Activity/derived buckets.
+- A bounded current-only query for at most 100 Treatments mutated during the
+  preceding 15 minutes is the durable equivalent of the upstream in-memory hot
+  cache. It makes a freshly submitted backdated API3 Treatment immediately
+  visible after DO eviction. Explicit historical frames never use this path.
+- Local gates passed: 71 Workers files / 789 tests, 23/23 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript and dry run. The dry bundle is 1300.86 KiB raw / 238.91 KiB gzip
+  with 250 unchanged assets and only `ENTRY_STORE` plus `ASSETS`.
+- Cloudflare version `dd737733-764d-4151-959e-10067308f3ed` was created at
+  `2026-07-22T11:15:04.593Z`, deployed at `2026-07-22T11:15:05.550Z`, receives
+  100% traffic and starts in 34 ms.
+- The 165-assertion public smoke passed on isolated tenant
+  `public-smoke-1784718918966`. It checked a fresh current ddata payload's null
+  `lastProfileFromSwitch` and eight empty derived buckets together with every
+  prior API, EIO3/EIO4 polling, direct WSS and upgrade gate. It reported 307,200
+  SQLite bytes and sent no real health data or closed-loop instruction.
+- The unchanged official homepage displayed `129 mg/dL`, two-minute-old
+  simulated data, two SVGs, 129 circles and a populated chart with no console
+  error. Admin Tools loaded zero subjects, all seven system roles, eight action
+  buttons and `Admin authorized`.
 
 ## Project release 95 v2 ddata Activity increment
 
@@ -1285,11 +1316,15 @@ broader version-72/73/74 page checks:
   trend and the two-SVG/eleven-path chart with no dialog or console error.
   Admin Tools showed eight visible action buttons and `Admin authorized` after
   the v2 ddata Activity deployment.
+- project release 96 reloaded the unchanged homepage showing `129 mg/dL`,
+  two-minute-old simulated data and the populated SVG chart without console
+  errors. Admin Tools loaded all seven system roles and remained `Admin
+  authorized` after the full v2 ddata/root split.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `607733cc-2c05-44bc-bde3-17c94be68aff` reused the same
-250 Static Assets entries and passed the 156-assertion credential-free remote
+Cloudflare version `dd737733-764d-4151-959e-10067308f3ed` reused the same
+250 Static Assets entries and passed the 165-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
@@ -1311,7 +1346,9 @@ Loop APNs route with Workers-native ES256/fetch transport and no lab delivery;
 project release 93 adds clean-source deployment preparation and protected
 Profile save/pushed-page evidence; project release 94 adds direct and upgraded
 EIO3 WebSocket compatibility; project release 95 adds the locked v2 ddata
-Activity/frame projection.
+Activity/frame projection; project release 96 separates the full v2 ddata clone
+from the root authorization projection and adds every enumerable Treatment
+bucket.
 
 This does not prove longer-running stability, every plugin workflow or real
 closed-loop client compatibility.

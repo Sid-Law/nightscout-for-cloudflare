@@ -1075,6 +1075,25 @@ and authorized. Derived summary/plugin Activity persistence remains a separate
 unfinished background feature; no real health data or closed-loop instruction
 was used.
 
+Project release 96 (`dd737733-764d-4151-959e-10067308f3ed`) deploys commit
+`c0340fe` and separates the complete `/api/v2/ddata/at` clone from the smaller
+root Socket.IO authorization snapshot. Ddata now keeps the full latest Profile
+store, the full bounded one-day DeviceStatus loader, raw Food shape,
+`lastProfileFromSwitch`, the locked Treatment windows/age markers and all eight
+enumerable `processTreatments(true)` buckets. Root authorization independently
+continues to remove `@@@@@` Profile history, retain only ten recent statuses per
+device/type, and omit Activity and the derived Treatment buckets. A durable
+15-minute recent-mutation adapter preserves the upstream hot-cache behavior for
+freshly written backdated Treatments without making historical frames
+unbounded. The full local gate passed 71 Workers files / 789 tests, 23/23
+audits, 42/42 unchanged client tests and 143/143 unchanged server/data-plugin
+tests; the dry bundle was 1300.86 KiB raw / 238.91 KiB gzip. The accepted
+165-assertion public smoke passed on `public-smoke-1784718918966`. The unchanged
+official homepage displayed `129 mg/dL`, two-minute-old simulated data and its
+SVG chart without console errors; Admin Tools loaded all seven system roles and
+reported `Admin authorized`. No real health data or closed-loop instruction was
+used.
+
 The APNs transport follows Apple's current provider-token and notification
 request specifications and Cloudflare's current Web Crypto/fetch APIs:
 [Apple token authentication](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns),
