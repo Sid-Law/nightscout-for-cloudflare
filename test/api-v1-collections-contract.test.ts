@@ -329,10 +329,105 @@ describe("locked v1/v2 collection upload contracts", () => {
     await expectLegacyIdError(await write(name, "DELETE", "/api/v1/food/bad-food-delete"), "bad-food-delete");
 
     expect(await (await write(name, "DELETE", `/api/v1/food/${String(formFood?._id)}`)).json()).toEqual({});
-    expect(await (await SELF.fetch(endpoint(
+    const remaining = await (await SELF.fetch(endpoint(
       `/api/v1/food?find[_id]=${String(formFood?._id)}`,
       name,
-    ))).json()).toEqual([]);
+    ))).json<JsonObject[]>();
+    // Locked Food.list() ignores query parameters; verify deletion by ID
+    // without accidentally turning this endpoint into the generic query API.
+    expect(remaining.some((document) => document._id === formFood?._id)).toBe(false);
+    expect(remaining).toHaveLength(5);
+  });
+
+  it("preserves raw non-Treatment documents and the locked Food helper queries", async () => {
+    const name = tenant("v1-food-helpers");
+    const created = await write(name, "POST", "/api/v1/food/", [
+      { type: "quickpick", name: "Numeric Ten", hidden: "false", position: 10 },
+      { type: "quickpick", name: "Numeric Two", hidden: "false", position: 2 },
+      { type: "quickpick", name: "String Ten", hidden: "false", position: "10" },
+      { type: "quickpick", name: "String Two", hidden: "false", position: "2" },
+      { type: "quickpick", name: "Boolean False", hidden: false, position: 0 },
+      { type: "quickpick", name: "Hidden", hidden: "true", position: 1 },
+      { type: "food", name: "Rice", carbs: "28" },
+      { type: "food", name: "Apple", carbs: 15 },
+    ]);
+    expect(created.status).toBe(200);
+
+    const quickpicks = await (
+      await SELF.fetch(endpoint(
+        "/api/v1/food/quickpicks.json?count=1&find[name]=Hidden&sort[position]=-1",
+        name,
+      ))
+    ).json<JsonObject[]>();
+    expect(quickpicks.map((document) => document.name)).toEqual([
+      "Numeric Two",
+      "Numeric Ten",
+      "String Ten",
+      "String Two",
+    ]);
+    expect(quickpicks.every((document) => document.hidden === "false")).toBe(true);
+    expect(quickpicks.every((document) => !("insulin" in document))).toBe(true);
+
+    const inherited = await (
+      await SELF.fetch(endpoint("/api/v2/food/quickpicks.json?count=1", name))
+    ).json<JsonObject[]>();
+    expect(inherited.map((document) => document.name)).toEqual(
+      quickpicks.map((document) => document.name),
+    );
+
+    const regular = await (
+      await SELF.fetch(endpoint("/api/v1/food/regular.json?count=1", name))
+    ).json<JsonObject[]>();
+    expect(regular).toHaveLength(2);
+    expect(regular).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Rice", carbs: "28" }),
+      expect.objectContaining({ name: "Apple", carbs: 15 }),
+    ]));
+    expect(regular.every((document) => !("insulin" in document))).toBe(true);
+
+    const profileResponse = await write(
+      name,
+      "POST",
+      "/api/v1/profile/",
+      profile("raw-fields", new Date().toISOString()),
+    );
+    expect(profileResponse.status).toBe(200);
+    const listedProfiles = await (
+      await SELF.fetch(endpoint("/api/v1/profile/?count=10", name))
+    ).json<JsonObject[]>();
+    expect(listedProfiles).toHaveLength(1);
+    expect(listedProfiles[0]).not.toHaveProperty("carbs");
+    expect(listedProfiles[0]).not.toHaveProperty("insulin");
+
+    const singularIgnoresFind = await (
+      await SELF.fetch(endpoint(
+        "/api/v1/profile/?count=10&find[defaultProfile]=does-not-exist",
+        name,
+      ))
+    ).json<JsonObject[]>();
+    expect(singularIgnoresFind).toHaveLength(1);
+    expect(await (
+      await SELF.fetch(endpoint(
+        "/api/v1/profiles/?count=10&find[defaultProfile]=does-not-exist",
+        name,
+      ))
+    ).json()).toEqual([]);
+
+    for (const path of [
+      "/api/v1/food/not-a-route",
+      "/api/v2/profile/not-a-route",
+      "/api/v1/profiles/current",
+    ]) {
+      const response = await SELF.fetch(endpoint(path, name));
+      expect(response.status, path).toBe(404);
+    }
+    const pluralMutation = await write(
+      name,
+      "POST",
+      "/api/v1/profiles/",
+      profile("plural-mutation", new Date().toISOString()),
+    );
+    expect(pluralMutation.status).toBe(404);
   });
 
   it("adapts every upstream Profile object/array, Loop shape, identity, PUT and DELETE workflow", async () => {
@@ -411,10 +506,13 @@ describe("locked v1/v2 collection upload contracts", () => {
       },
     ]);
     await expectLegacyIdError(mixed, "bad-uuid");
-    expect(await (await SELF.fetch(endpoint(
+    const profilesAfterRejectedBatch = await (await SELF.fetch(endpoint(
       "/api/v1/profile?find[defaultProfile]=Default-must-not-partially-write",
       name,
-    ))).json()).toEqual([]);
+    ))).json<JsonObject[]>();
+    expect(profilesAfterRejectedBatch.some((document) =>
+      document.defaultProfile === "Default-must-not-partially-write"
+    )).toBe(false);
 
     expect(await (await write(name, "DELETE", `/api/v1/profile/${String(single?._id)}`)).json()).toEqual({});
   });

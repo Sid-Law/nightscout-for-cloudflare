@@ -2039,8 +2039,38 @@ async function handleEntriesApi(
 }
 
 interface CollectionRoute {
+  requested: "activity" | "food" | "profile" | "profiles" | "treatments" | "devicestatus";
   collection: DocumentCollection;
   segment: string | undefined;
+}
+
+function compareLegacyFoodPosition(left: unknown, right: unknown): number {
+  if (left === right) return 0;
+  if (left === undefined || left === null) return -1;
+  if (right === undefined || right === null) return 1;
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  // MongoDB sorts numeric BSON values before strings. Food Editor writes a
+  // consistent type per batch, but retaining this boundary avoids silently
+  // turning mixed legacy data into JavaScript's string-coercion order.
+  if (typeof left === "number") return -1;
+  if (typeof right === "number") return 1;
+  const leftText = String(left);
+  const rightText = String(right);
+  return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+}
+
+function legacyFoodRead(documents: JsonDocument[], segment: string | undefined): JsonDocument[] {
+  if (segment === "quickpicks") {
+    // Locked lib/server/food.js uses exact Mongo equality with the string
+    // "false" (Food Editor submits URL-encoded booleans), then position ASC.
+    return documents
+      .filter((document) => document.type === "quickpick" && document.hidden === "false")
+      .sort((left, right) => compareLegacyFoodPosition(left.position, right.position));
+  }
+  if (segment === "regular") {
+    return documents.filter((document) => document.type === "food");
+  }
+  return documents;
 }
 
 function collectionRoute(pathname: string): CollectionRoute | null {
@@ -2050,11 +2080,23 @@ function collectionRoute(pathname: string): CollectionRoute | null {
     pathname,
   );
   if (match === null) return null;
-  const requested = match[1];
+  const requested = match[1] as CollectionRoute["requested"];
   return {
+    requested,
     collection: requested === "profiles" ? "profile" : (requested as DocumentCollection),
     segment: match[2]?.replace(/\.json$/, ""),
   };
+}
+
+function isLegacyCollectionGetRoute(route: CollectionRoute): boolean {
+  if (route.requested === "food") {
+    return route.segment === undefined || route.segment === "quickpicks" || route.segment === "regular";
+  }
+  if (route.requested === "profile") {
+    return route.segment === undefined || route.segment === "current";
+  }
+  if (route.requested === "profiles") return route.segment === undefined;
+  return route.segment === undefined;
 }
 
 function defaultDocumentCount(collection: DocumentCollection, url: URL): number {
@@ -2065,6 +2107,15 @@ function defaultDocumentCount(collection: DocumentCollection, url: URL): number 
   return 10;
 }
 
+function legacyCount(url: URL, defaultCount: number): number {
+  const rawCount = url.searchParams.get("count") ?? String(defaultCount);
+  const count = Number(rawCount);
+  if (!Number.isInteger(count) || count < 1 || count > 10000) {
+    throw new ApiError(400, "invalid_query", "count must be an integer from 1 to 10000");
+  }
+  return count;
+}
+
 async function handleCollectionApi(
   request: Request,
   env: AppEnv,
@@ -2072,11 +2123,12 @@ async function handleCollectionApi(
 ): Promise<Response | null> {
   const route = collectionRoute(url.pathname);
   if (route === null) return null;
-  const { collection, segment } = route;
+  const { collection, requested, segment } = route;
   const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
   const uuidHandling = parseLegacyUuidHandling(env.UUID_HANDLING);
 
   if (request.method === "GET") {
+    if (!isLegacyCollectionGetRoute(route)) return null;
     await requirePermission(request, env, url, `api:${collection}:read`);
     const all = collection === "treatments"
       ? normalizeTreatmentNumbers(parseDocuments(await callUuidAwareRpc(
@@ -2096,15 +2148,16 @@ async function handleCollectionApi(
       )))
       : parseDocuments(await store.listDocuments(collection));
     if (collection === "profile" && segment === "current") return json(all[0] ?? null);
-    const requiredType =
-      collection === "food" && segment === "quickpicks"
-        ? "quickpick"
-        : collection === "food" && segment === "regular"
-          ? "food"
-          : undefined;
+    // The locked Food storage helpers do not consume request query options.
+    // Preserve their all/regular/quickpicks behavior instead of routing Food
+    // through the generic Profile/Activity query adapter.
     const filtered = collection === "treatments"
       ? all
-      : filterDocuments(all, url, defaultDocumentCount(collection, url), requiredType);
+      : collection === "food"
+        ? legacyFoodRead(all, segment)
+        : collection === "profile" && requested === "profile"
+          ? all.slice(0, legacyCount(url, defaultDocumentCount(collection, url)))
+          : filterDocuments(all, url, defaultDocumentCount(collection, url));
     if (collection === "activity" || collection === "treatments") {
       const lastModified = latestDocumentTime(filtered);
       if (lastModified !== null) {
@@ -2123,6 +2176,9 @@ async function handleCollectionApi(
     }
     return json(filtered);
   }
+
+  // The plural Profile route is read-only in locked lib/api/profile/index.js.
+  if (requested === "profiles") return null;
 
   if (request.method === "POST" && segment === undefined) {
     const payload = await readBoundedBody(request);

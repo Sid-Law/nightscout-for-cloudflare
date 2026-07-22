@@ -347,7 +347,10 @@ export function filterDocuments(
       return (leftValue! < rightValue! ? -1 : 1) * selectedSort.direction;
     });
   }
-  return normalizeTreatmentNumbers(filtered.slice(0, count));
+  // This helper serves the non-Treatment legacy collections. Upstream only
+  // coerces numeric Treatment fields; applying that mapper here fabricated
+  // `carbs`/`insulin` on Food, Profile, Activity and DeviceStatus responses.
+  return filtered.slice(0, count);
 }
 
 export function normalizeTreatmentNumbers(documents: JsonDocument[]): JsonDocument[] {
