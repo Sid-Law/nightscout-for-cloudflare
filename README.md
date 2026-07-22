@@ -242,8 +242,8 @@ the complete v1/v2 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
 Mongo query/collection parity beyond the tested safe subset, Engine.IO
 JSONP/binary,
-the direct-WebSocket at-most-once crash window, remaining non-Treatment
-dataloader/server-plugin preprocessing on root updates, remaining background-task kinds, general server plugin
+remaining non-Treatment dataloader/server-plugin preprocessing on root updates,
+remaining background-task kinds, general server plugin
 execution, remaining plugin alarm generation,
 external push providers, plugin-derived v2 summary
 state/persistence, and broader plugin-specific page workflows.
@@ -586,11 +586,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `9fce8d5`. The 72-file Workers-runtime
-suite passes 792/792 tests, the audit suites pass 23/23, eleven complete
+The deployed runtime candidate is commit `ab101f5`. The 72-file Workers-runtime
+suite passes 793/793 tests, the audit suites pass 23/23, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1314.26 KiB raw / 241.79 KiB gzip and exposes only
+reports 1315.83 KiB raw / 242.12 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -1083,8 +1083,9 @@ client tests and 143/143 unchanged server/data-plugin tests; the dry bundle was
 real EIO3 direct WSS plus EIO3 and EIO4 polling upgrades. A clean browser then
 displayed current `113 mg/dL`, one-minute-old simulated data and the official
 chart; Admin Tools loaded seven default roles and reported `Admin authorized`.
-JSONP/binary and the direct-send crash window remain explicit gaps; no real
-device or closed-loop instruction was used.
+JSONP/binary remained explicit gaps; release 99 later closed the direct-send
+dequeue-before-send loss window. No real device or closed-loop instruction was
+used.
 
 Project release 95 (`607733cc-2c05-44bc-bde3-17c94be68aff`) deploys commit
 `a4e2267` and closes a separate API v2 ddata omission without changing the
@@ -1160,6 +1161,21 @@ passed and the complete 177-assertion public smoke passed on
 `0 records deleted` for both Entries and Treatments instead of `undefined` and
 remained authorized. The homepage displayed `126 mg/dL`, `+4`, a rising arrow,
 one-minute-old simulated data and two SVG charts. No real health data or
+closed-loop instruction was used.
+
+Project release 99 (`37ceecb8-4f67-40c0-8af2-cfcd06ff8910`) deploys commit
+`ab101f5` and removes the direct-WebSocket silent-loss window at the Cloudflare
+boundary. A selected FIFO prefix now remains in SQLite while every synchronous
+`WebSocket.send()` runs and is deleted only by one post-send acknowledgement
+transaction. A Durable Object crash before acknowledgement can replay a frame,
+but cannot discard the only durable copy before delivery; ordinary polling is
+unchanged. The full local gate passed 72 Workers files / 793 tests, 23/23
+audits, 42/42 unchanged client tests and 143/143 unchanged server/data-plugin
+tests; the dry bundle was 1315.83 KiB raw / 242.12 KiB gzip. The complete
+177-assertion public smoke passed on `public-smoke-1784725389106`, including
+the existing EIO3/EIO4 polling, direct WSS and upgrade gates. The unchanged
+homepage stayed on `/`, rendered two SVG charts and no dialog, and its title
+advanced from `125 +4 ↗` to `128 +4 ↗` while open. No real health data or
 closed-loop instruction was used.
 
 The APNs transport follows Apple's current provider-token and notification

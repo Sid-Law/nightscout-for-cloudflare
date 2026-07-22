@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `9fce8d5`
-- Runtime source candidate: `9fce8d5`
-- Git commit matching the deployed runtime worktree: `9fce8d5`
-- Cloudflare Version ID: `92e05b01-0bb6-49e9-9f3e-368cdee3a73b`
-- Project release sequence and Cloudflare ordinal: `98`
+- Deployed runtime candidate: `ab101f5`
+- Runtime source candidate: `ab101f5`
+- Git commit matching the deployed runtime worktree: `ab101f5`
+- Cloudflare Version ID: `37ceecb8-4f67-40c0-8af2-cfcd06ff8910`
+- Project release sequence and Cloudflare ordinal: `99`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T12:06:49.277Z`
+- Version creation time: `2026-07-22T13:02:54.704Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Deployment creation time: `2026-07-22T12:06:50.436Z`; 100% of traffic is on
+- Deployment creation time: `2026-07-22T13:02:55.632Z`; 100% of traffic is on
   the named version
-- Worker startup: 32 ms
+- Worker startup: 27 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -36,8 +36,8 @@ is not counted as API, plugin or real-time compatibility.
   plugin-runtime-state table used by xDrip-js notification throttling
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–98 reused them unchanged
-- Upload: 1314.26 KiB raw / 241.79 KiB gzip
+  versions 76–99 reused them unchanged
+- Upload: 1315.83 KiB raw / 242.12 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -109,8 +109,8 @@ user-operated Loop/AAPS compatibility run.
   state and a long suspension produces one current reading rather than a
   fabricated historical backlog. A crash in the small test-only gap between
   the Entry commit and schedule advance can add one extra sample, not an
-  unbounded replay; closing that gap is deferred with the direct-send crash
-  boundary rather than delaying ordinary-family testing.
+  unbounded replay. Release 99 later closed the unrelated direct-send loss
+  boundary without changing this simulator behavior.
 - The public `demo` tenant was explicitly enabled after deployment at
   `2026-07-22T01:35:00Z`; status returned `intervalMs:300000`, twelve seed rows
   appeared in the official chart, and isolated smoke tenants remained empty.
@@ -410,6 +410,37 @@ user-operated Loop/AAPS compatibility run.
   browser logs contained zero warnings/errors. No real health data or
   closed-loop client was used.
 
+## Project release 99 direct-WebSocket durable-send acknowledgement
+
+- Commit `ab101f5` removes the direct-WebSocket dequeue-before-send loss
+  window without changing Nightscout packets or the polling path. The Worker
+  peeks a bounded SQLite FIFO prefix, calls synchronous `WebSocket.send()` for
+  every selected frame, then validates and deletes exactly that prefix in one
+  transaction.
+- A crash before acknowledgement can replay a frame because a network send and
+  SQLite commit cannot be atomic. The durable copy is no longer deleted before
+  send, so this boundary favors recoverable at-least-once replay over silent
+  loss.
+- The new 25-case session/repository file proves unchanged counters after peek,
+  the same prefix after repository reconstruction, rollback of a mismatched
+  acknowledgement and advancement only after the exact acknowledgement. EIO3
+  and EIO4 direct/upgrade regression files remain green.
+- Local gates passed: 72 Workers files / 793 tests, 23/23 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript, the official asset rebuild and dry run. The dry bundle is
+  1315.83 KiB raw / 242.12 KiB gzip with 250 unchanged assets and only
+  `ENTRY_STORE` plus `ASSETS`.
+- Cloudflare ordinal/version 99, ID
+  `37ceecb8-4f67-40c0-8af2-cfcd06ff8910`, was created at
+  `2026-07-22T13:02:54.704Z`, deployed at `2026-07-22T13:02:55.632Z`, receives
+  100% traffic and starts in 27 ms.
+- The complete 177-assertion remote smoke passed on
+  `public-smoke-1784725389106`, reported 307,200 SQLite bytes and retained the
+  existing EIO3/EIO4 polling, direct WSS and upgrade gates.
+- The unchanged official homepage stayed at `/`, rendered two SVG charts and
+  no dialog, and its title advanced from `125 +4 ↗` to `128 +4 ↗` while open.
+  No real health data or closed-loop instruction was used.
+
 ## Project release 98 official Admin cleanup result compatibility
 
 - Commit `9fce8d5` closes a real upstream server/client seam in the unchanged
@@ -557,8 +588,8 @@ user-operated Loop/AAPS compatibility run.
   simulated data and its chart. Admin Tools loaded all seven default roles,
   the official cleanup groups and `Admin authorized`. No real health data,
   CGM, pump or closed-loop instruction was used.
-- JSONP/binary Engine.IO paths and the direct-WebSocket dequeue/send crash
-  window remain explicit gaps.
+- JSONP/binary Engine.IO paths remained explicit gaps; release 99 later closed
+  the direct-WebSocket dequeue-before-send loss window.
 
 ## Project release 93 clean-source deployment increment
 
@@ -1102,7 +1133,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `329aaca`. It retains schema-v15 persisted
+The deployed runtime candidate is `ab101f5`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -1500,8 +1531,10 @@ closed-loop client compatibility.
   numeric, object-ID and mixed-type behavior is not implied by the named write
   contract. `/storage` and `/alarm` currently
   support EIO3/SIO4 and EIO4/SIO5 polling plus direct and upgraded WebSocket.
-  Direct WebSocket retains
-  a named at-most-once crash window between durable dequeue and `send()`.
+  Direct WebSocket now keeps each selected FIFO prefix durable through every
+  synchronous send and deletes it only after exact SQLite acknowledgement.
+  A crash can replay at that non-atomic boundary but cannot lose the unsent
+  durable copy.
   `/alarm` now combines its live transport/auth/ACK outlet with the internal
   core processor: inherited v1/v2 HTTP ACK and schema-v13 emission state are
   durable, and bounded upstream request arrays can feed it. Schema-v14 tasks

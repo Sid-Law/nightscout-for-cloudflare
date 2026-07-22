@@ -6,14 +6,14 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `9fce8d5` and
-Cloudflare version `92e05b01-0bb6-49e9-9f3e-368cdee3a73b`. The
-candidate's 72-file Workers-runtime suite passes 792/792 plus 23/23 audit tests,
+“Current” below describes deployed evidence candidate `ab101f5` and
+Cloudflare version `37ceecb8-4f67-40c0-8af2-cfcd06ff8910`. The
+candidate's 72-file Workers-runtime suite passes 793/793 plus 23/23 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1314.26 KiB
-raw / 241.79 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Project release 98 reported a 32 ms startup and passed the
+Wrangler processed 250 Static Assets entries; its dry run reported 1315.83 KiB
+raw / 242.12 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Project release 99 reported a 27 ms startup and passed the
 177-assertion credential-free API, real EIO3/EIO4 direct-or-upgraded WSS, Pebble and
 real-browser gates. The authenticated Profile save/reload/restore and its
 live-page `dataUpdate`/`retroUpdate` observation are current release evidence;
@@ -1122,9 +1122,10 @@ The current server boundary is explicit:
   polling payload per session; incoming POST bodies are counted while streamed;
 - 32-session opportunity cleanup on normal requests plus a persistent alarm
   derived from the earliest ping, pong, expiry, poll or POST deadline;
-- direct-WebSocket queue delivery is currently at-most-once across an isolate
-  crash: a failure between durable dequeue and `server.send()` can lose that
-  frame. Closing this P2 requires an acknowledgement/replay contract;
+- direct-WebSocket queue delivery peeks a bounded FIFO prefix without deleting
+  it, performs every synchronous `server.send()`, then acknowledges that exact
+  prefix in one SQLite transaction. A crash before acknowledgement can replay
+  a frame, but no longer silently loses the only durable copy before send;
 - `/storage` can connect without the root namespace. Its subscription accepts a
   subject access token, defaults to the six official collections in locked
   order, ignores unknown collection names, requires `api:settings:admin` for
@@ -1233,8 +1234,8 @@ canvases). The official homepage then displayed `129 mg/dL`, `+3` and
 `FortyFiveUp`; all temporary mutations were restored or removed.
 No real CGM or closed-loop traffic was used. Four fresh-tenant Admin-notification probes returned the readable-site
 count while hiding the body, and the real browser retained the official Admin,
-clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send
-crash window described above remains open for direct WebSocket. The official
+clock and Settings/About 15.0.7 surfaces. Direct WebSocket now keeps its FIFO
+prefix durable until post-send acknowledgement. The official
 homepage uses the EIO4 polling server because its locked source requests
 polling; independently tested EIO3 and EIO4 WebSocket paths serve compatible
 external clients. The protected Profile
@@ -1275,7 +1276,8 @@ changing the official page transport. The locked Socket.IO 4.5.4
 persisted EIO3 protocol authority, SIO4 namespace state and client-ping/server-
 pong behavior survive DO eviction. The 150-assertion public smoke exercised
 real EIO3 direct WSS plus both protocol upgrades after Cloudflare propagation.
-JSONP/binary and the direct-send dequeue/send crash window remain explicit.
+JSONP/binary remained explicit, and release 99 later closed the direct-send
+dequeue-before-send loss window.
 
 Project release 93 keeps the same Worker runtime contract and adds a
 clean-source build/deployment boundary. Root `npm run build` installs the
@@ -1393,8 +1395,10 @@ shared 900-KB/8,000-node/2,000-document budget. It retains exact strict warn/
 urgent threshold-plus-one-millisecond deadlines, source expiry, future status
 activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
-The remaining transport work is non-Profile-Switch, non-Treatment preprocessing,
-Engine.IO JSONP/binary and the direct-send replay/acknowledgement boundary.
+The remaining transport work is non-Profile-Switch, non-Treatment preprocessing
+and Engine.IO JSONP/binary. The post-send boundary is deliberately at-least-once:
+a crash may replay a frame because Cloudflare cannot atomically commit SQLite
+and a network send, but it no longer loses an unsent durable frame.
 Uploader Battery, BWP, CAGE/SAGE/IAGE/BAGE and DBSize are complete producers.
 
 ### Background work and server plugins
