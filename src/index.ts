@@ -71,6 +71,11 @@ import {
   loadPluginPropertyContext,
 } from "./plugins/properties";
 import { buildNightscoutPebbleResponse } from "./pebble";
+import {
+  LoopPushError,
+  prepareLoopPush,
+  sendPreparedLoopPush,
+} from "./loop-push";
 
 export { EntryStore };
 
@@ -132,6 +137,10 @@ type AppEnv = Env & {
   API3_MAX_LIMIT?: string;
   AUTH_DEFAULT_ROLES?: string;
   AUTH_FAIL_DELAY?: string;
+  LOOP_APNS_KEY?: string;
+  LOOP_APNS_KEY_ID?: string;
+  LOOP_DEVELOPER_TEAM_ID?: string;
+  LOOP_PUSH_SERVER_ENVIRONMENT?: string;
   UUID_HANDLING?: string;
 };
 
@@ -181,6 +190,15 @@ function legacyInternalError(): Response {
   const body = new TextEncoder().encode("Internal Server Error");
   const headers = new Headers(corsHeaders());
   headers.set("Content-Type", "text/plain; charset=utf-8");
+  headers.set("Content-Length", String(body.byteLength));
+  headers.set("Cache-Control", "no-store");
+  return new Response(body, { status: 500, headers });
+}
+
+function legacyLoopNotificationError(message: string): Response {
+  const body = new TextEncoder().encode(message);
+  const headers = new Headers(corsHeaders());
+  headers.set("Content-Type", "text/html; charset=utf-8");
   headers.set("Content-Length", String(body.byteLength));
   headers.set("Cache-Control", "no-store");
   return new Response(body, { status: 500, headers });
@@ -2954,6 +2972,44 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     const snapshot = JSON.parse(snapshotJson);
     const hours = url.searchParams.get("hours") || 6;
     return json(buildNightscoutSummary(snapshot, hours, now, properties));
+  }
+
+  if (
+    request.method === "POST"
+    && /^\/api\/v2\/notifications\/loop\/?$/.test(url.pathname)
+  ) {
+    const payload = await readBoundedBody(request);
+    await requirePermission(
+      request,
+      env,
+      url,
+      "notifications:loop:push",
+      payload,
+    );
+    const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
+    const profiles = parseDocuments(await store.listDocuments("profile"));
+    try {
+      const prepared = prepareLoopPush(
+        payload,
+        requestRemoteIp(request),
+        profiles,
+        {
+          apnsKey: env.LOOP_APNS_KEY,
+          apnsKeyId: env.LOOP_APNS_KEY_ID,
+          developerTeamId: env.LOOP_DEVELOPER_TEAM_ID,
+          pushServerEnvironment: env.LOOP_PUSH_SERVER_ENVIRONMENT,
+        },
+        Date.now(),
+      );
+      await sendPreparedLoopPush(prepared);
+      return legacyOk();
+    } catch (error) {
+      return legacyLoopNotificationError(
+        error instanceof LoopPushError
+          ? error.message
+          : "APNs delivery failed: Unknown error",
+      );
+    }
   }
 
   if (

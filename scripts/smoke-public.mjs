@@ -266,6 +266,25 @@ checked(
 const treatmentRead = await request("/api/v1/treatments.json?count=1");
 equal(await treatmentRead.json(), [], "failed write did not persist");
 
+const loopPushUnauthorized = await request("/api/v2/notifications/loop", {
+  method: "POST",
+  headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+  body: "eventType=Temporary+Override+Cancel",
+});
+checked(loopPushUnauthorized.status === 401, "Loop remote notification requires push permission");
+const loopPushUnauthorizedBody = await loopPushUnauthorized.json();
+checked(
+  loopPushUnauthorizedBody.message === "Unauthorized",
+  "Loop remote notification returns the locked authorization boundary",
+);
+
+const loopPushV1 = await request("/api/v1/notifications/loop", {
+  method: "POST",
+  headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+  body: "eventType=Temporary+Override+Cancel",
+});
+checked(loopPushV1.status === 404, "Loop remote notification remains v2-only");
+
 const eioResponse = await request("/socket.io/?EIO=4&transport=polling");
 checked(eioResponse.status === 200, "EIO4 handshake status");
 const eioText = await eioResponse.text();
