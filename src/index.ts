@@ -748,12 +748,16 @@ function formBody(text: string): unknown {
   }
 }
 
-async function readBoundedBody(request: Request): Promise<unknown> {
+async function readBoundedBody(
+  request: Request,
+  allowEmpty = false,
+): Promise<unknown> {
   const declared = request.headers.get("Content-Length");
   if (declared !== null && Number(declared) > MAX_BODY_BYTES) {
     throw new ApiError(413, "body_too_large", "request body exceeds 512 KiB");
   }
   if (request.body === null) {
+    if (allowEmpty) return undefined;
     throw new ApiError(400, "invalid_json", "request body is required");
   }
 
@@ -777,6 +781,11 @@ async function readBoundedBody(request: Request): Promise<unknown> {
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  // Cloudflare's public edge can preserve a zero-byte stream for bodyless
+  // DELETE requests even though locally constructed Requests expose null.
+  // Upstream accepts both representations; mutation authorization sees the
+  // same undefined payload in either case.
+  if (allowEmpty && total === 0) return undefined;
   const text = new TextDecoder().decode(body);
   if (request.headers.get("Content-Type")?.toLowerCase().includes("application/x-www-form-urlencoded")) {
     return formBody(text);
@@ -1951,7 +1960,7 @@ async function handleEntriesApi(
   }
 
   if (request.method === "DELETE") {
-    const payload = request.body === null ? undefined : await readBoundedBody(request);
+    const payload = await readBoundedBody(request, true);
     await requirePermissions(
       request,
       env,
@@ -2181,7 +2190,7 @@ async function handleCollectionApi(
   }
 
   if (request.method === "DELETE") {
-    const payload = request.body === null ? undefined : await readBoundedBody(request);
+    const payload = await readBoundedBody(request, true);
     await requirePermissions(
       request,
       env,
@@ -2315,8 +2324,8 @@ async function handleAuthorizationApi(
         request.method === "PUT" ? "update" : "delete";
   const payload = request.method === "POST" || request.method === "PUT"
     ? await readBoundedBody(request)
-    : request.method === "DELETE" && request.body !== null
-      ? await readBoundedBody(request)
+    : request.method === "DELETE"
+      ? await readBoundedBody(request, true)
       : undefined;
   await requirePermission(
     request,

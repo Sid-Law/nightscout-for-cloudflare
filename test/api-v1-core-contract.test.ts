@@ -504,6 +504,9 @@ describe("locked v1 authenticated Entries and slice contract", () => {
     const exactDelete = await SELF.fetch(withTenant(exactPath, name), {
       method: "DELETE",
       headers: { "api-secret": await secretDigest() },
+      // Cloudflare's public edge may expose a bodyless DELETE as a zero-byte
+      // stream instead of request.body === null.
+      body: new Uint8Array(0),
     });
     expect(exactDelete.status).toBe(200);
     expect(await exactDelete.json()).toEqual({ acknowledged: true, deletedCount: 1 });
