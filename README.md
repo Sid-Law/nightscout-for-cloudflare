@@ -233,8 +233,8 @@ the complete v1/v2 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
 Mongo query/collection parity beyond the tested safe subset, Engine.IO
 EIO3 direct WebSocket/upgrade and JSONP/binary,
-the direct-WebSocket at-most-once crash window, remaining plugin preprocessing
-on root updates, remaining background-task kinds, general server plugin
+the direct-WebSocket at-most-once crash window, remaining non-Treatment
+dataloader/server-plugin preprocessing on root updates, remaining background-task kinds, general server plugin
 execution, remaining plugin alarm generation,
 external push providers, plugin-derived v2 summary
 state/persistence, and a protected mutation observed through the pushed live
@@ -550,11 +550,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `3c4b82a`. The 67-file Workers-runtime
-suite passes 734/734 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `750e9ec`. The 67-file Workers-runtime
+suite passes 735/735 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1251.01 KiB raw / 229.54 KiB gzip and exposes only
+reports 1251.44 KiB raw / 229.59 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -876,6 +876,21 @@ CONNECT plus `clients`; the refreshed unchanged homepage displayed `121 mg/dL`,
 `+4`, three minutes old with no warning or console error. The locked homepage
 client remains polling-only by upstream choice; external standard EIO4 clients
 can use the newly deployed upgrade.
+
+Version 86 (`44f94fa0-8061-4a7e-a30b-113e239488e6`) deploys commit `750e9ec`
+and connects the already locked `lib/data/treatmenttocurve.js` port to the
+official root Socket.IO data path. Initial authorization data and later
+`dataUpdate` deltas now receive the same display-only Treatment marker
+placement that upstream runs after its dataloader: explicit mg/dL/mmol values,
+caps, profile display units, raw-BG fallback and surrounding-SGV placement are
+preserved without adding a dose calculation. Transformation happens before
+the shared realtime JSON budget reserves each Treatment, so its added fields
+cannot bypass the Workers Free payload ceiling. The new contract covers both
+initial delivery and a post-eviction pushed delta; the Workers gate increased
+to 735/735 while every unchanged upstream and audit gate stayed green. The
+106-assertion public smoke passed on `public-smoke-1784697190440`. A fresh
+official-page session displayed current simulated glucose, two SVGs, no dialog,
+and zero console warnings or errors while receiving root and alarm events.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

@@ -6,14 +6,14 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `3c4b82a` and
-Cloudflare version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e`. The
-candidate's 67-file Workers-runtime suite passes 734/734 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `750e9ec` and
+Cloudflare version `44f94fa0-8061-4a7e-a30b-113e239488e6`. The
+candidate's 67-file Workers-runtime suite passes 735/735 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1251.01 KiB
-raw / 229.54 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 85 reported a 25 ms startup and passed the
+Wrangler processed 250 Static Assets entries; its dry run reported 1251.44 KiB
+raw / 229.59 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 86 reported a 29 ms startup and passed the
 106-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
 real-browser gates; the earlier authenticated official-page workflows remain
 separate version-80 evidence.
@@ -87,16 +87,16 @@ public v1/v2 ObjectId validator still rejects invalid uploader mutations before
 the internal save fallback. There is no raw Mongo collection façade.
 `src/plugins/iob.ts`, `src/plugins/cob.ts` and
 `src/data/treatment-to-curve.ts` use official request-local
-formulas and bounded Treatment/Profile inputs, while API v2 ddata applies the
-official treatment-marker curve placement. It retains the age/timeago,
+formulas and bounded Treatment/Profile inputs, while API v2 ddata and the root
+realtime snapshot both apply the official treatment-marker curve placement. It retains the age/timeago,
 `src/data-loader.ts` and
 `src/plugins/dbsize.ts`, so real SQLite file bytes flow through ddata and the
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 67 Workers files / 734 tests, 22/22 audits, eleven direct upstream
+evidence is 67 Workers files / 735 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1251.01 KiB raw / 229.54 KiB gzip with 250 assets and two bindings.
+dry run is 1251.44 KiB raw / 229.59 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4-upgrade/EIO3-polling and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -335,7 +335,12 @@ work.
 `lib/data/treatmenttocurve.js`. After ddata is loaded it mutates only the
 official Treatment display fields, placing markers between surrounding SGVs,
 respecting explicit mg/dL/mmol values and caps, and using the existing locked
-raw-BG calculation when enabled. It does not calculate insulin or advice.
+raw-BG calculation when enabled. Version 86 invokes it inside the tenant DO's
+root snapshot transform as well as the v2 ddata route. The transform runs
+before each Treatment is reserved against the shared realtime JSON budget, so
+initial root authorization and reconstructed deltas gain the locked marker
+fields without creating an unaccounted payload expansion. It does not calculate
+insulin or advice.
 
 `src/api2/summary.ts` is a direct stateless port
 of the locked SGV/treatment/profile and basal-data processors. It receives one
@@ -1131,7 +1136,7 @@ against the persisted root baseline and attach a fresh status after eviction.
 tightening over permissive upstream JavaScript call shapes.
 
 Polling, direct Hibernatable WebSocket and EIO4 polling upgrade are live in
-Cloudflare version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e`. Current
+Cloudflare version `44f94fa0-8061-4a7e-a30b-113e239488e6`. Current
 credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
@@ -1219,7 +1224,7 @@ shared 900-KB/8,000-node/2,000-document budget. It retains exact strict warn/
 urgent threshold-plus-one-millisecond deadlines, source expiry, future status
 activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
-The remaining transport work is non-Profile-Switch plugin preprocessing,
+The remaining transport work is non-Profile-Switch, non-Treatment preprocessing,
 EIO3 WebSocket/upgrade and the direct-send replay/acknowledgement boundary;
 automatic alarm producers for other remaining plugins stay as background work.
 BWP, CAGE/SAGE/IAGE and DBSize are complete producers.

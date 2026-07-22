@@ -52,8 +52,8 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary uses the complete 24-assertion `profile.test.js` adapter and receives opt-in official IOB/COB/BWP state. The complete locked `ddata`, `dataloader`, `dbsize`, `bgnow`, `direction`, `rawbg`, `upbat`, `ar2`, `basalprofileplugin`, `simplealarms`, `treatmentnotify`, `cannulaage`, `sensorage`, `insulinage`, `timeago`, `iob`, `cob`, `openaps`, `pump`, treatment-to-curve and five-case `loop` files are adapted. `/properties` runs the official default-enabled Basal and AR2 properties plus opt-in OpenAPS, Pump and BWP calculations through the same registry. Ddata publishes real SQLite bytes and applies official Treatment marker placement. Basal receives the current Profile plus bounded Temp Basal/Profile Switch/Combo Bolus treatments and meter-BG projection; AR2 maps official `ALARM_TYPES`/`AR2_CONE_FACTOR`, and IOB/COB/BWP preserve their upstream `ENABLE` gates and bounded Profile/Treatment inputs. The platform reports the one-GB ceiling as 953.67 MiB. One persisted task now evaluates twelve official producers: AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE, Treatment Notify, Timeago and opt-in DBSize. Remaining plugin/summary fields, summary persistence, remaining task sources and v2-only `/notifications/loop` delivery remain; ddata uses a bounded two-day SGV window. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
 | 7. Authentication/admin | Core plus Admin notices adapted; named hardening retained | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. Schema v15 persists the official readable-site and failed-auth Admin notices, message aggregation, public-count/admin-body split, eight/twelve-hour windows and disable gate across DO eviction. The deployed platform configuration preserves dashboard variables across Wrangler deploys and audits that no plaintext credential is committed; encrypted Secrets remain preferred. A user-provided construction credential successfully authorized one 25-entry simulated SGV batch without recording its value. The Workers boundary caps enforced delay at 60 seconds, bounds transient Admin notices at 128 per tenant, and handles repeated/bracket `secret` arrays safely instead of reproducing the locked upstream unhandled rejection. |
-| 8. Engine.IO/Socket.IO | Partial EIO3/EIO4 polling + EIO4 direct/upgrade WebSocket; official browser remains polling | Strict EIO4 polling, direct Hibernatable WebSocket, standard polling-to-WebSocket upgrade and legacy EIO3 HTTP polling are routed to tenant `EntryStore` DOs with persisted protocol/session/queue authority. EIO4 preserves server-ping/client-pong, RS framing and the locked probe/noop/upgrade order; abandoned candidates close through the persisted alarm without deleting polling. EIO3 preserves client-ping/server-pong, length-prefixed framing and the two-stage SIO4 root CONNECT/`clients` order. Root authorization, initial/retro data, deltas, four locked write events and API3 `/storage`/`/alarm` remain protocol-aware. The byte-identical official Socket.IO 4.5.4 browser client explicitly requests polling and uses root plus `/alarm`; external standard EIO4 clients can upgrade. Add remaining plugin preprocessing, close the direct-send at-most-once crash window and add EIO3 WebSocket only if ordinary legacy clients require it; JSONP/binary remain explicit non-ordinary gaps. |
-| 9. Real-time storage updates | Root server/client mutations, Profile Switch status and API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. Initial `status:true` authorization and later zero-duration Profile Switch writes now publish the locked `activeProfile`, with the comparison marker surviving DO eviction. The official client receives its initial root update remotely; add a credentialed pushed Profile Switch observed in the page and complete remaining plugin preprocessing. Keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
+| 8. Engine.IO/Socket.IO | Partial EIO3/EIO4 polling + EIO4 direct/upgrade WebSocket; official browser remains polling | Strict EIO4 polling, direct Hibernatable WebSocket, standard polling-to-WebSocket upgrade and legacy EIO3 HTTP polling are routed to tenant `EntryStore` DOs with persisted protocol/session/queue authority. EIO4 preserves server-ping/client-pong, RS framing and the locked probe/noop/upgrade order; abandoned candidates close through the persisted alarm without deleting polling. EIO3 preserves client-ping/server-pong, length-prefixed framing and the two-stage SIO4 root CONNECT/`clients` order. Root authorization, initial/retro data, deltas, official Treatment-to-curve preprocessing, four locked write events and API3 `/storage`/`/alarm` remain protocol-aware. The byte-identical official Socket.IO 4.5.4 browser client explicitly requests polling and uses root plus `/alarm`; external standard EIO4 clients can upgrade. Add remaining non-Treatment preprocessing, close the direct-send at-most-once crash window and add EIO3 WebSocket only if ordinary legacy clients require it; JSONP/binary remain explicit non-ordinary gaps. |
+| 9. Real-time storage updates | Root server/client mutations, Treatment markers, Profile Switch status and API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. Initial and reconstructed snapshots run the locked Treatment marker preprocessing before payload budgeting. Initial `status:true` authorization and later zero-duration Profile Switch writes publish the locked `activeProfile`, with the comparison marker surviving DO eviction. The official client receives its initial root update remotely; add a credentialed pushed Profile Switch observed in the page and complete remaining non-Treatment preprocessing. Keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Generic SQLite scheduler + unified automatic notification task | Schema v14 stores logical tasks, due times, attempts and update times in SQLite. The DO's one Cloudflare alarm is derived from the minimum of persisted realtime, authorization-cleanup, task, schema-v16 debounce and optional schema-v17 lab-CGM deadlines. One `plugin-notifications` task evaluates twelve official producers in server order from a bounded SGV/MBG/DeviceStatus/Profile/Treatment/SQLite-stat context. The disabled-by-default lab CGM uses the same alarm, writes one current SGV per five-minute due turn and never backfills an unbounded outage. Mutations run the leading edge; rapid batches receive exactly one persisted trailing evaluation after one quiet second or at the five-second max wait. Failures persist two-second exponential retry capped at five minutes; early at-least-once delivery is a no-op. Add remaining plugin producers, summary/activity persistence and future maintenance/pruning. |
 | 11. Server plugins/notifications | Static registry + twelve automatic producers + persisted core/Admin/push state | Stateless ports of the named official calculation plugins plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. Twelve producers, now including exact opt-in BWP, are automatically evaluated by schema v14 under their official gates; schema v15 persists Admin notices and schema v16 persists data-update debounce. Version 81 completely maps the locked Maker, Pushover and Pushnotify files: schema v18 persists dedupe leases, receipts and Maker All Clear state, and v1/v2 expose the official receipt callback. The processor preserves priority, information/announcement handling, snooze arbitration and automatic all-clear. External Pushover/IFTTT send/cancel remains disabled until explicitly authorized and connected through a persisted outbox. Remaining plugin alarm producers remain incomplete. |
 | 12. Upstream regression suite | Tracked; 16 pass + 86 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, Pebble, Maker, Pushover, Pushnotify, the complete storage-shape and bootevent-debounce files and the named plugin/API/realtime foundations are adapted. Eleven complete client files run 42/42 unchanged after bundle byte equality. Twenty-one locked server/data-plugin files run unchanged as a reusable 143/143-test gate. The latest direct file is the eight-case Node/Mongo pool-option parser; it is source evidence, not a Worker Mongo-pool setting. Seven files remain unresolved and two are fixed-scope exclusions. |
@@ -93,7 +93,7 @@ relabeled as scope exclusions.
 
 ## Current deployed increment
 
-The deployed runtime candidate `3c4b82a` retains schema-v15 persisted Admin
+The deployed runtime candidate `750e9ec` retains schema-v15 persisted Admin
 notifications, the complete storage-shape adapter and schema-v16 durable
 bootevent debounce while retaining the locked v1/v2 `experiments/test` permission
 probe, named API security/verifyauth/API_SECRET mappings, Query/Language
@@ -150,8 +150,8 @@ It shares the existing 900-KB/8,000-node/2,000-document transport budget.
 The prior IOB, COB and treatment-to-curve calculations retain
 DeviceStatus precedence, Treatment fallback, Profile inputs, recency, rounding,
 display and assistant behavior; they remain opt-in through the official
-`ENABLE` set and now feed enabled values into API v2 Summary. Ddata applies
-the locked Treatment marker placement on the glucose curve, including explicit
+`ENABLE` set and now feed enabled values into API v2 Summary. Ddata and the
+root realtime snapshot apply the locked Treatment marker placement on the glucose curve, including explicit
 unit handling and raw-BG fallback. No new dose recommendation is introduced.
 The Durable Object projection now supplies the newest current Profile, the
 official 2.5-day ordinary-Treatment window, the newest zero-duration Profile
@@ -162,15 +162,28 @@ document transport budget; this is an explicit Workers Free adaptation.
 All prior registry, ddata/database-size, age/timeago, Sandbox, Settings, Loop,
 Profile, uploader, identity, root-write/delta, API3 `/storage`, `/alarm`,
 authorization and notification-ACK contracts remain green. Cloudflare Worker
-version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e` (ordinal 85) is active;
-Wrangler reported a 25 ms startup. It processes 250 Static Assets entries. The
-Wrangler 4.112.0 dry run reports 1251.01 KiB raw / 229.54 KiB gzip and exposes
+version `44f94fa0-8061-4a7e-a30b-113e239488e6` (ordinal 86) is active;
+Wrangler reported a 29 ms startup. It processes 250 Static Assets entries. The
+Wrangler 4.112.0 dry run reports 1251.44 KiB raw / 229.59 KiB gzip and exposes
 only `ENTRY_STORE` plus `ASSETS`. The 67-file Workers-runtime suite passes
-734/734, all four audit suites pass
+735/735, all four audit suites pass
 22/22, eleven official client files pass 42/42 unchanged, twenty-one locked
 server/data-plugin files pass 143/143 unchanged and TypeScript passes. The
 manifest records sixteen direct passes, 86 adapted, seven unresolved and
 two fixed-scope excluded files.
+
+Version 86 connects the already adapted Treatment-to-curve function to the
+root Socket.IO snapshot instead of leaving it in the v2 ddata route. The
+upstream display-only algorithm runs on every selected Treatment before the
+shared JSON budget reserves it, using the resolved profile unit setting and
+raw-BG enable gate. A named DO contract verifies 95-mg/dL surrounding-SGV
+placement and an explicit mmol marker during initial authorization, then evicts
+the object and observes the same preprocessing in a later pushed delta. The
+106-assertion remote smoke passed on `public-smoke-1784697190440`; the unchanged
+official page received live root/alarm events, rendered two SVGs and current
+simulated glucose, and produced no dialog, console warning or console error.
+The smoke was credential-free, so protected page mutation remains separate
+evidence rather than being inferred.
 
 Version 85 completes EIO4 polling-to-WebSocket upgrade without changing the
 locked polling-only homepage client. A live polling SID now advertises
@@ -432,7 +445,7 @@ named simulated SGV batch.
 
 The code is still not a full port: non-Entries echo, arbitrary aggregation,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
-EIO3 direct WebSocket/upgrade/JSONP/binary, remaining plugin preprocessing before
+EIO3 direct WebSocket/upgrade/JSONP/binary, remaining non-Treatment preprocessing before
 deltas, automatic task adapters for the remaining server plugins, live external provider delivery,
 remaining plugin summary fields and nine upstream test files (seven unresolved
 plus two fixed-scope exclusions) remain incomplete.
@@ -473,7 +486,7 @@ local contracts prove API3 Treatment polling delivery, unauthorized
 silence, baseline survival across service reconstruction and update
 classification. Client `dbAdd`, `dbUpdate`, `dbUpdateUnset` and `dbRemove`
 handlers now adapt the complete locked `websocket.shape-handling.test.js` file;
-remaining plugin preprocessing, the direct-send replay boundary,
+remaining non-Treatment preprocessing, the direct-send replay boundary,
 and EIO3 WebSocket/upgrade remain the next realtime slices.
 
 ## Ordered implementation milestones
@@ -556,7 +569,7 @@ Token-bearing authorization paths are redacted from adapter error logs.
    Milestone E work.
 5. **Complete for the locked root write-shape slice:** `dbAdd`, `dbUpdate`,
    `dbUpdateUnset` and `dbRemove` preserve mapped permission, mutation, ACK and
-   broadcast order. Profile Switch status is persisted; extend remaining plugin preprocessing and broader
+   broadcast order. Profile Switch status and Treatment marker preprocessing are persisted/recomputed; extend remaining non-Treatment preprocessing and broader
    Mongo/BSON behavior separately.
 6. **Complete for HTTP API3 `/storage` events:** create/update/delete frames are
    enqueued in the same transaction for current authorized subscribers. The

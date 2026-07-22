@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `3c4b82a`
-- Runtime source candidate: `3c4b82a`
-- Git commit matching the deployed runtime worktree: `3c4b82a`
-- Cloudflare Version ID: `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e`
-- Cloudflare ordinal version number: `85`
+- Deployed runtime candidate: `750e9ec`
+- Runtime source candidate: `750e9ec`
+- Git commit matching the deployed runtime worktree: `750e9ec`
+- Cloudflare Version ID: `44f94fa0-8061-4a7e-a30b-113e239488e6`
+- Cloudflare ordinal version number: `86`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T04:57:24.298446Z`
+- Version creation time: `2026-07-22T05:12:52.069Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 25 ms
+- Worker startup: 29 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -33,8 +33,8 @@ is not counted as API, plugin or real-time compatibility.
   v19 persisted EIO3/EIO4 session-protocol authority
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–85 reused them unchanged
-- Upload: 1251.01 KiB raw / 229.54 KiB gzip
+  versions 76–86 reused them unchanged
+- Upload: 1251.44 KiB raw / 229.59 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -254,6 +254,35 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   remains on polling by upstream choice. Its fresh reload displayed
   `121 mg/dL`, `+4`, three minutes old with the chart and no warning or console
   error. EIO3 direct WebSocket/upgrade, JSONP and binary remain explicit gaps.
+
+## Version 86 root Treatment-to-curve preprocessing increment
+
+- Commit `750e9ec` connects the existing direct port of locked
+  `lib/data/treatmenttocurve.js` to the root Socket.IO snapshot. Initial
+  authorization and later `dataUpdate` deltas now carry the same display-only
+  Treatment `mgdl`/`mmol` marker fields as the Node dataloader path.
+- The adapter resolves units from the current tenant Profile/status settings
+  and obeys the official `rawbg` enable gate. Explicit readings and caps,
+  surrounding-SGV averaging and raw-calibration fallback stay in the locked
+  function; no insulin recommendation or new medical calculation is added.
+- Each Treatment is transformed before it is reserved in the shared realtime
+  JSON budget. Added marker fields therefore remain inside the 900-KB/8,000-
+  node/2,000-document Free-plan boundary instead of expanding a completed
+  payload afterward.
+- The named DO test covers initial root delivery, profile-derived mmol output,
+  eviction, a second Treatment write and the reconstructed pushed delta. Local
+  gates passed: 67 Workers files / 735 tests, 22/22 audits, 42/42 unchanged
+  client tests, 143/143 unchanged server/data-plugin tests, TypeScript,
+  Wrangler type generation and dry run. The dry bundle was 1251.44 KiB raw /
+  229.59 KiB gzip with 250 assets and only `ENTRY_STORE` plus `ASSETS`.
+- Cloudflare version `44f94fa0-8061-4a7e-a30b-113e239488e6` is ordinal 86,
+  created at `2026-07-22T05:12:52.069Z`; startup was 29 ms. The 106-assertion
+  public smoke passed on isolated tenant `public-smoke-1784697190440`, retained
+  the real EIO4 WSS upgrade and reported 299,008 SQLite bytes.
+- The remote run used no credential and therefore makes no protected-write
+  claim. A fresh official homepage session received root and alarm events,
+  displayed current simulated glucose, rendered two SVGs and showed no dialog,
+  console warning or console error.
 
 ## Release content
 
@@ -672,7 +701,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `3c4b82a`. It retains schema-v15 persisted
+The deployed runtime candidate is `750e9ec`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -688,7 +717,8 @@ preprocessing without adding a medical formula or Treatment action.
 Schema v19 additionally persists Engine protocol authority and routes the
 upstream-exact EIO3/SIO4 HTTP-polling sequence alongside EIO4.
 The current transport adapter additionally completes EIO4 polling-to-WebSocket
-upgrade and persists candidate timeout work in the existing alarm multiplexer.
+upgrade, persists candidate timeout work in the existing alarm multiplexer and
+runs locked Treatment-to-curve preprocessing in initial/reconstructed root snapshots.
 The table below records the exact current local gate for the immutable deployed
 runtime and assets. The unchanged-client runner now includes the original
 client Hashauth, Admin Tools, report-settings and complete Reports workflows;
@@ -710,13 +740,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 67 files, 734/734 passed |
-| Worker dry run | 1251.01 KiB raw / 229.54 KiB gzip |
+| Workers integration tests | 67 files, 735/735 passed |
+| Worker dry run | 1251.44 KiB raw / 229.59 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 734 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 735 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 21
 server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 files,
@@ -744,7 +774,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e` as the current
+Wrangler reports version `44f94fa0-8061-4a7e-a30b-113e239488e6` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -760,8 +790,8 @@ not only Wrangler command success.
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
 | GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and locked `null` IOB/COB fields because both plugins are disabled |
-| GET `/api/v2/ddata/at` | HTTP 200 with real isolated-tenant SQLite `dataSize:270336` bytes and `indexSize:0`; the total is not double-counted |
-| GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.26`, `display:"0%"` and `status:"current"` |
+| GET `/api/v2/ddata/at` | HTTP 200 with real isolated-tenant SQLite `dataSize:299008` bytes and `indexSize:0`; the total is not double-counted |
+| GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.29`, `display:"0%"` and `status:"current"` |
 | GET `/api/v2/properties/basal` | HTTP 200 on the public simulated profile with `display:"0.100U"`, scheduled `basal:0.1` and no fabricated active treatment contribution |
 | GET `/api/v2/properties/ar2` | HTTP 200 with six input-derived predicted points (`103` through `111`), average loss and `displayLine:"BG 15m: 107 mg/dl"` |
 | GET `/api/v2/properties/loop` | HTTP 200 with `{}` because Loop is opt-in and the deployed `ENABLE` setting does not enable it; no synthetic property was fabricated |
@@ -775,7 +805,7 @@ not only Wrangler command success.
 | Current EIO4 WebSocket upgrade | Real WSS completed `2probe`/`3probe`, released the pending poll with noop, accepted `5`, then returned root CONNECT and `clients` over the upgraded socket |
 
 The latest reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784696258002` and passed 106 behavior/CORS/protocol assertions.
+`public-smoke-1784697190440` and passed 106 behavior/CORS/protocol assertions.
 It observed 299,008 SQLite bytes and the EIO4 open/upgrade sequence above while
 also retaining the EIO3 client-ping/server-pong contract.
 
@@ -817,7 +847,7 @@ an HTTP mutation contract, not a pushed-delta claim.
 | Current EIO4 polling open | HTTP 200, a 20-character Engine.IO 4 SID, `upgrades:["websocket"]`, `pingInterval:25000` and `pingTimeout:20000` |
 | Current EIO4 polling upgrade | Real WSS passed probe/noop/upgrade, root CONNECT and `clients`; local contracts also cover duplicate, malformed and alarm-timeout candidates |
 | Current official Socket.IO client | Root connected, initial `dataUpdate` received, authorize ACK granted read, and `/alarm` subscribed with read success |
-| Live database stats/property | ddata published 262,144 SQLite bytes; the default-enabled registry property returned the same total and 953.67 MiB Free-plan maximum |
+| Live database stats/property | ddata published 299,008 SQLite bytes; the default-enabled registry property returned the same total and 953.67 MiB Free-plan maximum |
 | Local plugin registry contract | both named client/server cases plus order, enable/shown gates, hook/error behavior, event aggregation, iterators and settings projection |
 | Direct official client contract | 11 locked client files passed 42/42 unchanged against the byte-identical shipped bundle; Care Portal/Profile Editor/Admin/Reports mutations use locked mocks rather than the public tenant |
 | Local Cloudflare configuration contract | `keep_vars` is true; no plaintext vars, D1, R2, KV, Queues or custom routes are checked in; only `ENTRY_STORE` and `ASSETS` are bound |
@@ -866,7 +896,7 @@ alarm continuation and eviction recovery. The
 credential-free remote pass did not publish a trusted notification, perform
 an alarm ACK or mutate a Profile Switch; the separate simulator batch exercised only v1 SGV upload.
 The real DO reconstruction test covers the active-Profile push. Remote evidence does not yet prove
-EIO3 WebSocket/upgrade, remaining plugin preprocessing or automatic task
+EIO3 WebSocket/upgrade, remaining non-Treatment preprocessing or automatic task
 execution for the remaining server plugins.
 
 ## Real-browser evidence
@@ -897,10 +927,16 @@ broader version-72/73/74 page checks:
   acceptance used temporary values that were restored or deleted.
 - version 79 then rendered the explicitly enabled `demo` tenant's twelve-point
   one-hour lab seed in the same unchanged official chart.
+- version 86 opened a fresh official page, received root `dataUpdate` and alarm
+  subscription events, displayed current simulated glucose one minute old,
+  rendered two SVGs, showed no dialog and recorded zero console warnings or
+  errors. Its batch-specific Treatment write/eviction/delta proof remains the
+  real SQLite DO contract because the remote smoke intentionally used no
+  credential.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e` reused the same
+Cloudflare version `44f94fa0-8061-4a7e-a30b-113e239488e6` reused the same
 250 Static Assets entries and passed the 106-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
@@ -910,7 +946,8 @@ All Clear/browser acceptance; version 82 adds persisted active-Profile
 comparison and locked `status.activeProfile` publication; version 83 adds the
 opt-in locked BWP server chain and twelve-producer persisted scheduler; version
 84 adds upstream-exact legacy EIO3 HTTP polling and schema-v19 protocol state;
-version 85 adds the EIO4 polling-to-WebSocket upgrade and alarm-backed candidate timeout.
+version 85 adds the EIO4 polling-to-WebSocket upgrade and alarm-backed candidate timeout;
+version 86 adds bounded Treatment-to-curve preprocessing to initial and reconstructed root updates.
 
 This does not prove longer-running stability, a protected mutation observed
 through the pushed live-update path, every plugin workflow or real closed-loop
@@ -954,8 +991,8 @@ client compatibility.
   JSONP and binary remain missing. EIO3 HTTP polling is deployed. The main namespace
   now emits server-originated deltas from a schema-v11 persisted baseline and
   implements the locked client root write shape contract with schema-v12
-  authority and persisted Profile Switch status injection, but remaining
-  server-plugin preprocessing and a protected pushed mutation observed in the
+  authority, persisted Profile Switch status injection and official Treatment
+  marker preprocessing, but remaining non-Treatment server-plugin preprocessing and a protected pushed mutation observed in the
   official page remain incomplete. Broader Mongo/BSON
   numeric, object-ID and mixed-type behavior is not implied by the named write
   contract. `/storage` and `/alarm` currently
