@@ -186,6 +186,7 @@ const enabledPlugins = Array.isArray(statusV1.settings?.enable)
   ? statusV1.settings.enable
   : [];
 checked(enabledPlugins.includes("basal"), "basal remains default-enabled");
+checked(enabledPlugins.includes("errorcodes"), "errorcodes remains default-enabled");
 equal(basalProperties, {}, "basal does not fabricate a property without a Profile");
 checked(!enabledPlugins.includes("treatmentnotify"), "treatmentnotify remains opt-in by default");
 for (const plugin of ["iob", "cob"]) {

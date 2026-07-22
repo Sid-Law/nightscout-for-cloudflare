@@ -194,11 +194,11 @@ for diagnosis, dosing, or medical decisions.
   survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
   abandoned poll/POST lease cleanup, stale authorization-failure cleanup and
-  automatic AR2, Simple Alarm, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
+  automatic AR2, Simple Alarm, Dexcom Error Codes, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
   Treatment Notify, Timeago and opt-in DBSize re-evaluation without
   relying on a process-lifetime `setInterval`. Mutations evaluate the leading
   edge inside their originating request; no future deadline is retained when
-  all twelve enabled producers are inactive.
+  all thirteen enabled producers are inactive.
 - An NSCF platform-only, per-tenant simulated CGM switch for the public lab.
   It is disabled by default, requires the ordinary Entries write/delete
   permissions to change, seeds twelve deterministic five-minute SGVs when
@@ -550,11 +550,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `8ee5c73`. The 67-file Workers-runtime
-suite passes 736/736 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `7298f45`. The 68-file Workers-runtime
+suite passes 749/749 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1253.33 KiB raw / 230.07 KiB gzip and exposes only
+reports 1256.42 KiB raw / 230.69 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -587,9 +587,9 @@ Workers Static Assets, all 33 JSON files are audited as valid and byte-identical
 to v15.0.7, `LANGUAGE` reaches HTTP/Socket settings, and the default Sandbox
 uses the same request-local translator.
 This runtime connects a single `plugin-notifications` SQLite task to the locked
-official AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
+official AR2, Simple Alarms, Error Codes, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
 Treatment Notify, Timeago and DBSize calculations and the core notification
-processor. The engine evaluates the twelve
+processor. The engine evaluates the thirteen
 producers in official server order from one bounded context, arbitrates requests and snoozes in one
 transaction, atomically publishes the selected live `/alarm` frame, and stores
 the next exact logical deadline. AR2 preserves the official coefficients,
@@ -905,6 +905,24 @@ non-Treatment reader no longer fabricates `carbs` or `insulin` fields. All
 loaded` with complete Quick-picks controls, while the homepage displayed a
 fresh `118 mg/dL` simulated value. Both pages had zero console warnings or
 errors.
+
+Version 88 (`0dd4cdd5-09d2-428e-b12e-d6d66e6905e3`) deploys commit `7298f45`
+and adds the locked server-side Dexcom Error Codes notification producer after
+Simple Alarms in official order. It preserves the eight named display codes,
+fallback display, code-specific sounds, default information/urgent mapping,
+literal `off` custom mappings, newest nonfuture SGV selection and strict
+ten-minute expiry. The existing SQLite notification task now evaluates
+thirteen producers and activates future error-code readings at their exact
+timestamp before publishing through the same persisted `/alarm` processor.
+Ten pure-adapter tests and three real Durable Object scheduler tests raise the
+Workers gate to 749/749 across 68 files. All unchanged upstream and audit gates,
+TypeScript and the 1256.42-KiB dry run passed. The 121-assertion public smoke
+passed on `public-smoke-1784700236170`; a fresh official homepage showed a
+current `122 mg/dL`, `+4`, upward-trend reading with no dialog or console
+warning/error, Settings still reported Nightscout 15.0.7, and the durable
+five-minute simulator remained enabled. The public run confirms the official
+default enable flag; information, urgent, future-activation and clear behavior
+are proven without polluting the lab by the real SQLite DO integration tests.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

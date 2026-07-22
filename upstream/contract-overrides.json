@@ -432,7 +432,7 @@
     },
     "vendor/nightscout/tests/errorcodes.test.js": {
       "status": "pass",
-      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All eight in-range/error/calibration/display/default/custom-mapping cases execute against the original errorcodes plugin; no Cloudflare rewrite is used. Automatic persisted evaluation of this plugin remains a separate scheduler integration task."
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All eight in-range/error/calibration/display/default/custom-mapping cases execute against the original errorcodes plugin; no Cloudflare rewrite is used. Ten Workers-runtime pure-adapter cases and three real SQLite Durable Object scheduler cases additionally preserve strict nonfuture/ten-minute selection, default and literal-off custom levels, exact display/sound metadata, information/urgent publication, future activation and exact expiry through the persisted /alarm processor."
     },
     "vendor/nightscout/tests/utils.test.js": {
       "status": "pass",

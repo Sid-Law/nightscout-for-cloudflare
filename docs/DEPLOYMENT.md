@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `8ee5c73`
-- Runtime source candidate: `8ee5c73`
-- Git commit matching the deployed runtime worktree: `8ee5c73`
-- Cloudflare Version ID: `d8c70ff9-3370-4745-b9ee-45da662c1689`
-- Cloudflare ordinal version number: `87`
+- Deployed runtime candidate: `7298f45`
+- Runtime source candidate: `7298f45`
+- Git commit matching the deployed runtime worktree: `7298f45`
+- Cloudflare Version ID: `0dd4cdd5-09d2-428e-b12e-d6d66e6905e3`
+- Cloudflare ordinal version number: `88`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T05:35:41.556Z`
+- Version creation time: `2026-07-22T06:03:08.425Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 24 ms
+- Worker startup: 28 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -33,8 +33,8 @@ is not counted as API, plugin or real-time compatibility.
   v19 persisted EIO3/EIO4 session-protocol authority
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–87 reused them unchanged
-- Upload: 1253.33 KiB raw / 230.07 KiB gzip
+  versions 76–88 reused them unchanged
+- Upload: 1256.42 KiB raw / 230.69 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -285,6 +285,38 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   protected Food write is claimed; mixed write/read/order behavior is proved
   by the real SQLite Durable Object contract.
 
+## Version 88 Dexcom Error Codes notification increment
+
+- Commit `7298f45` ports the locked server-side `errorcodes` producer and places
+  it after Simple Alarms in official notification order. It preserves all eight
+  named display codes plus fallback display, code-specific Pushover sounds,
+  default information/urgent classification and literal `off` custom mapping
+  through `ERRORCODES_INFO`, `ERRORCODES_WARN` and `ERRORCODES_URGENT`.
+- The producer chooses the newest SGV at or before the logical evaluation time,
+  requires `mgdl < 39` and strict age below ten minutes, activates future rows
+  at their exact timestamp and clears at exact expiry. It publishes through the
+  existing atomic SQLite `/alarm` processor; no new notification outlet, real
+  CGM bridge or medical calculation is introduced.
+- Local gates passed: 68 Workers files / 749 tests, 22/22 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript, Wrangler type generation and dry run. The dry bundle was
+  1256.42 KiB raw / 230.69 KiB gzip with 250 assets and only `ENTRY_STORE`
+  plus `ASSETS`.
+- Cloudflare version `0dd4cdd5-09d2-428e-b12e-d6d66e6905e3` is ordinal 88,
+  created at `2026-07-22T06:03:08.425Z`; startup was 28 ms. The expanded
+  121-assertion public smoke passed on isolated tenant
+  `public-smoke-1784700236170`, retained real EIO4 WSS upgrade/EIO3 polling and
+  reported 299,008 SQLite bytes.
+- Remote status confirmed `errorcodes` remains enabled by the official default.
+  The public tenant was not polluted with an artificial error reading; ten
+  pure-adapter tests and three real SQLite DO scheduler tests prove information,
+  urgent, future-activation and exact-clear behavior.
+- A fresh official homepage displayed `122 mg/dL`, `+4`, an upward trend and a
+  populated chart without an alarm dialog or console warning/error. Settings
+  still reported Nightscout 15.0.7. The `demo` simulator remained enabled with
+  `intervalMs:300000`; its latest row was current and its next alarm deadline
+  advanced normally.
+
 ## Version 86 root Treatment-to-curve preprocessing increment
 
 - Commit `750e9ec` connects the existing direct port of locked
@@ -331,8 +363,8 @@ or dosing logic:
   unsupported-language fallback. It loads dictionaries through Static Assets
   instead of `fs`; all 33 deployed JSON files are valid and byte-identical to
   the locked release, and `LANGUAGE` reaches HTTP and Socket settings;
-- the official notification task now evaluates twelve producers in server
-  order: AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
+- the official notification task now evaluates thirteen producers in server
+  order: AR2, Simple Alarms, Error Codes, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
   Treatment Notify, Timeago and opt-in DBSize;
 - AR2 preserves the locked coefficients, six predicted points, inclusive
   six-sample/five-divisor average-loss behavior, warning/urgent thresholds,
@@ -342,6 +374,9 @@ or dosing logic:
 - Simple Alarms preserves the locked recent/nonfuture SGV boundary, strict
   urgent/warning high/low thresholds, exact default message, titles, event
   names and Pushover sound metadata;
+- Error Codes preserves the locked display/fallback and sound maps, default and
+  literal-`off` custom levels, newest nonfuture SGV rule, strict ten-minute
+  freshness and exact future-activation/expiry scheduling;
 - the processor preserves request reset, first urgent then warning,
   information/announcement handling, longest eligible snooze and automatic
   all-clear;
@@ -731,7 +766,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `8ee5c73`. It retains schema-v15 persisted
+The deployed runtime candidate is `7298f45`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -749,6 +784,8 @@ upstream-exact EIO3/SIO4 HTTP-polling sequence alongside EIO4.
 The current transport adapter additionally completes EIO4 polling-to-WebSocket
 upgrade, persists candidate timeout work in the existing alarm multiplexer and
 runs locked Treatment-to-curve preprocessing in initial/reconstructed root snapshots.
+The same persisted notification task now includes the locked Error Codes
+producer with exact mapping, strict freshness and future activation behavior.
 The table below records the exact current local gate for the immutable deployed
 runtime and assets. The unchanged-client runner now includes the original
 client Hashauth, Admin Tools, report-settings and complete Reports workflows;
@@ -770,13 +807,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 67 files, 736/736 passed |
-| Worker dry run | 1253.33 KiB raw / 230.07 KiB gzip |
+| Workers integration tests | 68 files, 749/749 passed |
+| Worker dry run | 1256.42 KiB raw / 230.69 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 736 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 749 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 21
 server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 files,
@@ -804,7 +841,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `d8c70ff9-3370-4745-b9ee-45da662c1689` as the current
+Wrangler reports version `0dd4cdd5-09d2-428e-b12e-d6d66e6905e3` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -830,6 +867,7 @@ not only Wrangler command success.
 | GET `/api/v2/properties/iob,cob` | HTTP 200; property presence exactly follows the deployed opt-in `ENABLE` set and both are absent by default |
 | GET `/api/v2/properties/openaps,pump` | HTTP 200; property presence exactly follows the deployed opt-in `ENABLE` set and both are absent by default |
 | GET `/api/v2/properties/cage,sage,iage,timeago` | HTTP 200; CAGE/SAGE/IAGE presence follows the deployed opt-in `ENABLE` set and all are absent by default, while timeago remains a client/notification plugin rather than a fabricated property |
+| GET `/api/v1/status.json` Error Codes gate | The official `errorcodes` plugin remains default-enabled. The credential-free run does not inject a fake error SGV; exact information/urgent/future/clear delivery is covered by real SQLite DO tests. |
 | Credentialed simulator mutation | The historical 25-entry v1 SGV batch from `simulator://nscf-demo` returned HTTP 200 and rendered the chart; all 25 exact simulator rows were later deleted because their intentionally idle timestamps triggered stale-data alarms |
 | Cloudflare bodyless DELETE | An isolated tenant created one simulated SGV, deleted it with a genuinely bodyless v1 request and returned HTTP 200 with `deletedCount:1`; a follow-up read returned zero rows |
 | GET/POST `/_nscf/simulated-cgm` | Public `demo` reported enabled with `intervalMs:300000`; twelve deterministic seed rows used `simulator://nscf-test`. Fresh smoke tenants remained disabled/empty. |
@@ -837,7 +875,7 @@ not only Wrangler command success.
 | Current EIO4 WebSocket upgrade | Real WSS completed `2probe`/`3probe`, released the pending poll with noop, accepted `5`, then returned root CONNECT and `clients` over the upgraded socket |
 
 The latest reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784697190440` and passed 106 behavior/CORS/protocol assertions.
+`public-smoke-1784700236170` and passed 121 behavior/CORS/protocol assertions.
 It observed 299,008 SQLite bytes and the EIO4 open/upgrade sequence above while
 also retaining the EIO3 client-ping/server-pong contract.
 
@@ -972,11 +1010,16 @@ broader version-72/73/74 page checks:
   Food/Profile read-only route assertions; protected Food writes remain local
   real-DO contract evidence because the page-local credential object was not
   exposed to browser automation.
+- version 88 reloaded the official homepage after enabling runtime log capture,
+  displayed `122 mg/dL`, `+4`, an upward trend and the populated chart, opened
+  Settings/About 15.0.7 and recorded no dialog, console warning or console
+  error. The public simulator remained enabled on its persisted five-minute
+  schedule; remote status also confirmed Error Codes remains default-enabled.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `d8c70ff9-3370-4745-b9ee-45da662c1689` reused the same
-250 Static Assets entries and passed the 120-assertion credential-free remote
+Cloudflare version `0dd4cdd5-09d2-428e-b12e-d6d66e6905e3` reused the same
+250 Static Assets entries and passed the 121-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
@@ -987,7 +1030,9 @@ opt-in locked BWP server chain and twelve-producer persisted scheduler; version
 84 adds upstream-exact legacy EIO3 HTTP polling and schema-v19 protocol state;
 version 85 adds the EIO4 polling-to-WebSocket upgrade and alarm-backed candidate timeout;
 version 86 adds bounded Treatment-to-curve preprocessing to initial and reconstructed root updates;
-version 87 restores the locked Food/Profile read routes and raw non-Treatment shapes.
+version 87 restores the locked Food/Profile read routes and raw non-Treatment shapes;
+version 88 adds the locked Error Codes producer as the thirteenth persisted
+notification source.
 
 This does not prove longer-running stability, a protected mutation observed
 through the pushed live-update path, every plugin workflow or real closed-loop

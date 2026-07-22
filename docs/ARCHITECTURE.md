@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `8ee5c73` and
-Cloudflare version `d8c70ff9-3370-4745-b9ee-45da662c1689`. The
-candidate's 67-file Workers-runtime suite passes 736/736 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `7298f45` and
+Cloudflare version `0dd4cdd5-09d2-428e-b12e-d6d66e6905e3`. The
+candidate's 68-file Workers-runtime suite passes 749/749 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1253.33 KiB
-raw / 230.07 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 87 reported a 24 ms startup and passed the
-120-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1256.42 KiB
+raw / 230.69 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 88 reported a 28 ms startup and passed the
+121-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
 real-browser gates; the earlier authenticated official-page workflows remain
 separate version-80 evidence.
 These are release facts for the named subset, not
@@ -33,7 +33,7 @@ Node-only dynamic plugin loader. Its locked client/server catalog membership
 and order, enable flags, shown-plugin gates, hook dispatch, error containment,
 event aggregation and extended-settings projection are contract-tested. The
 implemented v2 property plugins execute through this registry. The current runtime includes
-`src/plugins/ar2.ts`, `src/plugins/simplealarms.ts` and `src/notifications.ts` on top of
+`src/plugins/ar2.ts`, `src/plugins/simplealarms.ts`, `src/plugins/errorcodes.ts` and `src/notifications.ts` on top of
 `src/plugins/basal.ts` and `src/plugins/treatmentnotify.ts`: Basal preserves
 the current scheduled/temporary/Combo Bolus contribution, pill, visualization
 and assistant behavior; Treatment Notify preserves the locked recent-treatment
@@ -44,10 +44,12 @@ strict threshold cases. The
 notification processor preserves priority, snooze and automatic all-clear,
 with schema-v13 state and atomic live `/alarm` publication. Schema v14 adds a
 generic persisted task scheduler. One `plugin-notifications` task automatically
-evaluates AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
+evaluates AR2, Simple Alarms, Error Codes, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
 officially enabled Treatment Notify, opt-in Timeago and opt-in DBSize alerts in
-official server order; remaining notification plugins and external delivery
-remain missing. Pump,
+official server order. Error Codes retains the upstream display/sound map,
+default and literal-`off` custom level mapping, newest nonfuture SGV selection,
+strict ten-minute freshness and exact future activation/expiry; remaining
+notification plugins and external delivery remain missing. Pump,
 OpenAPS and Loop retain their official plugin and alert gates behind the same
 registry.
 Schema v15 replaces the upstream process-local Admin-notification array with
@@ -94,9 +96,9 @@ realtime snapshot both apply the official treatment-marker curve placement. It r
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 67 Workers files / 736 tests, 22/22 audits, eleven direct upstream
+evidence is 68 Workers files / 749 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1253.33 KiB raw / 230.07 KiB gzip with 250 assets and two bindings.
+dry run is 1256.42 KiB raw / 230.69 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4-upgrade/EIO3-polling and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -1136,7 +1138,7 @@ against the persisted root baseline and attach a fresh status after eviction.
 tightening over permissive upstream JavaScript call shapes.
 
 Polling, direct Hibernatable WebSocket and EIO4 polling upgrade are live in
-Cloudflare version `d8c70ff9-3370-4745-b9ee-45da662c1689`. Current
+Cloudflare version `0dd4cdd5-09d2-428e-b12e-d6d66e6905e3`. Current
 credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, exact Food
 helper reads and invalid Food/Profile route rejection, matching
@@ -1185,6 +1187,15 @@ page remain separate gates. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
+
+Version 88 adds `src/plugins/errorcodes.ts` to that same request-local and
+persisted plugin boundary. The 121-assertion remote gate confirms the official
+default enable flag without inserting an artificial CGM error into the public
+tenant. Ten pure contracts and three real SQLite DO scheduler contracts prove
+the complete mapping, information/urgent delivery, exact future activation and
+ten-minute clear. A fresh browser rendered `122 mg/dL`, `+4`, the official
+chart and About 15.0.7 with no dialog or console warning/error; the durable
+simulator remained enabled with its next five-minute deadline.
 
 The current API3 `/storage` adapter persists each accepted subscriber frame in
 the same SQLite transaction as its mutation, then wakes polling waiters or
@@ -1251,7 +1262,7 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`ar2`/`simplealarms`/`loop`/`openaps`/`pump`/`iob`/`cob`/`bwp`
+`bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`ar2`/`simplealarms`/`errorcodes`/`loop`/`openaps`/`pump`/`iob`/`cob`/`bwp`
 and `treatmentnotify` adapters plus the core notification processor,
 together with the request-local Sandbox, are reusable server
 calculation/property slices dispatched by the registry rather than a background
@@ -1263,7 +1274,7 @@ when the official alert gates enable them;
 IOB/COB/BWP use the locked official formulas and can populate request-time
 Summary state when enabled; BWP computes a preview but does not execute a
 Treatment or add a dosing formula.
-AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE, Treatment
+AR2, Simple Alarms, Error Codes, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE, Treatment
 Notify, Timeago and DBSize request objects are arbitrated, persisted and delivered to
 live `/alarm` clients by the same
 internal engine. Mutations evaluate the leading edge and the schema-v14
