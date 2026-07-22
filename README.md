@@ -537,14 +537,14 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 11 files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; eight files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `7fe1880`. The 64-file Workers-runtime
-suite passes 700/700 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `ae88ba1`. The 66-file Workers-runtime
+suite passes 719/719 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty locked server/data-plugin
 files pass 134/134 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1194.89 KiB raw / 220.95 KiB gzip and exposes only
+reports 1209.27 KiB raw / 223.51 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -603,8 +603,14 @@ future matching row, the latest Profile and the newest 1,000 Treatments within
 the existing time window and shared response budget. The task runs only through
 the official enable gates. Task failures persist a
 two-second exponential retry capped at five minutes. A 15-second to 24-hour
-heartbeat bound is an explicit Workers Free hardening difference. The adapter
-is internal, not a public processing API or an external push provider.
+heartbeat bound is an explicit Workers Free hardening difference. The automatic
+adapter is internal, not a public processing API. Version 81 also ports the
+complete locked Maker, Pushover and Pushnotify message-selection, dedupe,
+cancellation and acknowledgement contracts. Schema v18 persists their dedupe
+leases, emergency receipts and Maker All Clear timestamp per tenant, and the
+official v1/v2 Pushover callback can acknowledge a previously stored receipt.
+External Pushover/IFTTT delivery is still disabled until that specific
+destination is authorized and a persisted outbox is connected.
 Basal is enabled by the official default feature set
 and calculates the current scheduled basal plus active Temp Basal and Combo
 Bolus treatment contributions from the current Profile; it exposes the locked
@@ -649,8 +655,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the 11 unresolved plugin/test
-algorithms. The manifest records fifteen direct passes, 83 adapted, 11 unresolved
+Node plugin `require` without fabricating the eight unresolved plugin/test
+algorithms. The manifest records fifteen direct passes, 86 adapted, eight unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.
@@ -786,6 +792,16 @@ rendered the continuing simulated stream at `129 mg/dL`, `+3` and
 real health data, CGM credential or closed-loop traffic was used, and a
 protected mutation observed through the pushed live-update path remains a
 separate gate.
+
+Version 81 (`5f0c3898-7d92-4164-af78-55b64cc46517`) deploys commit `ae88ba1`
+with the locked Maker/Pushover/Pushnotify provider contracts, schema-v18 SQLite
+dedupe/receipt/All-Clear state and the inherited v1/v2 Pushover receipt
+callback. The callback rejects unknown receipts and no live external provider
+is enabled. A new simulator regression proves that fresh simulated SGV data
+automatically clears an already-emitted stale-data alarm. The 66-file,
+719-test Workers gate, 77-assertion public smoke and real browser all passed;
+the unchanged homepage displayed `121 mg/dL`, `+4`, `FortyFiveUp`, four minutes
+ago, with no dialog, console warning or console error.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

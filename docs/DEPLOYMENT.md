@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `7fe1880f580a`
-- Runtime source candidate: `7fe1880f580a`
-- Git commit matching the deployed worktree: `7fe1880f580a`
-- Cloudflare Version ID: `407dbd03-4a4f-454a-b9a2-1304deb19ac2`
-- Cloudflare ordinal version number: `80`
+- Deployed runtime candidate: `ae88ba1`
+- Runtime source candidate: `ae88ba1`
+- Git commit matching the deployed worktree: `ae88ba1`
+- Cloudflare Version ID: `5f0c3898-7d92-4164-af78-55b64cc46517`
+- Cloudflare ordinal version number: `81`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T02:15:52.364Z`
+- Version creation time: `2026-07-22T02:57:21.637Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 25 ms
+- Worker startup: 36 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -29,11 +29,11 @@ is not counted as API, plugin or real-time compatibility.
   authority columns, the v13 notification last-emission column, the v14
   persisted background-task table/index, the v15 Admin-notification table and
   the v16 persisted data-update debounce table/index and the v17 optional
-  simulated-CGM scheduling row
+  simulated-CGM scheduling row and the v18 push dedupe/receipt/Maker state
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–80 reused them unchanged
-- Upload: 1194.89 KiB raw / 220.95 KiB gzip
+  versions 76–81 reused them unchanged
+- Upload: 1209.27 KiB raw / 223.51 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -96,7 +96,7 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   mg/dL/mmol display, trend/direction, delta, uploader battery, raw/calibration
   and IOB/COB display fields. The Cloudflare adapter caps one request at 1,000
   Entries and uses request-local bounded plugin context.
-- The local Workers gate is now 64 files / 700 tests. The upstream manifest is
+- The version-80 local Workers gate was 64 files / 700 tests. Its manifest was
   15 direct pass, 83 adapted, 11 unresolved and two fixed-scope exclusions.
 - The 77-assertion public smoke passed on fresh tenant
   `public-smoke-1784686572692`; a `demo` Pebble read returned the two newest
@@ -108,6 +108,29 @@ data, CGM credentials, pump credentials or closed-loop traffic.
 - The unchanged homepage displayed the continuing simulator at `129 mg/dL`,
   `+3` and `FortyFiveUp`. No real health data, CGM credential or closed-loop
   client was used.
+
+## Version 81 push-provider contract and simulator-clear increment
+
+- Commit `ae88ba1` completely represents the 15 locked Maker, Pushover and
+  Pushnotify cases. Message values, event names, key fallback, priorities,
+  retries, SHA-1 keys, short dedupe leases, receipts, cancellation and All
+  Clear behavior are retained behind injected transports.
+- Schema v18 persists per-tenant dedupe leases, one-hour emergency receipts and
+  Maker's 30-minute All Clear guard across Durable Object eviction. The
+  official POST callback is live through v1 and inherited v2; it consumes only
+  a previously stored unexpired receipt and acknowledges the durable alarm.
+  Live external Pushover/IFTTT delivery remains disabled.
+- A simulator regression proves that fresh seeded SGV data automatically
+  clears an already-emitted stale-data alarm. The public `demo` simulator
+  remained enabled with a fresh `121 mg/dL` reading.
+- Local gates passed: 66 Workers files / 719 tests, 22 audit tests, 42 unchanged
+  client tests, 134 unchanged server/data-plugin tests, TypeScript and dry run.
+  The manifest is 15 direct pass, 86 adapted, eight unresolved and two
+  fixed-scope exclusions.
+- Public smoke passed 77 assertions on `public-smoke-1784689061606`. Unknown
+  v1/v2 provider receipts returned HTTP 500 with `Internal Server Error`. The
+  unchanged real homepage displayed `121 mg/dL`, `+4`, four minutes ago with
+  no visible dialog, console warning or console error.
 
 ## Release content
 
@@ -525,7 +548,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `7fe1880f580a`. It retains schema-v15 persisted
+The deployed runtime candidate is `ae88ba1`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -557,13 +580,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 64 files, 700/700 passed |
-| Worker dry run | 1194.89 KiB raw / 220.95 KiB gzip |
+| Workers integration tests | 66 files, 719/719 passed |
+| Worker dry run | 1209.27 KiB raw / 223.51 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 700 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 719 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 20
 server/data-plugin files run unchanged in a separate 134/134 gate. All 16 API3 files,
@@ -580,7 +603,7 @@ server/data-plugin files run unchanged in a separate 134/134 gate. All 16 API3 f
 `concurrent-writes.test.js`, `loop.test.js`, `settings.test.js`,
 `sandbox.test.js`, `plugins.test.js`, `query.test.js`, `language.test.js` and
 25 v1 client/API files, `pebble.test.js` and the four named server authentication files are
-classified as direct `pass` or fully `adapted`; fifteen are `pass`, 11 remain unresolved and two bridge files
+classified as direct `pass` or fully `adapted`; fifteen are `pass`, eight remain unresolved and two bridge files
 are fixed-scope exclusions.
 Neither count proves complete compatibility.
 
@@ -591,7 +614,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `407dbd03-4a4f-454a-b9a2-1304deb19ac2` as the current
+Wrangler reports version `5f0c3898-7d92-4164-af78-55b64cc46517` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -743,11 +766,13 @@ broader version-72/73/74 page checks:
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `407dbd03-4a4f-454a-b9a2-1304deb19ac2` reused the same
+Cloudflare version `5f0c3898-7d92-4164-af78-55b64cc46517` reused the same
 250 Static Assets entries and passed the 77-assertion credential-free remote
 API/Engine.IO/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
-version 80 adds the authenticated Profile/Food/Admin/Reports acceptance.
+version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
+81 adds persisted push-provider contracts/callback state and the fresh-data
+All Clear/browser acceptance.
 
 This does not prove longer-running stability, a protected mutation observed
 through the pushed live-update path, every plugin workflow or real closed-loop

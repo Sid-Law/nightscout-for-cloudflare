@@ -6,14 +6,14 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `7fe1880f580a` and
-Cloudflare version `407dbd03-4a4f-454a-b9a2-1304deb19ac2`. The
-candidate's 64-file Workers-runtime suite passes 700/700 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `ae88ba1` and
+Cloudflare version `5f0c3898-7d92-4164-af78-55b64cc46517`. The
+candidate's 66-file Workers-runtime suite passes 719/719 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 134/134 unchanged tests across twenty
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1194.89 KiB
-raw / 220.95 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 80 reported a 25 ms startup and passed the
+Wrangler processed 250 Static Assets entries; its dry run reported 1209.27 KiB
+raw / 223.51 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 81 reported a 36 ms startup and passed the
 77-assertion credential-free API, official Socket.IO-client, EIO4, Pebble and
 authenticated official-page browser gates.
 These are release facts for the named subset, not
@@ -71,6 +71,13 @@ writes one current SGV instead of replaying an unbounded backlog. The small
 test-only crash gap between the Entry commit and schedule advance can produce
 one extra sample and remains an explicit non-critical boundary.
 The generated Entries still drive the normal root delta pipeline.
+Schema v18 replaces Pushnotify's process-local NodeCache maps with bounded
+`push_recent`, `push_receipts` and `push_maker_state` SQLite tables. The
+request-local Maker/Pushover/Pushnotify adapters preserve the locked message,
+key, priority, retry, hash, receipt and All Clear contracts. The official
+v1/v2 receipt callback consumes only a previously stored, unexpired receipt
+and then acknowledges the same durable alarm state used by Socket.IO. Live
+external send/cancel transport remains disconnected.
 The legacy document adapter additionally preserves the locked storage-shape
 semantics: scalar and array API writes map to explicit batches, Profile/Food/
 Activity direct saves create a fresh ObjectId when their internal ID is absent
@@ -86,9 +93,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 64 Workers files / 700 tests, 22/22 audits, eleven direct upstream
+evidence is 66 Workers files / 719 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty direct upstream server/data-plugin files / 134 tests; the
-dry run is 1194.89 KiB raw / 220.95 KiB gzip with 250 assets and two bindings.
+dry run is 1209.27 KiB raw / 223.51 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -1109,7 +1116,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`407dbd03-4a4f-454a-b9a2-1304deb19ac2`. Current credential-free remote smoke
+`5f0c3898-7d92-4164-af78-55b64cc46517`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal and AR2 properties and the opt-in-disabled

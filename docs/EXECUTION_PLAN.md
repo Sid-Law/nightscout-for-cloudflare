@@ -55,8 +55,8 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket; official browser uses polling | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read/write/treatment-write authorization, initial/retro data, server-originated deltas and the locked `dbAdd`/`dbUpdate`/`dbUpdateUnset`/`dbRemove` events, plus API3 `/storage` and `/alarm`. The byte-identical official Socket.IO 4.5.4 browser client now uses root polling and `/alarm`; the only browser adapter adds an optional test-tenant query. Add remaining plugin evaluation, profile-switch preprocessing, close the direct-send at-most-once crash window, then add polling upgrade/EIO3. |
 | 9. Real-time storage updates | Root server/client mutations plus API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. The official client now receives its initial root update remotely; add a credentialed pushed mutation observed in the page and profile/plugin preprocessing. Keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Generic SQLite scheduler + unified automatic notification task | Schema v14 stores logical tasks, due times, attempts and update times in SQLite. The DO's one Cloudflare alarm is derived from the minimum of persisted realtime, authorization-cleanup, task, schema-v16 debounce and optional schema-v17 lab-CGM deadlines. One `plugin-notifications` task evaluates eleven official producers in server order from a bounded SGV/MBG/DeviceStatus/Profile/Treatment/SQLite-stat context. The disabled-by-default lab CGM uses the same alarm, writes one current SGV per five-minute due turn and never backfills an unbounded outage. Mutations run the leading edge; rapid batches receive exactly one persisted trailing evaluation after one quiet second or at the five-second max wait. Failures persist two-second exponential retry capped at five minutes; early at-least-once delivery is a no-op. Add BWP/remaining plugin producers, summary/activity persistence and future maintenance/pruning. |
-| 11. Server plugins/notifications | Static registry + eleven automatic producers + persisted core/Admin notices | Stateless ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `basal`, `ar2`, `simplealarms`, `loop`, `openaps`, `pump`, `iob`, `cob`, `dbsize`, `cannulaage`, `sensorage`, `insulinage`, `timeago`, Treatment Notify and treatment-to-curve plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, officially enabled Treatment Notify, opt-in Timeago and opt-in DBSize alerts are automatically evaluated by schema v14 under their official gates. Schema v15 adapts official Admin notices without a process-global array. Schema v16 persists the upstream one-second trailing/five-second max-wait data-update debounce across DO eviction while keeping the leading evaluation and root publication immediate. The official processor preserves urgent/warning priority, information/announcement handling, snooze arbitration and automatic all-clear. The static registry replaces Node dynamic `require`, preserves the locked catalogs/order/gates/hooks, and drives implemented v2 properties and IOB/COB Summary state. No public processing endpoint was added. BWP, remaining plugin alarm producers and external providers remain incomplete. Build those adapters without rewriting formulas. |
-| 12. Upstream regression suite | Tracked; 15 pass + 83 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, Pebble, the complete storage-shape and bootevent-debounce files, the named storage/concurrency/notification/data/dataloader/database-size/age/timeago/AR2/Basal/Treatment-Notify/Simple-Alarms/OpenAPS/Pump/IOB/COB/treatment-curve/property/Profile/Settings/Language/Query/Sandbox/registry/realtime foundations, four server authentication files and 25 v1 client/API files are adapted. Eleven complete client files run 42/42 unchanged after proving the public bundle is byte-identical to the locked upstream build. Version 80 separately completed credentialed Profile/Food/Admin/Reports browser acceptance. Twenty locked server/data-plugin files, now including AR2, Admin notices, ObjectId cache compatibility, the official environment parser and Express extension middleware, run unchanged as a reusable 134/134-test gate. The env pass locks upstream parsing but does not claim every Node process variable or external provider is mapped to Workers. 11 files remain unresolved and two are fixed-scope exclusions. |
+| 11. Server plugins/notifications | Static registry + eleven automatic producers + persisted core/Admin/push state | Stateless ports of the named official calculation plugins plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. Eleven producers are automatically evaluated by schema v14 under their official gates; schema v15 persists Admin notices and schema v16 persists data-update debounce. Version 81 completely maps the locked Maker, Pushover and Pushnotify files: schema v18 persists dedupe leases, receipts and Maker All Clear state, and v1/v2 expose the official receipt callback. The processor preserves priority, information/announcement handling, snooze arbitration and automatic all-clear. External Pushover/IFTTT send/cancel remains disabled until explicitly authorized and connected through a persisted outbox. BWP and remaining plugin alarm producers remain incomplete. |
+| 12. Upstream regression suite | Tracked; 15 pass + 86 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, Pebble, Maker, Pushover, Pushnotify, the complete storage-shape and bootevent-debounce files and the named plugin/API/realtime foundations are adapted. Eleven complete client files run 42/42 unchanged after bundle byte equality. Twenty locked server/data-plugin files run unchanged as a reusable 134/134-test gate. Eight files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -93,7 +93,7 @@ relabeled as scope exclusions.
 
 ## Current deployed increment
 
-The deployed runtime candidate `7fe1880f580a` retains schema-v15 persisted Admin
+The deployed runtime candidate `ae88ba1` retains schema-v15 persisted Admin
 notifications, the complete storage-shape adapter and schema-v16 durable
 bootevent debounce while retaining the locked v1/v2 `experiments/test` permission
 probe, named API security/verifyauth/API_SECRET mappings, Query/Language
@@ -159,18 +159,21 @@ document transport budget; this is an explicit Workers Free adaptation.
 All prior registry, ddata/database-size, age/timeago, Sandbox, Settings, Loop,
 Profile, uploader, identity, root-write/delta, API3 `/storage`, `/alarm`,
 authorization and notification-ACK contracts remain green. Cloudflare Worker
-version `407dbd03-4a4f-454a-b9a2-1304deb19ac2` (ordinal 80) is active;
-deployment metadata was created at `2026-07-22T02:15:52.364Z`, and Wrangler
-reported a 25 ms startup. It processes 250 Static Assets entries. The Wrangler
-4.112.0 dry run reports 1194.89 KiB raw / 220.95 KiB gzip and exposes only `ENTRY_STORE` plus
-`ASSETS`. The 64-file Workers-runtime suite passes 700/700, all four audit suites pass
+version `5f0c3898-7d92-4164-af78-55b64cc46517` (ordinal 81) is active;
+deployment metadata was created at `2026-07-22T02:57:21.637Z`, and Wrangler
+reported a 36 ms startup. It processes 250 Static Assets entries. The Wrangler
+4.112.0 dry run reports 1209.27 KiB raw / 223.51 KiB gzip and exposes only `ENTRY_STORE` plus
+`ASSETS`. The 66-file Workers-runtime suite passes 719/719, all four audit suites pass
 22/22, eleven official client files pass 42/42 unchanged, twenty locked
 server/data-plugin files pass 134/134 unchanged and TypeScript passes. The
-manifest records fifteen direct passes, 83 adapted, 11 unresolved and
+manifest records fifteen direct passes, 86 adapted, eight unresolved and
 two fixed-scope excluded files.
 
-Version 80's 77-assertion credential-free API/Engine.IO/Pebble smoke passed on
-isolated tenant `public-smoke-1784686572692`. The prior version-78 real
+Version 81's 77-assertion credential-free API/Engine.IO/Pebble smoke passed on
+isolated tenant `public-smoke-1784689061606`. Unknown v1/v2 Pushover receipts
+returned the locked 500 response. The public simulator remained enabled and
+the browser displayed fresh `121 mg/dL`, `+4` data without an alarm dialog or
+console error. The prior version-78 real
 official Socket.IO 4.5.4 client also connected root and `/alarm`, received the
 initial `dataUpdate`, authorized read and subscribed for alarms. Its clean
 browser profile loaded the content-addressed official client and tenant
@@ -386,8 +389,8 @@ named simulated SGV batch.
 The code is still not a full port: non-Entries echo, arbitrary aggregation,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, profile-switch status/plugin preprocessing before
-deltas, automatic task adapters for the remaining server plugins, external notification providers,
-remaining BWP/plugin summary fields and 13 upstream test files (11 unresolved
+deltas, automatic task adapters for the remaining server plugins, live external provider delivery,
+remaining BWP/plugin summary fields and ten upstream test files (eight unresolved
 plus two fixed-scope exclusions) remain incomplete.
 The homepage now consumes the implemented EIO4 polling server through the
 official Socket.IO client. Polling upgrade, EIO3 and pushed protected page
