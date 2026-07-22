@@ -225,7 +225,10 @@ checked(Array.isArray(summary.sgvs) && summary.sgvs.length === 0, "empty summary
 checked(summary.profile && Object.keys(summary.profile).length === 0, "empty summary profile");
 checked(summary.state?.iob === null, "disabled IOB remains null in summary");
 checked(summary.state?.cob === null, "disabled COB remains null in summary");
-checked(summary.state?.bage === null, "disabled BAGE remains null in summary");
+checked(
+  !Object.hasOwn(summary.state ?? {}, "bage"),
+  "disabled BAGE remains absent from summary",
+);
 
 const api3Unauthorized = await request("/api/v3/entries");
 checked(api3Unauthorized.status === 401, "API3 missing JWT");

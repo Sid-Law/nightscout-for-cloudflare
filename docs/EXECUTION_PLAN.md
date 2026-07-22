@@ -49,13 +49,13 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 2. Official browser assets/pages | Named daily workflows accepted; broader plugin/realtime closure partial | Versions 72–79 established the unchanged homepage/chart, Settings/About 15.0.7, Admin/clock, AR2, official Socket.IO polling and the opt-in lab feed. Version 80 authenticated Profile rename/save/reload/restore, Food create/read/delete, Admin role create/delete and Report generation (30 SVGs/eight canvases). All temporary records were restored or removed. A protected mutation observed through the pushed live page-update path remains. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. The complete 13-case concurrent-write contract proves five-way scalar/batch writes, unique IDs and 50-SMB/100-SGV/30-cross-collection recovery. The 26-case upstream storage-shape file is now adapted: scalar/one/many/20-document writes, Profile/Food/Activity save identity and created-at behavior, authorization replacement and explicit SQLite one/many batches are locked. Public invalid-ID checks remain strict while direct legacy saves retain upstream fresh-ObjectId fallback. `/storage` atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 27 locked files plus shared query contract adapted | Entries adapts its complete locked upstream file plus deduplication, Entries UUID and partial-failure contracts. The locked `query.test.js` defaults, ID date-bypass and ObjectId behavior now use one Worker-safe adapter shared by live Entries parsing. Treatments additionally adapts complete UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, Loop carb/dose and ObjectIdCache files. The complete Loop SGV/DeviceStatus file locks directions, device metadata, replay behavior and nested Loop/pump payloads; DeviceStatus retains official prediction trimming. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are mapped. `/pebble` now adapts its full nine-case legacy endpoint contract with bounded request-local context. Status consumes the request-local Settings adapter. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, wider Mongo query/document behavior and remaining v1 routes/test files. |
-| 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary uses the complete 24-assertion `profile.test.js` adapter and receives opt-in official IOB/COB/BWP state. The complete locked `ddata`, `dataloader`, `dbsize`, `bgnow`, `direction`, `rawbg`, `upbat`, `ar2`, `basalprofileplugin`, `simplealarms`, `errorcodes`, `treatmentnotify`, `cannulaage`, `sensorage`, `insulinage`, `timeago`, `iob`, `cob`, `openaps`, `pump`, treatment-to-curve and five-case `loop` files are adapted; the xDrip-js property/notification/pill contract is separately locked against its upstream source. `/properties` runs the official default-enabled Basal and AR2 properties plus opt-in OpenAPS, Pump, xDrip-js and BWP calculations through the same registry. Ddata publishes real SQLite bytes and applies official Treatment marker placement. Basal receives the current Profile plus bounded Temp Basal/Profile Switch/Combo Bolus treatments and meter-BG projection; AR2 maps official `ALARM_TYPES`/`AR2_CONE_FACTOR`, Error Codes maps `ERRORCODES_INFO/WARN/URGENT`, xDrip-js maps its three official environment settings, and IOB/COB/BWP preserve their upstream `ENABLE` gates and bounded Profile/Treatment inputs. The platform reports the one-GB ceiling as 953.67 MiB. One persisted task now evaluates fourteen official producers: AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE, SAGE, IAGE, Treatment Notify, Timeago and opt-in DBSize. Remaining plugin/summary fields, summary persistence, remaining task sources and v2-only `/notifications/loop` delivery remain; ddata uses a bounded two-day SGV window. |
+| 5. API v2 | Partial; official server property producers complete | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary uses the complete 24-assertion `profile.test.js` adapter and receives enabled official IOB/COB/BWP/BAGE state. The complete locked `ddata`, `dataloader`, `dbsize`, `bgnow`, `direction`, `rawbg`, `upbat`, `ar2`, `basalprofileplugin`, `simplealarms`, `errorcodes`, `treatmentnotify`, `cannulaage`, `sensorage`, `insulinage`, `timeago`, `iob`, `cob`, `openaps`, `pump`, treatment-to-curve and five-case `loop` files are adapted; xDrip-js, Battery Age and Runtime State are separately locked against their upstream sources. `/properties` now executes every property-producing plugin in the official server registry, including default Runtime State and opt-in BAGE. Ddata publishes real SQLite bytes and applies official Treatment marker placement. Basal receives the current Profile plus bounded Temp Basal/Profile Switch/Combo Bolus treatments and meter-BG projection; BAGE uses the newest nonfuture 62-day Pump Battery Change and official `BAGE_*` settings. The platform reports the one-GB ceiling as 953.67 MiB. One persisted task now evaluates fifteen official producers: AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE, SAGE, IAGE, BAGE, Treatment Notify, Timeago and opt-in DBSize. Uploader Battery alert production, summary/activity persistence, remaining task kinds and v2-only `/notifications/loop` delivery remain; ddata uses a bounded two-day SGV window. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
 | 7. Authentication/admin | Core plus Admin notices adapted; named hardening retained | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. Schema v15 persists the official readable-site and failed-auth Admin notices, message aggregation, public-count/admin-body split, eight/twelve-hour windows and disable gate across DO eviction. The deployed platform configuration preserves dashboard variables across Wrangler deploys and audits that no plaintext credential is committed; encrypted Secrets remain preferred. A user-provided construction credential successfully authorized one 25-entry simulated SGV batch without recording its value. The Workers boundary caps enforced delay at 60 seconds, bounds transient Admin notices at 128 per tenant, and handles repeated/bracket `secret` arrays safely instead of reproducing the locked upstream unhandled rejection. |
 | 8. Engine.IO/Socket.IO | Partial EIO3/EIO4 polling + EIO4 direct/upgrade WebSocket; official browser remains polling | Strict EIO4 polling, direct Hibernatable WebSocket, standard polling-to-WebSocket upgrade and legacy EIO3 HTTP polling are routed to tenant `EntryStore` DOs with persisted protocol/session/queue authority. EIO4 preserves server-ping/client-pong, RS framing and the locked probe/noop/upgrade order; abandoned candidates close through the persisted alarm without deleting polling. EIO3 preserves client-ping/server-pong, length-prefixed framing and the two-stage SIO4 root CONNECT/`clients` order. Root authorization, initial/retro data, deltas, official Treatment-to-curve preprocessing, four locked write events and API3 `/storage`/`/alarm` remain protocol-aware. The byte-identical official Socket.IO 4.5.4 browser client explicitly requests polling and uses root plus `/alarm`; external standard EIO4 clients can upgrade. Add remaining non-Treatment preprocessing, close the direct-send at-most-once crash window and add EIO3 WebSocket only if ordinary legacy clients require it; JSONP/binary remain explicit non-ordinary gaps. |
 | 9. Real-time storage updates | Root server/client mutations, Treatment markers, Profile Switch status and API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. Initial and reconstructed snapshots run the locked Treatment marker preprocessing before payload budgeting. Initial `status:true` authorization and later zero-duration Profile Switch writes publish the locked `activeProfile`, with the comparison marker surviving DO eviction. The official client receives its initial root update remotely; add a credentialed pushed Profile Switch observed in the page and complete remaining non-Treatment preprocessing. Keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
-| 10. Alarms/background tasks | Generic SQLite scheduler + unified automatic notification task | Schema v14 stores logical tasks, due times, attempts and update times in SQLite. The DO's one Cloudflare alarm is derived from the minimum of persisted realtime, authorization-cleanup, task, schema-v16 debounce and optional schema-v17 lab-CGM deadlines. One `plugin-notifications` task evaluates fourteen official producers in server order from a bounded SGV/MBG/DeviceStatus/Profile/Treatment/SQLite-stat context. Schema v20 additionally persists xDrip-js's small last-state throttle marker so eviction cannot reset its repeat interval. The disabled-by-default lab CGM uses the same alarm, writes one current SGV per five-minute due turn and never backfills an unbounded outage. Mutations run the leading edge; rapid batches receive exactly one persisted trailing evaluation after one quiet second or at the five-second max wait. Failures persist two-second exponential retry capped at five minutes; early at-least-once delivery is a no-op. Add remaining plugin producers, summary/activity persistence and future maintenance/pruning. |
-| 11. Server plugins/notifications | Static registry + fourteen automatic producers + persisted core/Admin/push state | Stateless ports of the named official calculation plugins plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. Fourteen producers, now including default-enabled Error Codes plus opt-in xDrip-js and BWP adapters, are automatically evaluated by schema v14 under their official gates; schema v15 persists Admin notices, schema v16 persists data-update debounce and schema v20 persists xDrip-js state-notification cadence. Error Codes preserves the official display/sound metadata, default and literal-`off` custom mapping, newest nonfuture SGV rule, strict ten-minute expiry and future activation. xDrip-js preserves its 24-hour newest-status selection, transmitter/battery property fields, state severity, alert metadata and whole-minute repeat rule. Version 81 completely maps the locked Maker, Pushover and Pushnotify files: schema v18 persists dedupe leases, receipts and Maker All Clear state, and v1/v2 expose the official receipt callback. The processor preserves priority, information/announcement handling, snooze arbitration and automatic all-clear. External Pushover/IFTTT send/cancel remains disabled until explicitly authorized and connected through a persisted outbox. Remaining plugin alarm producers remain incomplete. |
+| 10. Alarms/background tasks | Generic SQLite scheduler + unified automatic notification task | Schema v14 stores logical tasks, due times, attempts and update times in SQLite. The DO's one Cloudflare alarm is derived from the minimum of persisted realtime, authorization-cleanup, task, schema-v16 debounce and optional schema-v17 lab-CGM deadlines. One `plugin-notifications` task evaluates fifteen official producers in server order from a bounded SGV/MBG/DeviceStatus/Profile/Treatment/SQLite-stat context; BAGE reuses its exact threshold, 20-minute window, heartbeat and clear deadlines. Schema v20 additionally persists xDrip-js's small last-state throttle marker so eviction cannot reset its repeat interval. The disabled-by-default lab CGM uses the same alarm, writes one current SGV per five-minute due turn and never backfills an unbounded outage. Mutations run the leading edge; rapid batches receive exactly one persisted trailing evaluation after one quiet second or at the five-second max wait. Failures persist two-second exponential retry capped at five minutes; early at-least-once delivery is a no-op. Add the remaining Uploader Battery producer, summary/activity persistence and future maintenance/pruning. |
+| 11. Server plugins/notifications | Complete property-producing registry + fifteen automatic producers + persisted core/Admin/push state | Stateless ports of every property-producing official server plugin plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. Fifteen producers, now including BAGE under its official opt-in gate, are automatically evaluated by schema v14; schema v15 persists Admin notices, schema v16 persists data-update debounce and schema v20 persists xDrip-js state-notification cadence. Runtime State preserves the normal request-time `loaded` value. BAGE preserves latest nonfuture Pump Battery Change selection, day/hour display, Summary age, threshold metadata and automatic clear. Version 81 completely maps the locked Maker, Pushover and Pushnotify files: schema v18 persists dedupe leases, receipts and Maker All Clear state, and v1/v2 expose the official receipt callback. The processor preserves priority, information/announcement handling, snooze arbitration and automatic all-clear. External Pushover/IFTTT send/cancel remains disabled until explicitly authorized and connected through a persisted outbox. Uploader Battery remains the one official server notification producer not yet automatic. |
 | 12. Upstream regression suite | Tracked; 16 pass + 86 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, Pebble, Maker, Pushover, Pushnotify, the complete storage-shape and bootevent-debounce files and the named plugin/API/realtime foundations are adapted. Eleven complete client files run 42/42 unchanged after bundle byte equality. Twenty-one locked server/data-plugin files run unchanged as a reusable 143/143-test gate. The latest direct file is the eight-case Node/Mongo pool-option parser; it is source evidence, not a Worker Mongo-pool setting. Seven files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
@@ -93,14 +93,14 @@ relabeled as scope exclusions.
 
 ## Current deployed increment
 
-The deployed runtime candidate `31d0260` retains schema-v15 persisted Admin
+The deployed runtime candidate `73fdf64` retains schema-v15 persisted Admin
 notifications, the complete storage-shape adapter and schema-v16 durable
 bootevent debounce while retaining the locked v1/v2 `experiments/test` permission
 probe, named API security/verifyauth/API_SECRET mappings, Query/Language
 adapters and one schema-v14
 `plugin-notifications` task to the locked AR2, Simple Alarms, Error Codes, Pump, OpenAPS,
-xDrip-js, Loop, BWP, CAGE, SAGE, IAGE, Treatment Notify, Timeago, DBSize and notification-
-processor modules. Mutations evaluate all fourteen in official server order from
+xDrip-js, Loop, BWP, CAGE, SAGE, IAGE, BAGE, Treatment Notify, Timeago, DBSize and notification-
+processor modules. Mutations evaluate all fifteen in official server order from
 one bounded context. Notification state,
 Treatment snooze arbitration, live `/alarm` delivery and task completion/
 reschedule commit in one SQLite transaction. AR2 preserves its official
@@ -172,15 +172,28 @@ All prior
 registry, ddata/database-size, age/timeago, Sandbox, Settings, Loop,
 Profile, uploader, identity, root-write/delta, API3 `/storage`, `/alarm`,
 authorization and notification-ACK contracts remain green. Cloudflare Worker
-version `aa72dd6d-4307-41fc-8162-27211ed6dbb8` (ordinal 89) is active;
-Wrangler reported a 37 ms startup. It processes 250 Static Assets entries. The
-Wrangler 4.112.0 dry run reports 1269.08 KiB raw / 233.24 KiB gzip and exposes
+version `4dbd8a38-3f35-4e85-b379-324cbe2f5577` (ordinal 90) is active;
+Wrangler reported a 38 ms startup. It processes 250 Static Assets entries. The
+Wrangler 4.112.0 dry run reports 1273.27 KiB raw / 233.63 KiB gzip and exposes
 only `ENTRY_STORE` plus `ASSETS`. The 69-file Workers-runtime suite passes
-763/763, all four audit suites pass
+769/769, all four audit suites pass
 22/22, eleven official client files pass 42/42 unchanged, twenty-one locked
 server/data-plugin files pass 143/143 unchanged and TypeScript passes. The
 manifest records sixteen direct passes, 86 adapted, seven unresolved and
 two fixed-scope excluded files.
+
+Version 90 completes every `setProperties` producer in the locked official
+server registry. Default-enabled Runtime State returns `loaded`; opt-in BAGE
+ports the official source selection, day/hour display, notes, Summary age,
+`BAGE_*` settings and information/warning/urgent notification request. BAGE is
+the fifteenth schema-v14 producer, with future threshold activation, inclusive
+minute-20 alerting, minute-21 clear, heartbeat repeat and live `/alarm`
+publication proven by a real SQLite DO case. The 129-assertion remote smoke
+passed on `public-smoke-1784704705985`, including default Runtime State,
+default-disabled BAGE, EIO4 upgrade and EIO3 polling. A fresh official page
+displayed `127 mg/dL`, the chart and About 15.0.7 with zero captured browser
+warnings/errors. Uploader Battery remains the one official server notification
+producer not yet connected to the automatic scheduler.
 
 Version 89 adds the opt-in locked xDrip-js CGM Status property, pill projection
 and notification producer between OpenAPS and Loop. Eleven pure/HTTP/property
@@ -331,8 +344,9 @@ projection now includes the official current Profile and Treatment windows for
 IOB/COB/BWP while excluding long-range history and unrelated food. During the
 first rollout an already-live old DO lacked the new RPC; the corrected release
 falls back only for Cloudflare's exact missing-method error to the existing
-snapshot RPC. Enabled IOB/COB/BWP Summary state is deployed; remaining plugin
-state and persistence still require Milestone E.
+snapshot RPC. Enabled IOB/COB/BWP/BAGE Summary state is deployed and every
+official server property producer is request-time adapted; summary/activity
+persistence still requires Milestone E.
 
 The new v1 contracts preserve Loop, Trio and AndroidAPS ordered batch response
 shapes and pump/uploader metadata. Entries now implements exact numeric-date,
@@ -452,9 +466,9 @@ The deployed increment includes:
   persisted snooze state and bounded live delivery of the five locked alarm
   event names. The bounded internal processor can now select, persist and
   publish upstream notification requests atomically; the unified task now
-  feeds AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
-  officially enabled Treatment Notify, opt-in Timeago and opt-in DBSize alerts
-  through that outlet, while remaining plugin task sources stay incomplete;
+  feeds fifteen producers through that outlet in official order, including
+  Error Codes, xDrip-js, BWP and BAGE; Uploader Battery remains the only
+  official server notification producer not yet automatic;
 - inherited v1/v2 GET `/notifications/ack`, protected by
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
@@ -491,8 +505,8 @@ named simulated SGV batch.
 The code is still not a full port: non-Entries echo, arbitrary aggregation,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
 EIO3 direct WebSocket/upgrade/JSONP/binary, remaining non-Treatment preprocessing before
-deltas, automatic task adapters for the remaining server plugins, live external provider delivery,
-remaining plugin summary fields and nine upstream test files (seven unresolved
+deltas, the automatic Uploader Battery alert, live external provider delivery,
+summary/activity persistence and nine upstream test files (seven unresolved
 plus two fixed-scope exclusions) remain incomplete.
 The homepage consumes the implemented EIO4 polling server through the official
 Socket.IO client, whose locked source explicitly requests polling. Standard
@@ -569,12 +583,12 @@ Token-bearing authorization paths are redacted from adapter error logs.
 ### Milestone C — API completion
 
 1. Finish v1 entries and document routes from Express registration and Swagger.
-2. Finish the remaining plugin-derived v2 properties/summary state and
-   persistence, the v2-only notification loop and remaining authorization
-   surfaces. The ddata helper file, aggregate route, property picker/pretty
-   mode, `bgnow`/`direction`/`rawbg`/`upbat`/`loop` property contracts and core summary mapper are
-   deployed; inherited v1/v2 notification ACK is complete for its named
-   adapted contract.
+2. **Complete for official server `setProperties` producers:** the ddata helper,
+   aggregate route, property picker/pretty mode and all locked server property
+   plugins now run through the request-local registry, including Runtime State
+   and BAGE. Finish summary/activity persistence, the v2-only notification loop
+   and remaining authorization surfaces; inherited v1/v2 notification ACK is
+   complete for its named adapted contract.
 3. **Complete for the locked 16-file API3 contract set:** generic
    search/create/read/update/patch/delete/history, six-collection lastModified
    and byte-compatible small/medium JSON/CSV/XML rendering, plus shape, AAPS,
@@ -608,10 +622,10 @@ Token-bearing authorization paths are redacted from adapter error logs.
    ordinary-client compatibility matrix demonstrates a real need.
 4. **Complete for the named `/storage` and `/alarm` transport slices:** preserve
    the tested persisted namespace/room/subscription behavior, exact alarm ACKs,
-   live-only delivery and tenant isolation. Automatic AR2, Simple Alarms, Pump,
-   OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment Notify, Timeago and DBSize now
-   publish through the outlet; remaining upstream notification producers are
-   Milestone E work.
+   live-only delivery and tenant isolation. Fifteen automatic producers now
+   publish through the outlet in server order, including Error Codes, xDrip-js,
+   BWP and BAGE; Uploader Battery is the remaining official server notification
+   producer for Milestone E.
 5. **Complete for the locked root write-shape slice:** `dbAdd`, `dbUpdate`,
    `dbUpdateUnset` and `dbRemove` preserve mapped permission, mutation, ACK and
    broadcast order. Profile Switch status and Treatment marker preprocessing are persisted/recomputed; extend remaining non-Treatment preprocessing and broader
@@ -628,19 +642,17 @@ Token-bearing authorization paths are redacted from adapter error logs.
 
 ### Milestone E — background/server behavior
 
-1. **Generic substrate complete; plugin coverage partial:** schema v14 persists
-   the task table and shares one derived alarm with realtime/auth deadlines.
-   AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, officially enabled
-   Treatment Notify, opt-in Timeago and opt-in DBSize alerts share one automatic
-   task; add bounded producers for every remaining job.
+1. **Generic substrate complete; plugin coverage nearly complete:** schema v14
+   persists the task table and shares one derived alarm with realtime/auth
+   deadlines. Fifteen official notification producers share one automatic task;
+   add the bounded Uploader Battery producer and remaining non-plugin jobs.
 2. Add API v3 auto-prune; failed-auth Admin notification emission and persisted
    failure-delay cleanup are complete.
 3. Extend the deployed static official plugin registry only with locked
    descriptors and complete algorithm contracts.
 4. Retain the adapted dataloader/Sandbox/database-size path and execute the
    remaining official plugin/notification modules through a persisted tenant context.
-5. **Complete for AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE,
-   Treatment Notify, Timeago and DBSize scheduling:** the engine consults persisted `/alarm`
+5. **Complete for fifteen producers through BAGE scheduling:** the engine consults persisted `/alarm`
    ACK/silence rows and commits state, live publication and task reschedule
    atomically with retry, eviction, activation/expiry and all-clear coverage.
    Reuse this path for remaining producers without inventing medical algorithms.

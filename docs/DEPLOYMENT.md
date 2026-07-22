@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `31d0260`
-- Runtime source candidate: `31d0260`
-- Git commit matching the deployed runtime worktree: `31d0260`
-- Cloudflare Version ID: `aa72dd6d-4307-41fc-8162-27211ed6dbb8`
-- Cloudflare ordinal version number: `89`
+- Deployed runtime candidate: `73fdf64`
+- Runtime source candidate: `73fdf64`
+- Git commit matching the deployed runtime worktree: `73fdf64`
+- Cloudflare Version ID: `4dbd8a38-3f35-4e85-b379-324cbe2f5577`
+- Cloudflare ordinal version number: `90`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T06:44:29.982Z`
+- Version creation time: `2026-07-22T07:17:17.44993Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 37 ms
+- Worker startup: 38 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -34,8 +34,8 @@ is not counted as API, plugin or real-time compatibility.
   plugin-runtime-state table used by xDrip-js notification throttling
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–89 reused them unchanged
-- Upload: 1269.08 KiB raw / 233.24 KiB gzip
+  versions 76–90 reused them unchanged
+- Upload: 1273.27 KiB raw / 233.63 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -352,6 +352,34 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   at five-minute intervals and wrote the current row at
   `2026-07-22T06:45:00.168Z`.
 
+## Version 90 Runtime State and Pump Battery Age increment
+
+- Commit `73fdf64` completes every request-time `setProperties` producer in
+  the locked official server-plugin registry. The default-enabled Runtime
+  State property returns the upstream normal `{state:"loaded"}` value, while
+  opt-in BAGE uses the newest nonfuture Pump Battery Change from its bounded
+  62-day Treatment context and preserves official day/hour display, notes,
+  visualization, Summary state and `BAGE_*` settings.
+- BAGE is the fifteenth automatic notification producer. Its information,
+  warning and urgent thresholds, inclusive 20-minute firing window, heartbeat,
+  future activation and minute-21 clear run in the persisted schema-v14 task
+  and the existing one-alarm Durable Object scheduler. Uploader Battery is the
+  one remaining official server notification producer not yet automatic.
+- Local gates passed: 69 Workers files / 769 tests, 22/22 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript, Wrangler type generation and dry run. The dry bundle was
+  1273.27 KiB raw / 233.63 KiB gzip with 250 assets and only `ENTRY_STORE`
+  plus `ASSETS`.
+- Cloudflare version `4dbd8a38-3f35-4e85-b379-324cbe2f5577` is ordinal 90,
+  created at `2026-07-22T07:17:17.44993Z`; startup was 38 ms. The expanded
+  129-assertion public smoke passed on isolated tenant
+  `public-smoke-1784704705985`, retained real EIO4 WSS upgrade and EIO3
+  polling, and reported 307,200 SQLite bytes.
+- A fresh official homepage displayed `127 mg/dL`, a populated chart and a
+  live delta update. Settings/About reported Nightscout 15.0.7 and captured
+  browser logs contained zero warnings/errors. No real health data or
+  closed-loop client was used.
+
 ## Version 86 root Treatment-to-curve preprocessing increment
 
 - Commit `750e9ec` connects the existing direct port of locked
@@ -398,9 +426,9 @@ or dosing logic:
   unsupported-language fallback. It loads dictionaries through Static Assets
   instead of `fs`; all 33 deployed JSON files are valid and byte-identical to
   the locked release, and `LANGUAGE` reaches HTTP and Socket settings;
-- the official notification task now evaluates fourteen producers in server
-  order: AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE, SAGE, IAGE,
-  Treatment Notify, Timeago and opt-in DBSize;
+- the official notification task now evaluates fifteen producers in server
+  order: AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP,
+  CAGE, SAGE, IAGE, BAGE, Treatment Notify, Timeago and opt-in DBSize;
 - AR2 preserves the locked coefficients, six predicted points, inclusive
   six-sample/five-divisor average-loss behavior, warning/urgent thresholds,
   13-step forecast cone, sounds, titles, mg/dL/mmol scaling and English virtual
@@ -806,7 +834,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `31d0260`. It retains schema-v15 persisted
+The deployed runtime candidate is `73fdf64`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -828,6 +856,8 @@ The same persisted notification task now includes the locked Error Codes
 producer with exact mapping, strict freshness and future activation behavior.
 It now also includes the opt-in xDrip-js CGM Status property/notification
 adapter and schema-v20 durable notification-throttle state.
+It completes the request-time official property registry with Runtime State
+and BAGE, and adds BAGE as the fifteenth automatic notification producer.
 The table below records the exact current local gate for the immutable deployed
 runtime and assets. The unchanged-client runner now includes the original
 client Hashauth, Admin Tools, report-settings and complete Reports workflows;
@@ -849,13 +879,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 69 files, 763/763 passed |
-| Worker dry run | 1269.08 KiB raw / 233.24 KiB gzip |
+| Workers integration tests | 69 files, 769/769 passed |
+| Worker dry run | 1273.27 KiB raw / 233.63 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 763 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 769 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 21
 server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 files,
@@ -883,7 +913,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `aa72dd6d-4307-41fc-8162-27211ed6dbb8` as the current
+Wrangler reports version `4dbd8a38-3f35-4e85-b379-324cbe2f5577` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -900,7 +930,7 @@ not only Wrangler command success.
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
 | GET `/api/v1/food/quickpicks.json` and v2 `/food/regular.json` | HTTP 200 with empty fresh-tenant arrays; query arguments that the locked Food helpers ignore do not alter routing |
 | Invalid Food/Profile children and POST `/api/v1/profiles/` | HTTP 404; plural Profile remains the locked read-only query route |
-| GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and locked `null` IOB/COB fields because both plugins are disabled |
+| GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and locked `null` IOB/COB fields because both plugins are disabled; disabled BAGE is omitted as upstream does |
 | GET `/api/v2/ddata/at` | HTTP 200 with real isolated-tenant SQLite `dataSize:307200` bytes and `indexSize:0`; the total is not double-counted |
 | GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.29`, `display:"0%"` and `status:"current"` |
 | GET `/api/v2/properties/basal` | HTTP 200 on the public simulated profile with `display:"0.100U"`, scheduled `basal:0.1` and no fabricated active treatment contribution |
@@ -909,7 +939,9 @@ not only Wrangler command success.
 | GET `/api/v2/properties/iob,cob` | HTTP 200; property presence exactly follows the deployed opt-in `ENABLE` set and both are absent by default |
 | GET `/api/v2/properties/openaps,pump` | HTTP 200; property presence exactly follows the deployed opt-in `ENABLE` set and both are absent by default |
 | GET `/api/v2/properties/sensorState` | HTTP 200 with `{}` because xDrip-js is opt-in and disabled by the official default; exact enabled property/alert behavior is covered by pure and real SQLite DO tests |
+| GET `/api/v2/properties/runtimeState` | HTTP 200 with the default official `{state:"loaded"}` value |
 | GET `/api/v2/properties/cage,sage,iage,timeago` | HTTP 200; CAGE/SAGE/IAGE presence follows the deployed opt-in `ENABLE` set and all are absent by default, while timeago remains a client/notification plugin rather than a fabricated property |
+| GET `/api/v2/properties/bage` | HTTP 200 with `{}` because BAGE is opt-in and disabled by the official default; enabled display/Summary/alert behavior is covered by source and real SQLite DO tests |
 | GET `/api/v1/status.json` Error Codes gate | The official `errorcodes` plugin remains default-enabled. The credential-free run does not inject a fake error SGV; exact information/urgent/future/clear delivery is covered by real SQLite DO tests. |
 | Credentialed simulator mutation | The historical 25-entry v1 SGV batch from `simulator://nscf-demo` returned HTTP 200 and rendered the chart; all 25 exact simulator rows were later deleted because their intentionally idle timestamps triggered stale-data alarms |
 | Cloudflare bodyless DELETE | An isolated tenant created one simulated SGV, deleted it with a genuinely bodyless v1 request and returned HTTP 200 with `deletedCount:1`; a follow-up read returned zero rows |
@@ -918,7 +950,7 @@ not only Wrangler command success.
 | Current EIO4 WebSocket upgrade | Real WSS completed `2probe`/`3probe`, released the pending poll with noop, accepted `5`, then returned root CONNECT and `clients` over the upgraded socket |
 
 The latest reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784702685161` and passed 125 behavior/CORS/protocol assertions.
+`public-smoke-1784704705985` and passed 129 behavior/CORS/protocol assertions.
 It observed 307,200 SQLite bytes and the EIO4 open/upgrade sequence above while
 also retaining the EIO3 client-ping/server-pong contract.
 
@@ -1064,11 +1096,16 @@ broader version-72/73/74 page checks:
   15.0.7 and recorded no dialog, console warning or console error. The public
   simulator remained enabled and its latest API row was current; remote
   Properties also confirmed xDrip-js remains opt-in by default.
+- version 90 loaded a fresh official homepage showing current simulated data,
+  a populated chart and a changing delta, opened Settings/About 15.0.7 and
+  recorded zero console warnings/errors. Remote Properties confirmed default
+  Runtime State and default-disabled BAGE; Summary correctly omitted disabled
+  BAGE state.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `aa72dd6d-4307-41fc-8162-27211ed6dbb8` reused the same
-250 Static Assets entries and passed the 125-assertion credential-free remote
+Cloudflare version `4dbd8a38-3f35-4e85-b379-324cbe2f5577` reused the same
+250 Static Assets entries and passed the 129-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
@@ -1082,7 +1119,8 @@ version 86 adds bounded Treatment-to-curve preprocessing to initial and reconstr
 version 87 restores the locked Food/Profile read routes and raw non-Treatment shapes;
 version 88 adds the locked Error Codes producer as the thirteenth persisted
 notification source; version 89 adds opt-in xDrip-js as the fourteenth plus
-schema-v20 durable throttle state.
+schema-v20 durable throttle state; version 90 completes the request-time
+property registry and adds BAGE as the fifteenth persisted producer.
 
 This does not prove longer-running stability, a protected mutation observed
 through the pushed live-update path, every plugin workflow or real closed-loop
