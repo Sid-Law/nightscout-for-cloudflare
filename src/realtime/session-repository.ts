@@ -1011,11 +1011,14 @@ export class SqliteRealtimeSessionRepository {
   updateSession(session: RealtimeSession): void {
     this.storage.sql.exec(
       `UPDATE realtime_sessions SET
+         engine_protocol = ?, transport = ?,
          socket_sid = ?, socket_connected = ?, authorized = ?, read_allowed = ?,
          write_allowed = ?, treatment_write_allowed = ?,
          last_seen_at = ?, next_ping_at = ?, pong_deadline = ?, expires_at = ?,
          poll_token = ?, poll_deadline = ?, post_token = ?, post_deadline = ?
        WHERE sid = ?`,
+      session.engineProtocol,
+      session.transport,
       session.socketSid,
       session.socketConnected ? 1 : 0,
       session.authorized ? 1 : 0,
@@ -1031,6 +1034,40 @@ export class SqliteRealtimeSessionRepository {
       session.postToken,
       session.postDeadline,
       session.sid,
+    );
+  }
+
+  scheduleWebSocketClosure(
+    sid: string,
+    code: number,
+    reason: string,
+    createdAt: number,
+    nextAttemptAt: number,
+  ): void {
+    this.storage.sql.exec(
+      `INSERT INTO realtime_websocket_closures
+         (sid, close_code, close_reason, created_at, attempt_count,
+          next_attempt_at, socket_offset)
+       VALUES (?, ?, ?, ?, 0, ?, 0)
+       ON CONFLICT(sid) DO UPDATE SET
+         close_code = excluded.close_code,
+         close_reason = excluded.close_reason,
+         created_at = excluded.created_at,
+         attempt_count = 0,
+         next_attempt_at = excluded.next_attempt_at,
+         socket_offset = 0`,
+      sid,
+      code,
+      reason,
+      createdAt,
+      nextAttemptAt,
+    );
+  }
+
+  cancelWebSocketClosure(sid: string): void {
+    this.storage.sql.exec(
+      "DELETE FROM realtime_websocket_closures WHERE sid = ?",
+      sid,
     );
   }
 

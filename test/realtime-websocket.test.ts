@@ -10,6 +10,7 @@ import type { EntryStore } from "../src/entry-store";
 import {
   decodeEngineIoV4Handshake,
   decodeEngineIoV4Packet,
+  decodeEngineIoV4PollingPayload,
   encodeEngineIoV4Packet,
   unwrapSocketIoV5Packet,
   wrapSocketIoV5Packet,
@@ -40,6 +41,10 @@ async function secretDigest(): Promise<string> {
 
 function endpoint(tenantName: string, query = ""): string {
   return `https://example.test/socket.io/?EIO=4&transport=websocket&tenant=${tenantName}${query}`;
+}
+
+function pollingEndpoint(tenantName: string, query = ""): string {
+  return `https://example.test/socket.io/?EIO=4&transport=polling&tenant=${tenantName}${query}`;
 }
 
 function store(tenantName: string): DurableObjectStub<EntryStore> {
@@ -151,6 +156,32 @@ async function openWebSocket(tenantName: string): Promise<OpenWebSocket> {
   return { sid: handshake.sid, inbox, handshakeFrame };
 }
 
+async function openPolling(tenantName: string): Promise<{
+  sid: string;
+  handshake: ReturnType<typeof decodeEngineIoV4Handshake>;
+}> {
+  const response = await SELF.fetch(pollingEndpoint(tenantName));
+  expect(response.status).toBe(200);
+  const packets = decodeEngineIoV4PollingPayload(await response.text());
+  const handshake = decodeEngineIoV4Handshake(packets[0]!);
+  return { sid: handshake.sid, handshake };
+}
+
+async function openUpgradeWebSocket(
+  tenantName: string,
+  sid: string,
+): Promise<WebSocketInbox> {
+  const response = await SELF.fetch(endpoint(tenantName, `&sid=${sid}`), {
+    headers: { Upgrade: "websocket" },
+  });
+  expect(response.status).toBe(101);
+  const socket = response.webSocket;
+  if (socket === null) throw new Error("WebSocket upgrade did not return a socket");
+  const inbox = new WebSocketInbox(socket);
+  socket.accept();
+  return inbox;
+}
+
 async function nextSocketPackets(
   inbox: WebSocketInbox,
   count: number,
@@ -172,7 +203,7 @@ async function expectStoredSession(
 }
 
 describe("direct Engine.IO 4 WebSocket transport", () => {
-  it("validates direct-handshake HTTP boundaries and never accepts SID upgrades", async () => {
+  it("validates direct-handshake HTTP boundaries and rejects an invalid upgrade SID", async () => {
     const name = tenant("ws-http");
     const unknownTransport = await SELF.fetch(
       `https://example.test/socket.io/?EIO=4&transport=bogus&tenant=${name}`,
@@ -204,7 +235,104 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
       headers: { Upgrade: "websocket" },
     });
     expect(sidUpgrade.status).toBe(400);
-    expect(await sidUpgrade.json()).toEqual({ code: 3, message: "Bad request" });
+    expect(await sidUpgrade.json()).toEqual({ code: 1, message: "Session ID unknown" });
+  });
+
+  it("upgrades a live EIO4 polling SID with the locked probe/noop/upgrade order", async () => {
+    const name = tenant("ws-upgrade");
+    const opened = await openPolling(name);
+    expect(opened.handshake).toMatchObject({
+      sid: opened.sid,
+      upgrades: ["websocket"],
+    });
+
+    const pendingPoll = SELF.fetch(pollingEndpoint(name, `&sid=${opened.sid}`));
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    await expect(expectStoredSession(name, opened.sid)).resolves.toMatchObject({
+      transport: "polling",
+      pollToken: expect.any(String),
+    });
+
+    const inbox = await openUpgradeWebSocket(name, opened.sid);
+    inbox.socket.send("2probe");
+    expect(await inbox.nextString()).toBe("3probe");
+    const releasedPoll = await pendingPoll;
+    expect(releasedPoll.status).toBe(200);
+    expect(await releasedPoll.text()).toBe("6");
+
+    inbox.socket.send("5");
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    await expect(expectStoredSession(name, opened.sid)).resolves.toMatchObject({
+      transport: "websocket",
+      engineProtocol: 4,
+      pollToken: null,
+    });
+
+    await evictDurableObject(store(name));
+    inbox.socket.send(clientFrame({ type: "connect", namespace: "/" }));
+    expect(await nextSocketPackets(inbox, 2)).toMatchObject([
+      { type: "connect", namespace: "/" },
+      { type: "event", namespace: "/", data: ["clients", 1] },
+    ]);
+
+    const stalePolling = await SELF.fetch(
+      pollingEndpoint(name, `&sid=${opened.sid}`),
+    );
+    expect(stalePolling.status).toBe(400);
+    expect(await stalePolling.json()).toEqual({
+      code: 1,
+      message: "Session ID unknown",
+    });
+    inbox.socket.close(1000, "done");
+  });
+
+  it("keeps polling alive when an upgrade candidate fails and rejects duplicates", async () => {
+    const name = tenant("ws-upgrade-abort");
+    const opened = await openPolling(name);
+    const first = await openUpgradeWebSocket(name, opened.sid);
+
+    const duplicate = await SELF.fetch(endpoint(name, `&sid=${opened.sid}`), {
+      headers: { Upgrade: "websocket" },
+    });
+    expect(duplicate.status).toBe(400);
+    expect(await duplicate.json()).toEqual({ code: 3, message: "Bad request" });
+
+    first.socket.send("4not-a-probe");
+    expect((await first.closed()).code).toBe(1002);
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    await runInDurableObject(store(name), async (_instance, state) => {
+      expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(opened.sid))
+        .toMatchObject({ transport: "polling", engineProtocol: 4 });
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_websocket_closures WHERE sid = ?",
+        opened.sid,
+      ).one().count).toBe(0);
+    });
+  });
+
+  it("closes an abandoned upgrade through the persisted alarm without deleting polling", async () => {
+    const name = tenant("ws-upgrade-timeout");
+    const stub = store(name);
+    const opened = await openPolling(name);
+    const candidate = await openUpgradeWebSocket(name, opened.sid);
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `UPDATE realtime_websocket_closures
+         SET next_attempt_at = ?
+         WHERE sid = ?`,
+        Date.now() - 1,
+        opened.sid,
+      );
+      await state.storage.setAlarm(Date.now() + 60_000);
+    });
+    await evictDurableObject(stub);
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    expect((await candidate.closed()).code).toBe(1008);
+    await expect(expectStoredSession(name, opened.sid)).resolves.toMatchObject({
+      transport: "polling",
+      engineProtocol: 4,
+    });
   });
 
   it("matches the locked open, CONNECT, authorize and loadRetro frame order read-only", async () => {

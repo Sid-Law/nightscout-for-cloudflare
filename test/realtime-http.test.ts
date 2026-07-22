@@ -142,7 +142,7 @@ describe("Engine.IO 3/4 polling HTTP adapter", () => {
     expect(response.headers.get("Content-Type")).toBe("text/plain; charset=UTF-8");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.text()).toBe(
-      `0{"sid":"${sid}","upgrades":[],"pingInterval":25000,` +
+      `0{"sid":"${sid}","upgrades":["websocket"],"pingInterval":25000,` +
         `"pingTimeout":20000,"maxPayload":1000000}`,
     );
 

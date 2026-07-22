@@ -43,6 +43,7 @@ import {
   REALTIME_POST_LEASE_MS,
   REALTIME_TRANSPORT,
   REALTIME_WEBSOCKET_TRANSPORT,
+  REALTIME_WEBSOCKET_UPGRADE_TIMEOUT_MS,
   type RealtimeEngineProtocol,
   type RealtimeTransport,
 } from "./constants";
@@ -469,8 +470,9 @@ export class RealtimeSessionService {
     const payload = encodeEngineIoV4PollingPayload([
       createEngineIoV4HandshakePacket({
         sid: session.sid,
-        // This slice does not implement or advertise a WebSocket upgrade.
-        upgrades: [],
+        // Locked Nightscout enables polling and WebSocket, so a normal EIO4
+        // client probes and upgrades after this initial polling handshake.
+        upgrades: [REALTIME_WEBSOCKET_TRANSPORT],
         pingInterval: REALTIME_PING_INTERVAL_MS,
         pingTimeout: REALTIME_PING_TIMEOUT_MS,
         maxPayload: REALTIME_MAX_PAYLOAD_BYTES,
@@ -493,13 +495,74 @@ export class RealtimeSessionService {
       frame: encodeEngineIoV4Packet(createEngineIoV4HandshakePacket({
         sid: session.sid,
         // A direct WebSocket is already at Engine.IO's terminal transport.
-        // Polling-to-WebSocket upgrade remains intentionally unimplemented.
         upgrades: [],
         pingInterval: REALTIME_PING_INTERVAL_MS,
         pingTimeout: REALTIME_PING_TIMEOUT_MS,
         maxPayload: REALTIME_MAX_PAYLOAD_BYTES,
       })),
     };
+  }
+
+  beginWebSocketUpgrade(sid: string): number {
+    const now = this.now();
+    this.cleanup(now);
+    const deadline = now + REALTIME_WEBSOCKET_UPGRADE_TIMEOUT_MS;
+    this.storage.transactionSync(() => {
+      this.requireLiveSession(sid, now, REALTIME_TRANSPORT, 4);
+      this.repository.scheduleWebSocketClosure(
+        sid,
+        1008,
+        "upgrade timeout",
+        now,
+        deadline,
+      );
+    });
+    return deadline;
+  }
+
+  probeWebSocketUpgrade(sid: string): void {
+    const now = this.now();
+    this.cleanup(now);
+    this.storage.transactionSync(() => {
+      this.requireLiveSession(sid, now, REALTIME_TRANSPORT, 4);
+    });
+    // engine.io 6.2.1 forces one polling cycle to finish after the probe. A
+    // waiter with no queued application packet returns the ordinary noop.
+    this.wake(sid);
+  }
+
+  completeWebSocketUpgrade(sid: string): void {
+    const now = this.now();
+    this.cleanup(now);
+    this.storage.transactionSync(() => {
+      const session = this.requireLiveSession(sid, now, REALTIME_TRANSPORT, 4);
+      // The official client pauses polling and waits for its outstanding GET
+      // and POST before sending Engine.IO `upgrade`. Refuse a transport race
+      // instead of allowing both transports to own one durable SID.
+      if (session.pollToken !== null || session.postToken !== null) {
+        throw new RealtimeSessionError(
+          "overlap",
+          "polling transport has not paused before websocket upgrade",
+        );
+      }
+      session.transport = REALTIME_WEBSOCKET_TRANSPORT;
+      session.pollToken = null;
+      session.pollDeadline = null;
+      session.postToken = null;
+      session.postDeadline = null;
+      this.refreshInboundLiveness(session, now);
+      this.repository.updateSession(session);
+      this.repository.cancelWebSocketClosure(sid);
+    });
+  }
+
+  abortWebSocketUpgrade(sid: string): void {
+    this.storage.transactionSync(() => {
+      const session = this.repository.getSession(sid);
+      if (session === null || session.transport === REALTIME_TRANSPORT) {
+        this.repository.cancelWebSocketClosure(sid);
+      }
+    });
   }
 
   validateSession(sid: string, engineProtocol: RealtimeEngineProtocol = 4): void {

@@ -407,13 +407,13 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
 
     expect(handshake.sid).toMatch(/^[A-Za-z0-9_-]{20}$/);
     expect(handshake.payload).toBe(
-      `0{"sid":"${handshake.sid}","upgrades":[],"pingInterval":25000,` +
+      `0{"sid":"${handshake.sid}","upgrades":["websocket"],"pingInterval":25000,` +
         `"pingTimeout":20000,"maxPayload":1000000}`,
     );
     const [open] = decodeEngineIoV4PollingPayload(handshake.payload);
     expect(decodeEngineIoV4Handshake(open!)).toEqual({
       sid: handshake.sid,
-      upgrades: [],
+      upgrades: ["websocket"],
       pingInterval: 25_000,
       pingTimeout: 20_000,
       maxPayload: 1_000_000,

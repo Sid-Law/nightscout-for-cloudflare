@@ -29,6 +29,9 @@ export const REALTIME_WEBSOCKET_FLUSH_MAX_BYTES = REALTIME_MAX_PAYLOAD_BYTES;
 export const REALTIME_WEBSOCKET_CLOSE_CONTINUATION_MS = 100;
 export const REALTIME_WEBSOCKET_CLOSE_RETRY_BASE_MS = 1_000;
 export const REALTIME_WEBSOCKET_CLOSE_RETRY_MAX_MS = 5 * 60_000;
+// Locked engine.io 6.2.1 closes a candidate transport when the client does
+// not finish ping-probe/pong-probe/upgrade within ten seconds.
+export const REALTIME_WEBSOCKET_UPGRADE_TIMEOUT_MS = 10_000;
 // Leaves deterministic headroom for the Socket.IO event wrapper, optional
 // websocket status, and the authorize ACK within the advertised 1 MB queue.
 export const REALTIME_SNAPSHOT_MAX_BYTES = 900_000;

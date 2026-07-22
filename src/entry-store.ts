@@ -269,6 +269,9 @@ interface RealtimeWebSocketAttachment {
   version: typeof REALTIME_WEBSOCKET_ATTACHMENT_VERSION;
   objectId: string;
   sid: string;
+  mode: "session" | "upgrade";
+  phase?: "opening" | "probed";
+  deadline?: number;
 }
 
 interface PluginPropertyContext {
@@ -803,11 +806,18 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       request.headers.get("Upgrade")?.toLowerCase() !== "websocket" ||
       url.searchParams.get("EIO") !== "4" ||
       url.searchParams.get("transport") !== "websocket" ||
-      url.searchParams.has("sid") ||
       url.searchParams.has("j")
     ) {
       return Response.json(
         { code: 3, message: "Bad request" },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    const rawSid = url.searchParams.get("sid");
+    const upgradeSid = rawSid === null || rawSid === "" ? null : rawSid;
+    if (upgradeSid !== null && !REALTIME_SID.test(upgradeSid)) {
+      return Response.json(
+        { code: 1, message: "Session ID unknown" },
         { status: 400, headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -823,32 +833,69 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         { status: 503, headers: { "Cache-Control": "no-store" } },
       );
     }
+    if (
+      upgradeSid !== null &&
+      this.ctx.getWebSockets(`${REALTIME_WEBSOCKET_SID_TAG_PREFIX}${upgradeSid}`)
+        .some((ws) => ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+    ) {
+      return Response.json(
+        { code: 3, message: "Bad request" },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
 
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     let opened: { sid: string; frame: string } | null = null;
+    let upgradeStarted = false;
     try {
-      opened = this.realtime.createWebSocketHandshake();
-      const attachment: RealtimeWebSocketAttachment = {
-        version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
-        objectId: this.ctx.id.toString(),
-        sid: opened.sid,
-      };
+      let attachment: RealtimeWebSocketAttachment;
+      let initialFrame: string | null = null;
+      if (upgradeSid === null) {
+        opened = this.realtime.createWebSocketHandshake();
+        attachment = {
+          version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
+          objectId: this.ctx.id.toString(),
+          sid: opened.sid,
+          mode: "session",
+        };
+        initialFrame = opened.frame;
+      } else {
+        const deadline = this.realtime.beginWebSocketUpgrade(upgradeSid);
+        upgradeStarted = true;
+        attachment = {
+          version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
+          objectId: this.ctx.id.toString(),
+          sid: upgradeSid,
+          mode: "upgrade",
+          phase: "opening",
+          deadline,
+        };
+      }
       this.ctx.acceptWebSocket(server, [
         REALTIME_WEBSOCKET_TAG,
-        `${REALTIME_WEBSOCKET_SID_TAG_PREFIX}${opened.sid}`,
+        `${REALTIME_WEBSOCKET_SID_TAG_PREFIX}${attachment.sid}`,
       ]);
       server.serializeAttachment(attachment);
-      server.send(opened.frame);
+      if (initialFrame !== null) server.send(initialFrame);
       this.flushRealtimeWebSockets();
       await this.synchronizeRealtimeAlarm();
       return new Response(null, { status: 101, webSocket: client });
     } catch (error) {
       if (opened !== null) this.realtime.closeWebSocketSession(opened.sid);
+      if (upgradeStarted && upgradeSid !== null) {
+        this.realtime.abortWebSocketUpgrade(upgradeSid);
+      }
       this.safeCloseWebSocket(server, 1011, "handshake failed");
       this.flushRealtimeWebSockets();
       await this.synchronizeRealtimeAlarm();
+      if (error instanceof RealtimeSessionError && error.code === "unknown_sid") {
+        return Response.json(
+          { code: 1, message: "Session ID unknown" },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (error instanceof RealtimeSessionError && error.code === "capacity") {
         return Response.json(
           { code: 3, message: "Bad request" },
@@ -863,7 +910,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ws: WebSocket,
     message: string | ArrayBuffer,
   ): Promise<void> {
-    const attachment = this.realtimeWebSocketAttachment(ws);
+    let attachment = this.realtimeWebSocketAttachment(ws);
     if (attachment === null) {
       this.closeInvalidRealtimeWebSocket(ws);
       this.flushRealtimeWebSockets();
@@ -871,7 +918,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       return;
     }
     if (this.activeWebSocketSessions.has(attachment.sid)) {
-      this.realtime.closeWebSocketSession(attachment.sid);
+      if (attachment.mode === "upgrade") {
+        this.realtime.abortWebSocketUpgrade(attachment.sid);
+      } else {
+        this.realtime.closeWebSocketSession(attachment.sid);
+      }
       this.safeCloseWebSocket(ws, 1008, "concurrent frame");
       this.flushRealtimeWebSockets();
       await this.synchronizeRealtimeAlarm();
@@ -881,14 +932,49 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     this.activeWebSocketSessions.add(attachment.sid);
     try {
       if (typeof message !== "string") {
-        this.realtime.closeWebSocketSession(attachment.sid);
+        if (attachment.mode === "upgrade") {
+          this.realtime.abortWebSocketUpgrade(attachment.sid);
+        } else {
+          this.realtime.closeWebSocketSession(attachment.sid);
+        }
         this.safeCloseWebSocket(ws, 1003, "binary packets unsupported");
+        return;
+      }
+      if (attachment.mode === "upgrade") {
+        if ((attachment.deadline ?? 0) <= Date.now()) {
+          throw new RealtimeSessionError("bad_packet", "websocket upgrade timed out");
+        }
+        if (attachment.phase === "opening") {
+          if (message !== "2probe") {
+            throw new RealtimeSessionError("bad_packet", "expected websocket probe ping");
+          }
+          this.realtime.probeWebSocketUpgrade(attachment.sid);
+          attachment = { ...attachment, phase: "probed" };
+          ws.serializeAttachment(attachment);
+          ws.send("3probe");
+          return;
+        }
+        if (attachment.phase !== "probed" || message !== "5") {
+          throw new RealtimeSessionError("bad_packet", "expected websocket upgrade packet");
+        }
+        this.realtime.completeWebSocketUpgrade(attachment.sid);
+        attachment = {
+          version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
+          objectId: this.ctx.id.toString(),
+          sid: attachment.sid,
+          mode: "session",
+        };
+        ws.serializeAttachment(attachment);
         return;
       }
       const result = await this.realtime.submitWebSocketFrame(attachment.sid, message);
       if (result.closed) this.safeCloseWebSocket(ws, 1000, "transport close");
     } catch (error) {
-      this.realtime.closeWebSocketSession(attachment.sid);
+      if (attachment.mode === "upgrade") {
+        this.realtime.abortWebSocketUpgrade(attachment.sid);
+      } else {
+        this.realtime.closeWebSocketSession(attachment.sid);
+      }
       const oversized =
         error instanceof RealtimeSessionError &&
         error.code === "bad_packet" &&
@@ -913,15 +999,27 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     _reason: string,
     _wasClean: boolean,
   ): Promise<void> {
-    const sid = this.trustedRealtimeWebSocketSid(ws);
-    if (sid !== null) this.realtime.closeWebSocketSession(sid);
+    const attachment = this.realtimeWebSocketAttachment(ws);
+    if (attachment?.mode === "upgrade") {
+      this.realtime.abortWebSocketUpgrade(attachment.sid);
+    } else if (attachment !== null) {
+      this.realtime.closeWebSocketSession(attachment.sid);
+    } else {
+      this.closeInvalidRealtimeWebSocket(ws);
+    }
     this.flushRealtimeWebSockets();
     await this.synchronizeRealtimeAlarm();
   }
 
   override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
-    const sid = this.trustedRealtimeWebSocketSid(ws);
-    if (sid !== null) this.realtime.closeWebSocketSession(sid);
+    const attachment = this.realtimeWebSocketAttachment(ws);
+    if (attachment?.mode === "upgrade") {
+      this.realtime.abortWebSocketUpgrade(attachment.sid);
+    } else if (attachment !== null) {
+      this.realtime.closeWebSocketSession(attachment.sid);
+    } else {
+      this.closeInvalidRealtimeWebSocket(ws);
+    }
     console.error(JSON.stringify({ message: "realtime websocket transport error" }));
     this.safeCloseWebSocket(ws, 1011, "transport error");
     this.flushRealtimeWebSockets();
@@ -964,16 +1062,43 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ) {
       return null;
     }
+    const mode = value.mode === undefined || value.mode === "session"
+      ? "session"
+      : value.mode === "upgrade"
+        ? "upgrade"
+        : null;
+    if (mode === null) return null;
+    if (
+      mode === "upgrade" &&
+      (
+        (value.phase !== "opening" && value.phase !== "probed") ||
+        typeof value.deadline !== "number" ||
+        !Number.isSafeInteger(value.deadline) ||
+        value.deadline <= 0
+      )
+    ) {
+      return null;
+    }
     return {
       version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
       objectId: value.objectId,
       sid: value.sid,
+      mode,
+      ...(mode === "upgrade"
+        ? {
+            phase: value.phase as "opening" | "probed",
+            deadline: value.deadline as number,
+          }
+        : {}),
     };
   }
 
   private closeInvalidRealtimeWebSocket(ws: WebSocket): void {
     const sid = this.trustedRealtimeWebSocketSid(ws);
-    if (sid !== null) this.realtime.closeWebSocketSession(sid);
+    if (sid !== null) {
+      this.realtime.abortWebSocketUpgrade(sid);
+      this.realtime.closeWebSocketSession(sid);
+    }
     this.safeCloseWebSocket(ws, 1008, "invalid session attachment");
   }
 
@@ -1069,7 +1194,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       const ws = sockets[0]!;
       remainingSockets -= 1;
       const attachment = this.realtimeWebSocketAttachment(ws);
-      if (attachment === null || attachment.sid !== sid) {
+      if (attachment === null || attachment.sid !== sid || attachment.mode !== "session") {
         this.closeInvalidRealtimeWebSocket(ws);
         continue;
       }

@@ -45,6 +45,50 @@ async function request(path, init = {}, scoped = true) {
   return response;
 }
 
+class WebSocketInbox {
+  constructor(socket) {
+    this.messages = [];
+    this.waiters = [];
+    socket.addEventListener("message", (event) => {
+      const waiter = this.waiters.shift();
+      if (waiter === undefined) {
+        this.messages.push(event.data);
+        return;
+      }
+      clearTimeout(waiter.timer);
+      waiter.resolve(event.data);
+    });
+  }
+
+  next(timeoutMs = 5_000) {
+    const queued = this.messages.shift();
+    if (queued !== undefined) return Promise.resolve(queued);
+    return new Promise((resolve, reject) => {
+      const waiter = {
+        resolve,
+        timer: setTimeout(() => {
+          const index = this.waiters.indexOf(waiter);
+          if (index !== -1) this.waiters.splice(index, 1);
+          reject(new Error("timed out waiting for public WebSocket frame"));
+        }, timeoutMs),
+      };
+      this.waiters.push(waiter);
+    });
+  }
+}
+
+async function openWebSocket(url) {
+  const socket = new WebSocket(url);
+  const inbox = new WebSocketInbox(socket);
+  await new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve, { once: true });
+    socket.addEventListener("error", () => reject(new Error("public WebSocket failed")), {
+      once: true,
+    });
+  });
+  return { socket, inbox };
+}
+
 const healthResponse = await request("/healthz", {}, false);
 checked(healthResponse.status === 200, "health status");
 equal(await healthResponse.json(), {
@@ -186,7 +230,33 @@ const eioText = await eioResponse.text();
 checked(eioText.startsWith("0"), "EIO4 open packet");
 const eio = JSON.parse(eioText.slice(1));
 checked(/^[A-Za-z0-9_-]{20}$/.test(eio.sid), "EIO4 SID");
+equal(eio.upgrades, ["websocket"], "EIO4 advertises the locked WebSocket upgrade");
 equal([eio.pingInterval, eio.pingTimeout], [25_000, 20_000], "EIO4 heartbeat");
+
+const pendingEioPoll = request(
+  `/socket.io/?EIO=4&transport=polling&sid=${encodeURIComponent(eio.sid)}`,
+);
+await new Promise((resolve) => setTimeout(resolve, 100));
+const websocketUrl = endpoint(
+  `/socket.io/?EIO=4&transport=websocket&sid=${encodeURIComponent(eio.sid)}`,
+);
+websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+const upgraded = await openWebSocket(websocketUrl);
+upgraded.socket.send("2probe");
+equal(await upgraded.inbox.next(), "3probe", "EIO4 WebSocket probe response");
+const releasedEioPoll = await pendingEioPoll;
+checked(releasedEioPoll.status === 200, "EIO4 upgrade releases polling request");
+equal(await releasedEioPoll.text(), "6", "EIO4 upgrade polling noop");
+upgraded.socket.send("5");
+await new Promise((resolve) => setTimeout(resolve, 100));
+upgraded.socket.send("40");
+const upgradedRoot = await upgraded.inbox.next();
+checked(
+  typeof upgradedRoot === "string" && upgradedRoot.startsWith('40{"sid":"'),
+  "EIO4 upgraded root connect",
+);
+equal(await upgraded.inbox.next(), '42["clients",1]', "EIO4 upgraded clients event");
+upgraded.socket.close(1000, "smoke complete");
 
 const eio3Response = await request("/socket.io/?EIO=3&transport=polling");
 checked(eio3Response.status === 200, "EIO3 handshake status");
@@ -224,6 +294,7 @@ process.stdout.write(`${JSON.stringify({
   dbsize: properties.dbsize,
   eio: {
     sidLength: eio.sid.length,
+    upgrades: eio.upgrades,
     pingInterval: eio.pingInterval,
     pingTimeout: eio.pingTimeout,
   },
