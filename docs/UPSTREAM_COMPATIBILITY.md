@@ -17,7 +17,7 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-Deployed runtime candidate `329aaca` passes 785/785 tests across 71
+Deployed runtime candidate `9fce8d5` passes 792/792 tests across 72
 Workers-runtime files plus 23/23 audit tests, 42/42 unchanged tests across
 eleven complete upstream-client files and 143/143 unchanged tests across twenty-one locked upstream
 server/data-plugin files. The suite retains focused EIO4,
@@ -53,14 +53,25 @@ mutation by themselves; version 80's separate authenticated browser pass does
 cover the named Profile/Food/Admin/Reports workflows. This is not full-port
 evidence.
 The runtime code is deployed as Cloudflare version
-`1f7badbb-cdab-4031-8f55-f350c5277ae2`; exact release
+`92e05b01-0bb6-49e9-9f3e-368cdee3a73b`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
 
-The candidate Wrangler dry-run reports 250 Static Assets entries, 1289.67 KiB raw /
-237.03 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The candidate Wrangler dry-run reports 250 Static Assets entries, 1314.26 KiB raw /
+241.79 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
+
+NSCF package version `1.0.0-beta.1` is a downstream release-candidate label;
+it does not change the locked or reported Nightscout version `15.0.7`. A clean
+Git export with no dependency/build cache completed `npm ci`, rebuilt the
+official assets byte-for-byte and passed the full local and dry-run gates. An
+empty local SQLite DO then passed the unchanged official first-run workflow:
+the no-Profile redirect, raw-secret authentication, untouched Default/UTC
+Profile save, homepage glucose/chart render, remembered authorization, Food
+create/delete and Admin load. Stable NSCF `v1.0.0` remains unclaimed until a
+public-repository fresh Cloudflare-account deployment and user-operated
+Loop/AAPS acceptance pass.
 
 The deployed increment connects Uploader Battery, AR2, Simple Alarms, Error Codes, Pump, OpenAPS,
 xDrip-js, Loop, BWP,

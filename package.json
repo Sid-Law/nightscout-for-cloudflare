@@ -1,8 +1,8 @@
 {
   "name": "nscf",
-  "version": "0.1.0",
+  "version": "1.0.0-beta.1",
   "private": true,
-  "description": "NSCF — an independent, unofficial Nightscout downstream prototype for Cloudflare Workers",
+  "description": "NSCF — an independent, unofficial Nightscout v15.0.7 port candidate for Cloudflare Workers",
   "license": "AGPL-3.0-only",
   "type": "module",
   "cloudflare": {

@@ -21,6 +21,17 @@ the broader Food/Admin/Reports acceptance remains version-80 evidence.
 These are release facts for the named subset, not
 evidence of a complete port.
 
+The project package version is `1.0.0-beta.1`; the upstream application and all
+public Nightscout version responses remain `15.0.7`. The beta number describes
+NSCF release readiness and must not replace or decorate the official UI. A
+clean Git export has independently rebuilt byte-identical assets, passed the
+complete local gate and started with an empty SQLite Durable Object. On first
+visit the official client redirects an instance with no Profile from `/` to
+`/profile`. Authorization is page-client state: read-default users see the
+editor, but only an authenticated client can save. Selecting the upstream
+**Remember this device** option carries that authorization to Food/Admin pages;
+NSCF adds no onboarding UI or custom Profile defaults.
+
 The deployed platform configuration sets Wrangler `keep_vars: true` so a
 dashboard-managed lab variable survives later code deployments. A Node audit locks that behavior while
 rejecting checked-in plaintext vars and prohibited product bindings. The

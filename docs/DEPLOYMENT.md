@@ -67,6 +67,34 @@ It does not create or use D1, R2, KV, Queues, a custom domain or a zone route.
 The public instance is for simulated data only and must not receive real health
 data, CGM credentials, pump credentials or closed-loop traffic.
 
+## NSCF v1.0.0-beta.1 clean-source acceptance (not a deployment)
+
+This acceptance did not change the public Worker or Cloudflare version above.
+Git `HEAD` `21de612` was exported to a clean temporary directory without local
+dependencies, Wrangler state or generated files. Root `npm ci` had no runtime
+dependency advisories under `npm audit --omit=dev`; the locked upstream v15.0.7
+build dependency tree retains its historical audit warnings and was not
+upgraded because doing so would change the locked source build. `npm run build`
+recreated all 250 official assets byte-for-byte. TypeScript, the 1314.26 KiB
+raw / 241.79 KiB gzip dry run, 72/72 Workers test files with 792/792 tests,
+23/23 audits, 42/42 unchanged upstream client tests and 143/143 unchanged
+upstream server/data-plugin tests passed.
+
+A new local SQLite Durable Object and a local-only test password then exercised
+the actual unchanged pages. The lab simulator seeded current entries. The first
+homepage visit redirected to `/profile`; its initial authentication status was
+`Unauthorized`. After raw-secret authentication the untouched `Default`/`UTC`
+Profile saved with `Status: success`. Returning home showed `118 mg/dL`, `-3`,
+the direction arrow and two SVG charts. Re-authenticating with **Remember this
+device** preserved authorization across pages; a temporary Food row was
+created and deleted with `OK`, and Admin loaded zero subjects, seven built-in
+roles and its ordinary cleanup controls as `Admin authorized`.
+
+This evidence is sufficient for a public `v1.0.0-beta.1` source release. It is
+not a stable `v1.0.0` claim and is not a fresh Cloudflare-account one-click
+deployment. Those gates require a public GitHub/GitLab remote and the later
+user-operated Loop/AAPS compatibility run.
+
 ## Version 79 lab-feed increment
 
 - `/_nscf/simulated-cgm` is an NSCF platform endpoint, not an upstream

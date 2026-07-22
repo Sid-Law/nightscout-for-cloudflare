@@ -6,12 +6,20 @@ It is not an official Nightscout release and is not endorsed by or affiliated
 with the Nightscout Foundation. Sugar AI may provide initiator or maintenance
 support, but NSCF does not depend on or require Sugar AI.
 
-This repository is an active, incomplete Cloudflare port. It directly builds
+The current project release candidate is **NSCF v1.0.0-beta.1**. It is ready
+for a small public beta and a public source repository, but it is not yet the
+stable NSCF v1.0.0 release or a claim of complete upstream parity. It directly builds
 and serves the official Nightscout v15.0.7 homepage, charts, client plugins and
 translations; NSCF does not provide a redesigned or substitute UI. The complete
 Node/Mongo and complete Socket.IO/server-plugin behavior are not yet compatible. It uses
 simulated glucose values only. It is not a medical device and must not be used
 for diagnosis, dosing, or medical decisions.
+
+The promotion gates for stable `v1.0.0` are a successful Deploy to Cloudflare
+run from a public repository on a fresh Cloudflare account and a final
+user-operated Loop/AAPS compatibility test. Extreme historical migration,
+multi-year bulk queries, optional Google Home/Alexa integrations and
+production hardening do not block this first beta.
 
 ## What is implemented
 
@@ -294,6 +302,27 @@ declares only `API_SECRET`. The actual one-click button still needs a public
 GitHub/GitLab repository and a fresh-account acceptance run, so current
 operators still use Wrangler or the Cloudflare dashboard as documented below.
 The internal binding remains `API_SECRET` for Nightscout compatibility.
+
+### First opening: authenticate and save the official Profile
+
+A completely empty NSCF instance follows the official Nightscout behavior and
+redirects the first homepage visit to `/profile`. This is expected: the
+database does not yet contain a Profile.
+
+1. At the bottom of Profile Editor, select **(Authenticate)**.
+2. Enter the same raw family password supplied as `API_SECRET` during deploy.
+   Do not calculate or paste a hash.
+3. On a private family device, enable **Remember this device** so Food Editor,
+   Admin Tools and other official pages remain authorized after navigation.
+4. Select **Authenticate**, then select **Save**. The untouched official
+   `Default` Profile with timezone `UTC` is valid; renaming it or changing the
+   timezone is optional, not a prerequisite for saving.
+5. Confirm `Status: success`, then return to `/`.
+
+If closing the Profile Editor immediately returns to it, first check the
+bottom authentication status. `Unauthorized` means the page can read public
+data but cannot save; it does not mean a required Profile field is missing or
+that SQLite Durable Objects cannot persist the Profile.
 
 ## Local setup
 

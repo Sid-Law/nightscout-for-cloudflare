@@ -40,6 +40,33 @@ A module is complete only when:
 
 Opening a page or serving an official asset does not satisfy this standard.
 
+## NSCF v1.0.0-beta.1 release-candidate gate
+
+The committed release-98 baseline was exported from Git `HEAD` (`21de612`) to
+a directory with no existing `node_modules`, Wrangler state or generated
+assets. `npm ci` completed, `npm run build` rebuilt the locked upstream
+v15.0.7 bundle and all 250 Static Assets, and the result matched the committed
+`public/` tree file-for-file. The clean copy then passed TypeScript, a Wrangler
+dry run at 1314.26 KiB raw / 241.79 KiB gzip with only `ENTRY_STORE` and
+`ASSETS`, all 72 Workers files / 792 tests, 23/23 audits, 42/42 unchanged
+client tests and 143/143 unchanged server/data-plugin tests.
+
+A separate empty local SQLite Durable Object proved the ordinary first-run
+path in the unchanged official browser UI. Enabling the lab simulator seeded
+current SGVs; the initial `/` visit redirected to `/profile` because no Profile
+existed. Before authentication the page showed `Unauthorized`. Entering the
+raw local test `API_SECRET`, saving the untouched `Default`/`UTC` Profile and
+returning to `/` produced `118 mg/dL`, `-3`, the direction arrow and two SVG
+charts. Enabling the official **Remember this device** option kept Food and
+Admin authorized across navigation; Food create/delete completed with `OK`,
+and Admin loaded seven built-in roles plus the cleanup tools.
+
+This supports publication as `v1.0.0-beta.1`, not stable `v1.0.0`. Stable
+promotion still requires a public source remote plus fresh-account Deploy to
+Cloudflare acceptance and the separately user-operated Loop/AAPS final test.
+The beta gate does not promote optional voice assistants, legacy-history
+imports or extreme bulk-query behavior into launch blockers.
+
 ## Workstreams and status
 
 | Workstream | Status | Next acceptance checkpoint |
