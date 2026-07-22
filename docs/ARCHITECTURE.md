@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `f09e99f` and
-Cloudflare version `351ae79e-fcbb-4ff7-ba52-f013547311b5`. The
-candidate's 67-file Workers-runtime suite passes 728/728 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `45074b9` and
+Cloudflare version `c779b136-0f3f-4aaa-88ab-48309e1a53cf`. The
+candidate's 67-file Workers-runtime suite passes 731/731 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1220.35 KiB
-raw / 225.96 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 83 reported a 26 ms startup and passed the
-77-assertion credential-free API, official Socket.IO-client, EIO4, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1244.44 KiB
+raw / 228.40 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 84 reported a 39 ms startup and passed the
+99-assertion credential-free API, official Socket.IO-client, EIO4/EIO3 polling, Pebble and
 real-browser gates; the earlier authenticated official-page workflows remain
 separate version-80 evidence.
 These are release facts for the named subset, not
@@ -94,10 +94,10 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 67 Workers files / 728 tests, 22/22 audits, eleven direct upstream
+evidence is 67 Workers files / 731 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1220.35 KiB raw / 225.96 KiB gzip with 250 assets and two bindings.
-Remote API/EIO4 and real-browser gates passed against the same active version.
+dry run is 1244.44 KiB raw / 228.40 KiB gzip with 250 assets and two bindings.
+Remote API/EIO4/EIO3-polling and real-browser gates passed against the same active version.
 
 ## Current request and data flow
 
@@ -105,7 +105,8 @@ Remote API/EIO4 and real-browser gates passed against the same active version.
 Official Nightscout v15.0.7 pages and browser bundle / compatible uploader
         |
         | static HTML/CSS/JS and v1/v2 page API
-        | official Socket.IO 4.5.4 over EIO4 polling or direct-WebSocket clients
+        | official Socket.IO 4.5.4 over EIO4 polling; compatible EIO3 polling;
+        | EIO4 direct-WebSocket clients
         v
 Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
@@ -345,13 +346,16 @@ When those plugins are disabled, IOB/COB/BWP remain JSON `null`, matching the
 locked mapper. Remaining plugin-derived/persisted state is intentionally not
 synthesized.
 
-Exact `/socket.io` and `/socket.io/` requests reach real
-tenant-local Engine.IO 4 polling and direct-WebSocket endpoints. Polling
-implements the official open
-shape with `upgrades: []`, 25-second server ping / 20-second client-pong
-heartbeat, RS payload framing, SIO5 root CONNECT, `clients`, permission-derived
+Exact `/socket.io` and `/socket.io/` requests reach real tenant-local EIO4
+polling/direct-WebSocket and EIO3 polling endpoints. EIO4 polling implements
+the official open shape with `upgrades: []`, 25-second server ping / 20-second
+client-pong heartbeat, RS payload framing, SIO5 root CONNECT, `clients`, permission-derived
 `authorize`, initial and subsequent server-originated `dataUpdate`, and
-`loadRetro`. Sessions, root authorization
+`loadRetro`. EIO3 polling uses the same 25/20-second advertised values but
+retains its client-ping/server-pong heartbeat, length-prefixed payloads, SIO4
+packet forms and locked two-stage open-then-root-CONNECT/`clients` ordering.
+Schema v19 stores protocol authority per session, so mixed EIO3/EIO4 ACKs and
+broadcasts are framed for each recipient. Sessions, root authorization
 and ordered outbound frames are stored in the existing tenant `EntryStore`
 SQLite database, while only an in-flight long-poll waiter is ephemeral. DO
 eviction therefore does not lose protocol authority or queued packets. This
@@ -1042,9 +1046,10 @@ and trusted live notification outlet.
 
 The current server boundary is explicit:
 
-- EIO4 polling and direct WebSocket only; an Engine.IO upgrade from an existing
-  polling SID, EIO3 HTTP and binary packets are rejected, and the polling
-  handshake advertises `upgrades: []`; an exact
+- EIO4 polling/direct WebSocket and EIO3 HTTP polling; an Engine.IO upgrade
+  from an existing polling SID, EIO3 direct WebSocket/upgrade, JSONP and binary
+  packets are rejected, and every polling handshake advertises `upgrades: []`;
+  an exact
   `application/octet-stream` POST closes its leased SID and receives a
   controlled 400/code-3 response;
 - 256 sessions per tenant, 128 queued packets and a 1,000,000-byte whole
@@ -1163,7 +1168,8 @@ count while hiding the body, and the real browser retained the official Admin,
 clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official
 homepage now uses the EIO4 polling server; polling-to-WebSocket upgrade, EIO3
-and a pushed protected mutation observed in the page remain separate gates. The named
+WebSocket/upgrade and a pushed protected mutation observed in the page remain
+separate gates. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
@@ -1208,7 +1214,7 @@ urgent threshold-plus-one-millisecond deadlines, source expiry, future status
 activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
 The remaining transport work is non-Profile-Switch plugin preprocessing,
-EIO3, polling upgrade and the direct-send replay/acknowledgement boundary;
+EIO3 WebSocket/upgrade, polling upgrade and the direct-send replay/acknowledgement boundary;
 automatic alarm producers for other remaining plugins stay as background work.
 BWP, CAGE/SAGE/IAGE and DBSize are complete producers.
 
@@ -1308,7 +1314,8 @@ object as well as every out-of-scope product binding.
   rotated and converted to an encrypted Worker Secret before non-lab use.
 - The homepage ships the locked official Socket.IO 4.5.4 client. The adjacent
   adapter only appends an optional test-tenant query and has no medical or
-  display logic. EIO4 polling is the current page transport; polling upgrade
-  and EIO3 remain unimplemented.
+  display logic. EIO4 polling is the current page transport; EIO3 HTTP polling
+  is available for legacy clients, while polling upgrade and EIO3
+  WebSocket/upgrade remain unimplemented.
 - Text asset responses are streamed rather than buffered when UTF-8 headers are
   adapted, keeping the extra Worker CPU and memory work constant.

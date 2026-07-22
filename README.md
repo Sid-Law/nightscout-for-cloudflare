@@ -205,10 +205,12 @@ for diagnosis, dosing, or medical decisions.
   one current reading rather than fabricating a long backlog. The generated
   rows use the official Entries schema and flow through the official root
   `dataUpdate`; no client UI, medical formula or dosing logic is added.
-- Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs. Only EIO4
-  polling and direct WebSocket are routed: polling advertises `upgrades: []`,
-  EIO3 and binary packets are rejected, and polling-to-WebSocket upgrade is not
-  implemented.
+- Routed official EIO4/SIO5 and legacy EIO3/SIO4 HTTP polling through the same
+  persisted tenant transport. EIO3 keeps its client-ping/server-pong heartbeat,
+  length-prefixed payloads and two-stage root CONNECT/`clients` sequence; EIO4
+  retains RS framing and server-ping/client-pong. Direct WebSocket remains EIO4
+  only, polling advertises `upgrades: []`, and EIO3 WebSocket/upgrade, JSONP and
+  binary transports are not implemented.
 - Content-addressed loading for the official Socket.IO client and the small
   tenant-query adapter, so an older upstream service worker cannot keep
   serving an obsolete transport boundary after deployment.
@@ -227,7 +229,7 @@ This is not yet a drop-in Nightscout server. Important missing work includes
 the complete v1/v2 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
 Mongo query/collection parity beyond the tested safe subset, Engine.IO
-polling-to-WebSocket upgrade, EIO3 HTTP transport,
+polling-to-WebSocket upgrade, EIO3 direct WebSocket/upgrade and JSONP/binary,
 the direct-WebSocket at-most-once crash window, remaining plugin preprocessing
 on root updates, remaining background-task kinds, general server plugin
 execution, remaining plugin alarm generation,
@@ -235,8 +237,8 @@ external push providers, plugin-derived v2 summary
 state/persistence, and a protected mutation observed through the pushed live
 page update path.
 The official homepage now uses the implemented EIO4 polling endpoint and
-`/alarm` namespace. It does not yet prove polling-to-WebSocket upgrade, EIO3,
-every pushed mutation workflow or the still-missing server-side plugin
+`/alarm` namespace. It does not yet prove polling-to-WebSocket upgrade, EIO3
+WebSocket/upgrade, every pushed mutation workflow or the still-missing server-side plugin
 preprocessing pipeline.
 Entries also remains incomplete beyond its now-adapted locked test file:
 `times/echo`, `times` and dateString `slice` support only the bounded numeric-
@@ -543,11 +545,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `f09e99f`. The 67-file Workers-runtime
-suite passes 728/728 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `45074b9`. The 67-file Workers-runtime
+suite passes 731/731 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1220.35 KiB raw / 225.96 KiB gzip and exposes only
+reports 1244.44 KiB raw / 228.40 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -667,7 +669,7 @@ Its Node configuration audit rejects stored plaintext vars and prohibited
 D1/R2/KV/Queues/routes while locking the existing footprint.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
-byte parity, EIO3, polling-to-WebSocket upgrade and the server-side
+byte parity, EIO3 WebSocket/upgrade/JSONP/binary, polling-to-WebSocket upgrade and the server-side
 remaining plugin evaluators/task kinds, remaining plugin-derived summary
 fields and their persistence remain
 missing. The user-supplied construction credential is active and was used only
@@ -835,6 +837,24 @@ The unchanged homepage displayed the continuing simulator at `113 mg/dL`,
 `-1`, `Flat`, one minute old, without a dialog or console warning/error. At
 `2026-07-22T03:55:00.124Z` the persisted simulator independently appended the
 next `115 mg/dL` reading and advanced its following five-minute deadline.
+
+Version 84 (`c779b136-0f3f-4aaa-88ab-48309e1a53cf`) deploys commit `45074b9`
+and adds the legacy `allowEIO3` HTTP-polling compatibility slice over schema-v19
+persisted protocol authority. The locked upstream Socket.IO stack supplied the
+wire oracle: the first response is the EIO3 length-prefixed open packet, while
+the next poll returns root CONNECT before `clients`, exactly preserving the
+two-stage Socket.IO 2.x sequence. Client ping/server pong, namespace query
+parsing, per-session EIO3/SIO4 packet conversion, ACKs and mixed EIO3/EIO4
+broadcasts are covered without changing EIO4 behavior. EIO3 direct WebSocket,
+polling-to-WebSocket upgrade, JSONP and binary transports remain explicit gaps.
+The 67-file, 731-test Workers gate, all audit/source gates, dry run and the
+99-assertion public smoke passed; the smoke used isolated tenant
+`public-smoke-1784694550269` and exercised both EIO4 and EIO3 polling. A fresh
+real-browser reload of the unchanged official homepage displayed `127 mg/dL`,
+`-3`, one minute old with the chart present, a connected live client and no
+console warning or error. The five-minute persisted simulator remains enabled,
+so the public lab does not age into a stale-data alarm while migration work
+continues.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
