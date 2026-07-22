@@ -1,14 +1,22 @@
 import {
   ProtocolError,
+  createEngineIoV3HandshakePacket,
   createEngineIoV4HandshakePacket,
   createSocketIoV5ServerConnectPacket,
+  decodeEngineIoV3Packet,
+  decodeEngineIoV3PollingPayload,
   decodeEngineIoV4Packet,
   decodeEngineIoV4PollingPayload,
+  encodeEngineIoV3Packet,
+  encodeEngineIoV3PollingPayload,
   encodeEngineIoV4Packet,
   encodeEngineIoV4PollingPayload,
+  unwrapSocketIoV4Packet,
   wrapSocketIoV5Packet,
+  wrapSocketIoV4Packet,
   unwrapSocketIoV5Packet,
   type EngineIoV4Packet,
+  type SocketIoV4Packet,
   type SocketIoV5EventPacket,
   type SocketIoV5Packet,
 } from "../protocol";
@@ -35,6 +43,7 @@ import {
   REALTIME_POST_LEASE_MS,
   REALTIME_TRANSPORT,
   REALTIME_WEBSOCKET_TRANSPORT,
+  type RealtimeEngineProtocol,
   type RealtimeTransport,
 } from "./constants";
 import {
@@ -289,8 +298,65 @@ function recordValue(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function engineFrames(packets: readonly EngineIoV4Packet[]): string[] {
-  return packets.map((packet) => encodeEngineIoV4Packet(packet));
+function socketIoV5FromV4(packet: SocketIoV4Packet): SocketIoV5Packet {
+  if (packet.type !== "connect" || !packet.namespace.includes("?")) {
+    return packet as SocketIoV5Packet;
+  }
+  const queryAt = packet.namespace.indexOf("?");
+  const namespace = packet.namespace.slice(0, queryAt);
+  const params = new URLSearchParams(packet.namespace.slice(queryAt + 1));
+  const data: Record<string, string | string[]> = {};
+  for (const [key, value] of params) {
+    const prior = data[key];
+    data[key] = prior === undefined
+      ? value
+      : Array.isArray(prior)
+        ? [...prior, value]
+        : [prior, value];
+  }
+  return Object.keys(data).length === 0
+    ? { type: "connect", namespace }
+    : { type: "connect", namespace, data } as SocketIoV5Packet;
+}
+
+function engineFrameForSession(
+  session: RealtimeSession,
+  packet: EngineIoV4Packet,
+): string {
+  if (session.engineProtocol === 4) return encodeEngineIoV4Packet(packet);
+  if (packet.type !== "message") return encodeEngineIoV3Packet(packet);
+  const socketPacket = unwrapSocketIoV5Packet(packet);
+  const legacyPacket = socketPacket.type === "connect"
+    ? { type: "connect", namespace: socketPacket.namespace } as SocketIoV4Packet
+    : socketPacket as SocketIoV4Packet;
+  return encodeEngineIoV3Packet(wrapSocketIoV4Packet(legacyPacket));
+}
+
+function engineFrames(
+  session: RealtimeSession,
+  packets: readonly EngineIoV4Packet[],
+): string[] {
+  return packets.map((packet) => engineFrameForSession(session, packet));
+}
+
+function pollingPayloadForSession(
+  session: RealtimeSession,
+  packets: readonly EngineIoV4Packet[],
+): string {
+  return session.engineProtocol === 3
+    ? encodeEngineIoV3PollingPayload(
+      packets.map((packet) => decodeEngineIoV3Packet(engineFrameForSession(session, packet))),
+    )
+    : encodeEngineIoV4PollingPayload(packets);
+}
+
+function socketPacketForSession(
+  session: RealtimeSession,
+  packet: EngineIoV4Packet,
+): SocketIoV5Packet {
+  return session.engineProtocol === 3
+    ? socketIoV5FromV4(unwrapSocketIoV4Packet(packet))
+    : unwrapSocketIoV5Packet(packet);
 }
 
 function deltaDocuments(values: unknown[]): RealtimeDeltaDocument[] {
@@ -356,14 +422,49 @@ export class RealtimeSessionService {
     this.activeProfile = options.activeProfile ?? (() => null);
   }
 
-  createHandshake(): { sid: string; payload: string } {
+  createHandshake(
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): { sid: string; payload: string } {
     const now = this.now();
     this.cleanup(now);
     let session: RealtimeSession;
     try {
-      session = this.repository.createSession(now);
+      session = this.repository.createSession(now, REALTIME_TRANSPORT, engineProtocol);
     } catch (error) {
       throw this.translateRepositoryError(error);
+    }
+    if (engineProtocol === 3) {
+      // Socket.IO 2.x automatically connects the root namespace as soon as
+      // Engine.IO 3 opens; unlike SIO5, the client does not send a root CONNECT.
+      const wakeTargets = this.storage.transactionSync(() => {
+        session.socketSid = session.sid;
+        session.socketConnected = true;
+        this.repository.updateSession(session);
+        this.repository.enqueueFrames(
+          session.sid,
+          engineFrames(session, [wrapSocketIoV5Packet({
+            type: "connect",
+            namespace: "/",
+          })]),
+          now,
+        );
+        return this.enqueueClientsForConnectedSessions(now);
+      });
+      for (const targetSid of wakeTargets) {
+        if (targetSid !== session.sid) this.wake(targetSid);
+      }
+      return {
+        sid: session.sid,
+        payload: encodeEngineIoV3PollingPayload([
+          createEngineIoV3HandshakePacket({
+            sid: session.sid,
+            upgrades: [],
+            pingInterval: REALTIME_PING_INTERVAL_MS,
+            pingTimeout: REALTIME_PING_TIMEOUT_MS,
+            maxPayload: REALTIME_MAX_PAYLOAD_BYTES,
+          }),
+        ]),
+      };
     }
     const payload = encodeEngineIoV4PollingPayload([
       createEngineIoV4HandshakePacket({
@@ -383,7 +484,7 @@ export class RealtimeSessionService {
     this.cleanup(now);
     let session: RealtimeSession;
     try {
-      session = this.repository.createSession(now, REALTIME_WEBSOCKET_TRANSPORT);
+      session = this.repository.createSession(now, REALTIME_WEBSOCKET_TRANSPORT, 4);
     } catch (error) {
       throw this.translateRepositoryError(error);
     }
@@ -401,19 +502,24 @@ export class RealtimeSessionService {
     };
   }
 
-  validateSession(sid: string): void {
+  validateSession(sid: string, engineProtocol: RealtimeEngineProtocol = 4): void {
     const now = this.now();
     this.cleanup(now);
     this.storage.transactionSync(() => {
-      this.requireLiveSession(sid, now);
+      this.requireLiveSession(sid, now, REALTIME_TRANSPORT, engineProtocol);
     });
   }
 
-  beginPost(sid: string): string {
+  beginPost(sid: string, engineProtocol: RealtimeEngineProtocol = 4): string {
     const now = this.now();
     this.cleanup(now);
     const token = this.storage.transactionSync(() => {
-      const session = this.requireLiveSession(sid, now);
+      const session = this.requireLiveSession(
+        sid,
+        now,
+        REALTIME_TRANSPORT,
+        engineProtocol,
+      );
       if (session.postToken !== null && (session.postDeadline ?? 0) > now) {
         this.repository.deleteSessionInTransaction(sid);
         return null;
@@ -473,22 +579,33 @@ export class RealtimeSessionService {
     if (result.error !== null) throw result.error;
   }
 
-  async submitPost(sid: string, token: string, payload: string): Promise<void> {
-    let packets: EngineIoV4Packet[];
-    try {
-      packets = decodeEngineIoV4PollingPayload(payload);
-    } catch (error) {
-      this.closeForBadPacket(sid);
-      throw this.badPacket(error);
-    }
-
+  async submitPost(
+    sid: string,
+    token: string,
+    payload: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): Promise<void> {
     const initial = this.repository.getSession(sid);
-    if (initial === null || initial.transport !== REALTIME_TRANSPORT) {
+    if (
+      initial === null
+      || initial.transport !== REALTIME_TRANSPORT
+      || initial.engineProtocol !== engineProtocol
+    ) {
       throw new RealtimeSessionError("unknown_sid", "session ID is unknown");
     }
     if (initial.postToken !== token || (initial.postDeadline ?? 0) <= this.now()) {
       this.closeForBadPacket(sid);
       throw new RealtimeSessionError("invalid_post_lease", "polling POST lease is invalid");
+    }
+
+    let packets: EngineIoV4Packet[];
+    try {
+      packets = initial.engineProtocol === 3
+        ? decodeEngineIoV3PollingPayload(payload)
+        : decodeEngineIoV4PollingPayload(payload);
+    } catch (error) {
+      this.closeForBadPacket(sid);
+      throw this.badPacket(error);
     }
 
     const session = cloneSession(initial);
@@ -503,18 +620,25 @@ export class RealtimeSessionService {
           closed = true;
           break;
         }
-        if (packet.type === "pong") {
+        if (packet.type === "pong" && session.engineProtocol === 4) {
           this.acceptPong(session, packet);
+          continue;
+        }
+        if (packet.type === "ping" && session.engineProtocol === 3) {
+          this.refreshInboundLiveness(session, this.now());
+          // engine.io 6.2.1 answers the EIO3 client heartbeat without echoing
+          // optional ping data on the ordinary transport path.
+          outbound.push({ type: "pong" });
           continue;
         }
         if (packet.type !== "message") {
           throw new RealtimeSessionError(
             "bad_packet",
-            `client packet type ${packet.type} is invalid for EIO4 polling`,
+            `client packet type ${packet.type} is invalid for EIO${session.engineProtocol} polling`,
           );
         }
         this.refreshInboundLiveness(session, this.now());
-        const socketPacket = unwrapSocketIoV5Packet(packet);
+        const socketPacket = socketPacketForSession(session, packet);
         await this.processSocketPacket(
           session,
           socketPacket,
@@ -547,6 +671,7 @@ export class RealtimeSessionService {
       now,
       (current) =>
         current.transport !== REALTIME_TRANSPORT
+          || current.engineProtocol !== engineProtocol
           ? new RealtimeSessionError("unknown_sid", "session ID is unknown")
           : current.postToken !== token || (current.postDeadline ?? 0) <= now
             ? new RealtimeSessionError(
@@ -684,11 +809,19 @@ export class RealtimeSessionService {
     this.closeSession(sid);
   }
 
-  async poll(sid: string): Promise<string> {
+  async poll(
+    sid: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): Promise<string> {
     const startedAt = this.now();
     this.cleanup(startedAt);
     const acquired = this.storage.transactionSync(() => {
-      const session = this.requireLiveSession(sid, startedAt);
+      const session = this.requireLiveSession(
+        sid,
+        startedAt,
+        REALTIME_TRANSPORT,
+        engineProtocol,
+      );
       if (session.pollToken !== null && (session.pollDeadline ?? 0) > startedAt) {
         this.repository.deleteSessionInTransaction(sid);
         return { overlap: true as const };
@@ -741,7 +874,12 @@ export class RealtimeSessionService {
 
     const now = this.now();
     return this.storage.transactionSync(() => {
-      const session = this.requireLiveSession(sid, now);
+      const session = this.requireLiveSession(
+        sid,
+        now,
+        REALTIME_TRANSPORT,
+        engineProtocol,
+      );
       if (session.pollToken !== pollToken) {
         throw new RealtimeSessionError("unknown_sid", "polling GET no longer owns the session");
       }
@@ -749,7 +887,7 @@ export class RealtimeSessionService {
       let payload = this.repository.dequeuePayload(sid);
       if (payload === null) {
         // A bounded wake without application data is represented by EIO noop.
-        payload = encodeEngineIoV4PollingPayload([{ type: "noop" }]);
+        payload = pollingPayloadForSession(session, [{ type: "noop" }]);
       }
       session.pollToken = null;
       session.pollDeadline = null;
@@ -869,13 +1007,13 @@ export class RealtimeSessionService {
     }
     if (delta.delta !== true) return;
 
-    let frame: string;
+    let packet: EngineIoV4Packet;
     try {
-      frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+      packet = wrapSocketIoV5Packet({
         type: "event",
         namespace: "/",
         data: ["dataUpdate", delta],
-      }));
+      });
     } catch {
       return;
     }
@@ -883,7 +1021,7 @@ export class RealtimeSessionService {
     let droppedConnectedRoot = false;
     for (const sid of this.repository.listDataReceiverSessionIds(now)) {
       try {
-        this.repository.enqueueFrames(sid, [frame], now);
+        this.enqueuePacketsForSession(sid, [packet], now);
         this.pendingApplicationWakeSids.add(sid);
       } catch {
         this.repository.deleteSessionInTransaction(sid);
@@ -907,16 +1045,16 @@ export class RealtimeSessionService {
    */
   recordApi3StorageMutationInTransaction(event: Api3RealtimeMutationEvent): void {
     this.recordRootDataUpdateInTransaction();
-    let packet: string;
+    let packet: EngineIoV4Packet;
     try {
       const payload = event.type === "delete"
         ? { colName: event.collection, identifier: event.identifier }
         : { colName: event.collection, doc: event.document };
-      packet = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+      packet = wrapSocketIoV5Packet({
         type: "event",
         namespace: "/storage",
         data: [event.type, payload],
-      }));
+      });
     } catch {
       // A document mutation must never be rolled back because one realtime
       // representation cannot fit the bounded transport adapter.
@@ -927,7 +1065,7 @@ export class RealtimeSessionService {
     let droppedConnectedRoot = false;
     for (const sid of this.repository.listStorageSubscriberSessionIds(event.collection, now)) {
       try {
-        this.repository.enqueueFrames(sid, [packet], now);
+        this.enqueuePacketsForSession(sid, [packet], now);
         this.pendingApplicationWakeSids.add(sid);
       } catch {
         const session = this.repository.getSession(sid);
@@ -950,20 +1088,20 @@ export class RealtimeSessionService {
    * create an offline replay log.
    */
   publishAlarmNotification(notification: Record<string, unknown>): number {
-    let frame: string;
+    let packet: EngineIoV4Packet;
     try {
-      frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+      packet = wrapSocketIoV5Packet({
         type: "event",
         namespace: "/alarm",
         data: [alarmEventName(notification), notification],
-      }));
+      });
     } catch {
       return 0;
     }
     const now = this.now();
     const result = this.storage.transactionSync(() => {
       const wakeTargets = new Set<string>();
-      const delivered = this.enqueueAlarmFrameInTransaction(frame, now, wakeTargets);
+      const delivered = this.enqueueAlarmFrameInTransaction(packet, now, wakeTargets);
       return { delivered, wakeTargets: [...wakeTargets] };
     });
     for (const sid of result.wakeTargets) this.wake(sid);
@@ -995,12 +1133,12 @@ export class RealtimeSessionService {
       let delivered = 0;
       for (const notification of processed.emitted) {
         try {
-          const frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+          const packet = wrapSocketIoV5Packet({
             type: "event",
             namespace: "/alarm",
             data: [alarmEventName(notification), notification],
-          }));
-          delivered += this.enqueueAlarmFrameInTransaction(frame, now, wakeTargets);
+          });
+          delivered += this.enqueueAlarmFrameInTransaction(packet, now, wakeTargets);
         } catch {
           // Notification state remains authoritative even when one oversized
           // live-only representation cannot fit the bounded transport.
@@ -1046,8 +1184,17 @@ export class RealtimeSessionService {
     return sids.length;
   }
 
+  private enqueuePacketsForSession(
+    sid: string,
+    packets: readonly EngineIoV4Packet[],
+    now: number,
+  ): void {
+    const session = this.repository.requireSession(sid);
+    this.repository.enqueueFrames(sid, engineFrames(session, packets), now);
+  }
+
   private enqueueAlarmFrameInTransaction(
-    frame: string,
+    packet: EngineIoV4Packet,
     now: number,
     wakeTargets: Set<string>,
   ): number {
@@ -1055,7 +1202,7 @@ export class RealtimeSessionService {
     let droppedConnectedRoot = false;
     for (const sid of this.repository.listAlarmConnectionSessionIds(now)) {
       try {
-        this.repository.enqueueFrames(sid, [frame], now);
+        this.enqueuePacketsForSession(sid, [packet], now);
         wakeTargets.add(sid);
         delivered += 1;
       } catch {
@@ -1086,12 +1233,12 @@ export class RealtimeSessionService {
       message: `${group} - ${alarmLevelDisplay(level)} was ack'd`,
       group,
     };
-    const frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+    const packet = wrapSocketIoV5Packet({
       type: "event",
       namespace: "/alarm",
       data: ["clear_alarm", clear],
-    }));
-    this.enqueueAlarmFrameInTransaction(frame, now, wakeTargets);
+    });
+    this.enqueueAlarmFrameInTransaction(packet, now, wakeTargets);
     return true;
   }
 
@@ -1157,7 +1304,7 @@ export class RealtimeSessionService {
       }
       this.repository.updateSession(session);
       try {
-        this.repository.enqueueFrames(sid, engineFrames(outbound), now);
+        this.repository.enqueueFrames(sid, engineFrames(session, outbound), now);
       } catch (error) {
         return closeCurrent(
           this.translateRepositoryError(error),
@@ -1165,12 +1312,11 @@ export class RealtimeSessionService {
         );
       }
       for (const broadcast of broadcasts) {
-        const frame = encodeEngineIoV4Packet(broadcast);
         let droppedTarget = false;
         for (const targetSid of this.repository.listConnectedSessionIds()) {
           if (targetSid === sid) continue;
           try {
-            this.repository.enqueueFrames(targetSid, [frame], now);
+            this.enqueuePacketsForSession(targetSid, [broadcast], now);
             wakeTargets.add(targetSid);
           } catch (error) {
             if (
@@ -1613,12 +1759,22 @@ export class RealtimeSessionService {
     // engine.io 6.2.1 resets its liveness timeout for every inbound packet.
     // The independent server-ping interval remains unchanged until a pong.
     session.expiresAt = now + REALTIME_PING_INTERVAL_MS + REALTIME_PING_TIMEOUT_MS;
+    if (session.engineProtocol === 3) {
+      session.nextPingAt = session.expiresAt;
+      session.pongDeadline = null;
+      return;
+    }
     if (session.pongDeadline !== null) session.pongDeadline = session.expiresAt;
   }
 
   private enqueuePingIfDue(session: RealtimeSession, now: number): void {
+    if (session.engineProtocol === 3) return;
     if (session.pongDeadline !== null || now < session.nextPingAt) return;
-    this.repository.enqueueFrames(sidOf(session), [encodeEngineIoV4Packet({ type: "ping" })], now);
+    this.repository.enqueueFrames(
+      sidOf(session),
+      [engineFrameForSession(session, { type: "ping" })],
+      now,
+    );
     session.pongDeadline = now + REALTIME_PING_TIMEOUT_MS;
     session.expiresAt = session.pongDeadline;
   }
@@ -1627,9 +1783,14 @@ export class RealtimeSessionService {
     sid: string,
     now: number,
     transport: RealtimeTransport = REALTIME_TRANSPORT,
+    engineProtocol?: RealtimeEngineProtocol,
   ): RealtimeSession {
     const session = this.repository.getSession(sid);
-    if (session === null || session.transport !== transport) {
+    if (
+      session === null
+      || session.transport !== transport
+      || (engineProtocol !== undefined && session.engineProtocol !== engineProtocol)
+    ) {
       throw new RealtimeSessionError("unknown_sid", "session ID is unknown or expired");
     }
     if (
@@ -1689,15 +1850,15 @@ export class RealtimeSessionService {
     while (true) {
       const targets = this.repository.listConnectedSessionIds();
       if (targets.length === 0) return [...enqueued];
-      const frame = encodeEngineIoV4Packet(wrapSocketIoV5Packet({
+      const packet = wrapSocketIoV5Packet({
         type: "event",
         namespace: "/",
         data: ["clients", targets.length],
-      }));
+      });
       let droppedTarget = false;
       for (const targetSid of targets) {
         try {
-          this.repository.enqueueFrames(targetSid, [frame], now);
+          this.enqueuePacketsForSession(targetSid, [packet], now);
           enqueued.add(targetSid);
         } catch (error) {
           if (

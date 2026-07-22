@@ -1,4 +1,5 @@
-export const REALTIME_ENGINE_PROTOCOL = 4;
+export type RealtimeEngineProtocol = 3 | 4;
+export const REALTIME_ENGINE_PROTOCOL: RealtimeEngineProtocol = 4;
 export const REALTIME_TRANSPORT = "polling";
 export const REALTIME_WEBSOCKET_TRANSPORT = "websocket";
 export type RealtimeTransport =

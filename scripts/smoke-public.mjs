@@ -21,6 +21,24 @@ function endpoint(path, scoped = true) {
   return url;
 }
 
+function decodeEio3Polling(payload) {
+  const packets = [];
+  let cursor = 0;
+  while (cursor < payload.length) {
+    const colon = payload.indexOf(":", cursor);
+    checked(colon > cursor, "EIO3 length header");
+    const lengthText = payload.slice(cursor, colon);
+    checked(/^\d+$/.test(lengthText), "EIO3 decimal length");
+    const length = Number(lengthText);
+    const start = colon + 1;
+    const end = start + length;
+    checked(end <= payload.length, "EIO3 complete frame");
+    packets.push(payload.slice(start, end));
+    cursor = end;
+  }
+  return packets;
+}
+
 async function request(path, init = {}, scoped = true) {
   const response = await fetch(endpoint(path, scoped), init);
   checked(response.headers.get("Access-Control-Allow-Origin") === "*", `${path} CORS`);
@@ -170,6 +188,34 @@ const eio = JSON.parse(eioText.slice(1));
 checked(/^[A-Za-z0-9_-]{20}$/.test(eio.sid), "EIO4 SID");
 equal([eio.pingInterval, eio.pingTimeout], [25_000, 20_000], "EIO4 heartbeat");
 
+const eio3Response = await request("/socket.io/?EIO=3&transport=polling");
+checked(eio3Response.status === 200, "EIO3 handshake status");
+const eio3Packets = decodeEio3Polling(await eio3Response.text());
+checked(eio3Packets.length === 1, "EIO3 initial open packet count");
+checked(eio3Packets[0]?.startsWith("0"), "EIO3 open packet");
+const eio3 = JSON.parse(eio3Packets[0].slice(1));
+checked(/^[A-Za-z0-9_-]{20}$/.test(eio3.sid), "EIO3 SID");
+equal([eio3.pingInterval, eio3.pingTimeout], [25_000, 20_000], "EIO3 heartbeat");
+const eio3Root = await request(
+  `/socket.io/?EIO=3&transport=polling&sid=${encodeURIComponent(eio3.sid)}`,
+);
+checked(eio3Root.status === 200, "EIO3 root poll status");
+equal(
+  decodeEio3Polling(await eio3Root.text()),
+  ["40", '42["clients",1]'],
+  "EIO3 automatic root connect",
+);
+
+const eio3Ping = await request(
+  `/socket.io/?EIO=3&transport=polling&sid=${encodeURIComponent(eio3.sid)}`,
+  { method: "POST", body: "1:2" },
+);
+checked(eio3Ping.status === 200 && await eio3Ping.text() === "ok", "EIO3 ping POST");
+const eio3Pong = await request(
+  `/socket.io/?EIO=3&transport=polling&sid=${encodeURIComponent(eio3.sid)}`,
+);
+checked(eio3Pong.status === 200 && await eio3Pong.text() === "1:3", "EIO3 pong poll");
+
 process.stdout.write(`${JSON.stringify({
   origin,
   tenant,
@@ -180,5 +226,10 @@ process.stdout.write(`${JSON.stringify({
     sidLength: eio.sid.length,
     pingInterval: eio.pingInterval,
     pingTimeout: eio.pingTimeout,
+  },
+  eio3: {
+    sidLength: eio3.sid.length,
+    pingInterval: eio3.pingInterval,
+    pingTimeout: eio3.pingTimeout,
   },
 })}\n`);

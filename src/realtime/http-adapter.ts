@@ -2,7 +2,10 @@ import type {
   EntryStore,
   RealtimeRpcResult,
 } from "../entry-store";
-import { REALTIME_MAX_PAYLOAD_BYTES } from "./constants";
+import {
+  REALTIME_MAX_PAYLOAD_BYTES,
+  type RealtimeEngineProtocol,
+} from "./constants";
 
 const ENGINE_ERROR_MESSAGES = {
   0: "Transport unknown",
@@ -122,9 +125,9 @@ export async function handleSocketIo(
 }
 
 /**
- * Engine.IO 4 HTTP long-polling adapter for the tenant EntryStore Durable Object.
- * Polling-to-WebSocket upgrades, EIO3, JSONP polling, and binary polling are
- * intentionally outside this slice and are never advertised in the polling open packet.
+ * Engine.IO 3/4 HTTP long-polling adapter for the tenant EntryStore Durable Object.
+ * Polling-to-WebSocket upgrades, JSONP polling, and binary polling remain
+ * outside this slice and are never advertised in the polling open packet.
  */
 export async function handleSocketIoPolling(
   request: Request,
@@ -136,14 +139,16 @@ export async function handleSocketIoPolling(
   }
 
   if (url.searchParams.get("transport") !== "polling") return engineError(0);
-  if (url.searchParams.get("EIO") !== "4") return engineError(5);
+  const rawEngineProtocol = url.searchParams.get("EIO");
+  if (rawEngineProtocol !== "3" && rawEngineProtocol !== "4") return engineError(5);
+  const engineProtocol: RealtimeEngineProtocol = rawEngineProtocol === "3" ? 3 : 4;
   if (url.searchParams.has("j")) return engineError(3);
 
   const rawSid = url.searchParams.get("sid");
   const sid = rawSid === null || rawSid === "" ? null : rawSid;
   if (sid === null) {
     if (request.method !== "GET") return engineError(2);
-    const opened = await store.realtimeHandshake();
+    const opened = await store.realtimeHandshake(engineProtocol);
     if (!opened.ok) return rpcFailure(opened.error);
     return new Response(opened.value.payload, {
       status: 200,
@@ -152,7 +157,7 @@ export async function handleSocketIoPolling(
   }
 
   if (request.method === "GET") {
-    const polled = await store.realtimePoll(sid);
+    const polled = await store.realtimePoll(sid, engineProtocol);
     if (!polled.ok) return rpcFailure(polled.error);
     return new Response(polled.value, {
       status: 200,
@@ -160,12 +165,12 @@ export async function handleSocketIoPolling(
     });
   }
   if (request.method !== "POST") {
-    const validated = await store.realtimeValidateSession(sid);
+    const validated = await store.realtimeValidateSession(sid, engineProtocol);
     if (!validated.ok) return rpcFailure(validated.error);
     return empty(500);
   }
 
-  const lease = await store.realtimeBeginPost(sid);
+  const lease = await store.realtimeBeginPost(sid, engineProtocol);
   if (!lease.ok) return rpcFailure(lease.error);
   if (!pollingPostContentType(request)) {
     const rejected = await store.realtimeRejectPost(sid, lease.value);
@@ -186,7 +191,12 @@ export async function handleSocketIoPolling(
     return engineError(3);
   }
 
-  const submitted = await store.realtimeSubmitPost(sid, lease.value, payload);
+  const submitted = await store.realtimeSubmitPost(
+    sid,
+    lease.value,
+    payload,
+    engineProtocol,
+  );
   if (submitted.ok) return postOk();
   // Locked engine.io 6.2.1 acknowledges the polling POST before its parser
   // error closes the socket. Preserve that observable HTTP response.

@@ -4,11 +4,17 @@ import { describe, expect, it } from "vitest";
 import type { EntryStore } from "../src/entry-store";
 import { parseEntryPayload } from "../src/model";
 import {
+  decodeEngineIoV3Handshake,
+  decodeEngineIoV3PollingPayload,
   decodeEngineIoV4Handshake,
   decodeEngineIoV4PollingPayload,
+  encodeEngineIoV3PollingPayload,
   encodeEngineIoV4PollingPayload,
+  unwrapSocketIoV4Packet,
   unwrapSocketIoV5Packet,
+  wrapSocketIoV4Packet,
   wrapSocketIoV5Packet,
+  type SocketIoV4Packet,
   type SocketIoV5Packet,
 } from "../src/protocol";
 import {
@@ -26,8 +32,16 @@ function endpoint(tenantName: string, query = ""): string {
   return `https://example.test/socket.io/?EIO=4&transport=polling&tenant=${tenantName}${query}`;
 }
 
+function legacyEndpoint(tenantName: string, query = ""): string {
+  return `https://example.test/socket.io/?EIO=3&transport=polling&tenant=${tenantName}${query}`;
+}
+
 function clientPayload(packet: SocketIoV5Packet): string {
   return encodeEngineIoV4PollingPayload([wrapSocketIoV5Packet(packet)]);
+}
+
+function legacyClientPayload(packet: SocketIoV4Packet): string {
+  return encodeEngineIoV3PollingPayload([wrapSocketIoV4Packet(packet)]);
 }
 
 async function open(tenantName: string): Promise<{ sid: string; response: Response }> {
@@ -35,6 +49,15 @@ async function open(tenantName: string): Promise<{ sid: string; response: Respon
   const packets = decodeEngineIoV4PollingPayload(await response.clone().text());
   const handshake = decodeEngineIoV4Handshake(packets[0]!);
   return { sid: handshake.sid, response };
+}
+
+async function openLegacy(
+  tenantName: string,
+): Promise<{ sid: string; response: Response; packets: ReturnType<typeof decodeEngineIoV3PollingPayload> }> {
+  const response = await SELF.fetch(legacyEndpoint(tenantName));
+  const packets = decodeEngineIoV3PollingPayload(await response.clone().text());
+  const handshake = decodeEngineIoV3Handshake(packets[0]!);
+  return { sid: handshake.sid, response, packets };
 }
 
 async function send(
@@ -52,6 +75,21 @@ async function send(
 
 async function poll(tenantName: string, sid: string): Promise<Response> {
   return SELF.fetch(endpoint(tenantName, `&sid=${sid}`));
+}
+
+async function sendLegacy(
+  tenantName: string,
+  sid: string,
+  payload: string,
+): Promise<Response> {
+  return SELF.fetch(legacyEndpoint(tenantName, `&sid=${sid}`), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function pollLegacy(tenantName: string, sid: string): Promise<Response> {
+  return SELF.fetch(legacyEndpoint(tenantName, `&sid=${sid}`));
 }
 
 function socketPackets(payload: string): SocketIoV5Packet[] {
@@ -85,7 +123,7 @@ function jsonNodeCount(value: unknown): number {
   return nodes;
 }
 
-describe("Engine.IO 4 polling HTTP adapter", () => {
+describe("Engine.IO 3/4 polling HTTP adapter", () => {
   it("leaves the versioned official Socket.IO client on the static asset path", async () => {
     const response = await SELF.fetch(
       "https://example.test/socket.io/socket.io.js?cachebuster-test",
@@ -115,7 +153,7 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
     expect(await withoutTrailingSlash.text()).toMatch(/^0\{"sid":"[A-Za-z0-9_-]{20}"/);
 
     const unsupported = await SELF.fetch(
-      `https://example.test/socket.io/?EIO=3&transport=polling&tenant=${name}`,
+      `https://example.test/socket.io/?EIO=2&transport=polling&tenant=${name}`,
     );
     expect(unsupported.status).toBe(400);
     expect(unsupported.headers.get("Content-Type")).toBe("application/json");
@@ -150,6 +188,94 @@ describe("Engine.IO 4 polling HTTP adapter", () => {
 
     const options = await SELF.fetch(endpoint(name), { method: "OPTIONS" });
     expect(options.status).toBe(204);
+  });
+
+  it("runs the legacy EIO3/SIO4 heartbeat, root authorization, namespaces, and mixed broadcast", async () => {
+    const name = tenant("eio3-flow");
+    const opened = await openLegacy(name);
+    expect(opened.response.status).toBe(200);
+    expect(opened.response.headers.get("Content-Type")).toBe("text/plain; charset=UTF-8");
+    expect(opened.packets).toHaveLength(1);
+    expect(decodeEngineIoV3Handshake(opened.packets[0]!)).toEqual({
+      sid: opened.sid,
+      upgrades: [],
+      pingInterval: 25_000,
+      pingTimeout: 20_000,
+      maxPayload: 1_000_000,
+    });
+    const automaticRoot = decodeEngineIoV3PollingPayload(
+      await (await pollLegacy(name, opened.sid)).text(),
+    ).map((packet) => unwrapSocketIoV4Packet(packet));
+    expect(automaticRoot).toEqual([
+      { type: "connect", namespace: "/" },
+      { type: "event", namespace: "/", data: ["clients", 1] },
+    ]);
+
+    const ping = await sendLegacy(
+      name,
+      opened.sid,
+      encodeEngineIoV3PollingPayload([{ type: "ping", data: "client-data" }]),
+    );
+    expect(ping.status).toBe(200);
+    expect(await ping.text()).toBe("ok");
+    expect(await (await pollLegacy(name, opened.sid)).text()).toBe("1:3");
+
+    expect((await sendLegacy(name, opened.sid, legacyClientPayload({
+      type: "event",
+      namespace: "/",
+      id: 4,
+      data: ["authorize", { client: "legacy" }],
+    }))).status).toBe(200);
+    const authorized = decodeEngineIoV3PollingPayload(
+      await (await pollLegacy(name, opened.sid)).text(),
+    ).map((packet) => unwrapSocketIoV4Packet(packet));
+    expect(authorized[0]).toEqual({
+      type: "event",
+      namespace: "/",
+      data: ["connected"],
+    });
+    expect(authorized[1]).toMatchObject({
+      type: "event",
+      namespace: "/",
+      data: ["dataUpdate", { sgvs: [] }],
+    });
+    expect(authorized[2]).toEqual({
+      type: "ack",
+      namespace: "/",
+      id: 4,
+      data: [{ read: true, write: false, write_treatment: false }],
+    });
+
+    expect((await sendLegacy(name, opened.sid, legacyClientPayload({
+      type: "connect",
+      namespace: "/storage?source=legacy",
+    }))).status).toBe(200);
+    const storageConnect = decodeEngineIoV3PollingPayload(
+      await (await pollLegacy(name, opened.sid)).text(),
+    ).map((packet) => unwrapSocketIoV4Packet(packet));
+    expect(storageConnect).toEqual([{ type: "connect", namespace: "/storage" }]);
+
+    const wrongProtocol = await SELF.fetch(endpoint(name, `&sid=${opened.sid}`));
+    expect(wrongProtocol.status).toBe(400);
+    expect(await wrongProtocol.json()).toEqual({
+      code: 1,
+      message: "Session ID unknown",
+    });
+
+    const current = await open(name);
+    expect((await send(name, current.sid, clientPayload({
+      type: "connect",
+      namespace: "/",
+    }))).status).toBe(200);
+    await poll(name, current.sid);
+    const legacyBroadcast = decodeEngineIoV3PollingPayload(
+      await (await pollLegacy(name, opened.sid)).text(),
+    ).map((packet) => unwrapSocketIoV4Packet(packet));
+    expect(legacyBroadcast).toContainEqual({
+      type: "event",
+      namespace: "/",
+      data: ["clients", 2],
+    });
   });
 
   it("maps SGV raw fields, MBGs, and calibrations exactly into the upstream ddata buckets", async () => {

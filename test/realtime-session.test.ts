@@ -3,6 +3,8 @@ import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { EntryStore } from "../src/entry-store";
 import {
+  decodeEngineIoV3Handshake,
+  decodeEngineIoV3PollingPayload,
   decodeEngineIoV4Handshake,
   decodeEngineIoV4PollingPayload,
   encodeEngineIoV4PollingPayload,
@@ -12,6 +14,7 @@ import {
 } from "../src/protocol";
 import {
   migrateRealtimeSessions,
+  migrateRealtimeProtocolsV19,
   migrateRealtimeWriteAuthorityV12,
   SqliteRealtimeSessionRepository,
 } from "../src/realtime/session-repository";
@@ -323,6 +326,13 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
           )
           .one().id,
       ).toBe(13);
+      expect(
+        state.storage.sql
+          .exec<{ id: number }>(
+            "SELECT id FROM _sql_schema_migrations WHERE id = 19",
+          )
+          .one().id,
+      ).toBe(19);
       const columns = state.storage.sql
         .exec<{ name: string }>("PRAGMA table_info(realtime_sessions)")
         .toArray()
@@ -424,6 +434,92 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         nextPingAt: 1_025_000,
         expiresAt: 1_045_000,
       });
+    });
+  });
+
+  it("persists the legacy EIO3 root session and client heartbeat deadline across eviction", async () => {
+    const stub = store("realtime-eio3-handshake");
+    const handshake = await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const service = new RealtimeSessionService(state.storage, { now: () => 1_000_000 });
+      return service.createHandshake(3);
+    });
+
+    const packets = decodeEngineIoV3PollingPayload(handshake.payload);
+    expect(decodeEngineIoV3Handshake(packets[0]!)).toEqual({
+      sid: handshake.sid,
+      upgrades: [],
+      pingInterval: 25_000,
+      pingTimeout: 20_000,
+      maxPayload: 1_000_000,
+    });
+    expect(packets).toHaveLength(1);
+
+    await evictDurableObject(stub);
+    await runInDurableObject(stub, async (_instance, state) => {
+      const persisted = new SqliteRealtimeSessionRepository(state.storage)
+        .requireSession(handshake.sid);
+      expect(persisted).toMatchObject({
+        engineProtocol: 3,
+        socketSid: handshake.sid,
+        socketConnected: true,
+        nextPingAt: 1_045_000,
+        expiresAt: 1_045_000,
+        outboundPackets: 2,
+      });
+    });
+  });
+
+  it("rebuilds the v18 EIO4 constraint without losing a live row", async () => {
+    const stub = store("realtime-eio3-migration");
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(`
+        DROP INDEX IF EXISTS realtime_sessions_expiry;
+        DROP TABLE realtime_sessions;
+        CREATE TABLE realtime_sessions (
+          sid TEXT PRIMARY KEY,
+          socket_sid TEXT NOT NULL UNIQUE,
+          engine_protocol INTEGER NOT NULL CHECK (engine_protocol = 4),
+          transport TEXT NOT NULL CHECK (transport IN ('polling', 'websocket')),
+          socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
+          authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
+          read_allowed INTEGER NOT NULL DEFAULT 0 CHECK (read_allowed IN (0, 1)),
+          write_allowed INTEGER NOT NULL DEFAULT 0 CHECK (write_allowed IN (0, 1)),
+          treatment_write_allowed INTEGER NOT NULL DEFAULT 0
+            CHECK (treatment_write_allowed IN (0, 1)),
+          created_at INTEGER NOT NULL,
+          last_seen_at INTEGER NOT NULL,
+          next_ping_at INTEGER NOT NULL,
+          pong_deadline INTEGER,
+          expires_at INTEGER NOT NULL,
+          next_sequence INTEGER NOT NULL DEFAULT 1,
+          outbound_packets INTEGER NOT NULL DEFAULT 0,
+          outbound_bytes INTEGER NOT NULL DEFAULT 0,
+          poll_token TEXT,
+          poll_deadline INTEGER,
+          post_token TEXT,
+          post_deadline INTEGER
+        );
+        CREATE INDEX realtime_sessions_expiry ON realtime_sessions(expires_at, sid);
+        INSERT INTO realtime_sessions (
+          sid, socket_sid, engine_protocol, transport, socket_connected,
+          authorized, read_allowed, write_allowed, treatment_write_allowed,
+          created_at, last_seen_at, next_ping_at, expires_at
+        ) VALUES (
+          'eio4-v18-session', 'eio4-v18-socket', 4, 'polling', 1,
+          1, 1, 0, 0, 1000, 1000, 26000, 46000
+        );
+      `);
+
+      migrateRealtimeProtocolsV19(state.storage);
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      expect(repository.requireSession("eio4-v18-session")).toMatchObject({
+        engineProtocol: 4,
+        socketConnected: true,
+        authorized: true,
+      });
+      expect(repository.createSession(2_000, "polling", 3).engineProtocol).toBe(3);
+      expect(() => migrateRealtimeProtocolsV19(state.storage)).not.toThrow();
     });
   });
 

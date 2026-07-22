@@ -1,6 +1,9 @@
 import {
   ENGINE_IO_V4_POLLING_SEPARATOR,
+  decodeEngineIoV3Packet,
   decodeEngineIoV4Packet,
+  encodeEngineIoV3Packet,
+  encodeEngineIoV3PollingPayload,
   encodeEngineIoV4Packet,
 } from "../protocol";
 import {
@@ -17,6 +20,7 @@ import {
   REALTIME_WEBSOCKET_CLOSE_CONTINUATION_MS,
   REALTIME_WEBSOCKET_CLOSE_RETRY_BASE_MS,
   REALTIME_WEBSOCKET_CLOSE_RETRY_MAX_MS,
+  type RealtimeEngineProtocol,
   type RealtimeTransport,
 } from "./constants";
 
@@ -24,6 +28,7 @@ interface SessionRow {
   [key: string]: SqlStorageValue;
   sid: string;
   socket_sid: string;
+  engine_protocol: RealtimeEngineProtocol;
   transport: RealtimeTransport;
   socket_connected: number;
   authorized: number;
@@ -116,6 +121,7 @@ interface RootDataStateRow {
 export interface RealtimeSession {
   sid: string;
   socketSid: string;
+  engineProtocol: RealtimeEngineProtocol;
   transport: RealtimeTransport;
   socketConnected: boolean;
   authorized: boolean;
@@ -152,6 +158,7 @@ function sessionFromRow(row: SessionRow): RealtimeSession {
   return {
     sid: row.sid,
     socketSid: row.socket_sid,
+    engineProtocol: row.engine_protocol,
     transport: row.transport,
     socketConnected: row.socket_connected === 1,
     authorized: row.authorized === 1,
@@ -193,7 +200,7 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
     CREATE TABLE IF NOT EXISTS realtime_sessions (
       sid TEXT PRIMARY KEY,
       socket_sid TEXT NOT NULL UNIQUE,
-      engine_protocol INTEGER NOT NULL CHECK (engine_protocol = 4),
+      engine_protocol INTEGER NOT NULL CHECK (engine_protocol IN (3, 4)),
       transport TEXT NOT NULL CHECK (transport IN ('polling', 'websocket')),
       socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
       authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
@@ -305,6 +312,66 @@ export function migrateRealtimeTransportsV7(storage: DurableObjectStorage): void
       outbound_bytes, poll_token, poll_deadline, post_token, post_deadline
     FROM realtime_sessions_polling_v5;
     DROP TABLE realtime_sessions_polling_v5;
+    CREATE INDEX realtime_sessions_expiry
+      ON realtime_sessions(expires_at, sid);
+  `);
+}
+
+/**
+ * v19 admits the legacy Engine.IO 3 protocol on the existing bounded session
+ * table. SQLite cannot alter a CHECK constraint in place, so preserve every
+ * durable session field while rebuilding only this tenant-local table.
+ */
+export function migrateRealtimeProtocolsV19(storage: DurableObjectStorage): void {
+  const definition = storage.sql
+    .exec<SchemaRow>(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'realtime_sessions'",
+    )
+    .one().sql;
+  if (definition?.includes("engine_protocol IN (3, 4)")) return;
+
+  storage.sql.exec(`
+    DROP INDEX IF EXISTS realtime_sessions_expiry;
+    ALTER TABLE realtime_sessions RENAME TO realtime_sessions_eio4_v18;
+    CREATE TABLE realtime_sessions (
+      sid TEXT PRIMARY KEY,
+      socket_sid TEXT NOT NULL UNIQUE,
+      engine_protocol INTEGER NOT NULL CHECK (engine_protocol IN (3, 4)),
+      transport TEXT NOT NULL CHECK (transport IN ('polling', 'websocket')),
+      socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
+      authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
+      read_allowed INTEGER NOT NULL DEFAULT 0 CHECK (read_allowed IN (0, 1)),
+      write_allowed INTEGER NOT NULL DEFAULT 0 CHECK (write_allowed IN (0, 1)),
+      treatment_write_allowed INTEGER NOT NULL DEFAULT 0
+        CHECK (treatment_write_allowed IN (0, 1)),
+      created_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      next_ping_at INTEGER NOT NULL,
+      pong_deadline INTEGER,
+      expires_at INTEGER NOT NULL,
+      next_sequence INTEGER NOT NULL DEFAULT 1,
+      outbound_packets INTEGER NOT NULL DEFAULT 0,
+      outbound_bytes INTEGER NOT NULL DEFAULT 0,
+      poll_token TEXT,
+      poll_deadline INTEGER,
+      post_token TEXT,
+      post_deadline INTEGER
+    );
+    INSERT INTO realtime_sessions (
+      sid, socket_sid, engine_protocol, transport, socket_connected,
+      authorized, read_allowed, write_allowed, treatment_write_allowed,
+      created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
+      next_sequence, outbound_packets, outbound_bytes, poll_token,
+      poll_deadline, post_token, post_deadline
+    )
+    SELECT
+      sid, socket_sid, engine_protocol, transport, socket_connected,
+      authorized, read_allowed, write_allowed, treatment_write_allowed,
+      created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
+      next_sequence, outbound_packets, outbound_bytes, poll_token,
+      poll_deadline, post_token, post_deadline
+    FROM realtime_sessions_eio4_v18;
+    DROP TABLE realtime_sessions_eio4_v18;
     CREATE INDEX realtime_sessions_expiry
       ON realtime_sessions(expires_at, sid);
   `);
@@ -481,6 +548,7 @@ export class SqliteRealtimeSessionRepository {
   createSession(
     now: number,
     transport: RealtimeTransport = REALTIME_TRANSPORT,
+    engineProtocol: RealtimeEngineProtocol = REALTIME_ENGINE_PROTOCOL,
   ): RealtimeSession {
     const count = this.storage.sql
       .exec<CountRow>("SELECT COUNT(*) AS count FROM realtime_sessions")
@@ -494,8 +562,12 @@ export class SqliteRealtimeSessionRepository {
 
     const sid = randomSessionId();
     const socketSid = randomSessionId();
-    const nextPingAt = now + REALTIME_PING_INTERVAL_MS;
-    const expiresAt = nextPingAt + REALTIME_PING_TIMEOUT_MS;
+    const expiresAt = now + REALTIME_PING_INTERVAL_MS + REALTIME_PING_TIMEOUT_MS;
+    // EIO3 clients own the heartbeat and therefore have no server-ping due
+    // time. Reuse the expiry deadline so the shared alarm query stays bounded.
+    const nextPingAt = engineProtocol === 4
+      ? now + REALTIME_PING_INTERVAL_MS
+      : expiresAt;
     this.storage.sql.exec(
       `INSERT INTO realtime_sessions (
          sid, socket_sid, engine_protocol, transport, created_at, last_seen_at,
@@ -503,7 +575,7 @@ export class SqliteRealtimeSessionRepository {
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       sid,
       socketSid,
-      REALTIME_ENGINE_PROTOCOL,
+      engineProtocol,
       transport,
       now,
       now,
@@ -516,7 +588,8 @@ export class SqliteRealtimeSessionRepository {
   getSession(sid: string): RealtimeSession | null {
     const row = this.storage.sql
       .exec<SessionRow>(
-        `SELECT sid, socket_sid, transport, socket_connected, authorized, read_allowed,
+        `SELECT sid, socket_sid, engine_protocol, transport,
+                socket_connected, authorized, read_allowed,
                 write_allowed, treatment_write_allowed,
                 created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
                 next_sequence, outbound_packets, outbound_bytes,
@@ -850,7 +923,8 @@ export class SqliteRealtimeSessionRepository {
     const boundedLimit = Math.max(1, Math.min(REALTIME_CLEANUP_BATCH, Math.trunc(limit)));
     const expired = this.storage.sql
       .exec<SessionRow>(
-        `SELECT sid, socket_sid, transport, socket_connected, authorized, read_allowed,
+        `SELECT sid, socket_sid, engine_protocol, transport,
+                socket_connected, authorized, read_allowed,
                 write_allowed, treatment_write_allowed,
                 created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
                 next_sequence, outbound_packets, outbound_bytes,
@@ -920,7 +994,8 @@ export class SqliteRealtimeSessionRepository {
       .exec<SidRow>(
         `SELECT sid
          FROM realtime_sessions
-         WHERE pong_deadline IS NULL
+         WHERE engine_protocol = 4
+           AND pong_deadline IS NULL
            AND next_ping_at <= ?
            AND expires_at > ?
          ORDER BY next_ping_at, sid
@@ -974,7 +1049,8 @@ export class SqliteRealtimeSessionRepository {
       : [transport, REALTIME_MAX_SESSIONS_PER_TENANT];
     return this.storage.sql
       .exec<SessionRow>(
-        `SELECT sid, socket_sid, transport, socket_connected, authorized, read_allowed,
+        `SELECT sid, socket_sid, engine_protocol, transport,
+                socket_connected, authorized, read_allowed,
                 write_allowed, treatment_write_allowed,
                 created_at, last_seen_at, next_ping_at, pong_deadline, expires_at,
                 next_sequence, outbound_packets, outbound_bytes,
@@ -1149,8 +1225,14 @@ export class SqliteRealtimeSessionRepository {
     const encoded: Array<{ frame: string; bytes: number }> = [];
     let addedBytes = 0;
     for (const frame of frames) {
-      const canonical = encodeEngineIoV4Packet(decodeEngineIoV4Packet(frame));
-      if (canonical !== frame || canonical.includes(ENGINE_IO_V4_POLLING_SEPARATOR)) {
+      const canonical = session.engineProtocol === 3
+        ? encodeEngineIoV3Packet(decodeEngineIoV3Packet(frame))
+        : encodeEngineIoV4Packet(decodeEngineIoV4Packet(frame));
+      if (
+        canonical !== frame
+        || (session.engineProtocol === 4
+          && canonical.includes(ENGINE_IO_V4_POLLING_SEPARATOR))
+      ) {
         throw new RealtimeRepositoryError("queue_overflow", "outbound packet is not canonical");
       }
       const bytes = new TextEncoder().encode(frame).byteLength;
@@ -1160,7 +1242,12 @@ export class SqliteRealtimeSessionRepository {
 
     const totalPackets = session.outboundPackets + encoded.length;
     const totalBytes = session.outboundBytes + addedBytes;
-    const framedBytes = totalBytes + Math.max(0, totalPackets - 1);
+    // EIO3 prefixes each frame with a decimal UTF-16 length and a colon.
+    // Twelve bytes per queued frame is a conservative bound for the parser's
+    // ten-digit header cap; EIO4 uses one separator between frames.
+    const framedBytes = session.engineProtocol === 3
+      ? totalBytes + totalPackets * 12
+      : totalBytes + Math.max(0, totalPackets - 1);
     if (
       totalPackets > REALTIME_MAX_QUEUE_PACKETS ||
       totalBytes > REALTIME_MAX_QUEUE_BYTES ||
@@ -1240,7 +1327,9 @@ export class SqliteRealtimeSessionRepository {
     if (selected.length === 0) return [];
 
     const frames = selected.map((row) => row.packet);
-    const payload = frames.join(ENGINE_IO_V4_POLLING_SEPARATOR);
+    const payload = session.engineProtocol === 3
+      ? encodeEngineIoV3PollingPayload(frames.map((frame) => decodeEngineIoV3Packet(frame)))
+      : frames.join(ENGINE_IO_V4_POLLING_SEPARATOR);
     const payloadBytes = new TextEncoder().encode(payload).byteLength;
     if (payloadBytes > REALTIME_MAX_PAYLOAD_BYTES) {
       throw new Error("stored realtime payload exceeds the advertised maxPayload");
@@ -1265,9 +1354,14 @@ export class SqliteRealtimeSessionRepository {
   }
 
   dequeuePayload(sid: string): string | null {
+    const session = this.requireSession(sid);
     const frames = this.dequeueFrames(sid);
     return frames.length === 0
       ? null
-      : frames.join(ENGINE_IO_V4_POLLING_SEPARATOR);
+      : session.engineProtocol === 3
+        ? encodeEngineIoV3PollingPayload(
+          frames.map((frame) => decodeEngineIoV3Packet(frame)),
+        )
+        : frames.join(ENGINE_IO_V4_POLLING_SEPARATOR);
   }
 }

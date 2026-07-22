@@ -58,6 +58,7 @@ import {
   migrateRealtimeStorageNamespaceV9,
   migrateRealtimeTransportsV7,
   migrateRealtimeNotificationStateV13,
+  migrateRealtimeProtocolsV19,
   migrateRealtimeWriteAuthorityV12,
 } from "./realtime/session-repository";
 import {
@@ -89,6 +90,7 @@ import {
   REALTIME_WEBSOCKET_FLUSH_MAX_BYTES,
   REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES,
   REALTIME_WEBSOCKET_FLUSH_MAX_SOCKETS,
+  type RealtimeEngineProtocol,
 } from "./realtime/constants";
 import {
   nightscoutStatus,
@@ -771,9 +773,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (18)",
       );
 
+      // Locked Socket.IO keeps allowEIO3 enabled. Admit protocol 3 sessions in
+      // the same bounded durable table while preserving all existing EIO4 rows.
+      migrateRealtimeProtocolsV19(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (19)",
+      );
+
       // This named, idempotent auth state is intentionally independent of the
-      // numeric migration sequence. WebSocket transport remediation owns the
-      // next numeric marker, while delay-list state can safely repair itself
+      // numeric migration sequence. Delay-list state can safely repair itself
       // even when a later branch has already advanced MAX(id).
       this.ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS authorization_failures (
@@ -3010,19 +3018,31 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     await this.synchronizeRealtimeAlarm();
   }
 
-  realtimeHandshake(): Promise<RealtimeRpcResult<{ sid: string; payload: string }>> {
-    return this.realtimeScheduledResult(() => this.realtime.createHandshake());
+  realtimeHandshake(
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): Promise<RealtimeRpcResult<{ sid: string; payload: string }>> {
+    return this.realtimeScheduledResult(() =>
+      this.realtime.createHandshake(engineProtocol)
+    );
   }
 
-  realtimeValidateSession(sid: string): Promise<RealtimeRpcResult<null>> {
+  realtimeValidateSession(
+    sid: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): Promise<RealtimeRpcResult<null>> {
     return this.realtimeScheduledResult(() => {
-      this.realtime.validateSession(sid);
+      this.realtime.validateSession(sid, engineProtocol);
       return null;
     });
   }
 
-  realtimeBeginPost(sid: string): Promise<RealtimeRpcResult<string>> {
-    return this.realtimeScheduledResult(() => this.realtime.beginPost(sid));
+  realtimeBeginPost(
+    sid: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): Promise<RealtimeRpcResult<string>> {
+    return this.realtimeScheduledResult(() =>
+      this.realtime.beginPost(sid, engineProtocol)
+    );
   }
 
   realtimeAbortPost(sid: string, token: string): Promise<RealtimeRpcResult<null>> {
@@ -3043,15 +3063,21 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     sid: string,
     token: string,
     payload: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
   ): Promise<RealtimeRpcResult<null>> {
     return this.realtimeScheduledResult(async () => {
-      await this.realtime.submitPost(sid, token, payload);
+      await this.realtime.submitPost(sid, token, payload, engineProtocol);
       return null;
     });
   }
 
-  realtimePoll(sid: string): Promise<RealtimeRpcResult<string>> {
-    return this.realtimeScheduledResult(() => this.realtime.poll(sid));
+  realtimePoll(
+    sid: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): Promise<RealtimeRpcResult<string>> {
+    return this.realtimeScheduledResult(() =>
+      this.realtime.poll(sid, engineProtocol)
+    );
   }
 
   private getOrCreateJwtSecret(): string {
