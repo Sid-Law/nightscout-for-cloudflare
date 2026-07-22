@@ -56,6 +56,11 @@ export interface NightscoutStatusEnvironment {
   IAGE_WARN?: string;
   IAGE_URGENT?: string;
   IAGE_ENABLE_ALERTS?: string;
+  BAGE_INFO?: string;
+  BAGE_WARN?: string;
+  BAGE_URGENT?: string;
+  BAGE_DISPLAY?: string;
+  BAGE_ENABLE_ALERTS?: string;
   DAY_START?: string;
   DAY_END?: string;
   OPENAPS_ENABLE_ALERTS?: string;
@@ -229,6 +234,13 @@ function platformExtendedSettings(
     ["warn", environment.IAGE_WARN],
     ["urgent", environment.IAGE_URGENT],
     ["enableAlerts", environment.IAGE_ENABLE_ALERTS],
+  ]);
+  addPlugin("bage", [
+    ["info", environment.BAGE_INFO],
+    ["warn", environment.BAGE_WARN],
+    ["urgent", environment.BAGE_URGENT],
+    ["display", environment.BAGE_DISPLAY],
+    ["enableAlerts", environment.BAGE_ENABLE_ALERTS],
   ]);
   addPlugin("openaps", [
     ["enableAlerts", environment.OPENAPS_ENABLE_ALERTS],

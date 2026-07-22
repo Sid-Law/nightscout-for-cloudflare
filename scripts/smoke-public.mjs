@@ -180,7 +180,9 @@ const openApsPumpResponse = await request("/api/v2/properties/openaps,pump");
 checked(openApsPumpResponse.status === 200, "OpenAPS/Pump property status");
 const openApsPumpProperties = await openApsPumpResponse.json();
 
-const ageResponse = await request("/api/v2/properties/cage,sage,iage,timeago");
+const ageResponse = await request(
+  "/api/v2/properties/cage,sage,iage,bage,timeago,runtimestate",
+);
 checked(ageResponse.status === 200, "age property status");
 const ageProperties = await ageResponse.json();
 const basalResponse = await request("/api/v2/properties/basal");
@@ -206,13 +208,15 @@ for (const plugin of ["openaps", "pump"]) {
     `${plugin} enabled gate`,
   );
 }
-for (const plugin of ["cage", "sage", "iage"]) {
+for (const plugin of ["cage", "sage", "iage", "bage"]) {
   checked(
     Object.hasOwn(ageProperties, plugin) === enabledPlugins.includes(plugin),
     `${plugin} enabled gate`,
   );
 }
 checked(!Object.hasOwn(ageProperties, "timeago"), "timeago remains a client/notification plugin");
+checked(enabledPlugins.includes("runtimestate"), "runtimestate remains default-enabled");
+equal(ageProperties.runtimestate, { state: "loaded" }, "steady Worker runtime state");
 
 const summaryResponse = await request("/api/v2/summary");
 checked(summaryResponse.status === 200, "v2 summary status");
@@ -221,6 +225,7 @@ checked(Array.isArray(summary.sgvs) && summary.sgvs.length === 0, "empty summary
 checked(summary.profile && Object.keys(summary.profile).length === 0, "empty summary profile");
 checked(summary.state?.iob === null, "disabled IOB remains null in summary");
 checked(summary.state?.cob === null, "disabled COB remains null in summary");
+checked(summary.state?.bage === null, "disabled BAGE remains null in summary");
 
 const api3Unauthorized = await request("/api/v3/entries");
 checked(api3Unauthorized.status === 401, "API3 missing JWT");

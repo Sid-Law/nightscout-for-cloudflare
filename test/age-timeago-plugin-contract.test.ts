@@ -2,6 +2,9 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker from "../src/index";
 import {
+  batteryAgeNotification,
+  batteryAgeVisualization,
+  calculateBatteryAgeProperty,
   calculateCannulaAgeProperty,
   calculateAgeNotificationEvaluation,
   calculateInsulinAgeProperty,
@@ -13,6 +16,7 @@ import {
   sensorAgeNotification,
   sensorAgeVisualization,
 } from "../src/plugins/age";
+import { calculateRuntimeStateProperty } from "../src/plugins/runtimestate";
 import {
   calculateTimeAgoDisplay,
   calculateTimeAgoStatus,
@@ -22,7 +26,7 @@ import {
   calculatePluginProperties,
   loadPluginPropertyContext,
 } from "../src/plugins/properties";
-import { URGENT, WARN } from "../src/runtime/levels";
+import { INFO, URGENT, WARN } from "../src/runtime/levels";
 import { nightscoutTimes } from "../src/runtime/times";
 import { nightscoutStatus, tenantStatusSettings } from "../src/status";
 
@@ -95,6 +99,92 @@ describe("locked Nightscout insulinage.test.js", () => {
       group: "IAGE",
       plugin: { name: "iage" },
     });
+  });
+});
+
+describe("locked Nightscout batteryage.js source contract", () => {
+  it("selects the latest current pump-battery change and formats days and notes", () => {
+    const property = calculateBatteryAgeProperty([
+      { eventType: "Pump Battery Change", notes: "old", mills: hours(72) },
+      { eventType: "Note", notes: "ignore", mills: hours(12) },
+      { eventType: "Pump Battery Change", notes: "current", mills: hours(24) },
+      { eventType: "Pump Battery Change", notes: "future", mills: now + 60_000 },
+    ], now);
+    expect(property).toMatchObject({
+      found: true,
+      age: 24,
+      days: 1,
+      hours: 0,
+      display: "1d0h",
+      notes: "current",
+    });
+    expect(batteryAgeVisualization(property)).toMatchObject({
+      value: "1d0h",
+      label: "BAGE",
+      info: [
+        expect.objectContaining({ label: "Inserted" }),
+        { label: "Notes:", value: "current" },
+      ],
+      pillClass: null,
+    });
+  });
+
+  it("preserves the no-record and hours display shapes", () => {
+    expect(calculateBatteryAgeProperty([], now)).toMatchObject({
+      found: false,
+      age: 0,
+      treatmentDate: null,
+      display: "n/a ",
+    });
+    expect(calculateBatteryAgeProperty([
+      { eventType: "Pump Battery Change", mills: hours(25) },
+    ], now, { display: "hours" })).toMatchObject({ age: 25, display: "25h" });
+  });
+
+  it("emits the locked information, warning and urgent notification payloads", () => {
+    const preferences = { info: 1, warn: 2, urgent: 3, enableAlerts: true };
+    const information = batteryAgeNotification(calculateBatteryAgeProperty([
+      { eventType: "Pump Battery Change", mills: hours(1) },
+    ], now, preferences));
+    const warning = batteryAgeNotification(calculateBatteryAgeProperty([
+      { eventType: "Pump Battery Change", mills: hours(2) },
+    ], now, preferences));
+    const urgent = batteryAgeNotification(calculateBatteryAgeProperty([
+      { eventType: "Pump Battery Change", mills: hours(3) },
+    ], now, preferences));
+    expect(information).toMatchObject({
+      level: INFO,
+      title: "Pump battery age 1 hours",
+      message: "Change pump battery soon",
+      group: "BAGE",
+      plugin: { name: "bage", label: "Pump Battery Age" },
+      debug: { age: 1 },
+    });
+    expect(warning).toMatchObject({
+      level: WARN,
+      message: "Time to change pump battery",
+      pushoverSound: "incoming",
+    });
+    expect(urgent).toMatchObject({
+      level: URGENT,
+      message: "Pump Battery change overdue!",
+      pushoverSound: "persistent",
+    });
+  });
+
+  it("keeps the inclusive 20-minute alert window and urgent pill class", () => {
+    const preferences = { info: 1, warn: 2, urgent: 3, enableAlerts: true };
+    const atMinute20 = calculateBatteryAgeProperty([{
+      eventType: "Pump Battery Change",
+      mills: now - 3 * 60 * 60_000 - 20 * 60_000,
+    }], now, preferences);
+    const atMinute21 = calculateBatteryAgeProperty([{
+      eventType: "Pump Battery Change",
+      mills: now - 3 * 60 * 60_000 - 21 * 60_000,
+    }], now, preferences);
+    expect(batteryAgeNotification(atMinute20)).not.toBeNull();
+    expect(batteryAgeNotification(atMinute21)).toBeNull();
+    expect(batteryAgeVisualization(atMinute21).pillClass).toBe("urgent");
   });
 });
 
@@ -177,21 +267,25 @@ describe("Durable Object age-notification deadlines", () => {
       { eventType: "Site Change", mills: changedAt },
       { eventType: "Sensor Start", mills: changedAt },
       { eventType: "Insulin Change", mills: changedAt },
+      { eventType: "Pump Battery Change", mills: changedAt },
     ], now, 60_000, {
       cage: { info: 1, warn: 1, urgent: 1, enableAlerts: true },
       sage: { info: 1, warn: 1, urgent: 1, enableAlerts: true },
       iage: { info: 1, warn: 1, urgent: 1, enableAlerts: true },
+      bage: { info: 1, warn: 1, urgent: 1, enableAlerts: true },
     });
 
     expect(evaluation.notifications.map((request) => request.group)).toEqual([
       "CAGE",
       "SAGE",
       "IAGE",
+      "BAGE",
     ]);
     expect(evaluation.notifications.map((request) => request.level)).toEqual([
       URGENT,
       URGENT,
       WARN,
+      URGENT,
     ]);
     expect(evaluation.nextDueAt).toBe(now + 60_000);
   });
@@ -301,7 +395,7 @@ describe("locked Nightscout timeago.test.js", () => {
 describe("Workers age-plugin platform adapter", () => {
   it("normalizes official settings only for enabled plugins", () => {
     const configured = tenantStatusSettings({
-      ENABLE: "cage sage iage",
+      ENABLE: "cage sage iage bage",
       TIMEAGO_ENABLE_ALERTS: "true",
       ALARM_TIMEAGO_WARN: "off",
       ALARM_TIMEAGO_WARN_MINS: "20",
@@ -320,12 +414,18 @@ describe("Workers age-plugin platform adapter", () => {
       IAGE_WARN: "48",
       IAGE_URGENT: "72",
       IAGE_ENABLE_ALERTS: "false",
+      BAGE_INFO: "312",
+      BAGE_WARN: "336",
+      BAGE_URGENT: "360",
+      BAGE_DISPLAY: "hours",
+      BAGE_ENABLE_ALERTS: "true",
     });
     expect(configured.extendedSettings).toMatchObject({
       timeago: { enableAlerts: true },
       cage: { info: 40, warn: 48, urgent: 72, display: "days", enableAlerts: true },
       sage: { info: 144, warn: 164, urgent: 166, enableAlerts: true },
       iage: { info: 44, warn: 48, urgent: 72, enableAlerts: false },
+      bage: { info: 312, warn: 336, urgent: 360, display: "hours", enableAlerts: true },
     });
     const settings = (nightscoutStatus(new Date(now), "readable", configured).settings ?? {}) as
       Record<string, unknown>;
@@ -338,6 +438,8 @@ describe("Workers age-plugin platform adapter", () => {
 
     expect(tenantStatusSettings({ CAGE_WARN: "48" }).extendedSettings)
       .not.toHaveProperty("cage");
+    expect(tenantStatusSettings({ BAGE_WARN: "336" }).extendedSettings)
+      .not.toHaveProperty("bage");
   });
 
   it("loads one bounded latest event per type and serves enabled v2 properties", async () => {
@@ -350,10 +452,11 @@ describe("Workers age-plugin platform adapter", () => {
       { eventType: "Insulin Change", notes: "reservoir", created_at: new Date(liveNow - nightscoutTimes.hours(48).msecs).toISOString() },
       { eventType: "Sensor Change", notes: "insert", created_at: new Date(liveNow - nightscoutTimes.days(2).msecs).toISOString() },
       { eventType: "Sensor Start", notes: "start", created_at: new Date(liveNow - nightscoutTimes.days(1).msecs).toISOString() },
+      { eventType: "Pump Battery Change", notes: "battery", created_at: new Date(liveNow - nightscoutTimes.days(3).msecs).toISOString() },
     ]));
 
     const context = await loadPluginPropertyContext(stub, liveNow);
-    expect(context.treatments).toHaveLength(4);
+    expect(context.treatments).toHaveLength(5);
     expect(context.treatments).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ notes: "old" }),
     ]));
@@ -361,19 +464,25 @@ describe("Workers age-plugin platform adapter", () => {
       context,
       "mg/dl",
       liveNow,
-      new Set(["cage", "sage", "iage"]),
-      { cage: { display: "days" } },
+      new Set(["cage", "sage", "iage", "bage", "runtimestate"]),
+      { cage: { display: "days" }, bage: { display: "days" } },
     );
     expect(properties).toMatchObject({
       cage: { display: "1d0h", notes: "site" },
       iage: { display: "2d0h", notes: "reservoir", level: WARN },
       sage: { min: "Sensor Start", "Sensor Start": { display: "1d0h", notes: "start" } },
+      bage: { display: "3d0h", notes: "battery", age: 72 },
+      runtimestate: { state: "loaded" },
     });
 
     const status = nightscoutStatus(
       new Date(now),
       "readable",
-      tenantStatusSettings({ ENABLE: "cage sage iage", CAGE_DISPLAY: "days" }),
+      tenantStatusSettings({
+        ENABLE: "cage sage iage bage",
+        CAGE_DISPLAY: "days",
+        BAGE_DISPLAY: "days",
+      }),
     );
     const fakeStub = {
       authorizationDelay: (...args: Parameters<typeof stub.authorizationDelay>) =>
@@ -387,7 +496,9 @@ describe("Workers age-plugin platform adapter", () => {
       nightscoutHttpStatus: async () => JSON.stringify(status),
     };
     const response = await worker.fetch(
-      new Request(`https://example.test/api/v2/properties/cage,sage,iage?tenant=${tenant}`),
+      new Request(
+        `https://example.test/api/v2/properties/cage,sage,iage,bage,runtimestate?tenant=${tenant}`,
+      ),
       {
         ASSETS: env.ASSETS,
         ENTRY_STORE: { getByName: () => fakeStub },
@@ -400,6 +511,25 @@ describe("Workers age-plugin platform adapter", () => {
       cage: { display: "1d0h" },
       iage: { display: "2d0h" },
       sage: { min: "Sensor Start" },
+      bage: { display: "3d0h", age: 72 },
+      runtimestate: { state: "loaded" },
     });
+
+    const summaryResponse = await worker.fetch(
+      new Request(`https://example.test/api/v2/summary/?tenant=${tenant}`),
+      {
+        ASSETS: env.ASSETS,
+        ENTRY_STORE: { getByName: () => fakeStub },
+        AUTH_DEFAULT_ROLES: "readable",
+        AUTH_FAIL_DELAY: "0",
+      } as unknown as Parameters<typeof worker.fetch>[1],
+    );
+    expect(summaryResponse.status).toBe(200);
+    expect(await summaryResponse.json()).toMatchObject({ state: { bage: 72 } });
+  });
+
+  it("ports the locked request-local runtime-state property", () => {
+    expect(calculateRuntimeStateProperty()).toEqual({ state: "loaded" });
+    expect(calculateRuntimeStateProperty("booted")).toEqual({ state: "booted" });
   });
 });

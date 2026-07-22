@@ -20,12 +20,12 @@ export interface AgeNotification extends RealtimeDocument {
   message: string;
   pushoverSound: "incoming" | "persistent";
   level: number;
-  group: "CAGE" | "IAGE" | "SAGE";
+  group: "BAGE" | "CAGE" | "IAGE" | "SAGE";
 }
 
 export interface AgeVisualization extends RealtimeDocument {
   value: unknown;
-  label: "CAGE" | "IAGE" | "SAGE";
+  label: "BAGE" | "CAGE" | "IAGE" | "SAGE";
   info: RealtimeDocument[];
   pillClass: "urgent" | "warn" | null;
 }
@@ -34,6 +34,7 @@ export interface AgeNotificationOptions {
   cage?: AgePreferences;
   sage?: AgePreferences;
   iage?: AgePreferences;
+  bage?: AgePreferences;
 }
 
 export interface AgeNotificationEvaluation {
@@ -56,6 +57,12 @@ const INSULIN_PLUGIN = {
 const SENSOR_PLUGIN = {
   name: "sage",
   label: "Sensor Age",
+  pluginType: "pill-minor",
+} as const;
+
+const BATTERY_PLUGIN = {
+  name: "bage",
+  label: "Pump Battery Age",
   pluginType: "pill-minor",
 } as const;
 
@@ -107,7 +114,8 @@ function statusClass(level: unknown): "urgent" | "warn" | null {
 
 function notificationRequest(
   property: RealtimeDocument,
-  plugin: typeof CANNULA_PLUGIN | typeof INSULIN_PLUGIN | typeof SENSOR_PLUGIN,
+  plugin: typeof BATTERY_PLUGIN | typeof CANNULA_PLUGIN | typeof INSULIN_PLUGIN
+    | typeof SENSOR_PLUGIN,
 ): RealtimeDocument | null {
   const notification = property.notification;
   if (typeof notification !== "object" || notification === null || Array.isArray(notification)) {
@@ -358,6 +366,108 @@ export function insulinAgeVisualization(
   };
 }
 
+/** Direct request-local port of locked plugins/batteryage.findLatestTimeChange(). */
+export function calculateBatteryAgeProperty(
+  treatments: RealtimeDocument[],
+  now: number,
+  preferences: AgePreferences = {},
+  translate: AgeTranslator = translateEnglish,
+): RealtimeDocument {
+  const prefs = {
+    info: preference(preferences.info, 312),
+    warn: preference(preferences.warn, 336),
+    urgent: preference(preferences.urgent, 360),
+    display: preference(preferences.display, "days"),
+    enableAlerts: preference(preferences.enableAlerts, false),
+  };
+  const result: RealtimeDocument = {
+    found: false,
+    age: 0,
+    treatmentDate: null,
+    checkForAlert: false,
+  };
+  let previousDate = 0;
+
+  for (const treatment of treatments) {
+    if (!String(treatment.eventType ?? "").includes("Pump Battery Change")) continue;
+    const treatmentDate = eventMills(treatment);
+    if (!(treatmentDate > previousDate && treatmentDate <= now)) continue;
+    previousDate = treatmentDate;
+    result.treatmentDate = treatmentDate;
+    const parts = ageParts(now, treatmentDate);
+    if (!result.found || (parts.age >= 0 && parts.age < Number(result.age))) {
+      Object.assign(result, parts, {
+        found: true,
+        notes: treatment.notes,
+      });
+    }
+  }
+
+  result.level = NONE;
+  let sound: AgeNotification["pushoverSound"] = "incoming";
+  let message: string | undefined;
+  let sendNotification = false;
+  const age = Number(result.age);
+
+  if (age >= Number(prefs.urgent)) {
+    sendNotification = age === prefs.urgent;
+    message = translate("Pump Battery change overdue!");
+    sound = "persistent";
+    result.level = URGENT;
+  } else if (age >= Number(prefs.warn)) {
+    sendNotification = age === prefs.warn;
+    message = translate("Time to change pump battery");
+    result.level = WARN;
+  } else if (age >= Number(prefs.info)) {
+    sendNotification = age === prefs.info;
+    message = "Change pump battery soon";
+    result.level = INFO;
+  }
+
+  if (prefs.display === "days" && result.found) {
+    result.display = `${age >= 24 ? `${String(result.days)}d` : ""}${String(result.hours)}h`;
+  } else {
+    result.display = result.found ? `${age}h` : "n/a ";
+  }
+
+  if (
+    prefs.enableAlerts && sendNotification &&
+    Number(result.minFractions) <= 20
+  ) {
+    result.notification = {
+      title: translate("Pump battery age %1 hours", [age]),
+      message: message as string,
+      pushoverSound: sound,
+      level: Number(result.level),
+      group: "BAGE",
+    } satisfies AgeNotification;
+  }
+  return result;
+}
+
+export function batteryAgeNotification(property: RealtimeDocument): RealtimeDocument | null {
+  return notificationRequest(property, BATTERY_PLUGIN);
+}
+
+export function batteryAgeVisualization(
+  property: RealtimeDocument,
+  translate: AgeTranslator = translateEnglish,
+): AgeVisualization {
+  const info: RealtimeDocument[] = [{
+    label: translate("Inserted"),
+    value: new Date(Number(property.treatmentDate)).toLocaleString(),
+  }];
+  if (!isEmpty(property.notes)) {
+    info.push({ label: `${translate("Notes")}:`, value: property.notes });
+  }
+  return {
+    value: property.display,
+    label: "BAGE",
+    info,
+    pillClass: statusClass(property.level),
+  };
+}
+
 type SensorEvent = "Sensor Start" | "Sensor Change";
 
 function sensorEventInfo(value: unknown): RealtimeDocument {
@@ -508,7 +618,7 @@ export function sensorAgeVisualization(
 }
 
 /**
- * Durable Object scheduling adapter for the three locked age plugins. The
+ * Durable Object scheduling adapter for the four locked age plugins. The
  * property and request payloads above remain the source of truth; this helper
  * only derives the persisted logical deadlines that replace Node's heartbeat.
  */
@@ -529,7 +639,7 @@ export function calculateAgeNotificationEvaluation(
     deadlines.push(...ageDeadlines(property, thresholds, notification, now, heartbeatMs));
   };
 
-  // Preserve the locked server registry order: CAGE, SAGE, then IAGE.
+  // Preserve the locked server registry order: CAGE, SAGE, IAGE, then BAGE.
   if (options.cage !== undefined && options.cage.enableAlerts) {
     const property = calculateCannulaAgeProperty(treatments, now, options.cage);
     collect(property, [
@@ -563,6 +673,15 @@ export function calculateAgeNotificationEvaluation(
       numericPreference(options.iage.info, 44),
       numericPreference(options.iage.warn, 48),
     ], insulinAgeNotification(property));
+  }
+
+  if (options.bage !== undefined && options.bage.enableAlerts) {
+    const property = calculateBatteryAgeProperty(treatments, now, options.bage);
+    collect(property, [
+      numericPreference(options.bage.info, 312),
+      numericPreference(options.bage.warn, 336),
+      numericPreference(options.bage.urgent, 360),
+    ], batteryAgeNotification(property));
   }
 
   const future = deadlines.filter((deadline) => Number.isFinite(deadline) && deadline > now);

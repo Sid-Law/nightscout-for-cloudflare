@@ -7,6 +7,7 @@ import { calculateDirectionProperty } from "./direction";
 import { calculateDatabaseSizeProperty } from "./dbsize";
 import {
   calculateCannulaAgeProperty,
+  calculateBatteryAgeProperty,
   calculateInsulinAgeProperty,
   calculateSensorAgeProperty,
   type AgePreferences,
@@ -39,6 +40,7 @@ import {
   calculateXdripJsProperty,
   type XdripJsPreferences,
 } from "./xdripjs";
+import { calculateRuntimeStateProperty } from "./runtimestate";
 
 export interface PluginPropertyContext {
   sgvs: RealtimeDocument[];
@@ -246,6 +248,7 @@ export function calculatePluginProperties(
   enabled: ReadonlySet<string>,
   extendedSettings: Record<string, unknown> = {},
   settings: Record<string, unknown> = {},
+  runtimeState: unknown = "loaded",
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   let profile: NightscoutProfileFunctions | undefined;
@@ -400,6 +403,15 @@ export function calculatePluginProperties(
         );
       },
     },
+    bage: {
+      setProperties: (pluginSandbox) => {
+        properties.bage = calculateBatteryAgeProperty(
+          context.treatments ?? [],
+          now,
+          agePreferences(pluginSandbox),
+        );
+      },
+    },
     basal: {
       setProperties: () => {
         const basal = calculateBasalProperty(pluginProfile(), now);
@@ -415,6 +427,11 @@ export function calculatePluginProperties(
           ? pluginSandbox.extendedSettings as Record<string, unknown>
           : {};
         properties.dbsize = calculateDatabaseSizeProperty(context.dbstats, preferences);
+      },
+    },
+    runtimestate: {
+      setProperties: () => {
+        properties.runtimestate = calculateRuntimeStateProperty(runtimeState);
       },
     },
   };

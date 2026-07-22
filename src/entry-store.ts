@@ -311,6 +311,7 @@ interface AutomaticNotificationRuntime {
   cage: boolean;
   sage: boolean;
   iage: boolean;
+  bage: boolean;
   treatmentNotify: boolean;
   timeAgo: boolean;
   dbSize: boolean;
@@ -1364,6 +1365,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const cagePreferences = recordValue(extendedSettings.cage);
     const sagePreferences = recordValue(extendedSettings.sage);
     const iagePreferences = recordValue(extendedSettings.iage);
+    const bagePreferences = recordValue(extendedSettings.bage);
     const dbSizePreferences = recordValue(extendedSettings.dbsize);
     return {
       settings,
@@ -1380,6 +1382,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       cage: enabled.has("cage") && Boolean(cagePreferences.enableAlerts),
       sage: enabled.has("sage") && Boolean(sagePreferences.enableAlerts),
       iage: enabled.has("iage") && Boolean(iagePreferences.enableAlerts),
+      bage: enabled.has("bage") && Boolean(bagePreferences.enableAlerts),
       treatmentNotify: enabled.has("treatmentnotify"),
       timeAgo: enabled.has("timeago") && Boolean(timeAgoPreferences.enableAlerts),
       dbSize: enabled.has("dbsize") && Boolean(dbSizePreferences.enableAlerts),
@@ -1405,6 +1408,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
       || runtime.pump || runtime.openAps || runtime.xdripJs
       || runtime.loop || runtime.bwp || runtime.cage || runtime.sage || runtime.iage
+      || runtime.bage
       || runtime.treatmentNotify || runtime.timeAgo || runtime.dbSize;
     const inputChanged = runtime.dbSize || (collection === "profile"
       ? anyEnabled
@@ -1413,7 +1417,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           || runtime.treatmentNotify || runtime.timeAgo
         : collection === "treatments"
           ? runtime.bwp || runtime.treatmentNotify || runtime.pump || runtime.openAps
-            || runtime.cage || runtime.sage || runtime.iage
+            || runtime.cage || runtime.sage || runtime.iage || runtime.bage
           : collection === "devicestatus"
             && (runtime.bwp || runtime.pump || runtime.openAps
               || runtime.xdripJs || runtime.loop));
@@ -1591,11 +1595,12 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       );
     }
 
-    if (runtime.cage || runtime.sage || runtime.iage) {
+    if (runtime.cage || runtime.sage || runtime.iage || runtime.bage) {
       const eventTypes = [
         ...(runtime.cage ? ["Site Change"] : []),
         ...(runtime.sage ? ["Sensor Start", "Sensor Change"] : []),
         ...(runtime.iage ? ["Insulin Change"] : []),
+        ...(runtime.bage ? ["Pump Battery Change"] : []),
       ];
       for (const eventType of eventTypes) {
         result.ageTreatments.push(...this.realtimeDocuments(
@@ -1668,7 +1673,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
     // Preserve the locked server plugin order for every implemented producer:
     // ar2, simplealarms, errorcodes, pump, openaps, xdripjs, loop, bwp, cage, sage,
-    // iage, treatmentnotify, timeago, then dbsize. The shared engine can therefore
+    // iage, bage, treatmentnotify, timeago, then dbsize. The shared engine can therefore
     // arbitrate identical requests and treatment snoozes in Node-server order.
     if (runtime.ar2) {
       schedule(this.earliestFutureEntryAt(data.sgvs, now));
@@ -1808,7 +1813,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       schedule(now + heartbeatMs);
     }
 
-    if (runtime.cage || runtime.sage || runtime.iage) {
+    if (runtime.cage || runtime.sage || runtime.iage || runtime.bage) {
       schedule(this.earliestFutureEntryAt(data.ageTreatments, now));
       const age = calculateAgeNotificationEvaluation(
         data.ageTreatments,
@@ -1823,6 +1828,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
             : {}),
           ...(runtime.iage
             ? { iage: recordValue(runtime.extendedSettings.iage) }
+            : {}),
+          ...(runtime.bage
+            ? { bage: recordValue(runtime.extendedSettings.bage) }
             : {}),
         },
       );
@@ -1884,6 +1892,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
       || runtime.pump || runtime.openAps || runtime.xdripJs
       || runtime.loop || runtime.bwp || runtime.cage || runtime.sage || runtime.iage
+      || runtime.bage
       || runtime.treatmentNotify || runtime.timeAgo || runtime.dbSize;
     if (tasks.has(PLUGIN_NOTIFICATIONS_TASK)) {
       if (!anyEnabled) tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);

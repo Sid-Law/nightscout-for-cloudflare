@@ -2874,6 +2874,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       store.nightscoutHttpStatus(now).then((value) => JSON.parse(value) as {
         settings?: { units?: unknown; enable?: unknown };
         extendedSettings?: Record<string, unknown>;
+        runtimeState?: unknown;
       }),
     ]);
     const units: NightscoutGlucoseUnits = status.settings?.units === "mmol"
@@ -2891,6 +2892,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       enabled,
       status.extendedSettings ?? {},
       status.settings ?? {},
+      status.runtimeState,
     );
     let result = properties;
     const rawSelection = url.pathname
@@ -2930,6 +2932,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     const status = JSON.parse(statusJson) as {
       settings?: { units?: unknown; enable?: unknown };
       extendedSettings?: Record<string, unknown>;
+      runtimeState?: unknown;
     };
     const units: NightscoutGlucoseUnits = status.settings?.units === "mmol"
       ? "mmol"
@@ -2946,6 +2949,7 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
       enabled,
       status.extendedSettings ?? {},
       status.settings ?? {},
+      status.runtimeState,
     );
     const snapshot = JSON.parse(snapshotJson);
     const hours = url.searchParams.get("hours") || 6;
@@ -3155,6 +3159,7 @@ async function handlePebble(
   const status = JSON.parse(statusJson) as {
     settings?: { units?: unknown; enable?: unknown };
     extendedSettings?: Record<string, unknown>;
+    runtimeState?: unknown;
   };
   const enabled = new Set(
     Array.isArray(status.settings?.enable)
@@ -3176,6 +3181,7 @@ async function handlePebble(
     pebbleEnabled,
     status.extendedSettings ?? {},
     status.settings ?? {},
+    status.runtimeState,
   );
   const response = buildNightscoutPebbleResponse(context, {
     now,

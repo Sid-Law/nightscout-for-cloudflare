@@ -44,10 +44,47 @@ function packets(payload: string): SocketIoV5Packet[] {
     .map((packet) => unwrapSocketIoV5Packet(packet));
 }
 
+const RESET_NOTIFICATION_ENVIRONMENT = {
+  ENABLE: undefined,
+  DISABLE: undefined,
+  ALARM_TYPES: undefined,
+  ERRORCODES_INFO: undefined,
+  ERRORCODES_WARN: undefined,
+  ERRORCODES_URGENT: undefined,
+  XDRIPJS_ENABLE_ALERTS: undefined,
+  XDRIPJS_WARN_BAT_V: undefined,
+  XDRIPJS_STATE_NOTIFY_INTRVL: undefined,
+  CAGE_ENABLE_ALERTS: undefined,
+  CAGE_INFO: undefined,
+  CAGE_WARN: undefined,
+  CAGE_URGENT: undefined,
+  SAGE_ENABLE_ALERTS: undefined,
+  SAGE_INFO: undefined,
+  SAGE_WARN: undefined,
+  SAGE_URGENT: undefined,
+  IAGE_ENABLE_ALERTS: undefined,
+  IAGE_INFO: undefined,
+  IAGE_WARN: undefined,
+  IAGE_URGENT: undefined,
+  BAGE_ENABLE_ALERTS: undefined,
+  BAGE_INFO: undefined,
+  BAGE_WARN: undefined,
+  BAGE_URGENT: undefined,
+  BAGE_DISPLAY: undefined,
+  DBSIZE_ENABLE_ALERTS: undefined,
+  DBSIZE_MAX: undefined,
+  DBSIZE_WARN_PERCENTAGE: undefined,
+  DBSIZE_URGENT_PERCENTAGE: undefined,
+} as const;
+
 async function openAlarm(name: string): Promise<{
   sid: string;
   poll: () => Promise<SocketIoV5Packet[]>;
 }> {
+  // cloudflare:test shares the mutable environment object between DO
+  // instances in this file. Reset it before constructing a fresh tenant so a
+  // preceding opt-in plugin test cannot publish during the namespace CONNECT.
+  Object.assign(env as unknown as NightscoutStatusEnvironment, RESET_NOTIFICATION_ENVIRONMENT);
   const response = await SELF.fetch(endpoint(name));
   const [open] = decodeEngineIoV4PollingPayload(await response.text());
   const sid = decodeEngineIoV4Handshake(open!).sid;
@@ -68,30 +105,10 @@ async function openAlarm(name: string): Promise<{
 }
 
 function resetAgeAndDatabaseNotificationSettings(instance: EntryStore): void {
-  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
-    ERRORCODES_INFO: undefined,
-    ERRORCODES_WARN: undefined,
-    ERRORCODES_URGENT: undefined,
-    XDRIPJS_ENABLE_ALERTS: undefined,
-    XDRIPJS_WARN_BAT_V: undefined,
-    XDRIPJS_STATE_NOTIFY_INTRVL: undefined,
-    CAGE_ENABLE_ALERTS: undefined,
-    CAGE_INFO: undefined,
-    CAGE_WARN: undefined,
-    CAGE_URGENT: undefined,
-    SAGE_ENABLE_ALERTS: undefined,
-    SAGE_INFO: undefined,
-    SAGE_WARN: undefined,
-    SAGE_URGENT: undefined,
-    IAGE_ENABLE_ALERTS: undefined,
-    IAGE_INFO: undefined,
-    IAGE_WARN: undefined,
-    IAGE_URGENT: undefined,
-    DBSIZE_ENABLE_ALERTS: undefined,
-    DBSIZE_MAX: undefined,
-    DBSIZE_WARN_PERCENTAGE: undefined,
-    DBSIZE_URGENT_PERCENTAGE: undefined,
-  });
+  Object.assign(
+    (instance as unknown as MutableEntryStoreSurface).env,
+    RESET_NOTIFICATION_ENVIRONMENT,
+  );
 }
 
 function enableXdripJs(instance: EntryStore): void {
@@ -274,7 +291,7 @@ function enableCannulaAgeNotifications(instance: EntryStore): void {
   resetAgeAndDatabaseNotificationSettings(instance);
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "cage",
-    DISABLE: "ar2 simplealarms treatmentnotify timeago pump openaps loop sage iage",
+    DISABLE: "ar2 simplealarms treatmentnotify timeago pump openaps loop sage iage bage",
     ALARM_TYPES: "predict",
     CAGE_ENABLE_ALERTS: "true",
     CAGE_INFO: "1",
@@ -285,11 +302,27 @@ function enableCannulaAgeNotifications(instance: EntryStore): void {
   });
 }
 
+function enableBatteryAgeNotifications(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "bage",
+    DISABLE: "ar2 simplealarms treatmentnotify timeago pump openaps loop cage sage iage dbsize",
+    ALARM_TYPES: "predict",
+    BAGE_ENABLE_ALERTS: "true",
+    BAGE_INFO: "1",
+    BAGE_WARN: "1",
+    BAGE_URGENT: "1",
+    BAGE_DISPLAY: "days",
+    DBSIZE_ENABLE_ALERTS: undefined,
+    HEARTBEAT: "60",
+  });
+}
+
 function enableDatabaseSizeNotifications(instance: EntryStore): void {
   resetAgeAndDatabaseNotificationSettings(instance);
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "dbsize",
-    DISABLE: "ar2 simplealarms treatmentnotify timeago pump openaps loop cage sage iage",
+    DISABLE: "ar2 simplealarms treatmentnotify timeago pump openaps loop cage sage iage bage",
     ALARM_TYPES: "predict",
     DBSIZE_ENABLE_ALERTS: "true",
     DBSIZE_MAX: "0.01",
@@ -810,6 +843,76 @@ describe("SQLite Durable Object background notification scheduler", () => {
         title: "All Clear",
         message: "Auto ack'd alarm(s)",
         group: "CAGE",
+      }],
+    }]);
+  });
+
+  it("schedules, emits, and clears the exact pump-battery-age alert window", async () => {
+    const name = tenant("background-bage");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const changedAt = Date.now();
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableBatteryAgeNotifications(instance);
+      await instance.createDocuments("treatments", JSON.stringify([{
+        eventType: "Pump Battery Change",
+        enteredBy: "scheduler-test",
+        created_at: new Date(changedAt).toISOString(),
+      }]));
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(changedAt + 60 * 60_000);
+    });
+
+    const alertAt = changedAt + 60 * 60_000;
+    await runInDurableObject(stub, async (instance, state) => {
+      enableBatteryAgeNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        alertAt,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(alertAt + 60_000);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["urgent_alarm", expect.objectContaining({
+        level: URGENT,
+        title: "Pump battery age 1 hours",
+        message: "Pump Battery change overdue!",
+        group: "BAGE",
+        plugin: expect.objectContaining({ name: "bage" }),
+      })],
+    }]);
+
+    const clearAt = alertAt + 21 * 60_000;
+    await runInDurableObject(stub, async (instance, state) => {
+      enableBatteryAgeNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        clearAt,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).toArray()).toEqual([]);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["clear_alarm", {
+        clear: true,
+        title: "All Clear",
+        message: "Auto ack'd alarm(s)",
+        group: "BAGE",
       }],
     }]);
   });
