@@ -7,6 +7,11 @@ import {
 } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { EntryStore } from "../src/entry-store";
+import type { NightscoutStatusEnvironment } from "../src/status";
+
+interface MutableEntryStoreSurface {
+  env: NightscoutStatusEnvironment;
+}
 
 const TEST_API_SECRET = "nscf-test-secret-20260717";
 
@@ -127,5 +132,53 @@ describe("opt-in Cloudflare simulated CGM", () => {
     const disabled = await configure(tenantName, false);
     expect(disabled.status).toBe(200);
     expect(await disabled.json()).toMatchObject({ enabled: false, nextAt: null });
+  });
+
+  it("clears an existing stale-data alarm as soon as fresh simulated SGV data resumes", async () => {
+    const tenantName = tenant("sim-cgm-all-clear");
+    const stub = env.ENTRY_STORE.getByName(tenantName) as DurableObjectStub<EntryStore>;
+    const now = Date.now();
+    await runInDurableObject(stub, async (instance, state) => {
+      Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+        ENABLE: "timeago",
+        DISABLE: "simplealarms treatmentnotify",
+        TIMEAGO_ENABLE_ALERTS: "true",
+        ALARM_TIMEAGO_WARN: "true",
+        ALARM_TIMEAGO_WARN_MINS: "1",
+        ALARM_TIMEAGO_URGENT: "true",
+        ALARM_TIMEAGO_URGENT_MINS: "2",
+        HEARTBEAT: "60",
+      });
+      const staleAt = now - 10 * 60_000;
+      await instance.processAlarmNotificationRequests(JSON.stringify({
+        notifications: [{
+          level: 1,
+          title: "Warning, BG data stale",
+          message: "10 mins ago",
+          group: "default",
+          eventName: "timeago",
+          plugin: { name: "timeago" },
+        }],
+        snoozes: [],
+      }), staleAt);
+      expect(state.storage.sql.exec<{ last_emit_at: number | null }>(
+        `SELECT last_emit_at FROM realtime_alarm_silences
+         WHERE level = 1 AND alarm_group = 'default'`,
+      ).one().last_emit_at).toBe(staleAt);
+
+      await instance.configureSimulatedCgm(true, now);
+      const cleared = state.storage.sql.exec<{
+        last_ack_at: number;
+        silence_time: number;
+        last_emit_at: number | null;
+      }>(
+        `SELECT last_ack_at, silence_time, last_emit_at
+         FROM realtime_alarm_silences
+         WHERE level = 1 AND alarm_group = 'default'`,
+      ).one();
+      expect(cleared.last_ack_at).toBeGreaterThanOrEqual(now);
+      expect(cleared.silence_time).toBe(1);
+      expect(cleared.last_emit_at).toBeNull();
+    });
   });
 });

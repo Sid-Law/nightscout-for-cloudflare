@@ -41,6 +41,49 @@ export interface NightscoutAlarmEvent {
 
 export type NightscoutSettingAccessor = (name: string) => unknown;
 
+export function nightscoutAlarmEventEnabled(
+  settings: Record<string, unknown>,
+  notification: NightscoutAlarmEvent,
+): boolean {
+  const urgentHigh = notification.eventName === "high"
+    && notification.level === URGENT
+    && Boolean(settings.alarmUrgentHigh);
+  const high = notification.eventName === "high" && Boolean(settings.alarmHigh);
+  const urgentLow = notification.eventName === "low"
+    && notification.level === URGENT
+    && Boolean(settings.alarmUrgentLow);
+  const low = notification.eventName === "low" && Boolean(settings.alarmLow);
+  return (notification.eventName !== "high" && notification.eventName !== "low")
+    || urgentHigh || high || urgentLow || low;
+}
+
+export function nightscoutFirstSnoozeMins(
+  settings: Record<string, unknown>,
+  notification: NightscoutAlarmEvent,
+): unknown {
+  let values: unknown;
+  if (
+    notification.eventName === "high"
+    && notification.level === URGENT
+    && Boolean(settings.alarmUrgentHigh)
+  ) values = settings.alarmUrgentHighMins;
+  else if (notification.eventName === "high" && Boolean(settings.alarmHigh)) {
+    values = settings.alarmHighMins;
+  } else if (
+    notification.eventName === "low"
+    && notification.level === URGENT
+    && Boolean(settings.alarmUrgentLow)
+  ) values = settings.alarmUrgentLowMins;
+  else if (notification.eventName === "low" && Boolean(settings.alarmLow)) {
+    values = settings.alarmLowMins;
+  } else {
+    values = notification.level === URGENT
+      ? settings.alarmUrgentMins
+      : settings.alarmWarnMins;
+  }
+  return Array.isArray(values) ? values[0] : undefined;
+}
+
 export interface NightscoutSettings extends Record<string, unknown> {
   units: unknown;
   thresholds: Record<string, unknown>;

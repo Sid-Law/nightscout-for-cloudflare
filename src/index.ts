@@ -177,6 +177,15 @@ function legacyOk(): Response {
   return new Response(body, { status: 200, headers });
 }
 
+function legacyInternalError(): Response {
+  const body = new TextEncoder().encode("Internal Server Error");
+  const headers = new Headers(corsHeaders());
+  headers.set("Content-Type", "text/plain; charset=utf-8");
+  headers.set("Content-Length", String(body.byteLength));
+  headers.set("Cache-Control", "no-store");
+  return new Response(body, { status: 500, headers });
+}
+
 function legacyAlexaSpeechletResponse(
   title: string,
   output: string,
@@ -2912,6 +2921,30 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
     );
     // Express res.sendStatus(200) returns this exact text body.
     return legacyOk();
+  }
+
+  if (
+    request.method === "POST"
+    && /^\/api\/v[12]\/notifications\/pushovercallback\/?$/.test(url.pathname)
+  ) {
+    if (env.ENTRY_STORE === undefined) {
+      throw new ApiError(
+        503,
+        "entry_store_not_configured",
+        "ENTRY_STORE must be configured before Pushover callbacks are enabled",
+      );
+    }
+    const payload = await readBoundedBody(request);
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+      return legacyInternalError();
+    }
+    const accepted = await env.ENTRY_STORE.getByName(resolveTenant(request, url))
+      .acknowledgePushoverReceipt(JSON.stringify(payload), Date.now());
+    // Locked v15.0.7 leaves provider callbacks unauthenticated: only a
+    // short-lived, previously persisted receipt can acknowledge an alarm.
+    return accepted
+      ? legacyOk()
+      : legacyInternalError();
   }
 
   if (

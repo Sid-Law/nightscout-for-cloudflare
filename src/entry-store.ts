@@ -110,6 +110,14 @@ import { calculateTreatmentNotificationEvaluation } from "./plugins/treatmentnot
 import { calculateTimeAgoNotificationEvaluation } from "./plugins/timeago";
 import { createNightscoutProfileFunctions } from "./profile-functions";
 import { nightscoutTimes } from "./runtime/times";
+import {
+  NightscoutPushNotify,
+} from "./pushnotify";
+import { SqlitePushNotificationStateStore } from "./push-notification-store";
+import {
+  nightscoutAlarmEventEnabled,
+  nightscoutFirstSnoozeMins,
+} from "./settings";
 
 export type DocumentCollection =
   | "activity"
@@ -744,6 +752,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (17)",
       );
 
+      // Upstream pushnotify keeps dedupe leases, Pushover receipts and Maker
+      // All Clear state in process memory. Persist them per tenant so Worker
+      // eviction cannot duplicate an alarm or lose a receipt callback.
+      this.pushNotificationState().migrate();
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (18)",
+      );
+
       // This named, idempotent auth state is intentionally independent of the
       // numeric migration sequence. WebSocket transport remediation owns the
       // next numeric marker, while delay-list state can safely repair itself
@@ -1080,6 +1096,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
   private adminNotifies(): SqliteAdminNotifyRepository {
     return new SqliteAdminNotifyRepository(this.ctx.storage);
+  }
+
+  private pushNotificationState(): SqlitePushNotificationStateStore {
+    return new SqlitePushNotificationStateStore(this.ctx.storage);
   }
 
   private adminNotifiesEnabled(now: number): boolean {
@@ -2663,6 +2683,50 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const accepted = this.realtime.acknowledgeAlarm(level, group, silenceTime);
     this.flushRealtimeWebSockets();
     await this.synchronizeRealtimeAlarm();
+    return accepted;
+  }
+
+  async acknowledgePushoverReceipt(responseJson: string, now: number): Promise<boolean> {
+    if (
+      responseJson.length > REALTIME_MAX_PAYLOAD_BYTES
+      || !Number.isSafeInteger(now)
+      || now < 0
+    ) return false;
+    let response: unknown;
+    try {
+      response = JSON.parse(responseJson) as unknown;
+    } catch {
+      return false;
+    }
+    if (typeof response !== "object" || response === null || Array.isArray(response)) return false;
+
+    const runtime = this.resolvedAutomaticNotificationRuntime(now);
+    const pushnotify = new NightscoutPushNotify({
+      state: this.pushNotificationState(),
+      now: () => now,
+      settings: {
+        isAlarmEventEnabled: (notification) =>
+          nightscoutAlarmEventEnabled(runtime.settings, {
+            eventName: notification.eventName ?? "",
+            level: Number(notification.level),
+          }),
+        snoozeFirstMinsForAlarmEvent: (notification) =>
+          nightscoutFirstSnoozeMins(runtime.settings, {
+            eventName: notification.eventName ?? "",
+            level: Number(notification.level),
+          }),
+      },
+      notifications: {
+        ack: (level, group, silenceTime) => {
+          this.realtime.acknowledgeAlarm(level, group ?? "default", silenceTime);
+        },
+      },
+    });
+    const accepted = pushnotify.pushoverAck(response as Record<string, unknown>);
+    if (accepted) {
+      this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+    }
     return accepted;
   }
 

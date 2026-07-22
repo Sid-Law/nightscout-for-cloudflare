@@ -350,6 +350,18 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/maker.test.js": {
+      "status": "adapted",
+      "reason": "All six locked query, three-event dispatch, missing-name, missing-level, 30-minute All Clear dedupe and multi-announcement-key cases are represented by test/push-provider-contract.test.ts. src/plugins/maker.ts preserves the official value1/value2/value3 query encoding and ns-event/ns-<level>/ns-<level>-<name>/ns-allclear names with a request-local clock and injected transport. Maker All Clear state is persisted per tenant in SQLite and survives Durable Object eviction. External IFTTT delivery remains disabled until the destination is explicitly authorized and a persisted outbox is connected; no Node request/async/global state is used."
+    },
+    "vendor/nightscout/tests/pushnotify.test.js": {
+      "status": "adapted",
+      "reason": "All three locked one-shot alarm, one-shot informational notification and emergency-receipt cancellation cases are represented by test/push-provider-contract.test.ts. src/pushnotify.ts additionally retains notifyhash/content-SHA1/plugin-level key selection, the 30-second send lease, 15-minute success TTL, one-hour receipt TTL, alarm enable gate, Pushover acknowledgement snooze and Maker event mapping without process-global NodeCache state. SQLite now persists dedupe and receipt state across Durable Object eviction, and the official v1/v2 receipt callback acknowledges live alarm state. External delivery remains disabled until the destination is explicitly authorized and a persisted outbox is connected."
+    },
+    "vendor/nightscout/tests/pushover.test.js": {
+      "status": "adapted",
+      "reason": "All six locked warning, urgent, legacy group-key, multi-announcement-key, announcement-only and non-announcement suppression cases are represented by test/push-provider-contract.test.ts. src/plugins/pushover.ts preserves official key fallbacks, emergency/normal priorities, 15-minute expiry, two-versus-fifteen-minute retry, sound, callback and multiple-recipient mapping. The v1/v2 callback and SQLite receipt state are live, while external send/cancel transport stays injected so a future explicitly authorized outbox can own Cloudflare retries without changing the locked message contract."
+    },
     "vendor/nightscout/tests/pebble.test.js": {
       "status": "adapted",
       "reason": "All nine locked endpoint cases are represented by test/pebble-contract.test.ts: default and two-reading counts, mmol scaling, missing/negative/false uploader battery suppression, raw fields/calibration projection, Treatment IOB/COB fallbacks and DeviceStatus IOB. src/pebble.ts preserves the official response shape and direction mapping over a request-local bounded Durable Object snapshot; the live /pebble route retains readable authorization, query-unit override and HEAD parity while capping one response at 1000 readings for Workers Free safety. Existing IOB/COB formula contracts remain authoritative and no dose recommendation was added."

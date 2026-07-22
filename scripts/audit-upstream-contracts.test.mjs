@@ -177,12 +177,12 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.equal(first.tests.length, 111);
   assert.equal(serializeManifest(first), serializeManifest(second));
   assert.equal(first.tests.filter((item) => item.status === "pass").length, 15);
-  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 83);
+  assert.equal(first.tests.filter((item) => item.status === "adapted").length, 86);
   assert.deepEqual(first.statistics.tests_by_status, {
     pass: 15,
-    adapted: 83,
+    adapted: 86,
     "excluded-fixed-scope": 2,
-    unresolved: 11,
+    unresolved: 8,
   });
   for (const file of [
     "vendor/nightscout/tests/api.aaps-client.test.js",
@@ -230,7 +230,10 @@ test("the locked repository manifest is stable and validates all 111 test files"
     "vendor/nightscout/tests/carb-dose-upload.test.js",
     "vendor/nightscout/tests/gap-treat-012.test.js",
     "vendor/nightscout/tests/objectid-cache.test.js",
+    "vendor/nightscout/tests/maker.test.js",
     "vendor/nightscout/tests/pebble.test.js",
+    "vendor/nightscout/tests/pushnotify.test.js",
+    "vendor/nightscout/tests/pushover.test.js",
     "vendor/nightscout/tests/sgv-devicestatus.test.js",
     "vendor/nightscout/tests/api3.aaps-patterns.test.js",
     "vendor/nightscout/tests/api3.basic.test.js",
@@ -291,13 +294,6 @@ test("the locked repository manifest is stable and validates all 111 test files"
       "vendor/nightscout/tests/mmconnect.test.js",
     ],
   );
-  for (const file of [
-    "vendor/nightscout/tests/maker.test.js",
-    "vendor/nightscout/tests/pushnotify.test.js",
-    "vendor/nightscout/tests/pushover.test.js",
-  ]) {
-    assert.equal(first.tests.find((item) => item.file === file)?.status, "unresolved", file);
-  }
 });
 
 test("default readable auth does not grant four-part admin read permissions", () => {
