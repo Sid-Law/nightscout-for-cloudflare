@@ -748,7 +748,7 @@
     },
     "vendor/nightscout/tests/upbat.test.js": {
       "status": "adapted",
-      "reason": "Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts and the live DO route contract in test/api-v2-data-contract.test.ts: exact 20% urgent/minimum analysis, pill classes, missing/-1 hiding, both assistant intents and responses, official enable gating, and /api/v2/properties output from bounded recent device status."
+      "reason": "Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts, the live DO route contract in test/api-v2-data-contract.test.ts and the real persisted scheduler contract in test/background-notification-scheduler.test.ts: exact 20% urgent/minimum analysis, pill classes, missing/-1 hiding, both assistant intents and responses, official enable gating, custom warn/urgent thresholds, multi-device/voltage alert text, and /api/v2/properties output from bounded recent device status. UPBAT_* settings reach HTTP/Socket snapshots, while schema v14 preserves official server order, future activation, heartbeat repetition, exact 30-minute expiry, automatic clear and live /alarm publication."
     },
     "vendor/nightscout/tests/uuid-handling.test.js": {
       "status": "adapted",

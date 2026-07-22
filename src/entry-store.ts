@@ -102,6 +102,10 @@ import {
 } from "./status";
 import { calculateSimpleAlarmRequest } from "./plugins/simplealarms";
 import { calculateAr2NotificationRequest } from "./plugins/ar2";
+import {
+  calculateUploaderBatteryProperty,
+  uploaderBatteryNotification,
+} from "./plugins/upbat";
 import { calculateErrorCodeNotification } from "./plugins/errorcodes";
 import {
   calculateXdripJsEvaluation,
@@ -300,6 +304,7 @@ interface AutomaticNotificationRuntime {
   settings: Record<string, unknown>;
   extendedSettings: Record<string, unknown>;
   enabled: ReadonlySet<string>;
+  upbat: boolean;
   ar2: boolean;
   simpleAlarms: boolean;
   errorCodes: boolean;
@@ -1358,6 +1363,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         : [],
     );
     const timeAgoPreferences = recordValue(extendedSettings.timeago);
+    const upbatPreferences = recordValue(extendedSettings.upbat);
     const pumpPreferences = recordValue(extendedSettings.pump);
     const openApsPreferences = recordValue(extendedSettings.openaps);
     const loopPreferences = recordValue(extendedSettings.loop);
@@ -1371,6 +1377,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       settings,
       extendedSettings,
       enabled,
+      upbat: enabled.has("upbat") && Boolean(upbatPreferences.enableAlerts),
       ar2: enabled.has("ar2"),
       simpleAlarms: enabled.has("simplealarms"),
       errorCodes: enabled.has("errorcodes"),
@@ -1405,7 +1412,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const tasks = this.backgroundTasks();
     const now = Date.now();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
-    const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
+    const anyEnabled = runtime.upbat || runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
       || runtime.pump || runtime.openAps || runtime.xdripJs
       || runtime.loop || runtime.bwp || runtime.cage || runtime.sage || runtime.iage
       || runtime.bage
@@ -1419,7 +1426,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           ? runtime.bwp || runtime.treatmentNotify || runtime.pump || runtime.openAps
             || runtime.cage || runtime.sage || runtime.iage || runtime.bage
           : collection === "devicestatus"
-            && (runtime.bwp || runtime.pump || runtime.openAps
+            && (runtime.upbat || runtime.bwp || runtime.pump || runtime.openAps
               || runtime.xdripJs || runtime.loop));
     if (!inputChanged) return;
     if (this.dataUpdateDebounce().record(PLUGIN_NOTIFICATIONS_TASK, now)) {
@@ -1528,8 +1535,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       result.mbgs.reverse();
     }
 
-    if (runtime.pump || runtime.openAps || runtime.xdripJs || runtime.loop) {
+    if (runtime.upbat || runtime.pump || runtime.openAps || runtime.xdripJs || runtime.loop) {
       const enabledFields = [
+        runtime.upbat
+          ? "(json_type(body, '$.uploader') IS NOT NULL OR json_type(body, '$.uploaderBattery') IS NOT NULL)"
+          : null,
         runtime.pump ? "json_type(body, '$.pump') IS NOT NULL" : null,
         runtime.openAps ? "json_type(body, '$.openaps') IS NOT NULL" : null,
         runtime.xdripJs ? "json_type(body, '$.xdripjs') IS NOT NULL" : null,
@@ -1672,9 +1682,40 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     );
 
     // Preserve the locked server plugin order for every implemented producer:
-    // ar2, simplealarms, errorcodes, pump, openaps, xdripjs, loop, bwp, cage, sage,
-    // iage, bage, treatmentnotify, timeago, then dbsize. The shared engine can therefore
+    // upbat, ar2, simplealarms, errorcodes, pump, openaps, xdripjs, loop, bwp,
+    // cage, sage, iage, bage, treatmentnotify, timeago, then dbsize. The shared engine can therefore
     // arbitrate identical requests and treatment snoozes in Node-server order.
+    if (runtime.upbat) {
+      schedule(this.earliestFutureEntryAt(
+        data.devicestatus.filter((status) =>
+          Object.prototype.hasOwnProperty.call(status, "uploader")
+        ),
+        now,
+      ));
+      const preferences = recordValue(runtime.extendedSettings.upbat);
+      const property = calculateUploaderBatteryProperty(
+        data.devicestatus,
+        now,
+        preferences,
+      );
+      const notification = uploaderBatteryNotification(property, preferences);
+      if (notification !== null) {
+        notifications.push(notification);
+        schedule(now + heartbeatMs);
+        for (const status of data.devicestatus) {
+          if (!Object.prototype.hasOwnProperty.call(status, "uploader")) continue;
+          const mills = Number(status.mills);
+          if (
+            Number.isFinite(mills)
+            && mills <= now
+            && mills >= now - nightscoutTimes.mins(30).msecs
+          ) {
+            schedule(mills + nightscoutTimes.mins(30).msecs + 1);
+          }
+        }
+      }
+    }
+
     if (runtime.ar2) {
       schedule(this.earliestFutureEntryAt(data.sgvs, now));
       const latest = this.latestSgvAtOrBefore(data.sgvs, now);
@@ -1889,7 +1930,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   private seedAutomaticNotificationTask(now: number): void {
     const tasks = this.backgroundTasks();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
-    const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
+    const anyEnabled = runtime.upbat || runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
       || runtime.pump || runtime.openAps || runtime.xdripJs
       || runtime.loop || runtime.bwp || runtime.cage || runtime.sage || runtime.iage
       || runtime.bage

@@ -32,7 +32,10 @@ import {
   type NightscoutPlugin,
   type PluginExecutionSandbox,
 } from "./registry";
-import { calculateUploaderBatteryProperty } from "./upbat";
+import {
+  calculateUploaderBatteryProperty,
+  type UploaderBatteryPreferences,
+} from "./upbat";
 import { calculateBasalProperty } from "./basal";
 import { calculateAr2Property, type Ar2Settings } from "./ar2";
 import { calculateBolusWizardPreview } from "./bwp";
@@ -291,8 +294,12 @@ export function calculatePluginProperties(
       },
     },
     upbat: {
-      setProperties: () => {
-        properties.upbat = calculateUploaderBatteryProperty(context.devicestatus, now);
+      setProperties: (pluginSandbox) => {
+        properties.upbat = calculateUploaderBatteryProperty(
+          context.devicestatus,
+          now,
+          pluginPreferences<UploaderBatteryPreferences>(pluginSandbox),
+        );
       },
     },
     ar2: {

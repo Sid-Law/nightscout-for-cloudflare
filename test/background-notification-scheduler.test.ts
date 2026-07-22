@@ -54,6 +54,9 @@ const RESET_NOTIFICATION_ENVIRONMENT = {
   XDRIPJS_ENABLE_ALERTS: undefined,
   XDRIPJS_WARN_BAT_V: undefined,
   XDRIPJS_STATE_NOTIFY_INTRVL: undefined,
+  UPBAT_ENABLE_ALERTS: undefined,
+  UPBAT_WARN: undefined,
+  UPBAT_URGENT: undefined,
   CAGE_ENABLE_ALERTS: undefined,
   CAGE_INFO: undefined,
   CAGE_WARN: undefined,
@@ -314,6 +317,19 @@ function enableBatteryAgeNotifications(instance: EntryStore): void {
     BAGE_URGENT: "1",
     BAGE_DISPLAY: "days",
     DBSIZE_ENABLE_ALERTS: undefined,
+    HEARTBEAT: "60",
+  });
+}
+
+function enableUploaderBatteryNotifications(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "upbat",
+    DISABLE: "ar2 simplealarms errorcodes treatmentnotify timeago pump openaps xdripjs loop bwp cage sage iage bage dbsize",
+    ALARM_TYPES: "predict",
+    UPBAT_ENABLE_ALERTS: "true",
+    UPBAT_WARN: "30",
+    UPBAT_URGENT: "20",
     HEARTBEAT: "60",
   });
 }
@@ -913,6 +929,76 @@ describe("SQLite Durable Object background notification scheduler", () => {
         title: "All Clear",
         message: "Auto ack'd alarm(s)",
         group: "BAGE",
+      }],
+    }]);
+  });
+
+  it("activates, repeats, and clears the official Uploader Battery alarm", async () => {
+    const name = tenant("background-upbat");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const activatesAt = Date.now() + 5_000;
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableUploaderBatteryNotifications(instance);
+      await instance.createDocuments("devicestatus", JSON.stringify([{
+        device: "openaps://phone",
+        created_at: new Date(activatesAt).toISOString(),
+        uploader: { battery: 19, batteryVoltage: 4_100 },
+      }]));
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(activatesAt);
+    });
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableUploaderBatteryNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        activatesAt,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(activatesAt + 60_000);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["urgent_alarm", expect.objectContaining({
+        level: URGENT,
+        title: "Urgent Uploader Battery is Low",
+        message: "phone 19% (4.100v)",
+        pushoverSound: "echo",
+        group: "Uploader Battery",
+        plugin: expect.objectContaining({ name: "upbat" }),
+      })],
+    }]);
+
+    const clearsAt = activatesAt + 30 * 60_000 + 1;
+    await runInDurableObject(stub, async (instance, state) => {
+      enableUploaderBatteryNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        clearsAt,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).toArray()).toEqual([]);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["clear_alarm", {
+        clear: true,
+        title: "All Clear",
+        message: "Auto ack'd alarm(s)",
+        group: "Uploader Battery",
       }],
     }]);
   });

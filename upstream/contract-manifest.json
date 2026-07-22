@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "d72bebc4f9d2351f95f73ebed868c7c9cd4bb6f3532564af64ded8933f55d133",
+  "inputs_sha256": "9a35a1a89d38491de451a3bec2b629691fc1f3aa71bed9e4cf9b5ae49c95fcf7",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -8647,7 +8647,7 @@
     {
       "file": "vendor/nightscout/tests/upbat.test.js",
       "status": "adapted",
-      "reason": "Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts and the live DO route contract in test/api-v2-data-contract.test.ts: exact 20% urgent/minimum analysis, pill classes, missing/-1 hiding, both assistant intents and responses, official enable gating, and /api/v2/properties output from bounded recent device status.",
+      "reason": "Represented by the complete named Workers-runtime plugin contract in test/plugin-foundations-contract.test.ts, the live DO route contract in test/api-v2-data-contract.test.ts and the real persisted scheduler contract in test/background-notification-scheduler.test.ts: exact 20% urgent/minimum analysis, pill classes, missing/-1 hiding, both assistant intents and responses, official enable gating, custom warn/urgent thresholds, multi-device/voltage alert text, and /api/v2/properties output from bounded recent device status. UPBAT_* settings reach HTTP/Socket snapshots, while schema v14 preserves official server order, future activation, heartbeat repetition, exact 30-minute expiry, automatic clear and live /alarm publication.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

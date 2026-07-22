@@ -27,6 +27,9 @@ export interface NightscoutStatusEnvironment {
   BWP_WARN?: string;
   BWP_URGENT?: string;
   BWP_SNOOZE_MINS?: string;
+  UPBAT_WARN?: string;
+  UPBAT_URGENT?: string;
+  UPBAT_ENABLE_ALERTS?: string;
   ERRORCODES_INFO?: string;
   ERRORCODES_WARN?: string;
   ERRORCODES_URGENT?: string;
@@ -195,6 +198,11 @@ function platformExtendedSettings(
     ["warn", environment.BWP_WARN],
     ["urgent", environment.BWP_URGENT],
     ["snoozeMins", environment.BWP_SNOOZE_MINS],
+  ]);
+  addPlugin("upbat", [
+    ["warn", environment.UPBAT_WARN],
+    ["urgent", environment.UPBAT_URGENT],
+    ["enableAlerts", environment.UPBAT_ENABLE_ALERTS],
   ]);
   if (enabled.has("errorcodes")) {
     const errorcodes: Record<string, unknown> = {};

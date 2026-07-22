@@ -404,6 +404,27 @@ describe("tenant status configuration sources", () => {
       configured,
     ).extendedSettings).toEqual(configured.extendedSettings);
   });
+
+  it("maps the three official Uploader Battery alert settings", () => {
+    const configured = tenantStatusSettings({
+      UPBAT_WARN: "42",
+      UPBAT_URGENT: "17",
+      UPBAT_ENABLE_ALERTS: "true",
+    });
+    expect(configured.extendedSettings).toMatchObject({
+      upbat: {
+        warn: 42,
+        urgent: 17,
+        enableAlerts: true,
+      },
+    });
+    expect(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      configured,
+    ).extendedSettings).toEqual(configured.extendedSettings);
+  });
 });
 
 describe("v1/v2 status representations", () => {

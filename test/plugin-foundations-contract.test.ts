@@ -22,6 +22,7 @@ import {
   calculateUploaderBatteryProperty,
   UPLOADER_BATTERY_INTENTS,
   uploaderBatteryAssistantResponse,
+  uploaderBatteryNotification,
   uploaderBatteryVisualization,
 } from "../src/plugins/upbat";
 import {
@@ -166,6 +167,37 @@ describe("locked Nightscout upbat.test.js", () => {
     });
     expect(uploaderBatteryAssistantResponse({ display: "20%" })).toEqual(response);
   });
+
+  it("ports the opt-in multi-device notification request and configured thresholds", () => {
+    const property = calculateUploaderBatteryProperty([
+      {
+        device: "openaps://phone",
+        mills: now,
+        uploader: { battery: 45, batteryVoltage: 4_100 },
+      },
+      { device: "watch", mills: now, uploader: { battery: 19 } },
+    ], now, { warn: 50, urgent: 20 });
+    expect(property).toMatchObject({
+      display: "19%",
+      status: "urgent",
+      min: { notification: URGENT },
+    });
+    expect(uploaderBatteryNotification(property)).toBeNull();
+    expect(uploaderBatteryNotification(property, { enableAlerts: true })).toEqual({
+      level: URGENT,
+      title: "Urgent Uploader Battery is Low",
+      message: "phone 45% (4.100v); watch 19%",
+      pushoverSound: "echo",
+      group: "Uploader Battery",
+      plugin: {
+        name: "upbat",
+        label: "Uploader Battery",
+        pluginType: "pill-status",
+        pillFlip: true,
+      },
+      debug: property,
+    });
+  });
 });
 
 describe("enabled plugin property adapter", () => {
@@ -213,6 +245,26 @@ describe("enabled plugin property adapter", () => {
     const configured = tenantStatusSettings({ ENABLE: "rawbg", DISABLE: "dbsize" });
     expect(configured.enable).toContain("rawbg");
     expect(configured.enable).not.toContain("dbsize");
+  });
+
+  it("passes official extended upbat thresholds through the property registry", () => {
+    const now = Date.parse("2026-07-20T12:00:00.000Z");
+    const properties = calculatePluginProperties(
+      {
+        sgvs: [],
+        cals: [],
+        devicestatus: [{ mills: now, uploader: { battery: 40 } }],
+      },
+      "mg/dl",
+      now,
+      new Set(["upbat"]),
+      { upbat: { warn: 50, urgent: 30 } },
+    );
+    expect(properties.upbat).toMatchObject({
+      display: "40%",
+      status: "warn",
+      min: { notification: WARN },
+    });
   });
 
   it("survives a rolling deploy by falling back only from a missing new DO RPC", async () => {

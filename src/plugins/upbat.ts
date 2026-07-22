@@ -1,12 +1,13 @@
 import type { RealtimeDocument } from "../realtime/ddata-snapshot";
 import {
+  levelToDisplay,
   levelToStatusClass,
   URGENT,
   WARN,
 } from "../runtime/levels";
 import { nightscoutTimes } from "../runtime/times";
 
-export interface UploaderBatteryPreferences {
+export interface UploaderBatteryPreferences extends Record<string, unknown> {
   warn?: unknown;
   urgent?: unknown;
   enableAlerts?: unknown;
@@ -16,6 +17,13 @@ export const UPLOADER_BATTERY_INTENTS = [
   { intent: "UploaderBattery" },
   { intent: "MetricNow", metrics: ["uploader battery"] },
 ] as const;
+
+export const UPLOADER_BATTERY_PLUGIN = Object.freeze({
+  name: "upbat",
+  label: "Uploader Battery",
+  pluginType: "pill-status",
+  pillFlip: true,
+});
 
 interface UploaderDevice extends RealtimeDocument {
   name: string;
@@ -187,6 +195,40 @@ export function uploaderBatteryVisualization(property: RealtimeDocument): Realti
     pillClass: property.status,
     info,
     hide: !(minimum?.value && Number(minimum.value) >= 0),
+  };
+}
+
+/** Direct request-local port of locked plugins/upbat.checkNotifications(). */
+export function uploaderBatteryNotification(
+  property: RealtimeDocument | undefined,
+  preferences: UploaderBatteryPreferences = {},
+): RealtimeDocument | null {
+  if (!property || !preferences.enableAlerts) return null;
+  const minimum = property.min as RealtimeDocument | undefined;
+  const level = minimum?.notification;
+  if (minimum === undefined || typeof level !== "number" || level < WARN) return null;
+
+  const devices = property.devices;
+  const values = typeof devices === "object" && devices !== null && !Array.isArray(devices)
+    ? Object.values(devices as Record<string, RealtimeDocument>)
+    : [];
+  const message = values.map((device) => {
+    const deviceMinimum = device.min as RealtimeDocument | undefined;
+    const info = [String(device.name), String(deviceMinimum?.display)];
+    if (deviceMinimum?.battery && deviceMinimum.voltageDisplay) {
+      info.push(`(${String(deviceMinimum.voltageDisplay)})`);
+    }
+    return info.join(" ");
+  }).join("; ");
+
+  return {
+    level,
+    title: `${levelToDisplay(level)} Uploader Battery is Low`,
+    message,
+    pushoverSound: "echo",
+    group: "Uploader Battery",
+    plugin: UPLOADER_BATTERY_PLUGIN,
+    debug: property,
   };
 }
 
