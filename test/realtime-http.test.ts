@@ -720,6 +720,12 @@ describe("Engine.IO 3/4 polling HTTP adapter", () => {
       created_at: new Date(now - (150 - deviceIndex) * 60_000).toISOString(),
       pump: { battery: 50 + (deviceIndex % 50) },
     }));
+    statuses.push(...Array.from({ length: 12 }, (_unused, index) => ({
+      _id: `same-device-${index}`,
+      device: "same-device",
+      created_at: new Date(now - (12 - index) * 30_000).toISOString(),
+      pump: { battery: 70 + index },
+    })));
     statuses.push({
       _id: "outside-one-day-window",
       device: "outside-device",
@@ -783,19 +789,29 @@ describe("Engine.IO 3/4 polling HTTP adapter", () => {
       data: [{ read: true, write: false, write_treatment: false }],
     });
     const data = eventValue(authorized, "dataUpdate") as RealtimeSnapshot;
-    expect(data.devicestatus).toHaveLength(150);
+    expect(data.devicestatus).toHaveLength(160);
     const groupCounts = new Map<string, number>();
     for (const status of data.devicestatus as Array<Record<string, unknown>>) {
       const device = String(status.device);
       groupCounts.set(device, (groupCounts.get(device) ?? 0) + 1);
     }
-    expect(groupCounts.size).toBe(150);
-    expect([...groupCounts.values()]).toEqual(Array.from({ length: 150 }, () => 1));
+    expect(groupCounts.size).toBe(151);
+    expect(groupCounts.get("same-device")).toBe(10);
     expect(groupCounts.get("device-000")).toBe(1);
+    expect(data.devicestatus).not.toContainEqual(
+      expect.objectContaining({ _id: "same-device-0" }),
+    );
+    expect(data.devicestatus).not.toContainEqual(
+      expect.objectContaining({ _id: "same-device-1" }),
+    );
     expect(data.devicestatus).not.toContainEqual(
       expect.objectContaining({ _id: "outside-one-day-window" }),
     );
     expect(data.profiles).toHaveLength(1);
+    expect((data.profiles[0] as Record<string, any>).store)
+      .not.toHaveProperty("Private@@@@@copy");
+    expect(data).not.toHaveProperty("activity");
+    expect(data).not.toHaveProperty("sitechangeTreatments");
     expect(data.food).toEqual([]);
     expect(new TextEncoder().encode(JSON.stringify(data)).byteLength)
       .toBeLessThanOrEqual(REALTIME_SNAPSHOT_MAX_BYTES);
@@ -819,7 +835,9 @@ describe("Engine.IO 3/4 polling HTTP adapter", () => {
     const retroStatuses = (
       eventValue(retro, "retroUpdate") as { devicestatus: Array<Record<string, unknown>> }
     ).devicestatus;
-    expect(retroStatuses).toHaveLength(150);
+    expect(retroStatuses).toHaveLength(162);
+    expect(retroStatuses.filter((status) => status.device === "same-device"))
+      .toHaveLength(12);
     expect(retroStatuses).not.toContainEqual(
       expect.objectContaining({ _id: "outside-one-day-window" }),
     );

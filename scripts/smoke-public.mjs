@@ -161,6 +161,19 @@ checked(ddata.dbstats?.dataSize > 0, "SQLite databaseSize is published");
 checked(ddata.dbstats?.indexSize === 0, "SQLite total is not double-counted");
 equal(ddata.activity, [], "current ddata publishes the Activity bucket");
 checked(!Object.hasOwn(ddata, "page"), "current ddata omits historical frame metadata");
+equal(ddata.lastProfileFromSwitch, null, "fresh ddata has no active Profile Switch");
+for (const bucket of [
+  "sitechangeTreatments",
+  "insulinchangeTreatments",
+  "batteryTreatments",
+  "sensorTreatments",
+  "profileTreatments",
+  "combobolusTreatments",
+  "tempbasalTreatments",
+  "tempTargetTreatments",
+]) {
+  equal(ddata[bucket], [], `fresh ddata publishes ${bucket}`);
+}
 
 const ddataFrameAt = Date.now() - 10 * 60_000;
 const ddataFrameResponse = await request(`/api/v2/ddata/at/${ddataFrameAt}`);

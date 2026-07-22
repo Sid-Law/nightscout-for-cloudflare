@@ -1,4 +1,5 @@
 import type { RealtimeSnapshot } from "./session-service";
+import { MMOL_TO_MGDL } from "../runtime/units";
 
 const DEVICE_TYPE_FIELDS = ["uploader", "pump", "openaps", "loop", "xdripjs"] as const;
 
@@ -33,12 +34,168 @@ export interface LegacyRealtimeDdataState {
   lastUpdated: number;
 }
 
+export interface RealtimeTreatmentBuckets {
+  sitechangeTreatments: RealtimeDocument[];
+  insulinchangeTreatments: RealtimeDocument[];
+  batteryTreatments: RealtimeDocument[];
+  sensorTreatments: RealtimeDocument[];
+  profileTreatments: RealtimeDocument[];
+  combobolusTreatments: RealtimeDocument[];
+  tempbasalTreatments: RealtimeDocument[];
+  tempTargetTreatments: RealtimeDocument[];
+}
+
 function cloneDocument(document: RealtimeDocument): RealtimeDocument {
   return JSON.parse(JSON.stringify(document)) as RealtimeDocument;
 }
 
 function cloneDocuments(documents: RealtimeDocument[]): RealtimeDocument[] {
   return documents.map(cloneDocument);
+}
+
+/**
+ * Mirrors the recursive id/amount pass at the end of locked dataloader.update.
+ * `runtime` selects whether processRawDataForRuntime runs first; Profile and
+ * Food deliberately skip that step upstream, while Treatments and
+ * DeviceStatus receive it.
+ */
+export function normalizeRealtimeDdataDocument(
+  document: RealtimeDocument,
+  runtime: boolean,
+): RealtimeDocument {
+  const normalized = runtime
+    ? normalizeRealtimeDocument(document)
+    : cloneDocument(document);
+  const work: unknown[] = [normalized];
+  while (work.length > 0) {
+    const value = work.pop();
+    if (typeof value !== "object" || value === null) continue;
+    if (Array.isArray(value)) {
+      work.push(...value);
+      continue;
+    }
+    const record = value as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(record, "_id") && record._id != null) {
+      record._id = String(record._id);
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(record, "amount") &&
+      !Object.prototype.hasOwnProperty.call(record, "absolute")
+    ) {
+      record.absolute = Number(record.amount);
+    }
+    work.push(...Object.values(record));
+  }
+  return normalized;
+}
+
+function treatmentEventIncludes(document: RealtimeDocument, value: string): boolean {
+  return typeof document.eventType === "string" && document.eventType.includes(value);
+}
+
+function sortTreatments(documents: RealtimeDocument[]): RealtimeDocument[] {
+  return documents.sort((left, right) => Number(left.mills) - Number(right.mills));
+}
+
+function processRealtimeDurations(
+  documents: RealtimeDocument[],
+  keepZeroDuration: boolean,
+): RealtimeDocument[] {
+  const seenMills = new Set<unknown>();
+  const treatments = documents.map(cloneDocument).filter((document) => {
+    if (seenMills.has(document.mills)) return false;
+    seenMills.add(document.mills);
+    return true;
+  });
+  const endEvents = treatments.filter((treatment) => !treatment.duration);
+
+  const cutIfInInterval = (
+    base: RealtimeDocument,
+    end: RealtimeDocument,
+  ): void => {
+    const baseMills = Number(base.mills);
+    const endMills = Number(end.mills);
+    const duration = Number(base.duration);
+    if (
+      baseMills < endMills &&
+      baseMills + duration * 60_000 > endMills
+    ) {
+      base.duration = (endMills - baseMills) / 60_000;
+      if (end.profile) {
+        base.cuttedby = end.profile;
+        end.cutting = base.profile;
+      }
+    }
+  };
+
+  for (const treatment of treatments) {
+    if (!treatment.duration) continue;
+    for (const endEvent of endEvents) cutIfInInterval(treatment, endEvent);
+  }
+  for (const treatment of treatments) {
+    if (!treatment.duration) continue;
+    for (const other of treatments) cutIfInInterval(treatment, other);
+  }
+  return keepZeroDuration
+    ? treatments
+    : treatments.filter((treatment) => Boolean(treatment.duration));
+}
+
+/** Pure equivalent of the enumerable arrays added by ddata.processTreatments(true). */
+export function buildRealtimeTreatmentBuckets(
+  source: RealtimeDocument[],
+): RealtimeTreatmentBuckets {
+  const treatments = sortTreatments(source.map(cloneDocument));
+  const profileTreatments = processRealtimeDurations(
+    treatments.filter((treatment) => treatment.eventType === "Profile Switch"),
+    true,
+  );
+  const tempBasalTreatments = processRealtimeDurations(
+    treatments.filter((treatment) => treatmentEventIncludes(treatment, "Temp Basal")),
+    false,
+  );
+  const convertedTargets = treatments
+    .filter((treatment) => treatmentEventIncludes(treatment, "Temporary Target"))
+    .map(cloneDocument)
+    .map((treatment) => {
+      let converted = false;
+      if (Object.prototype.hasOwnProperty.call(treatment, "units") && treatment.units === "mmol") {
+        treatment.targetTop = Number(treatment.targetTop) * MMOL_TO_MGDL;
+        treatment.targetBottom = Number(treatment.targetBottom) * MMOL_TO_MGDL;
+        treatment.units = "mg/dl";
+        converted = true;
+      }
+      if (
+        !converted &&
+        (Number(treatment.targetTop) < 20 || Number(treatment.targetBottom) < 20)
+      ) {
+        treatment.targetTop = Number(treatment.targetTop) * MMOL_TO_MGDL;
+        treatment.targetBottom = Number(treatment.targetBottom) * MMOL_TO_MGDL;
+        treatment.units = "mg/dl";
+      }
+      return treatment;
+    });
+
+  return {
+    sitechangeTreatments: sortTreatments(treatments
+      .filter((treatment) => treatmentEventIncludes(treatment, "Site Change"))
+      .map(cloneDocument)),
+    insulinchangeTreatments: sortTreatments(treatments
+      .filter((treatment) => treatmentEventIncludes(treatment, "Insulin Change"))
+      .map(cloneDocument)),
+    batteryTreatments: sortTreatments(treatments
+      .filter((treatment) => treatmentEventIncludes(treatment, "Pump Battery Change"))
+      .map(cloneDocument)),
+    sensorTreatments: sortTreatments(treatments
+      .filter((treatment) => treatmentEventIncludes(treatment, "Sensor"))
+      .map(cloneDocument)),
+    profileTreatments,
+    combobolusTreatments: sortTreatments(treatments
+      .filter((treatment) => treatment.eventType === "Combo Bolus")
+      .map(cloneDocument)),
+    tempbasalTreatments: tempBasalTreatments,
+    tempTargetTreatments: processRealtimeDurations(convertedTargets, false),
+  };
 }
 
 /** Creates the same empty data buckets as the locked upstream ddata module. */
@@ -224,7 +381,7 @@ export function buildRealtimeDdataSnapshot(
     cals: input.cals ?? [],
     profiles: filterRealtimePublicProfiles(input.profiles),
     mbgs: input.mbgs ?? [],
-    food: input.food.map(normalizeRealtimeDocument),
+    food: input.food.map((document) => normalizeRealtimeDdataDocument(document, false)),
     treatments: input.treatments.map(normalizeRealtimeDocument),
     dbstats: input.dbstats ?? {},
   };

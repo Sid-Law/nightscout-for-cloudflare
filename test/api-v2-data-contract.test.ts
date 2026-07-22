@@ -1,12 +1,14 @@
-import { env, SELF } from "cloudflare:test";
+import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { parseEntryPayload } from "../src/model";
 import { buildNightscoutSummary } from "../src/api2/summary";
 import type { RealtimeSnapshot } from "../src/realtime/session-service";
 import {
+  buildRealtimeTreatmentBuckets,
   cloneLegacyRealtimeDdataState,
   createLegacyRealtimeDdataState,
   mergeRealtimeDocumentsPreferNew,
+  normalizeRealtimeDdataDocument,
   processRealtimeRawDataForRuntime,
 } from "../src/realtime/ddata-snapshot";
 
@@ -55,6 +57,89 @@ describe("locked Nightscout v15.0.7 v2 data contracts", () => {
       [{ _id: "mongo-id", identifier: "loop-id", carbs: 15 }],
       [{ identifier: "loop-id", carbs: 0 }],
     )).toEqual([{ identifier: "loop-id", carbs: 0 }]);
+  });
+
+  it("ports the enumerable treatment buckets added by processTreatments(true)", () => {
+    const treatments = [
+      { _id: "a", eventType: "Profile Switch", mills: 1_000, duration: 30, profile: "A" },
+      { _id: "b", eventType: "Profile Switch", mills: 2_000, duration: 0, profile: "B" },
+      { _id: "c", eventType: "Temp Basal", mills: 3_000, duration: 30 },
+      { _id: "d", eventType: "Temp Basal", mills: 4_000, duration: 0 },
+      {
+        _id: "e",
+        eventType: "Temporary Target",
+        mills: 5_000,
+        duration: 30,
+        targetTop: 6,
+        targetBottom: 5,
+        units: "mmol",
+      },
+      { _id: "f", eventType: "Combo Bolus", mills: 6_000 },
+      { _id: "g", eventType: "Site Change", mills: 7_000 },
+      { _id: "h", eventType: "Sensor Start", mills: 8_000 },
+      { _id: "i", eventType: "Insulin Change", mills: 9_000 },
+      { _id: "j", eventType: "Pump Battery Change", mills: 10_000 },
+    ];
+    expect(buildRealtimeTreatmentBuckets(treatments)).toEqual({
+      sitechangeTreatments: [{ _id: "g", eventType: "Site Change", mills: 7_000 }],
+      insulinchangeTreatments: [{
+        _id: "i",
+        eventType: "Insulin Change",
+        mills: 9_000,
+      }],
+      batteryTreatments: [{
+        _id: "j",
+        eventType: "Pump Battery Change",
+        mills: 10_000,
+      }],
+      sensorTreatments: [{ _id: "h", eventType: "Sensor Start", mills: 8_000 }],
+      profileTreatments: [
+        {
+          _id: "a",
+          eventType: "Profile Switch",
+          mills: 1_000,
+          duration: 1 / 60,
+          profile: "A",
+          cuttedby: "B",
+        },
+        {
+          _id: "b",
+          eventType: "Profile Switch",
+          mills: 2_000,
+          duration: 0,
+          profile: "B",
+          cutting: "A",
+        },
+      ],
+      combobolusTreatments: [{ _id: "f", eventType: "Combo Bolus", mills: 6_000 }],
+      tempbasalTreatments: [{
+        _id: "c",
+        eventType: "Temp Basal",
+        mills: 3_000,
+        duration: 1 / 60,
+      }],
+      tempTargetTreatments: [{
+        _id: "e",
+        eventType: "Temporary Target",
+        mills: 5_000,
+        duration: 30,
+        targetTop: 108.09353999999999,
+        targetBottom: 90.07795,
+        units: "mg/dl",
+      }],
+    });
+
+    const food = normalizeRealtimeDdataDocument({
+      _id: 123,
+      created_at: "2026-07-22T00:00:00.000Z",
+      nested: { _id: 456, amount: "0.75" },
+    }, false);
+    expect(food).toEqual({
+      _id: "123",
+      created_at: "2026-07-22T00:00:00.000Z",
+      nested: { _id: "456", amount: "0.75", absolute: 0.75 },
+    });
+    expect(food).not.toHaveProperty("mills");
   });
 
   it("projects the locked two-day Activity bucket into current v2 ddata only", async () => {
@@ -134,6 +219,129 @@ describe("locked Nightscout v15.0.7 v2 data contracts", () => {
       page: { frame: true, after: frameAt },
       activity: [{ mills: beforeAt, heartrate: 96 }],
     });
+  });
+
+  it("serves full ddata.clone Profile, DeviceStatus, Food, and Treatment buckets", async () => {
+    const name = tenant("v2-full-ddata");
+    const now = Date.now();
+    const stub = env.ENTRY_STORE.getByName(name);
+    await stub.createDocuments("profile", JSON.stringify([{
+      _id: "888888888888888888888888",
+      defaultProfile: "Child",
+      store: { Child: {}, "Child@@@@@historical": {} },
+    }]));
+    await stub.createDocuments("food", JSON.stringify([{
+      _id: "999999999999999999999999",
+      created_at: new Date(now - 60_000).toISOString(),
+      name: "ordinary meal",
+      nested: { amount: "0.5" },
+    }]));
+    await stub.createDocuments("devicestatus", JSON.stringify([
+      ...Array.from({ length: 12 }, (_unused, index) => ({
+        _id: (100 + index).toString().repeat(24).slice(0, 24),
+        device: "loop-device",
+        created_at: new Date(now - (12 - index) * 60_000).toISOString(),
+        loop: { iob: { iob: index } },
+      })),
+      {
+        _id: "121212121212121212121212",
+        device: "future-loop-device",
+        created_at: new Date(now + 60 * 60_000).toISOString(),
+        loop: { iob: { iob: 99 } },
+      },
+    ]));
+    await stub.createDocuments("treatments", JSON.stringify([
+      {
+        _id: "131313131313131313131313",
+        eventType: "Note",
+        created_at: new Date(now - 10 * 24 * 60 * 60_000).toISOString(),
+        notes: "outside ordinary window",
+      },
+      {
+        _id: "141414141414141414141414",
+        eventType: "Profile Switch",
+        created_at: new Date(now - 30 * 24 * 60 * 60_000).toISOString(),
+        duration: 0,
+        profile: "Child",
+      },
+      {
+        _id: "151515151515151515151515",
+        eventType: "Site Change",
+        created_at: new Date(now - 30 * 24 * 60 * 60_000 + 1_000).toISOString(),
+      },
+      {
+        _id: "161616161616161616161616",
+        eventType: "Temp Basal",
+        created_at: new Date(now - 2 * 60_000).toISOString(),
+        duration: 30,
+        amount: "0.7",
+      },
+      {
+        _id: "171717171717171717171717",
+        eventType: "Temporary Target",
+        created_at: new Date(now - 90_000).toISOString(),
+        duration: 30,
+        targetTop: 6,
+        targetBottom: 5,
+        units: "mmol",
+      },
+      {
+        _id: "181818181818181818181818",
+        eventType: "Temp Basal",
+        created_at: new Date(now - 60_000).toISOString(),
+        duration: 0,
+      },
+    ]));
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `UPDATE documents
+         SET updated_at = ?
+         WHERE collection = 'treatments' AND id = ?`,
+        now - 10 * 24 * 60 * 60_000,
+        "131313131313131313131313",
+      );
+    });
+
+    const response = await SELF.fetch(endpoint("/api/v2/ddata/at", name));
+    expect(response.status).toBe(200);
+    const body = await response.json() as Record<string, any>;
+    expect(body.profiles[0].store).toHaveProperty("Child@@@@@historical");
+    expect(body.devicestatus).toHaveLength(13);
+    expect(body.devicestatus[0].mills).toBeLessThan(body.devicestatus[11].mills);
+    expect(body.devicestatus[12]).toMatchObject({ device: "future-loop-device" });
+    expect(body.food).toEqual([expect.objectContaining({
+      name: "ordinary meal",
+      nested: { amount: "0.5", absolute: 0.5 },
+    })]);
+    expect(body.food[0]).not.toHaveProperty("mills");
+    expect(body.treatments).toHaveLength(5);
+    expect(body.treatments).not.toContainEqual(
+      expect.objectContaining({ notes: "outside ordinary window" }),
+    );
+    expect(body.treatments.map((treatment: Record<string, unknown>) => treatment._id))
+      .toEqual([
+        "141414141414141414141414",
+        "151515151515151515151515",
+        "161616161616161616161616",
+        "171717171717171717171717",
+        "181818181818181818181818",
+      ]);
+    expect(body.treatments[2]).toMatchObject({ amount: "0.7", absolute: 0.7 });
+    expect(body.lastProfileFromSwitch).toBe("Child");
+    expect(body.sitechangeTreatments).toEqual([
+      expect.objectContaining({ _id: "151515151515151515151515" }),
+    ]);
+    expect(body.tempbasalTreatments).toEqual([
+      expect.objectContaining({ _id: "161616161616161616161616", duration: 1 }),
+    ]);
+    expect(body.tempTargetTreatments).toEqual([
+      expect.objectContaining({
+        _id: "171717171717171717171717",
+        targetTop: 108.09353999999999,
+        targetBottom: 90.07795,
+        units: "mg/dl",
+      }),
+    ]);
   });
 
   it("supports the locked properties wildcard selection and truthy pretty query", async () => {

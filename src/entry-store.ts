@@ -72,12 +72,15 @@ import {
   type RealtimeSnapshot,
 } from "./realtime/session-service";
 import {
+  buildRealtimeTreatmentBuckets,
   buildRealtimeRetroDeviceStatus,
   filterRealtimePublicProfiles,
+  normalizeRealtimeDdataDocument,
   normalizeRealtimeDeviceStatus,
   normalizeRealtimeDocument,
   selectRealtimeRecentDeviceStatus,
   type RealtimeDocument,
+  type RealtimeTreatmentBuckets,
 } from "./realtime/ddata-snapshot";
 import {
   REALTIME_DEVICE_STATUS_WINDOW_MS,
@@ -228,6 +231,7 @@ const REALTIME_SID = /^[A-Za-z0-9_-]{20}$/;
 const REALTIME_ENTRY_WINDOW_MS = 2 * 24 * 60 * 60 * 1_000;
 const AGE_TREATMENT_WINDOW_MS = 62 * 24 * 60 * 60 * 1_000;
 const RUNTIME_TREATMENT_WINDOW_MS = Math.round(2.5 * 24 * 60 * 60 * 1_000);
+const RUNTIME_RECENT_MUTATION_WINDOW_MS = 15 * 60 * 1_000;
 const PROFILE_SWITCH_WINDOW_MS = 31 * 12 * 24 * 60 * 60 * 1_000;
 const NOTIFICATION_REQUEST_BATCH_LIMIT = 128;
 const BACKGROUND_TASK_BATCH_LIMIT = 4;
@@ -269,6 +273,16 @@ const AGE_TREATMENT_EVENT_TYPES = [
   "Insulin Change",
   "Pump Battery Change",
 ] as const;
+const REALTIME_TREATMENT_BUCKET_KEYS: readonly (keyof RealtimeTreatmentBuckets)[] = [
+  "sitechangeTreatments",
+  "insulinchangeTreatments",
+  "batteryTreatments",
+  "sensorTreatments",
+  "profileTreatments",
+  "combobolusTreatments",
+  "tempbasalTreatments",
+  "tempTargetTreatments",
+];
 const API3_STORAGE_COLLECTIONS: readonly Api3CollectionName[] = [
   "devicestatus",
   "entries",
@@ -300,6 +314,15 @@ interface PluginPropertyContext {
   treatments: RealtimeDocument[];
   profiles: RealtimeDocument[];
   dbstats: Record<string, unknown>;
+}
+
+type RealtimeSnapshotMode = "root" | "ddata";
+
+interface FullRealtimeDdataSnapshot extends RealtimeSnapshot, RealtimeTreatmentBuckets {
+  activity: RealtimeDocument[];
+  lastUpdated: number;
+  lastProfileFromSwitch: string | null;
+  page?: { frame: true; after: number };
 }
 
 interface AutomaticNotificationRuntime {
@@ -2289,6 +2312,34 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return null;
   }
 
+  /** Locked ddata loader's distinct latest Profile Switch marker semantics. */
+  private ddataLastProfileFromSwitch(at: number, frame: boolean): string | null {
+    const upperClause = frame ? "AND sort_time <= ?" : "";
+    for (const row of this.ctx.storage.sql.exec<{
+      profile: SqlStorageValue;
+      sort_time: SqlStorageValue;
+    }>(
+      `SELECT json_extract(body, '$.profile') AS profile, sort_time
+       FROM documents
+       WHERE collection = 'treatments'
+         AND json_extract(body, '$.eventType') = 'Profile Switch'
+         AND json_type(body, '$.duration') IN ('integer', 'real')
+         AND CAST(json_extract(body, '$.duration') AS REAL) = 0
+         AND sort_time >= ?
+         ${upperClause}
+       ORDER BY sort_time DESC, updated_at DESC, id ASC
+       LIMIT 1`,
+      ...(frame
+        ? [at - PROFILE_SWITCH_WINDOW_MS, at]
+        : [at - PROFILE_SWITCH_WINDOW_MS]),
+    )) {
+      return Number(row.sort_time) < Date.now() && typeof row.profile === "string"
+        ? row.profile
+        : null;
+    }
+    return null;
+  }
+
   nightscoutHttpStatus(now: number): string {
     const timestamp = Number.isFinite(now) ? now : Date.now();
     return JSON.stringify(nightscoutStatus(
@@ -2298,7 +2349,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ));
   }
 
-  private realtimeSnapshot(now: number, frame = false): RealtimeSnapshot {
+  private realtimeSnapshot(
+    now: number,
+    frame = false,
+    mode: RealtimeSnapshotMode = "root",
+  ): RealtimeSnapshot {
     const snapshot: RealtimeSnapshot = {
       devicestatus: [],
       sgvs: [],
@@ -2362,18 +2417,27 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
        LIMIT 1`,
       [],
       budget,
-      (document) => document,
+      (document) => normalizeRealtimeDdataDocument(document, false),
     );
-    snapshot.profiles = filterRealtimePublicProfiles(profiles);
+    snapshot.profiles = mode === "root"
+      ? filterRealtimePublicProfiles(profiles)
+      : profiles;
     budget = new RealtimeJsonBudget(
       snapshot,
       snapshot.sgvs.length + snapshot.profiles.length,
     );
 
-    const rawDeviceStatus = this.realtimeRawDeviceStatus(now, budget);
-    snapshot.devicestatus = selectRealtimeRecentDeviceStatus(rawDeviceStatus, now);
-    // recentDeviceStatus removes old-per-group and future records, so refund
-    // those conservative raw reservations before lower-priority collections.
+    const rawDeviceStatus = this.realtimeRawDeviceStatus(
+      now,
+      budget,
+      mode === "ddata" && frame,
+    );
+    snapshot.devicestatus = mode === "root"
+      ? selectRealtimeRecentDeviceStatus(rawDeviceStatus, now)
+      : buildRealtimeRetroDeviceStatus(rawDeviceStatus);
+    // Root recentDeviceStatus removes old-per-group and future records, so
+    // refund those conservative raw reservations before lower-priority
+    // collections. Ddata keeps the complete bounded raw loader array.
     budget = new RealtimeJsonBudget(
       snapshot,
       snapshot.sgvs.length + snapshot.profiles.length + snapshot.devicestatus.length,
@@ -2433,34 +2497,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     }
     snapshot.mbgs.reverse();
 
-    const realtimeSettings = this.resolvedAutomaticNotificationRuntime(now);
-    snapshot.treatments = this.realtimeDocuments(
-      `SELECT id, body, sort_time
-       FROM documents
-       WHERE collection = 'treatments'
-       ORDER BY json_extract(body, '$.created_at') DESC, id ASC
-       LIMIT 1000`,
-      [],
-      budget,
-      (document) => {
-        const treatment = normalizeRealtimeDocument(document);
-        // The locked dataloader runs treatmenttocurve before websocket.js
-        // clones ddata. Apply the same official display-only preprocessing at
-        // the Durable Object snapshot boundary so both initial root data and
-        // later calcdelta frames place Treatment markers on the BG curve.
-        // Transform before the shared budget reserves this item so the added
-        // eventType/mgdl/mmol fields remain inside the Free-plan payload cap.
-        fitTreatmentsToBgCurve({
-          sgvs: snapshot.sgvs as RealtimeDocument[],
-          cals: snapshot.cals as RealtimeDocument[],
-          treatments: [treatment],
-        }, {
-          units: realtimeSettings.settings.units,
-          rawBgEnabled: realtimeSettings.enabled.has("rawbg"),
-        });
-        return treatment;
-      },
-    );
+    snapshot.treatments = this.realtimeLoadedTreatments(now, frame, budget, snapshot);
     snapshot.food = this.realtimeDocuments(
       `SELECT id, body, sort_time
        FROM documents
@@ -2469,9 +2506,120 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
        LIMIT 5000`,
       [],
       budget,
-      normalizeRealtimeDocument,
+      (document) => normalizeRealtimeDdataDocument(document, false),
     );
     return snapshot;
+  }
+
+  /**
+   * Locked dataloader retains the ordinary 2.5-day Treatment window plus one
+   * latest zero-duration Profile Switch and one latest age event per type.
+   * Current loads intentionally have no upper bound; explicit frames do.
+   */
+  private realtimeLoadedTreatments(
+    now: number,
+    frame: boolean,
+    budget: RealtimeJsonBudget,
+    snapshot: RealtimeSnapshot,
+  ): RealtimeDocument[] {
+    const realtimeSettings = this.resolvedAutomaticNotificationRuntime(now);
+    const normalize = (document: RealtimeDocument): RealtimeDocument => {
+      const treatment = normalizeRealtimeDdataDocument(document, true);
+      // The locked dataloader runs treatmenttocurve before processTreatments.
+      fitTreatmentsToBgCurve({
+        sgvs: snapshot.sgvs as RealtimeDocument[],
+        cals: snapshot.cals as RealtimeDocument[],
+        treatments: [treatment],
+      }, {
+        units: realtimeSettings.settings.units,
+        rawBgEnabled: realtimeSettings.enabled.has("rawbg"),
+      });
+      return treatment;
+    };
+    const treatments: RealtimeDocument[] = [];
+    const seen = new Set<string>();
+    const append = (documents: RealtimeDocument[]): void => {
+      for (const document of documents) {
+        const id = typeof document._id === "string" ? document._id : "";
+        if (id.length > 0 && seen.has(id)) continue;
+        if (id.length > 0) seen.add(id);
+        treatments.push(document);
+      }
+    };
+    const upperClause = frame ? "AND sort_time <= ?" : "";
+
+    append(this.realtimeDocuments(
+      `SELECT id, body, sort_time
+       FROM (
+         SELECT id, body, sort_time, updated_at
+         FROM documents
+         WHERE collection = 'treatments'
+           AND sort_time >= ?
+           ${upperClause}
+         ORDER BY sort_time DESC, updated_at DESC, id ASC
+         LIMIT 1000
+       )
+       ORDER BY sort_time ASC, id ASC`,
+      frame
+        ? [now - RUNTIME_TREATMENT_WINDOW_MS, now]
+        : [now - RUNTIME_TREATMENT_WINDOW_MS],
+      budget,
+      normalize,
+    ));
+
+    if (!frame) {
+      // The Node server keeps freshly received Treatments in its in-memory
+      // cache even when a client backdates created_at outside the cold-load
+      // window. SQLite updated_at is the durable equivalent across DO
+      // eviction; one HTTP batch is capped at 100, so this stays bounded.
+      append(this.realtimeDocuments(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = 'treatments'
+           AND updated_at >= ?
+         ORDER BY updated_at ASC, id ASC
+         LIMIT 100`,
+        [now - RUNTIME_RECENT_MUTATION_WINDOW_MS],
+        budget,
+        normalize,
+      ));
+    }
+
+    append(this.realtimeDocuments(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'treatments'
+         AND json_extract(body, '$.eventType') = 'Profile Switch'
+         AND json_type(body, '$.duration') IN ('integer', 'real')
+         AND CAST(json_extract(body, '$.duration') AS REAL) = 0
+         AND sort_time >= ?
+         ${upperClause}
+       ORDER BY sort_time DESC, updated_at DESC, id ASC
+       LIMIT 1`,
+      frame ? [now - PROFILE_SWITCH_WINDOW_MS, now] : [now - PROFILE_SWITCH_WINDOW_MS],
+      budget,
+      normalize,
+    ));
+
+    for (const eventType of AGE_TREATMENT_EVENT_TYPES) {
+      append(this.realtimeDocuments(
+        `SELECT id, body, sort_time
+         FROM documents
+         WHERE collection = 'treatments'
+           AND json_extract(body, '$.eventType') = ?
+           AND sort_time >= ?
+           ${upperClause}
+         ORDER BY sort_time DESC, updated_at DESC, id ASC
+         LIMIT 1`,
+        frame
+          ? [eventType, now - AGE_TREATMENT_WINDOW_MS, now]
+          : [eventType, now - AGE_TREATMENT_WINDOW_MS],
+        budget,
+        normalize,
+      ));
+    }
+    treatments.sort((left, right) => Number(left.mills) - Number(right.mills));
+    return treatments;
   }
 
   /**
@@ -2716,13 +2864,19 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   private realtimeRawDeviceStatus(
     now: number,
     budget: RealtimeJsonBudget,
+    frame = false,
   ): RealtimeDocument[] {
+    const upperClause = frame ? "AND sort_time <= ?" : "";
     return this.realtimeDocuments(
       `SELECT id, body, sort_time
        FROM documents
-       WHERE collection = 'devicestatus' AND sort_time >= ?
+       WHERE collection = 'devicestatus'
+         AND sort_time >= ?
+         ${upperClause}
        ORDER BY sort_time DESC, updated_at DESC`,
-      [now - REALTIME_DEVICE_STATUS_WINDOW_MS],
+      frame
+        ? [now - REALTIME_DEVICE_STATUS_WINDOW_MS, now]
+        : [now - REALTIME_DEVICE_STATUS_WINDOW_MS],
       budget,
       normalizeRealtimeDeviceStatus,
     );
@@ -3541,16 +3695,21 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   async getDdataSnapshotJson(at: number, frame: boolean): Promise<string> {
     if (!Number.isFinite(at)) throw new Error("invalid ddata frame time");
     const timestamp = Math.trunc(at);
-    const snapshot = this.realtimeSnapshot(timestamp, frame);
-    const result: RealtimeSnapshot & {
-      activity: RealtimeDocument[];
-      lastUpdated: number;
-      page?: { frame: true; after: number };
-    } = {
-      ...snapshot,
+    const snapshot = this.realtimeSnapshot(timestamp, frame, "ddata");
+    const result: FullRealtimeDdataSnapshot = {
+      sgvs: snapshot.sgvs,
+      treatments: snapshot.treatments,
+      mbgs: snapshot.mbgs,
+      cals: snapshot.cals,
+      profiles: snapshot.profiles,
+      devicestatus: snapshot.devicestatus,
+      food: snapshot.food,
       activity: [],
+      dbstats: snapshot.dbstats,
       lastUpdated: at,
+      lastProfileFromSwitch: this.ddataLastProfileFromSwitch(timestamp, frame),
       ...(frame ? { page: { frame: true, after: at } } : {}),
+      ...buildRealtimeTreatmentBuckets([]),
     };
 
     // Locked dataloader.loadActivity() projects only these four fields, sorts
@@ -3606,6 +3765,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       if (!budget.reserveArrayItem(activity, result.activity.length)) break;
       seenMills.add(mills);
       result.activity.push(activity);
+    }
+
+    const buckets = buildRealtimeTreatmentBuckets(
+      snapshot.treatments as RealtimeDocument[],
+    );
+    for (const key of REALTIME_TREATMENT_BUCKET_KEYS) {
+      for (const treatment of buckets[key]) {
+        if (!budget.reserveArrayItem(treatment, result[key].length)) break;
+        result[key].push(treatment);
+      }
     }
     return JSON.stringify(result);
   }
