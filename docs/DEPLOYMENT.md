@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `99cfe78`
-- Runtime source candidate: `99cfe78`
-- Git commit matching the deployed worktree: `99cfe78`
-- Cloudflare Version ID: `baade90c-d738-4a8b-a6c2-f1b19af68d9b`
-- Cloudflare ordinal version number: `82`
+- Deployed runtime candidate: `f09e99f`
+- Runtime source candidate: `f09e99f`
+- Git commit matching the deployed worktree: `f09e99f`
+- Cloudflare Version ID: `351ae79e-fcbb-4ff7-ba52-f013547311b5`
+- Cloudflare ordinal version number: `83`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T03:20:47.618975Z`
+- Version creation time: `2026-07-22T03:49:01.064Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 30 ms
+- Worker startup: 26 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -32,8 +32,8 @@ is not counted as API, plugin or real-time compatibility.
   simulated-CGM scheduling row and the v18 push dedupe/receipt/Maker state
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–82 reused them unchanged
-- Upload: 1210.58 KiB raw / 223.75 KiB gzip
+  versions 76–83 reused them unchanged
+- Upload: 1220.35 KiB raw / 225.96 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -171,6 +171,38 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   the pushed status; remote evidence here is read-only API/protocol/browser
   smoke.
 
+## Version 83 Bolus Wizard Preview server increment
+
+- Commit `f09e99f` ports the locked v15.0.7 server-side BWP calculation as an
+  opt-in adapter. It retains mg/dL/mmol paths, missing Profile/IOB/stale-data
+  errors, IOB effect/outcome, target estimates, recent carbs, display flooring,
+  Temp Basal preview percentages, warning/urgent requests and IOB-based snooze.
+  It does not add a dose formula or execute a Treatment.
+- BWP now participates in the official v2 property registry and Summary state,
+  and Pebble adds `bwp`/`bwpo` when IOB is requested. Environment mapping covers
+  the official `BWP_SNOOZE`, `BWP_WARN`, `BWP_URGENT` and `BWP_SNOOZE_MINS`
+  settings only when the plugin is enabled.
+- The persisted notification task evaluates twelve producers in upstream order:
+  BWP runs after Loop and before CAGE. The task and request paths share Profile
+  Switch, Temp Basal and Combo Bolus preprocessing, including the latest bounded
+  one-year zero-duration Profile Switch.
+- Local gates passed: 67 Workers files / 728 tests, 22/22 audits, 42/42 unchanged
+  client tests, 143/143 unchanged server/data-plugin tests, TypeScript, Wrangler
+  type generation and dry run. The dry bundle was 1220.35 KiB raw / 225.96 KiB
+  gzip with 250 assets and only `ENTRY_STORE` plus `ASSETS`.
+- Cloudflare version `351ae79e-fcbb-4ff7-ba52-f013547311b5` is ordinal 83,
+  created at `2026-07-22T03:49:01.064Z`; startup was 26 ms. The 77-assertion
+  public smoke passed on isolated tenant `public-smoke-1784692181407`.
+- BWP is disabled in the public upstream-default configuration. Remote v2
+  Properties returned `{}`, Summary returned `bwp:null`, and Pebble omitted BWP;
+  the enabled path is proven by the real SQLite Durable Object alarm test rather
+  than a protected public mutation.
+- The unchanged homepage displayed `113 mg/dL`, `-1`, `Flat`, one minute old,
+  without a dialog or console warning/error. The lab simulator remained enabled;
+  it appended `115 mg/dL` at `2026-07-22T03:55:00.124Z` and advanced its next
+  persisted five-minute deadline, so no manual reseeding or data deletion was
+  needed.
+
 ## Release content
 
 The current deployed increment retains the generic SQLite background scheduler,
@@ -188,9 +220,9 @@ or dosing logic:
   unsupported-language fallback. It loads dictionaries through Static Assets
   instead of `fs`; all 33 deployed JSON files are valid and byte-identical to
   the locked release, and `LANGUAGE` reaches HTTP and Socket settings;
-- the official notification task now evaluates eleven producers in server
-  order: AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment
-  Notify, Timeago and opt-in DBSize;
+- the official notification task now evaluates twelve producers in server
+  order: AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
+  Treatment Notify, Timeago and opt-in DBSize;
 - AR2 preserves the locked coefficients, six predicted points, inclusive
   six-sample/five-divisor average-loss behavior, warning/urgent thresholds,
   13-step forecast cone, sounds, titles, mg/dL/mmol scaling and English virtual
@@ -253,8 +285,8 @@ or dosing logic:
 - the DBSize producer consumes `ctx.storage.sql.databaseSize`, is disabled by
   default under the official alert gate, and when opted in persists heartbeat
   scheduling and publishes through `/alarm`;
-- the RPC is not a public HTTP API. BWP, remaining plugin producers and external
-  push providers remain incomplete;
+- the RPC is not a public HTTP API. Remaining plugin producers and external
+  push providers remain incomplete; BWP is now an opt-in persisted producer;
 - all five named `simplealarms.test.js` and all eight named
   `notifications.test.js` cases pass unchanged in the direct upstream gate,
   with existing DO migration/persistence/live-publication contracts plus twelve
@@ -435,8 +467,8 @@ The immediately preceding v2 increment remains deployed and includes:
 - `/api/v2/summary/` with locked hour filtering, SGV/noise, carb/insulin,
   temporary-target, temp-basal schedule and current-profile mapping. The
   current release additionally feeds enabled request-local registry values,
-  including IOB/COB, into the mapper. Disabled IOB/COB and unimplemented BWP
-  remain `null`; unsupported properties are not fabricated;
+  including IOB/COB/BWP, into the mapper. Disabled IOB/COB/BWP remain `null`;
+  unsupported properties are not fabricated;
 
 The immediately preceding v1 increment remains deployed and includes:
 
@@ -587,7 +619,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `99cfe78`. It retains schema-v15 persisted
+The deployed runtime candidate is `f09e99f`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -597,7 +629,9 @@ Treatment-to-curve, registry, age/timeago, dataloader/database-size, Sandbox,
 Settings, Loop, Profile, uploader, identity, root-write/delta, v1, API3,
 authorization, realtime, notification-ACK and official-page work. Schema v17
 adds the opt-in per-tenant lab feed and its one-alarm continuation without
-changing official request/response contracts.
+changing official request/response contracts. It also adds the exact opt-in
+server BWP property/Summary/Pebble/notification chain and shared Profile
+preprocessing without adding a medical formula or Treatment action.
 The table below records the exact current local gate for the immutable deployed
 runtime and assets. The unchanged-client runner now includes the original
 client Hashauth, Admin Tools, report-settings and complete Reports workflows;
@@ -619,13 +653,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 66 files, 720/720 passed |
-| Worker dry run | 1210.58 KiB raw / 223.75 KiB gzip |
+| Workers integration tests | 67 files, 728/728 passed |
+| Worker dry run | 1220.35 KiB raw / 225.96 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 720 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 728 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 21
 server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 files,
@@ -653,7 +687,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `baade90c-d738-4a8b-a6c2-f1b19af68d9b` as the current
+Wrangler reports version `351ae79e-fcbb-4ff7-ba52-f013547311b5` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -806,14 +840,15 @@ broader version-72/73/74 page checks:
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `baade90c-d738-4a8b-a6c2-f1b19af68d9b` reused the same
+Cloudflare version `351ae79e-fcbb-4ff7-ba52-f013547311b5` reused the same
 250 Static Assets entries and passed the 77-assertion credential-free remote
 API/Engine.IO/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
 81 adds persisted push-provider contracts/callback state and the fresh-data
 All Clear/browser acceptance; version 82 adds persisted active-Profile
-comparison and locked `status.activeProfile` publication.
+comparison and locked `status.activeProfile` publication; version 83 adds the
+opt-in locked BWP server chain and twelve-producer persisted scheduler.
 
 This does not prove longer-running stability, a protected mutation observed
 through the pushed live-update path, every plugin workflow or real closed-loop
@@ -829,9 +864,8 @@ client compatibility.
   `bgnow`/`direction`/`rawbg`/`upbat` properties and core summary mapper are
   adapted. CAGE/SAGE/IAGE, IOB/COB, OpenAPS/Pump and timeago's request-local
   calculation and AR2 prediction are also adapted; ddata includes official Treatment marker
-  placement and Summary receives enabled IOB/COB state. Persisted evaluation/
-  delivery, BWP and
-  remaining plugin-derived state/persistence, v2 notification-loop and other
+  placement and Summary receives enabled IOB/COB/BWP state. Remaining
+  plugin-derived state/persistence, v2 notification-loop and other
   routes remain incomplete. API v3
   routes all six official generic collections and all 16 locked upstream API3
   test files have named Workers-runtime adaptations. Broad large-response
@@ -881,9 +915,9 @@ client compatibility.
   Repeated/bracket secret arrays are deliberately handled safely instead of
   reproducing the locked upstream unhandled rejection.
 - The generic alarm-driven background scheduler is deployed in schema v14. One
-  task covers AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, enabled
-  Treatment Notify, opt-in Timeago and opt-in DBSize. BWP and plugin-derived
-  summary/activity state still need producer/persistence adapters. Alarm ACK/silence state
+  task covers AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
+  enabled Treatment Notify, opt-in Timeago and opt-in DBSize. Remaining
+  plugin-derived summary/activity state still needs producer/persistence adapters. Alarm ACK/silence state
   originates in schema v10 and schema v13 adds last-emission state consumed by
   the adapted core processor. Schema v16 durably coalesces rapid mutation
   triggers for that task without delaying realtime publication. API3 pruning

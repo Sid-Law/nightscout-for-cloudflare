@@ -6,16 +6,17 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `99cfe78` and
-Cloudflare version `baade90c-d738-4a8b-a6c2-f1b19af68d9b`. The
-candidate's 66-file Workers-runtime suite passes 720/720 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `f09e99f` and
+Cloudflare version `351ae79e-fcbb-4ff7-ba52-f013547311b5`. The
+candidate's 67-file Workers-runtime suite passes 728/728 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1210.58 KiB
-raw / 223.75 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 82 reported a 30 ms startup and passed the
+Wrangler processed 250 Static Assets entries; its dry run reported 1220.35 KiB
+raw / 225.96 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 83 reported a 26 ms startup and passed the
 77-assertion credential-free API, official Socket.IO-client, EIO4, Pebble and
-authenticated official-page browser gates.
+real-browser gates; the earlier authenticated official-page workflows remain
+separate version-80 evidence.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -43,10 +44,10 @@ strict threshold cases. The
 notification processor preserves priority, snooze and automatic all-clear,
 with schema-v13 state and atomic live `/alarm` publication. Schema v14 adds a
 generic persisted task scheduler. One `plugin-notifications` task automatically
-evaluates AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, officially
-enabled Treatment Notify, opt-in Timeago and opt-in DBSize alerts in official
-server order; BWP, remaining notification plugins and external delivery remain
-missing. Pump,
+evaluates AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
+officially enabled Treatment Notify, opt-in Timeago and opt-in DBSize alerts in
+official server order; remaining notification plugins and external delivery
+remain missing. Pump,
 OpenAPS and Loop retain their official plugin and alert gates behind the same
 registry.
 Schema v15 replaces the upstream process-local Admin-notification array with
@@ -93,9 +94,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 66 Workers files / 720 tests, 22/22 audits, eleven direct upstream
+evidence is 67 Workers files / 728 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1210.58 KiB raw / 223.75 KiB gzip with 250 assets and two bindings.
+dry run is 1220.35 KiB raw / 225.96 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -339,10 +340,10 @@ raw-BG calculation when enabled. It does not calculate insulin or advice.
 of the locked SGV/treatment/profile and basal-data processors. It receives one
 bounded snapshot and a request clock, so it neither shares request state nor
 creates timers. The route now calculates the same enabled request-local
-registry properties and supplies official IOB/COB values to Summary state.
-When those plugins are disabled, IOB/COB remain JSON `null`, matching the
-locked mapper. BWP and remaining plugin-derived/persisted state are
-intentionally not synthesized.
+registry properties and supplies official IOB/COB/BWP values to Summary state.
+When those plugins are disabled, IOB/COB/BWP remain JSON `null`, matching the
+locked mapper. Remaining plugin-derived/persisted state is intentionally not
+synthesized.
 
 Exact `/socket.io` and `/socket.io/` requests reach real
 tenant-local Engine.IO 4 polling and direct-WebSocket endpoints. Polling
@@ -375,8 +376,10 @@ the document mutation transaction; legacy paths publish in a follow-up DO
 transaction. Existing polling and Hibernatable-WebSocket flush paths deliver
 the same durable queue. Food and activity still advance the baseline but emit
 no delta because the locked calculator exposes neither field. Upstream
-profile-switch status injection and server-plugin preprocessing before the
-comparison remain unadapted.
+profile-switch status injection is persisted in the same root baseline. The
+shared BWP request/task path also preprocesses bounded Profile Switch, Temp
+Basal and Combo Bolus input; remaining server-plugin preprocessing before the
+comparison remains partial.
 
 Schema v12 extends each persisted root session with `write_allowed` and
 `treatment_write_allowed`. A successful `authorize` therefore retains all
@@ -422,9 +425,9 @@ all-clear object. The official v1 `/notifications/ack` route and its inherited
 v2 mount use the same SQLite transaction and live broadcast path, require
 `notifications:*:ack`, and return Express's exact `200 OK` text body. The
 adapter bounds state to 256 distinct group names of at most 256 characters.
-AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment Notify,
-Timeago and DBSize now run through the persisted scheduler under their official
-gates; BWP and remaining notification sources are not yet automatic producers.
+AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE, Treatment
+Notify, Timeago and DBSize now run through the persisted scheduler under their
+official gates; remaining notification sources are not yet automatic producers.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
 deadlines, bounded WebSocket close retries and stale authorization-failure
 cleanup plus background-task deadlines are multiplexed through the DO's single
@@ -1073,9 +1076,9 @@ The current server boundary is explicit:
   Broken/overflow recipients are dropped independently and disconnected
   clients receive no replay. The bounded notification processor can persist and
   publish upstream request arrays through this outlet. A schema-v14 task now
-  computes and publishes AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE,
-  IAGE, officially enabled Treatment Notify, opt-in Timeago and opt-in DBSize
-  alerts automatically; adapters for BWP and the remaining notification plugins
+  computes and publishes AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE,
+  SAGE, IAGE, officially enabled Treatment Notify, opt-in Timeago and opt-in
+  DBSize alerts automatically; adapters for the remaining notification plugins
   remain missing;
 - root `subscribe` has no handler or ACK, matching the locked root. The four
   locked client-originated mutation events validate collection, authority,
@@ -1206,8 +1209,8 @@ activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
 The remaining transport work is non-Profile-Switch plugin preprocessing,
 EIO3, polling upgrade and the direct-send replay/acknowledgement boundary;
-automatic alarm producers for BWP and other remaining plugins stay as
-background work. CAGE/SAGE/IAGE and DBSize are complete producers.
+automatic alarm producers for other remaining plugins stay as background work.
+BWP, CAGE/SAGE/IAGE and DBSize are complete producers.
 
 ### Background work and server plugins
 
@@ -1219,8 +1222,8 @@ them transactionally and derives the next wake from storage. This follows
 Cloudflare's one-alarm model: multiple logical events are stored and
 multiplexed through the one Durable Object alarm. The generic substrate is
 deployed; one unified notification task connects AR2, Simple Alarms, Pump,
-OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment Notify, Timeago and DBSize with their
-official enable gates today.
+OpenAPS, Loop, BWP, CAGE, SAGE, IAGE, Treatment Notify, Timeago and DBSize with
+their official enable gates today.
 
 Official plugin formulas and medical calculations are not rewritten. The
 build-time registry lists the locked server plugins so bundling is deterministic;
@@ -1230,7 +1233,7 @@ scope; mocked internal mapping, validation, deduplication, cancellation and
 multi-key contracts remain required.
 
 The deployed summary basal processor and pure
-`bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`ar2`/`simplealarms`/`loop`/`openaps`/`pump`/`iob`/`cob`
+`bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`ar2`/`simplealarms`/`loop`/`openaps`/`pump`/`iob`/`cob`/`bwp`
 and `treatmentnotify` adapters plus the core notification processor,
 together with the request-local Sandbox, are reusable server
 calculation/property slices dispatched by the registry rather than a background
@@ -1239,16 +1242,17 @@ Treatment Notify produces locked request objects from the persisted task
 context when officially enabled. OpenAPS/Pump expose locked uploader state at
 request time and their existing request objects now also execute automatically
 when the official alert gates enable them;
-IOB/COB use the locked official formulas and can populate
-request-time Summary state when enabled; they do not recommend insulin.
-AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment Notify,
-Timeago and DBSize request objects are arbitrated, persisted and delivered to
+IOB/COB/BWP use the locked official formulas and can populate request-time
+Summary state when enabled; BWP computes a preview but does not execute a
+Treatment or add a dosing formula.
+AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE, Treatment
+Notify, Timeago and DBSize request objects are arbitrated, persisted and delivered to
 live `/alarm` clients by the same
 internal engine. Mutations evaluate the leading edge and the schema-v14
 scheduler retains only the earliest logical activation, strict threshold-plus-
 one-millisecond transition, source expiry, quiet-night boundary or heartbeat.
-BWP and remaining automatic outputs still need adapters around locked upstream
-modules rather than downstream formulas. The age producers use bounded latest
+Remaining automatic outputs still need adapters around locked upstream modules
+rather than downstream formulas. The age producers use bounded latest
 current/earliest-future Treatment rows, exact whole-hour thresholds, the locked
 inclusive 20-minute window and automatic clear. DBSize uses the actual SQLite
 file byte count and remains opt-in.
