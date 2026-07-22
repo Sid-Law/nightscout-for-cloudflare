@@ -407,7 +407,7 @@ controls, not upstream claims.
 
 ## Current deployed integration evidence
 
-Runtime candidate `a176f4c` passes 790/790 tests in 71
+Runtime candidate `9fce8d5` passes 792/792 tests in 72
 Workers-runtime files plus 23/23 audit tests, 42/42 unchanged direct upstream
 client tests across eleven complete files and 143/143 unchanged tests across twenty-one locked server/data-plugin
 files. It connects schema-v14 background work to automatic Uploader Battery, AR2, Simple Alarm,
@@ -421,10 +421,10 @@ dataloader/database-size, Sandbox, Settings, Loop, Profile, uploader, identity,
 root-delta/write, API3, authorization, realtime and notification-ACK slices.
 Schema v17 adds the disabled-by-default, per-tenant lab-CGM schedule described
 above and its official Entries/root-delta integration tests.
-Cloudflare version `2fe3ad83-08e7-45a2-90e6-3b86f54a6286` is current as
-project release and Cloudflare ordinal 97 and reported a 23 ms startup. It
-processed 250 Static Assets entries; the final dry run reported 1313.61 KiB raw
-/ 241.57 KiB gzip, with only
+Cloudflare version `92e05b01-0bb6-49e9-9f3e-368cdee3a73b` is current as
+project release and Cloudflare ordinal 98 and reported a 32 ms startup. It
+processed 250 Static Assets entries; the final dry run reported 1314.26 KiB raw
+/ 241.79 KiB gzip, with only
 `ENTRY_STORE` and `ASSETS`.
 This deployment had no explicit version annotation; none is invented.
 The clean-source build installs the locked Nightscout build dependencies before
@@ -452,7 +452,7 @@ configuration plus empty property output, default-disabled Uploader Battery
 alerts, xDrip-js and BAGE properties, plus the v2-only Loop push permission
 boundary and v1 non-route,
 and missing-token API3 Entries returned 401. Isolated tenant
-`public-smoke-1784720399510` reported
+`public-smoke-1784722092670` reported
 307,200 SQLite bytes,
 `indexSize:0`, a 953.67 MiB maximum and `0%`/`current` state. This run sent no
 API secret value and performed no protected mutation. A name-only encrypted-
@@ -494,6 +494,17 @@ Tools again loaded zero subjects, all seven roles, eight buttons and three
 tables and reported `Admin authorized`; its two known upstream chartless-page
 warnings remained non-errors. No real health data or closed-loop instruction
 was used.
+Release 98 exercised the unchanged official Admin cleanup workflow rather than
+counting page load as compatibility. Locked server collection deletion returns
+MongoDB 5's `{acknowledged,deletedCount}`, while the unchanged Admin Entries
+and Treatments plugins still read the legacy `n` field. NSCF now adds `n`/`ok`
+only for same-origin `/admin/` requests; direct API callers retain the exact
+modern result. The real page rendered `0 records deleted` for both buttons and
+remained authorized. The homepage displayed `126 mg/dL`, `+4`, a rising arrow,
+one-minute-old simulated data and two SVG charts. After one non-repeating EIO3
+POST failure at cutover, an isolated handshake/root/ping replay passed and the
+full 177-assertion smoke passed on `public-smoke-1784722092670`. No real health
+data or closed-loop instruction was used.
 Version 81 retained those assets and workflows, rejected unknown provider
 receipts on both v1 and v2 with the locked 500 body, and kept the public
 simulator current. The real homepage displayed `121 mg/dL`, `+4`, four minutes

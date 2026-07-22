@@ -557,11 +557,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `329aaca`. The 71-file Workers-runtime
-suite passes 785/785 tests, the audit suites pass 23/23, eleven complete
+The deployed runtime candidate is commit `9fce8d5`. The 72-file Workers-runtime
+suite passes 792/792 tests, the audit suites pass 23/23, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1289.67 KiB raw / 237.03 KiB gzip and exposes only
+reports 1314.26 KiB raw / 241.79 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -1114,6 +1114,24 @@ one-minute-old simulated data and two SVG charts with no console error; Admin
 Tools retained zero subjects, seven system roles, eight buttons, three tables
 and `Admin authorized`. No real health data or closed-loop instruction was
 used.
+
+Project release 98 (`92e05b01-0bb6-49e9-9f3e-368cdee3a73b`) deploys commit
+`9fce8d5` and closes a real unchanged-Admin-Tools workflow seam. Nightscout
+v15.0.7's collection removal returns MongoDB 5's modern
+`{acknowledged,deletedCount}` result, while its unchanged Entries and
+Treatments cleanup plugins still render the legacy `n` field. NSCF preserves
+the exact modern public API shape for ordinary callers and adds `n`/`ok`
+aliases only for same-origin requests from the official `/admin/` page. The
+full local gate passed 72 Workers files / 792 tests, 23/23 audits, 42/42
+unchanged client tests and 143/143 unchanged server/data-plugin tests; the dry
+bundle was 1314.26 KiB raw / 241.79 KiB gzip. After one non-repeating EIO3 POST
+failure immediately after cutover, a fresh isolated three-step EIO3 replay
+passed and the complete 177-assertion public smoke passed on
+`public-smoke-1784722092670`. The unchanged official Admin page then reported
+`0 records deleted` for both Entries and Treatments instead of `undefined` and
+remained authorized. The homepage displayed `126 mg/dL`, `+4`, a rising arrow,
+one-minute-old simulated data and two SVG charts. No real health data or
+closed-loop instruction was used.
 
 The APNs transport follows Apple's current provider-token and notification
 request specifications and Cloudflare's current Web Crypto/fetch APIs:

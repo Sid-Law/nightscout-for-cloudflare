@@ -12,18 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `a176f4c`
-- Runtime source candidate: `a176f4c`
-- Git commit matching the deployed runtime worktree: `a176f4c`
-- Cloudflare Version ID: `2fe3ad83-08e7-45a2-90e6-3b86f54a6286`
-- Project release sequence and Cloudflare ordinal: `97`
+- Deployed runtime candidate: `9fce8d5`
+- Runtime source candidate: `9fce8d5`
+- Git commit matching the deployed runtime worktree: `9fce8d5`
+- Cloudflare Version ID: `92e05b01-0bb6-49e9-9f3e-368cdee3a73b`
+- Project release sequence and Cloudflare ordinal: `98`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T11:39:43.541Z`
+- Version creation time: `2026-07-22T12:06:49.277Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Deployment creation time: `2026-07-22T11:39:44.351Z`; 100% of traffic is on
+- Deployment creation time: `2026-07-22T12:06:50.436Z`; 100% of traffic is on
   the named version
-- Worker startup: 23 ms
+- Worker startup: 32 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -36,8 +36,8 @@ is not counted as API, plugin or real-time compatibility.
   plugin-runtime-state table used by xDrip-js notification throttling
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–96 reused them unchanged
-- Upload: 1300.86 KiB raw / 238.91 KiB gzip
+  versions 76–98 reused them unchanged
+- Upload: 1314.26 KiB raw / 241.79 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -381,6 +381,35 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   live delta update. Settings/About reported Nightscout 15.0.7 and captured
   browser logs contained zero warnings/errors. No real health data or
   closed-loop client was used.
+
+## Project release 98 official Admin cleanup result compatibility
+
+- Commit `9fce8d5` closes a real upstream server/client seam in the unchanged
+  Admin Tools workflow. Locked v15.0.7 collection removal returns MongoDB 5's
+  `{acknowledged,deletedCount}`, while the unchanged Entries and Treatments
+  cleanup plugins render `retVal.n`.
+- Direct API callers retain the exact modern result. Only same-origin requests
+  with an exact `/admin/` Referer path receive additional `n` and `ok` aliases;
+  cross-origin, missing-Referer and other official-page requests do not.
+- Local gates passed: 72 Workers files / 792 tests, 23/23 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript and dry run. The dry bundle is 1314.26 KiB raw / 241.79 KiB gzip
+  with 250 unchanged assets and only `ENTRY_STORE` plus `ASSETS`.
+- Cloudflare ordinal/version 98, ID
+  `92e05b01-0bb6-49e9-9f3e-368cdee3a73b`, was created at
+  `2026-07-22T12:06:49.277Z`, deployed at `2026-07-22T12:06:50.436Z`, receives
+  100% traffic and starts in 32 ms.
+- The first complete smoke immediately after cutover stopped at EIO3 ping POST.
+  A fresh isolated handshake/root/ping replay then returned HTTP 200 at every
+  step, and the full 177-assertion smoke passed on
+  `public-smoke-1784722092670`, including all prior API, polling, direct WSS and
+  upgrade gates. The failure was not reproduced and no protocol code was
+  changed without repeatable evidence.
+- The unchanged official Admin page rendered `0 records deleted` for both
+  Entries and Treatments and remained `Admin authorized`. The homepage
+  displayed `126 mg/dL`, `+4`, a rising arrow, one-minute-old simulated data,
+  one chart region and two SVGs. No real health data or closed-loop instruction
+  was used.
 
 ## Project release 97 legacy Entries storage utilities
 
@@ -1356,10 +1385,14 @@ broader version-72/73/74 page checks:
   or console error. Admin Tools loaded zero subjects, all seven roles, eight
   buttons, three tables and `Admin authorized`; its two known chartless-page
   warnings remained non-errors.
+- project release 98 clicked the real unchanged Entries and Treatments cleanup
+  buttons; both rendered `0 records deleted` and Admin remained authorized.
+  The homepage displayed `126 mg/dL`, `+4`, a rising arrow, one-minute-old
+  simulated data and two SVG charts.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `2fe3ad83-08e7-45a2-90e6-3b86f54a6286` reused the same
+Cloudflare version `92e05b01-0bb6-49e9-9f3e-368cdee3a73b` reused the same
 250 Static Assets entries and passed the 177-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
@@ -1385,7 +1418,9 @@ EIO3 WebSocket compatibility; project release 95 adds the locked v2 ddata
 Activity/frame projection; project release 96 separates the full v2 ddata clone
 from the root authorization projection and adds every enumerable Treatment
 bucket; project release 97 completes the selectable Entries/Treatments/
-DeviceStatus echo and bounded arbitrary-string-field slice tools.
+DeviceStatus echo and bounded arbitrary-string-field slice tools; project
+release 98 adapts the official Admin cleanup result seam while preserving the
+direct collection-delete response.
 
 This does not prove longer-running stability, every plugin workflow or real
 closed-loop client compatibility.

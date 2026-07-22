@@ -46,7 +46,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Named daily workflows and protected push accepted; broader plugin closure partial | Versions 72–80 established the unchanged homepage/chart, Settings/About 15.0.7, Admin/clock, AR2, official Socket.IO polling, Profile/Food/Admin mutation and Reports. Version 93 repeated Profile save/reload/restore and observed its protected `dataUpdate`/`retroUpdate` in an already-open official homepage. Keep the same gate green while accepting additional plugin pages. |
+| 2. Official browser assets/pages | Named daily workflows and protected push accepted; broader plugin closure partial | Versions 72–80 established the unchanged homepage/chart, Settings/About 15.0.7, Admin/clock, AR2, official Socket.IO polling, Profile/Food/Admin mutation and Reports. Version 93 repeated Profile save/reload/restore and observed its protected `dataUpdate`/`retroUpdate` in an already-open official homepage. Version 98 closes the unchanged Admin Entries/Treatments cleanup result seam and proves both real buttons render `0 records deleted`. Keep the same gate green while accepting additional plugin pages. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. The complete 13-case concurrent-write contract proves five-way scalar/batch writes, unique IDs and 50-SMB/100-SGV/30-cross-collection recovery. The 26-case upstream storage-shape file is now adapted: scalar/one/many/20-document writes, Profile/Food/Activity save identity and created-at behavior, authorization replacement and explicit SQLite one/many batches are locked. Public invalid-ID checks remain strict while direct legacy saves retain upstream fresh-ObjectId fallback. `/storage` atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 27 locked files plus shared query contract adapted | Entries adapts its complete locked upstream file plus deduplication, Entries UUID and partial-failure contracts. The locked `query.test.js` defaults, ID date-bypass and ObjectId behavior now use one Worker-safe adapter shared by live Entries parsing. Treatments additionally adapts complete UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, Loop carb/dose and ObjectIdCache files. The complete Loop SGV/DeviceStatus file locks directions, device metadata, replay behavior and nested Loop/pump payloads; DeviceStatus retains official prediction trimming. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are mapped. `/pebble` now adapts its full nine-case legacy endpoint contract with bounded request-local context. Release 97 completes selectable Entries/Treatments/DeviceStatus echo and bounded arbitrary-field slice behavior. Status consumes the request-local Settings adapter. Complete bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, wider Mongo query/document behavior and remaining v1 routes/test files. |
 | 5. API v2 | Partial; property/notification registries and Loop remote push adapted | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary uses the complete 24-assertion `profile.test.js` adapter and receives enabled official IOB/COB/BWP/BAGE state. The complete locked `ddata`, `dataloader`, `dbsize`, `bgnow`, `direction`, `rawbg`, `upbat`, `ar2`, `basalprofileplugin`, `simplealarms`, `errorcodes`, `treatmentnotify`, `cannulaage`, `sensorage`, `insulinage`, `timeago`, `iob`, `cob`, `openaps`, `pump`, treatment-to-curve and five-case `loop` files are adapted; xDrip-js, Battery Age and Runtime State are separately locked against their upstream sources. `/properties` executes every property-producing plugin in the official server registry. Release 96 gives `/ddata/at` its independent full `ddata.clone()` shape: complete latest Profile store and bounded one-day DeviceStatus loader, raw Food, official Treatment windows/age markers, `lastProfileFromSwitch`, Activity and all eight enumerable derived Treatment buckets. Root authorization remains the separate `dataWithRecentStatuses()` projection with private Profile history removed, ten statuses per device/type, and no Activity or derived buckets. A bounded 15-minute durable recent-mutation adapter preserves freshly backdated Treatment visibility across DO eviction. Basal receives the current Profile plus bounded Temp Basal/Profile Switch/Combo Bolus treatments and meter-BG projection; BAGE uses the newest nonfuture 62-day Pump Battery Change; upbat preserves the official recent-device minimum and `UPBAT_*` thresholds. The platform reports the one-GB ceiling as 953.67 MiB. One persisted task now evaluates all sixteen official producers. The v2-only `/notifications/loop` route preserves all four official event payloads and uses Workers Web Crypto plus bounded `fetch` for APNs; local tests inject the transport, while the public lab intentionally has no Apple credentials and sends no real instruction. Derived summary/plugin Activity persistence, remaining non-plugin task kinds and a credentialed non-medical APNs acceptance fixture remain; ddata uses bounded two-day SGV and Activity windows. |
@@ -175,16 +175,28 @@ authorization and notification-ACK contracts remain green. The v2-only Loop
 remote-notification route now preserves upstream validation/payload behavior
 and replaces Node-only `@parse/node-apn` mechanics with Workers Web Crypto and
 an awaited bounded APNs fetch. Cloudflare Worker version
-`2fe3ad83-08e7-45a2-90e6-3b86f54a6286` is active as project release and
-Cloudflare ordinal 97. It reported a 23 ms startup and processes 250 Static
-Assets entries. The Wrangler 4.113.0 dry run reports 1313.61 KiB raw / 241.57
+`92e05b01-0bb6-49e9-9f3e-368cdee3a73b` is active as project release and
+Cloudflare ordinal 98. It reported a 32 ms startup and processes 250 Static
+Assets entries. The Wrangler 4.113.0 dry run reports 1314.26 KiB raw / 241.79
 KiB gzip and exposes
-only `ENTRY_STORE` plus `ASSETS`. The 71-file Workers-runtime suite passes
-790/790, all four audit suites pass
+only `ENTRY_STORE` plus `ASSETS`. The 72-file Workers-runtime suite passes
+792/792, all four audit suites pass
 23/23, eleven official client files pass 42/42 unchanged, twenty-one locked
 server/data-plugin files pass 143/143 unchanged and TypeScript passes. The
 manifest records sixteen direct passes, 86 adapted, seven unresolved and
 two fixed-scope excluded files.
+
+Version 98 fixes the unchanged official Admin Tools cleanup display without
+changing the standard collection-delete contract. Locked v15.0.7 server code
+returns MongoDB 5's `{acknowledged,deletedCount}`, but the unchanged Entries
+and Treatments Admin plugins still read legacy `retVal.n`. The Worker adds
+`n`/`ok` aliases only when the request is same-origin and its Referer path is
+exactly `/admin/`; direct API callers keep the exact modern result. Two new
+server-workflow contracts and the related Entries/Treatments/collections
+regressions pass. A fresh EIO3 replay and the complete 177-assertion remote
+smoke passed after one non-repeating post-cutover ping failure. The real Admin
+buttons rendered `0 records deleted` for both collections and stayed
+authorized; the homepage displayed current simulated glucose and two charts.
 
 Version 97 completes the selectable storage contract for the legacy Entries
 `echo` and `slice` tools. Both v1 and inherited v2 apply the locked Entries,
