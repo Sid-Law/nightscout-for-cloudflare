@@ -27,6 +27,9 @@ export interface NightscoutStatusEnvironment {
   BWP_WARN?: string;
   BWP_URGENT?: string;
   BWP_SNOOZE_MINS?: string;
+  ERRORCODES_INFO?: string;
+  ERRORCODES_WARN?: string;
+  ERRORCODES_URGENT?: string;
   DBSIZE_MAX?: string;
   DBSIZE_WARN_PERCENTAGE?: string;
   DBSIZE_URGENT_PERCENTAGE?: string;
@@ -185,6 +188,20 @@ function platformExtendedSettings(
     ["urgent", environment.BWP_URGENT],
     ["snoozeMins", environment.BWP_SNOOZE_MINS],
   ]);
+  if (enabled.has("errorcodes")) {
+    const errorcodes: Record<string, unknown> = {};
+    for (const [key, raw] of [
+      ["info", environment.ERRORCODES_INFO],
+      ["warn", environment.ERRORCODES_WARN],
+      ["urgent", environment.ERRORCODES_URGENT],
+    ] as const) {
+      // Unlike most extended settings, the locked plugin parses literal
+      // space-delimited strings and gives the string "off" special meaning.
+      // Preserve those bytes instead of normalizing "off" to boolean false.
+      if (raw !== undefined) errorcodes[key] = raw;
+    }
+    if (Object.keys(errorcodes).length > 0) extended.errorcodes = errorcodes;
+  }
   addPlugin("timeago", [["enableAlerts", environment.TIMEAGO_ENABLE_ALERTS]]);
   addPlugin("cage", [
     ["info", environment.CAGE_INFO],

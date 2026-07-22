@@ -69,6 +69,9 @@ async function openAlarm(name: string): Promise<{
 
 function resetAgeAndDatabaseNotificationSettings(instance: EntryStore): void {
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ERRORCODES_INFO: undefined,
+    ERRORCODES_WARN: undefined,
+    ERRORCODES_URGENT: undefined,
     CAGE_ENABLE_ALERTS: undefined,
     CAGE_INFO: undefined,
     CAGE_WARN: undefined,
@@ -85,6 +88,19 @@ function resetAgeAndDatabaseNotificationSettings(instance: EntryStore): void {
     DBSIZE_MAX: undefined,
     DBSIZE_WARN_PERCENTAGE: undefined,
     DBSIZE_URGENT_PERCENTAGE: undefined,
+  });
+}
+
+function enableErrorCodes(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "errorcodes",
+    DISABLE: "ar2 simplealarms treatmentnotify timeago pump openaps loop bwp cage sage iage dbsize",
+    ALARM_TYPES: "predict",
+    ERRORCODES_INFO: undefined,
+    ERRORCODES_WARN: undefined,
+    ERRORCODES_URGENT: undefined,
+    HEARTBEAT: "60",
   });
 }
 
@@ -268,6 +284,144 @@ function enableDatabaseSizeNotifications(instance: EntryStore): void {
 }
 
 describe("SQLite Durable Object background notification scheduler", () => {
+  it("automatically emits and expires the locked urgent Error Codes alarm", async () => {
+    const name = tenant("background-errorcodes-urgent");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const errorAt = Date.now() - 1_000;
+
+    const task = await runInDurableObject(stub, async (instance, state) => {
+      enableErrorCodes(instance);
+      await instance.putEntries(parseEntryPayload([{
+        sgv: 10,
+        date: errorAt,
+        dateString: new Date(errorAt).toISOString(),
+        direction: "NONE",
+        device: "simulator://errorcodes",
+        type: "sgv",
+      }]));
+      return state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+    });
+    expect(task).toMatchObject({ kind: PLUGIN_NOTIFICATIONS_TASK, attempt_count: 0 });
+    expect(task.due_at).toBeGreaterThan(errorAt);
+    expect(task.due_at).toBeLessThanOrEqual(errorAt + 10 * 60_000);
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["urgent_alarm", expect.objectContaining({
+        level: URGENT,
+        title: "CGM Error Code",
+        message: "???",
+        group: "CGM Error Code",
+        pushoverSound: "alien",
+        plugin: expect.objectContaining({ name: "errorcodes" }),
+      })],
+    }]);
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableErrorCodes(instance);
+      const pending = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        pending,
+        errorAt + 10 * 60_000,
+      );
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_tasks",
+      ).one().count).toBe(0);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["clear_alarm", {
+        clear: true,
+        title: "All Clear",
+        message: "Auto ack'd alarm(s)",
+        group: "CGM Error Code",
+      }],
+    }]);
+  });
+
+  it("publishes the locked calibration Error Code as an information event", async () => {
+    const name = tenant("background-errorcodes-info");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const errorAt = Date.now() - 1_000;
+
+    await runInDurableObject(stub, async (instance) => {
+      enableErrorCodes(instance);
+      await instance.putEntries(parseEntryPayload([{
+        sgv: 5,
+        date: errorAt,
+        dateString: new Date(errorAt).toISOString(),
+        direction: "NONE",
+        device: "simulator://errorcodes",
+        type: "sgv",
+      }]));
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["notification", expect.objectContaining({
+        level: 0,
+        title: "CGM Error Code",
+        message: "?NC",
+        group: "CGM Error Code",
+        pushoverSound: "intermission",
+        plugin: expect.objectContaining({ name: "errorcodes" }),
+      })],
+    }]);
+  });
+
+  it("activates a future Error Code with the literal custom level mapping", async () => {
+    const name = tenant("background-errorcodes-future");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const futureAt = Date.now() + 5 * 60_000;
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableErrorCodes(instance);
+      Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+        ERRORCODES_INFO: "off",
+        ERRORCODES_WARN: "10",
+        ERRORCODES_URGENT: "off",
+      });
+      await instance.putEntries(parseEntryPayload([{
+        sgv: 10,
+        date: futureAt,
+        dateString: new Date(futureAt).toISOString(),
+        direction: "NONE",
+        device: "simulator://errorcodes",
+        type: "sgv",
+      }]));
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      expect(task.due_at).toBe(futureAt);
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        futureAt,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(futureAt + 60_000);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expect.objectContaining({
+        level: 1,
+        title: "CGM Error Code",
+        message: "???",
+        group: "CGM Error Code",
+        plugin: expect.objectContaining({ name: "errorcodes" }),
+      })],
+    }]);
+  });
+
   it("runs the opt-in BWP producer from persisted Profile and SGV data", async () => {
     const name = tenant("background-bwp");
     const stub = store(name);
