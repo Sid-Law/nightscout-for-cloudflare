@@ -190,6 +190,32 @@ function json(data: unknown, init: ResponseInit = {}, space?: number): Response 
   return new Response(JSON.stringify(data, null, space), { ...init, headers });
 }
 
+function isOfficialAdminPageRequest(request: Request): boolean {
+  const referer = request.headers.get("Referer");
+  if (referer === null) return false;
+  try {
+    const requestUrl = new URL(request.url);
+    const refererUrl = new URL(referer);
+    return refererUrl.origin === requestUrl.origin && /^\/admin\/?$/.test(refererUrl.pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Locked v15.0.7 server collection removal exposes MongoDB 5's
+ * `{ acknowledged, deletedCount }` result. Its unchanged Admin Tools client
+ * still reads the legacy `n` field. Keep the public API byte shape locked for
+ * normal callers and add the compatibility aliases only to same-origin
+ * requests made by the official `/admin/` page.
+ */
+function legacyMongoDeleteResult(request: Request, deletedCount: number): Response {
+  const result = { acknowledged: true, deletedCount };
+  return json(isOfficialAdminPageRequest(request)
+    ? { ...result, n: deletedCount, ok: 1 }
+    : result);
+}
+
 function legacyOk(): Response {
   const body = new TextEncoder().encode("OK");
   const headers = new Headers(corsHeaders());
@@ -2302,7 +2328,7 @@ async function handleEntriesApi(
         "entry deletion exceeds 128 records or stored revisions; narrow the request",
       );
     }
-    return json({ acknowledged: true, deletedCount: deleted });
+    return legacyMongoDeleteResult(request, deleted);
   }
 
   return null;
@@ -2543,7 +2569,7 @@ async function handleCollectionApi(
           () => store.deleteLegacyTreatmentWithUuidHandling(segment, uuidHandling),
           () => store.deleteLegacyTreatment(segment),
         );
-        return json({ acknowledged: true, deletedCount: deleted ? 1 : 0 });
+        return legacyMongoDeleteResult(request, deleted ? 1 : 0);
       }
       if (!isValidLegacyObjectId(segment)) return legacyDocumentIdError(segment, false);
       selected = [{ _id: segment }];
@@ -2564,7 +2590,7 @@ async function handleCollectionApi(
       return json({});
     }
     if (collection === "treatments") {
-      return json({ acknowledged: true, deletedCount: deleted });
+      return legacyMongoDeleteResult(request, deleted);
     }
     return json({ n: deleted, ok: 1 });
   }
