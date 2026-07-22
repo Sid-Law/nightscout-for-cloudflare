@@ -238,8 +238,7 @@ the direct-WebSocket at-most-once crash window, remaining non-Treatment
 dataloader/server-plugin preprocessing on root updates, remaining background-task kinds, general server plugin
 execution, remaining plugin alarm generation,
 external push providers, plugin-derived v2 summary
-state/persistence, and a protected mutation observed through the pushed live
-page update path.
+state/persistence, and broader plugin-specific page workflows.
 The official homepage now uses the implemented EIO4 polling endpoint and
 `/alarm` namespace and is intentionally pinned to polling by the locked
 v15.0.7 client source. The separate standard EIO4 polling-to-WebSocket upgrade
@@ -288,12 +287,14 @@ separate advanced opt-in: it additionally requires an Apple Developer APNs
 those values unset disables only remote APNs commands; it does not disable
 ordinary Loop/AAPS data upload or the Nightscout display.
 
-The planned Deploy to Cloudflare flow will obtain this value from the
-human-readable binding description in `package.json`, without asking a family
-to calculate a hash. That one-click flow has not yet passed end-to-end release
-testing; current operators still use Wrangler or the Cloudflare dashboard as
-documented below. The internal binding remains `API_SECRET` for Nightscout
-compatibility.
+The Deploy to Cloudflare template obtains this value from the human-readable
+binding description in `package.json`, without asking a family to calculate a
+hash. A clean source checkout now installs the locked upstream build tools and
+rebuilds the official assets through `npm run build`; `.dev.vars.example`
+declares only `API_SECRET`. The actual one-click button still needs a public
+GitHub/GitLab repository and a fresh-account acceptance run, so current
+operators still use Wrangler or the Cloudflare dashboard as documented below.
+The internal binding remains `API_SECRET` for Nightscout compatibility.
 
 ## Local setup
 
@@ -301,7 +302,6 @@ Requires Node.js and npm. Node 22 LTS or newer is recommended.
 
 ```sh
 npm install
-npm run upstream:install
 npm run build
 npm run check
 npm test
@@ -558,8 +558,8 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `db85900`. The 70-file Workers-runtime
-suite passes 782/782 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `86dd941`. The 70-file Workers-runtime
+suite passes 782/782 tests, the audit suites pass 23/23, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
 reports 1288.03 KiB raw / 236.93 KiB gzip and exposes only
@@ -813,8 +813,9 @@ official Report page output (30 SVGs and eight canvases). The homepage then
 rendered the continuing simulated stream at `129 mg/dL`, `+3` and
 `FortyFiveUp`. All temporary acceptance records were removed or restored. No
 real health data, CGM credential or closed-loop traffic was used, and a
-protected mutation observed through the pushed live-update path remains a
-separate gate.
+protected mutation observed through the pushed live-update path remained a
+separate gate at that version; version 93 closes it with an authenticated
+Profile save plus live `dataUpdate`/`retroUpdate` observation.
 
 Version 81 (`5f0c3898-7d92-4164-af78-55b64cc46517`) deploys commit `ae88ba1`
 with the locked Maker/Pushover/Pushnotify provider contracts, schema-v18 SQLite
@@ -1017,6 +1018,29 @@ retained real EIO4 WebSocket upgrade and EIO3 polling. A fresh official
 homepage rendered `117 mg/dL`, `+3`, one-minute-old simulated data and its
 chart. The official Admin page loaded all cleanup workflows, seven built-in
 roles, zero subjects and `Admin authorized` against the same active version.
+
+Version 93 in the project release sequence
+(`117d0d35-e696-41b5-a12f-06a7e0e274c4`) deploys commit `86dd941` and prepares
+the clean-source Cloudflare deployment template. Root `npm run build` now
+installs the pinned Nightscout build tree before rebuilding the official UI;
+the clean-source run installed 1,057 locked upstream build packages and
+generated all 250 Static Assets. Wrangler 4.113.0 and
+`@cloudflare/workers-types` 5.20260722.1 are locked, and the configuration
+audit verifies the exact build/deploy commands plus the sole `API_SECRET`
+onboarding binding. A public Git remote and fresh-account Deploy button
+acceptance are still required before calling setup one-click.
+
+The full local gate remained 70 Workers files / 782 tests, increased to 23/23
+audits, 42/42 unchanged client tests, 143/143 unchanged server/data-plugin
+tests, TypeScript and the 1288.03-KiB raw / 236.93-KiB gzip dry run. The
+post-deploy 139-assertion smoke passed on
+`public-smoke-1784712181612`, including EIO4 WebSocket upgrade and EIO3
+polling. The unchanged official homepage displayed current simulated glucose
+and its chart; the Profile Editor loaded `Profile11111111`, `Asia/Shanghai`
+and `Admin authorized`. Immediately before this deployment, an authenticated
+Profile rename/save emitted live-page `dataUpdate` and `retroUpdate` events;
+the original name was then restored and reloaded successfully. No real health
+data or closed-loop instruction was used.
 
 The APNs transport follows Apple's current provider-token and notification
 request specifications and Cloudflare's current Web Crypto/fetch APIs:

@@ -6,17 +6,18 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `db85900` and
-Cloudflare version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42`. The
-candidate's 70-file Workers-runtime suite passes 782/782 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `86dd941` and
+Cloudflare version `117d0d35-e696-41b5-a12f-06a7e0e274c4`. The
+candidate's 70-file Workers-runtime suite passes 782/782 plus 23/23 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
 Wrangler processed 250 Static Assets entries; its dry run reported 1288.03 KiB
 raw / 236.93 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 92 reported a 26 ms startup and passed the
+product bindings. Project release 93 reported a 29 ms startup and passed the
 139-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
-real-browser gates; the earlier authenticated official-page workflows remain
-separate version-80 evidence.
+real-browser gates. The authenticated Profile save/reload/restore and its
+live-page `dataUpdate`/`retroUpdate` observation are current release evidence;
+the broader Food/Admin/Reports acceptance remains version-80 evidence.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -107,7 +108,7 @@ realtime snapshot both apply the official treatment-marker curve placement. It r
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 70 Workers files / 782 tests, 22/22 audits, eleven direct upstream
+evidence is 70 Workers files / 782 tests, 23/23 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
 dry run is 1288.03 KiB raw / 236.93 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4-upgrade/EIO3-polling and real-browser gates passed against the same active version.
@@ -1169,7 +1170,7 @@ against the persisted root baseline and attach a fresh status after eviction.
 tightening over permissive upstream JavaScript call shapes.
 
 Polling, direct Hibernatable WebSocket and EIO4 polling upgrade are live in
-Cloudflare version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42`. Current
+Cloudflare version `117d0d35-e696-41b5-a12f-06a7e0e274c4`. Current
 credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, exact Food
 helper reads and invalid Food/Profile route rejection, matching
@@ -1214,11 +1215,24 @@ clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official
 homepage uses the EIO4 polling server because its locked source requests
 polling; the independently tested EIO4 upgrade now serves standard external
-clients. EIO3 WebSocket/upgrade and a pushed protected mutation observed in the
-page remain separate gates. The named
+clients. EIO3 WebSocket/upgrade remains a separate gate; the protected Profile
+save/pushed-page path passed in project release 93. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
+
+Project release 93 keeps the same Worker runtime contract and adds a
+clean-source build/deployment boundary. Root `npm run build` installs the
+locked Nightscout build tree, runs its webpack bundle, then generates the
+official pages/assets. A configuration audit fixes the exact Cloudflare build
+and deploy scripts and permits only the `API_SECRET` onboarding field; it also
+continues to reject D1, R2, KV, Queues and routes. Wrangler 4.113.0 and Workers
+types 5.20260722.1 are pinned. This makes the repository suitable for a Deploy
+to Cloudflare button, but a public GitHub/GitLab remote and fresh-account run
+remain external release prerequisites. The post-deploy browser loaded current
+simulated glucose and the authorized Profile Editor; an authenticated Profile
+rename/save was observed as `dataUpdate`/`retroUpdate` in the already-open
+official homepage before being restored.
 
 Version 92 adds the separate official Loop remote-notification transport.
 Unlike the display/alert plugin above, this is a protected API v2 request that

@@ -12,16 +12,18 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `db85900`
-- Runtime source candidate: `db85900`
-- Git commit matching the deployed runtime worktree: `db85900`
-- Cloudflare Version ID: `8f11cd37-f90d-4b51-9ad6-5ce85091ac42`
-- Cloudflare ordinal version number: `92`
+- Deployed runtime candidate: `86dd941`
+- Runtime source candidate: `86dd941`
+- Git commit matching the deployed runtime worktree: `86dd941`
+- Cloudflare Version ID: `117d0d35-e696-41b5-a12f-06a7e0e274c4`
+- Project release sequence: `93`; Wrangler 4.113.0 did not print a numeric
+  Cloudflare ordinal for this deployment
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T08:49:05.929209Z`
+- Version creation time: `2026-07-22T09:21:05.546Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 26 ms
+- Deployment creation time: `2026-07-22T09:21:06.470Z`
+- Worker startup: 29 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -34,7 +36,7 @@ is not counted as API, plugin or real-time compatibility.
   plugin-runtime-state table used by xDrip-js notification throttling
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–92 reused them unchanged
+  versions 76–93 reused them unchanged
 - Upload: 1288.03 KiB raw / 236.93 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
@@ -379,6 +381,40 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   live delta update. Settings/About reported Nightscout 15.0.7 and captured
   browser logs contained zero warnings/errors. No real health data or
   closed-loop client was used.
+
+## Project release 93 clean-source deployment increment
+
+- Commit `86dd941` changes the root `build` command into the complete locked
+  source pipeline: Nightscout build dependencies, official webpack bundle and
+  the generated official pages/assets. The accepted clean-source execution
+  installed 1,057 upstream build packages and regenerated all 250 assets.
+- Wrangler 4.113.0, workerd 1.20260721.1 and Workers types 5.20260722.1 are
+  locked. The Cloudflare configuration audit now has two cases and verifies
+  the exact build/deploy commands, sole `API_SECRET` onboarding binding,
+  `keep_vars`, `ENTRY_STORE`/`ASSETS` and absence of D1, R2, KV, Queues and
+  routes.
+- Local gates passed: 70 Workers files / 782 tests, 23/23 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript and dry run. The dry bundle remains 1288.03 KiB raw / 236.93 KiB
+  gzip with 250 assets and only `ENTRY_STORE` plus `ASSETS`.
+- Cloudflare version `117d0d35-e696-41b5-a12f-06a7e0e274c4` was created at
+  `2026-07-22T09:21:05.546Z`, deployed at
+  `2026-07-22T09:21:06.470Z`, receives 100% traffic and starts in 29 ms.
+  Wrangler 4.113.0 did not print a numeric Cloudflare ordinal, so `93` is the
+  project release sequence rather than an invented provider ordinal.
+- The 139-assertion public smoke passed on isolated tenant
+  `public-smoke-1784712181612`, retained real EIO4 WSS upgrade and EIO3
+  polling, and reported 307,200 SQLite bytes. A post-deploy real-browser reload
+  displayed current simulated glucose/chart data; Profile Editor loaded
+  `Profile11111111`, `Asia/Shanghai`, `Values loaded.` and `Admin authorized`.
+- Immediately before deployment, an authenticated Profile rename/save/reload
+  was observed in an already-open official homepage as fresh `dataUpdate` and
+  `retroUpdate` events. The original name was restored and reloaded. This
+  closes the named protected page-mutation gate without real CGM or closed-loop
+  traffic.
+- The repository now has the metadata required by Deploy to Cloudflare, but it
+  has no public GitHub/GitLab remote. A button and fresh-account deployment are
+  therefore still pending and no one-click setup claim is made yet.
 
 ## Version 92 Loop remote APNs increment
 
@@ -888,7 +924,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `db85900`. It retains schema-v15 persisted
+The deployed runtime candidate is `86dd941`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -972,7 +1008,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42` as the current
+Wrangler reports version `117d0d35-e696-41b5-a12f-06a7e0e274c4` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -1172,10 +1208,16 @@ broader version-72/73/74 page checks:
   loaded zero subjects, all seven built-in roles, every cleanup group and
   `Admin authorized`. Remote smoke proved the new v2 Loop route's permission
   boundary without supplying Apple credentials or sending an instruction.
+- project release 93 reloaded the official homepage after deployment and
+  displayed current simulated glucose plus the chart. Profile Editor loaded
+  the restored `Profile11111111`, `Asia/Shanghai`, `Values loaded.` and
+  `Admin authorized`. Immediately before deployment, a temporary authenticated
+  Profile rename/save was observed in the already-open homepage as
+  `dataUpdate` and `retroUpdate`; the original name was restored and reloaded.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42` reused the same
+Cloudflare version `117d0d35-e696-41b5-a12f-06a7e0e274c4` reused the same
 250 Static Assets entries and passed the 139-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
@@ -1194,11 +1236,12 @@ schema-v20 durable throttle state; version 90 completes the request-time
 property registry and adds BAGE as the fifteenth persisted producer; version
 91 adds Uploader Battery as the sixteenth and completes the official server
 notification-producer registry; version 92 restores the separate protected
-Loop APNs route with Workers-native ES256/fetch transport and no lab delivery.
+Loop APNs route with Workers-native ES256/fetch transport and no lab delivery;
+project release 93 adds clean-source deployment preparation and protected
+Profile save/pushed-page evidence.
 
-This does not prove longer-running stability, a protected mutation observed
-through the pushed live-update path, every plugin workflow or real closed-loop
-client compatibility.
+This does not prove longer-running stability, every plugin workflow or real
+closed-loop client compatibility.
 
 ## Known limitations
 
@@ -1241,8 +1284,9 @@ client compatibility.
   now emits server-originated deltas from a schema-v11 persisted baseline and
   implements the locked client root write shape contract with schema-v12
   authority, persisted Profile Switch status injection and official Treatment
-  marker preprocessing, but remaining non-Treatment server-plugin preprocessing and a protected pushed mutation observed in the
-  official page remain incomplete. Broader Mongo/BSON
+  marker preprocessing, and project release 93 proves one protected Profile
+  mutation through the official page; remaining non-Treatment server-plugin
+  preprocessing remains incomplete. Broader Mongo/BSON
   numeric, object-ID and mixed-type behavior is not implied by the named write
   contract. `/storage` and `/alarm` currently
   support EIO3/SIO4 and EIO4/SIO5 polling plus EIO4 direct and upgraded
@@ -1281,10 +1325,14 @@ See `UPSTREAM_COMPATIBILITY.md` for the evidence matrix and
 ## Rollback
 
 The immediately preceding known-good rollback Worker version is
-`de66cb8c-f9b6-464e-8741-8aed362d7955` (version 64). It has its own remote API,
-Engine.IO and browser acceptance and retains schema-v14 automatic Simple Alarms,
-Treatment Notify and Timeago but lacks this release's automatic Pump/OpenAPS/
-Loop scheduling. Version 63 (`c14ae3c9-b108-4fcd-9fa8-bdbd16e1dd69`) retains
+`8f11cd37-f90d-4b51-9ad6-5ce85091ac42` (version 92). It has its own 139-case
+remote API/Engine.IO/WSS and browser acceptance and differs from release 93
+only in the clean-source deployment preparation and the newer protected-page
+evidence. A much older conservative fallback is
+`de66cb8c-f9b6-464e-8741-8aed362d7955` (version 64); it retains schema-v14
+automatic Simple Alarms, Treatment Notify and Timeago but lacks later
+Pump/OpenAPS/Loop scheduling and many subsequent adapters. Version 63
+(`c14ae3c9-b108-4fcd-9fa8-bdbd16e1dd69`) retains
 automatic Simple Alarms but lacks Treatment Notify and Timeago scheduling. Version 62
 (`99984670-1693-4ea1-8dfe-c2d1bf7c59f7`) lacks the schema-v14 scheduler and
 automatic Simple Alarm execution. The earlier version 60
