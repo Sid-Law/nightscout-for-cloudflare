@@ -1262,13 +1262,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         continue;
       }
       try {
-        const frames = this.realtime.drainWebSocketFrames(
+        const batch = this.realtime.peekWebSocketFrames(
           sid,
           remainingFrames,
           remainingBytes,
         );
-        if (frames.length === 0) break;
-        for (const frame of frames) {
+        if (batch === null) break;
+        for (const frame of batch.frames) {
           const frameBytes = realtimeJsonEncoder.encode(frame).byteLength;
           if (frameBytes > remainingBytes || remainingFrames === 0) {
             throw new Error("websocket flush budget invariant failed");
@@ -1277,6 +1277,12 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           remainingBytes -= frameBytes;
           remainingFrames -= 1;
         }
+        // WebSocket.send() cannot participate in a SQLite transaction. Keep
+        // the FIFO prefix durable until every synchronous send succeeds, then
+        // acknowledge it in one transaction. A crash after send but before
+        // this acknowledgement may replay a frame, but cannot silently lose
+        // the only durable copy before delivery.
+        this.realtime.acknowledgeWebSocketFrames(sid, batch);
       } catch {
         this.realtime.closeWebSocketSession(sid);
         this.safeCloseWebSocket(ws, 1011, "outbound queue failure");

@@ -17,9 +17,9 @@ export const REALTIME_MAX_QUEUE_PACKETS = 128;
 export const REALTIME_MAX_QUEUE_BYTES = REALTIME_MAX_PAYLOAD_BYTES;
 export const REALTIME_CLEANUP_BATCH = 32;
 // Global per-invocation WebSocket delivery budget. Pending frames remain in
-// SQLite until dequeued for one send attempt. There is an intentional
-// at-most-once crash window between that durable dequeue and `WebSocket.send`;
-// clients recover by reconnecting and requesting a fresh snapshot.
+// SQLite until every synchronous `WebSocket.send` in the selected FIFO prefix
+// succeeds and the prefix is acknowledged. A crash at that final boundary may
+// replay a frame, but cannot silently discard the durable copy before send.
 export const REALTIME_WEBSOCKET_FLUSH_MAX_SOCKETS = 16;
 export const REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES = 64;
 export const REALTIME_WEBSOCKET_FLUSH_MAX_BYTES = REALTIME_MAX_PAYLOAD_BYTES;

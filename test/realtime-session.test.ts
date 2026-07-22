@@ -33,6 +33,7 @@ import {
   REALTIME_MAX_PAYLOAD_BYTES,
   REALTIME_MAX_QUEUE_PACKETS,
   REALTIME_MAX_SESSIONS_PER_TENANT,
+  REALTIME_WEBSOCKET_TRANSPORT,
 } from "../src/realtime/constants";
 import { nightscoutWebsocketStatus } from "../src/status";
 
@@ -1245,6 +1246,56 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       expect(repository.requireSession(session.sid)).toMatchObject({
         outboundPackets: 0,
         outboundBytes: 0,
+      });
+    });
+  });
+
+  it("keeps a WebSocket FIFO prefix durable until explicit post-send acknowledgement", async () => {
+    const stub = store("realtime-websocket-send-ack");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const session = repository.createSession(
+        5_200_000,
+        REALTIME_WEBSOCKET_TRANSPORT,
+      );
+      repository.enqueueFrames(session.sid, ["4first", "4second", "4third"], 5_200_001);
+
+      const first = repository.peekFrames(session.sid, 2, 1_000);
+      expect(first).toEqual({
+        frames: ["4first", "4second"],
+        lastSequence: 2,
+        packetCount: 2,
+        byteLength: 13,
+      });
+      expect(repository.requireSession(session.sid)).toMatchObject({
+        outboundPackets: 3,
+        outboundBytes: 19,
+      });
+
+      // A new repository instance models the Durable Object reconstruction
+      // boundary after send but before acknowledgement: the same FIFO prefix
+      // remains available instead of being silently lost.
+      const reconstructed = new SqliteRealtimeSessionRepository(state.storage);
+      expect(reconstructed.peekFrames(session.sid, 2, 1_000)).toEqual(first);
+      expect(() => state.storage.transactionSync(() => reconstructed.acknowledgeFrames(
+        session.sid,
+        { ...first!, packetCount: 1 },
+      ))).toThrowError("realtime acknowledgement no longer matches the stored FIFO prefix");
+      expect(reconstructed.requireSession(session.sid)).toMatchObject({
+        outboundPackets: 3,
+        outboundBytes: 19,
+      });
+      state.storage.transactionSync(() => reconstructed.acknowledgeFrames(session.sid, first!));
+      expect(reconstructed.requireSession(session.sid)).toMatchObject({
+        outboundPackets: 1,
+        outboundBytes: 6,
+      });
+      expect(reconstructed.peekFrames(session.sid, 2, 1_000)).toEqual({
+        frames: ["4third"],
+        lastSequence: 3,
+        packetCount: 1,
+        byteLength: 6,
       });
     });
   });

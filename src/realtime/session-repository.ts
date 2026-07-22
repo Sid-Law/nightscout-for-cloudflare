@@ -56,6 +56,20 @@ interface QueueRow {
   byte_length: number;
 }
 
+interface QueuePrefixRow {
+  [key: string]: SqlStorageValue;
+  packet_count: number;
+  byte_length: number;
+  last_sequence: number | null;
+}
+
+export interface RealtimeWebSocketFrameBatch {
+  frames: string[];
+  lastSequence: number;
+  packetCount: number;
+  byteLength: number;
+}
+
 interface WebSocketClosureRow {
   [key: string]: SqlStorageValue;
   sid: string;
@@ -1326,8 +1340,19 @@ export class SqliteRealtimeSessionRepository {
     maxPackets = REALTIME_MAX_QUEUE_PACKETS,
     maxBytes = REALTIME_MAX_PAYLOAD_BYTES,
   ): string[] {
+    const batch = this.peekFrames(sid, maxPackets, maxBytes);
+    if (batch === null) return [];
+    this.acknowledgeFrames(sid, batch);
+    return batch.frames;
+  }
+
+  peekFrames(
+    sid: string,
+    maxPackets = REALTIME_MAX_QUEUE_PACKETS,
+    maxBytes = REALTIME_MAX_PAYLOAD_BYTES,
+  ): RealtimeWebSocketFrameBatch | null {
     const session = this.requireSession(sid);
-    if (session.outboundPackets === 0) return [];
+    if (session.outboundPackets === 0) return null;
     const boundedPackets = Math.max(
       1,
       Math.min(REALTIME_MAX_QUEUE_PACKETS, Math.trunc(maxPackets)),
@@ -1361,7 +1386,7 @@ export class SqliteRealtimeSessionRepository {
     // Leave a large first frame durable when the caller has already spent its
     // global turn budget. A fresh alarm invocation can send it with a full
     // budget without reordering later frames.
-    if (selected.length === 0) return [];
+    if (selected.length === 0) return null;
 
     const frames = selected.map((row) => row.packet);
     const payload = session.engineProtocol === 3
@@ -1371,23 +1396,56 @@ export class SqliteRealtimeSessionRepository {
     if (payloadBytes > REALTIME_MAX_PAYLOAD_BYTES) {
       throw new Error("stored realtime payload exceeds the advertised maxPayload");
     }
-    for (const row of selected) {
-      this.storage.sql.exec(
-        "DELETE FROM realtime_outbound_packets WHERE sid = ? AND sequence = ?",
-        sid,
-        row.sequence,
-      );
+    return {
+      frames,
+      lastSequence: selected[selected.length - 1]!.sequence,
+      packetCount: selected.length,
+      byteLength: selectedBytes,
+    };
+  }
+
+  acknowledgeFrames(sid: string, batch: RealtimeWebSocketFrameBatch): void {
+    const session = this.requireSession(sid);
+    if (
+      batch.packetCount <= 0
+      || batch.packetCount > session.outboundPackets
+      || batch.byteLength < 0
+      || batch.byteLength > session.outboundBytes
+      || !Number.isSafeInteger(batch.lastSequence)
+    ) {
+      throw new Error("realtime acknowledgement does not fit the stored queue");
     }
+    const prefix = this.storage.sql.exec<QueuePrefixRow>(
+      `SELECT COUNT(*) AS packet_count,
+              COALESCE(SUM(byte_length), 0) AS byte_length,
+              MAX(sequence) AS last_sequence
+       FROM realtime_outbound_packets
+       WHERE sid = ? AND sequence <= ?`,
+      sid,
+      batch.lastSequence,
+    ).one();
+    if (
+      prefix.packet_count !== batch.packetCount
+      || prefix.byte_length !== batch.byteLength
+      || prefix.last_sequence !== batch.lastSequence
+    ) {
+      throw new Error("realtime acknowledgement no longer matches the stored FIFO prefix");
+    }
+    this.storage.sql.exec(
+      `DELETE FROM realtime_outbound_packets
+       WHERE sid = ? AND sequence <= ?`,
+      sid,
+      batch.lastSequence,
+    );
     this.storage.sql.exec(
       `UPDATE realtime_sessions
        SET outbound_packets = outbound_packets - ?,
            outbound_bytes = outbound_bytes - ?
        WHERE sid = ?`,
-      selected.length,
-      selectedBytes,
+      batch.packetCount,
+      batch.byteLength,
       sid,
     );
-    return frames;
   }
 
   dequeuePayload(sid: string): string | null {

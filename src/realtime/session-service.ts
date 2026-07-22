@@ -52,6 +52,7 @@ import {
   RealtimeRepositoryError,
   SqliteRealtimeSessionRepository,
   type RealtimeSession,
+  type RealtimeWebSocketFrameBatch,
   type RealtimeWebSocketClosure,
   type RealtimeWebSocketClosureRetry,
 } from "./session-repository";
@@ -903,15 +904,26 @@ export class RealtimeSessionService {
     });
   }
 
-  drainWebSocketFrames(
+  peekWebSocketFrames(
     sid: string,
     maxPackets: number,
     maxBytes: number,
-  ): string[] {
+  ): RealtimeWebSocketFrameBatch | null {
     const now = this.now();
     return this.storage.transactionSync(() => {
       this.requireLiveSession(sid, now, REALTIME_WEBSOCKET_TRANSPORT);
-      return this.repository.dequeueFrames(sid, maxPackets, maxBytes);
+      return this.repository.peekFrames(sid, maxPackets, maxBytes);
+    });
+  }
+
+  acknowledgeWebSocketFrames(
+    sid: string,
+    batch: RealtimeWebSocketFrameBatch,
+  ): void {
+    const now = this.now();
+    this.storage.transactionSync(() => {
+      this.requireLiveSession(sid, now, REALTIME_WEBSOCKET_TRANSPORT);
+      this.repository.acknowledgeFrames(sid, batch);
     });
   }
 
