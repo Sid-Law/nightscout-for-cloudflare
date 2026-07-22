@@ -517,8 +517,11 @@ files are classified as fully `adapted`. Eleven complete locked client files
 `profileeditor.test.js`, plus `hashauth.test.js`, `admintools.test.js`,
 `reportstorage.test.js` and `reports.test.js`) run unchanged for 42/42 tests against the
 byte-identical official client bundle and are classified as `pass`.
-Twenty complete locked server/data-plugin files also run unchanged for
-134/134 tests; the newest addition is `ar2.test.js`, whose ten cases lock the
+Twenty-one complete locked server/data-plugin files also run unchanged for
+143/143 tests; the newest addition is `mongo-pool-config.test.js`, whose eight
+cases lock the official Node/Mongo pool-option parser without claiming that
+SQLite Durable Objects use a Mongo connection pool. The preceding addition is
+`ar2.test.js`, whose ten cases lock the
 official prediction cone, warning/urgent decisions, interpolation and virtual
 assistant output. The preceding `expressextensions.test.js` addition locks
 exact `.json` suffix handling and rejects the lookalike `entriesXjson` path.
@@ -537,13 +540,13 @@ are `gap-treat-012.test.js`,
 The prior eight v1 additions are
 `api.aaps-client.test.js`, `api.alexa.test.js`, `api.entries.test.js`,
 `api.root.test.js`, `api.status.test.js`, `api.treatments.test.js`,
-`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; eight files remain
+`api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit `ae88ba1`. The 66-file Workers-runtime
 suite passes 719/719 tests, the four audit suites pass 22/22, eleven complete
-official client files pass 42/42 unchanged, and twenty locked server/data-plugin
-files pass 134/134 unchanged. Wrangler dry-run reads 250 Static Assets entries,
+official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
+files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
 reports 1209.27 KiB raw / 223.51 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
@@ -655,8 +658,8 @@ This does not make the whole Nightscout port or the complete v1/v2 API
 compatible.
 The Sandbox reuses the locked Profile, units and times adapters instead of Node
 dynamic `require` or module-global state. The static registry likewise replaces
-Node plugin `require` without fabricating the eight unresolved plugin/test
-algorithms. The manifest records fifteen direct passes, 86 adapted, eight unresolved
+Node plugin `require` without fabricating unresolved Node/Mongo or test-harness
+behavior. The manifest records sixteen direct passes, 86 adapted, seven unresolved
 and two fixed-scope exclusions. The deployed configuration also retains
 Wrangler `keep_vars`, so dashboard-managed plaintext
 variables are preserved instead of being overwritten by a code deployment.

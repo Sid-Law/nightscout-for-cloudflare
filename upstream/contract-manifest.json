@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "9159e05dc0dd7a0c5b47922f04ef54c1a53e3d2fe047abac24f9b88957ecbc5f",
+  "inputs_sha256": "c76515d633d1572f5afd749de2b0894787a811e3b0b6605f40b745ea35d78738",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -38,10 +38,10 @@
     },
     "test_file_count": 111,
     "tests_by_status": {
-      "pass": 15,
+      "pass": 16,
       "adapted": 86,
       "excluded-fixed-scope": 2,
-      "unresolved": 8
+      "unresolved": 7
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -8263,8 +8263,8 @@
     },
     {
       "file": "vendor/nightscout/tests/mongo-pool-config.test.js",
-      "status": "unresolved",
-      "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests.",
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. All eight default, valid override, invalid/zero/negative fallback and legacy/global pool-size cases preserve the official Node/Mongo configuration parser. This is source-compatibility evidence only: NSCF's fixed Cloudflare platform uses per-tenant SQLite Durable Objects and has no Mongo connection pool, so MONGO_POOL_SIZE is intentionally not exposed as a Worker runtime setting.",
       "workstream": "1-storage-foundation",
       "depends_on": [],
       "related_routes": [],

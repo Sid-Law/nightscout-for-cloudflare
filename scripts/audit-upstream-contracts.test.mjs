@@ -176,13 +176,13 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.equal(first.routes.length, 161);
   assert.equal(first.tests.length, 111);
   assert.equal(serializeManifest(first), serializeManifest(second));
-  assert.equal(first.tests.filter((item) => item.status === "pass").length, 15);
+  assert.equal(first.tests.filter((item) => item.status === "pass").length, 16);
   assert.equal(first.tests.filter((item) => item.status === "adapted").length, 86);
   assert.deepEqual(first.statistics.tests_by_status, {
-    pass: 15,
+    pass: 16,
     adapted: 86,
     "excluded-fixed-scope": 2,
-    unresolved: 8,
+    unresolved: 7,
   });
   for (const file of [
     "vendor/nightscout/tests/api.aaps-client.test.js",
@@ -277,6 +277,7 @@ test("the locked repository manifest is stable and validates all 111 test files"
     "vendor/nightscout/tests/env.test.js",
     "vendor/nightscout/tests/expressextensions.test.js",
     "vendor/nightscout/tests/hashauth.test.js",
+    "vendor/nightscout/tests/mongo-pool-config.test.js",
     "vendor/nightscout/tests/pluginbase.test.js",
     "vendor/nightscout/tests/profileeditor.test.js",
     "vendor/nightscout/tests/reports.test.js",

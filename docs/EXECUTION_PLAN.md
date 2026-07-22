@@ -56,7 +56,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 9. Real-time storage updates | Root server/client mutations plus API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. The official client now receives its initial root update remotely; add a credentialed pushed mutation observed in the page and profile/plugin preprocessing. Keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Generic SQLite scheduler + unified automatic notification task | Schema v14 stores logical tasks, due times, attempts and update times in SQLite. The DO's one Cloudflare alarm is derived from the minimum of persisted realtime, authorization-cleanup, task, schema-v16 debounce and optional schema-v17 lab-CGM deadlines. One `plugin-notifications` task evaluates eleven official producers in server order from a bounded SGV/MBG/DeviceStatus/Profile/Treatment/SQLite-stat context. The disabled-by-default lab CGM uses the same alarm, writes one current SGV per five-minute due turn and never backfills an unbounded outage. Mutations run the leading edge; rapid batches receive exactly one persisted trailing evaluation after one quiet second or at the five-second max wait. Failures persist two-second exponential retry capped at five minutes; early at-least-once delivery is a no-op. Add BWP/remaining plugin producers, summary/activity persistence and future maintenance/pruning. |
 | 11. Server plugins/notifications | Static registry + eleven automatic producers + persisted core/Admin/push state | Stateless ports of the named official calculation plugins plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. Eleven producers are automatically evaluated by schema v14 under their official gates; schema v15 persists Admin notices and schema v16 persists data-update debounce. Version 81 completely maps the locked Maker, Pushover and Pushnotify files: schema v18 persists dedupe leases, receipts and Maker All Clear state, and v1/v2 expose the official receipt callback. The processor preserves priority, information/announcement handling, snooze arbitration and automatic all-clear. External Pushover/IFTTT send/cancel remains disabled until explicitly authorized and connected through a persisted outbox. BWP and remaining plugin alarm producers remain incomplete. |
-| 12. Upstream regression suite | Tracked; 15 pass + 86 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, Pebble, Maker, Pushover, Pushnotify, the complete storage-shape and bootevent-debounce files and the named plugin/API/realtime foundations are adapted. Eleven complete client files run 42/42 unchanged after bundle byte equality. Twenty locked server/data-plugin files run unchanged as a reusable 134/134-test gate. Eight files remain unresolved and two are fixed-scope exclusions. |
+| 12. Upstream regression suite | Tracked; 16 pass + 86 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, Pebble, Maker, Pushover, Pushnotify, the complete storage-shape and bootevent-debounce files and the named plugin/API/realtime foundations are adapted. Eleven complete client files run 42/42 unchanged after bundle byte equality. Twenty-one locked server/data-plugin files run unchanged as a reusable 143/143-test gate. The latest direct file is the eight-case Node/Mongo pool-option parser; it is source evidence, not a Worker Mongo-pool setting. Seven files remain unresolved and two are fixed-scope exclusions. |
 
 ## Generated dispatch map
 
@@ -164,9 +164,9 @@ deployment metadata was created at `2026-07-22T02:57:21.637Z`, and Wrangler
 reported a 36 ms startup. It processes 250 Static Assets entries. The Wrangler
 4.112.0 dry run reports 1209.27 KiB raw / 223.51 KiB gzip and exposes only `ENTRY_STORE` plus
 `ASSETS`. The 66-file Workers-runtime suite passes 719/719, all four audit suites pass
-22/22, eleven official client files pass 42/42 unchanged, twenty locked
-server/data-plugin files pass 134/134 unchanged and TypeScript passes. The
-manifest records fifteen direct passes, 86 adapted, eight unresolved and
+22/22, eleven official client files pass 42/42 unchanged, twenty-one locked
+server/data-plugin files pass 143/143 unchanged and TypeScript passes. The
+manifest records sixteen direct passes, 86 adapted, seven unresolved and
 two fixed-scope excluded files.
 
 Version 81's 77-assertion credential-free API/Engine.IO/Pebble smoke passed on
@@ -390,7 +390,7 @@ The code is still not a full port: non-Entries echo, arbitrary aggregation,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
 WebSocket upgrade, EIO3 HTTP, profile-switch status/plugin preprocessing before
 deltas, automatic task adapters for the remaining server plugins, live external provider delivery,
-remaining BWP/plugin summary fields and ten upstream test files (eight unresolved
+remaining BWP/plugin summary fields and nine upstream test files (seven unresolved
 plus two fixed-scope exclusions) remain incomplete.
 The homepage now consumes the implemented EIO4 polling server through the
 official Socket.IO client. Polling upgrade, EIO3 and pushed protected page

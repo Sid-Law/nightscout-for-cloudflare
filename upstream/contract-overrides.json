@@ -350,6 +350,10 @@
     "reason": "No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests."
   },
   "test_status_overrides": {
+    "vendor/nightscout/tests/mongo-pool-config.test.js": {
+      "status": "pass",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. All eight default, valid override, invalid/zero/negative fallback and legacy/global pool-size cases preserve the official Node/Mongo configuration parser. This is source-compatibility evidence only: NSCF's fixed Cloudflare platform uses per-tenant SQLite Durable Objects and has no Mongo connection pool, so MONGO_POOL_SIZE is intentionally not exposed as a Worker runtime setting."
+    },
     "vendor/nightscout/tests/maker.test.js": {
       "status": "adapted",
       "reason": "All six locked query, three-event dispatch, missing-name, missing-level, 30-minute All Clear dedupe and multi-announcement-key cases are represented by test/push-provider-contract.test.ts. src/plugins/maker.ts preserves the official value1/value2/value3 query encoding and ns-event/ns-<level>/ns-<level>-<name>/ns-allclear names with a request-local clock and injected transport. Maker All Clear state is persisted per tenant in SQLite and survives Durable Object eviction. External IFTTT delivery remains disabled until the destination is explicitly authorized and a persisted outbox is connected; no Node request/async/global state is used."

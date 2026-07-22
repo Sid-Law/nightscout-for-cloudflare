@@ -132,6 +132,20 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   unchanged real homepage displayed `121 mg/dL`, `+4`, four minutes ago with
   no visible dialog, console warning or console error.
 
+### Post-version-81 upstream audit increment
+
+- No Worker runtime changed and no deployment was required. The complete locked
+  `mongo-pool-config.test.js` file now runs unchanged: all eight upstream
+  Node/Mongo pool-option cases pass, raising the current manifest to 16 direct
+  passes, 86 adapted files, seven unresolved files and two fixed-scope
+  exclusions.
+- The unchanged server/data-plugin gate is now 21 complete files and 143/143
+  tests. This is source-compatibility evidence only; NSCF uses SQLite Durable
+  Objects and intentionally has no `MONGO_POOL_SIZE` Worker setting.
+- The seven unresolved files are Mongo connection/retry, destructive Mongo test
+  cleanup/production-safety and Mocha flakiness/self-test files. They are not
+  ordinary-family Nightscout page, uploader or closed-loop API features.
+
 ## Release content
 
 The current deployed increment retains the generic SQLite background scheduler,
@@ -575,7 +589,7 @@ in the current deployed candidate.
 | Upstream route/test audit | 161 registrations and 111 test files; generated outputs deterministic |
 | Audit tool tests | 14/14 passed |
 | Direct upstream client tests | 11 locked files passed 42/42 unchanged after public/upstream bundle byte equality (`pluginbase`, renderer, error codes, utilities, Care Portal, Bolus Wizard Preview, Profile Editor, Hashauth, Admin Tools, report storage and Reports) |
-| Direct upstream server/data-plugin tests | 20 locked files passed 134/134 unchanged (`dataloader`, `dbsize`, CAGE, SAGE, IAGE, timeago, AR2, treatment-to-curve, IOB, COB, OpenAPS, Pump, Basal Profile, Treatment Notify, Simple Alarms, Notifications, Admin notices, ObjectId cache compatibility, env and Express extension middleware) |
+| Direct upstream server/data-plugin tests | 21 locked files passed 143/143 unchanged (`dataloader`, `dbsize`, CAGE, SAGE, IAGE, timeago, AR2, treatment-to-curve, IOB, COB, OpenAPS, Pump, Basal Profile, Treatment Notify, Simple Alarms, Notifications, Admin notices, ObjectId cache compatibility, env, Mongo pool-option parsing and Express extension middleware) |
 | Authorization audit tests | 6/6 passed |
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
@@ -588,8 +602,8 @@ in the current deployed candidate.
 The locked upstream contains 111 JavaScript test files; a static declaration
 audit finds 883 active `it(...)` cases plus one skipped case. The 719 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
-run 42/42 unchanged against the shipped official client bundle, while 20
-server/data-plugin files run unchanged in a separate 134/134 gate. All 16 API3 files,
+run 42/42 unchanged against the shipped official client bundle, while 21
+server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 files,
 `notifications-api.test.js`, `ddata.test.js`, `bgnow.test.js`,
 `direction.test.js`, `levels.test.js`, `rawbg.test.js`, `times.test.js`,
 `units.test.js`, `upbat.test.js`, `data.calcdelta.test.js`,

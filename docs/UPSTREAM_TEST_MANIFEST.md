@@ -8,8 +8,8 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
-- Statuses: pass: 15, adapted: 86, excluded-fixed-scope: 2, unresolved: 8
-- Input fingerprint: `9159e05dc0dd7a0c5b47922f04ef54c1a53e3d2fe047abac24f9b88957ecbc5f`
+- Statuses: pass: 16, adapted: 86, excluded-fixed-scope: 2, unresolved: 7
+- Input fingerprint: `c76515d633d1572f5afd749de2b0894787a811e3b0b6605f40b745ea35d78738`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -19,7 +19,7 @@ Fixed-scope exclusions are exactly the two live real-CGM bridge files (`bridge.t
 
 | Workstream | Depends on | Files | Unresolved | Fixed-scope excluded |
 | --- | --- | ---: | ---: | ---: |
-| 1-storage-foundation | none | 15 | 3 | 0 |
+| 1-storage-foundation | none | 15 | 2 | 0 |
 | 2-authorization | 1-storage-foundation | 6 | 0 | 0 |
 | 3-api-v1-v2 | 1-storage-foundation, 2-authorization | 14 | 0 | 0 |
 | 4-plugins-and-calculations | 1-storage-foundation | 40 | 2 | 0 |
@@ -53,7 +53,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/cache-objectid-compat.test.js` | pass | 0 | The complete locked upstream file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. All 16 cases preserve the MongoDB 5 ObjectId root-cause demonstration, ddata string normalization, fixed null/empty/stale age filter and cache insertion/data-update behavior for ObjectId, string and mixed identifiers. NSCF's request-local SQLite projections do not make the Node process cache authoritative; their separate ID normalization remains covered by Workers tests. |
 | `vendor/nightscout/tests/concurrent-writes.test.js` | adapted | 6 | Represented by all 13 named Workers-runtime cases in test/api-v1-concurrent-writes.test.ts: five simultaneous scalar and two-item batch writes for Treatments, DeviceStatus and Entries; ten staggered Treatment writes in 100 ms; concurrent cross-collection batches; unique server ObjectIds; per-batch response cardinality; 50 AAPS SMB offline-recovery writes; 100 AndroidAPS SGV recovery writes; and 30 concurrent Treatment/Entry/DeviceStatus requests. Every request crosses the Worker boundary into one tenant SQLite Durable Object, and non-200 responses fail the contract before persisted counts are checked. |
 | `vendor/nightscout/tests/issue-6923-legacy-uuid.test.js` | adapted | 8 | Represented by the complete three-case Workers-runtime regression in test/api-v1-treatment-identity-matrix.test.ts. A raw pre-fix Treatment with UUID directly in _id and no identifier is inserted through the main-namespace raw storage path, then found, updated in place without duplication, and deleted through the v1 API with the MongoDB 5 acknowledged/deletedCount response. |
-| `vendor/nightscout/tests/mongo-pool-config.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
+| `vendor/nightscout/tests/mongo-pool-config.test.js` | pass | 0 | The complete locked upstream file runs unchanged through scripts/run-upstream-server-plugin-contracts.mjs. All eight default, valid override, invalid/zero/negative fallback and legacy/global pool-size cases preserve the official Node/Mongo configuration parser. This is source-compatibility evidence only: NSCF's fixed Cloudflare platform uses per-tenant SQLite Durable Objects and has no Mongo connection pool, so MONGO_POOL_SIZE is intentionally not exposed as a Worker runtime setting. |
 | `vendor/nightscout/tests/mongo-storage.retry.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/mongo-storage.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/objectid-cache.test.js` | adapted | 8 | Represented by all seven named Workers-runtime ObjectIdCache cases in test/api-v1-loop-client-contract.test.ts: POST-response cache mapping, cached-ID PUT and DELETE, cache-miss and app-restart duplicate behavior with fresh timestamps, ordered batch identity mapping, temp-basal update, and pump-event hexadecimal syncIdentifier preservation. The contract retains upstream behavior that syncIdentifier is descriptive rather than a server uniqueness key. |
