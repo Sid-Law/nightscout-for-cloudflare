@@ -9,7 +9,7 @@ support, but NSCF does not depend on or require Sugar AI.
 This repository is an active, incomplete Cloudflare port. It directly builds
 and serves the official Nightscout v15.0.7 homepage, charts, client plugins and
 translations; NSCF does not provide a redesigned or substitute UI. The complete
-Node/Mongo/Socket.IO/server-plugin behavior is not yet compatible. It uses
+Node/Mongo and complete Socket.IO/server-plugin behavior are not yet compatible. It uses
 simulated glucose values only. It is not a medical device and must not be used
 for diagnosis, dosing, or medical decisions.
 
@@ -114,8 +114,11 @@ for diagnosis, dosing, or medical decisions.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
-- A transport-only polling shim for the upstream client's Socket.IO surface;
-  it loads one aggregate data payload and emits the upstream `dataUpdate`.
+- The byte-identical official Nightscout Socket.IO 4.5.4 browser client from
+  the locked v15.0.7 tree. The official homepage, Admin, Profile, Food and
+  Reporting pages now connect it directly to NSCF's EIO4 polling root and
+  `/alarm` namespaces. The only adjacent browser adapter adds NSCF's optional
+  test-tenant query; it contains no data, chart, plugin or medical logic.
 - A separately routed, tenant-local `/socket.io/` server slice for strict EIO4
   HTTP polling and the SIO5 root namespace. Sessions, heartbeat state,
   read/write/treatment-write authorization state and bounded outbound queues
@@ -193,8 +196,9 @@ for diagnosis, dosing, or medical decisions.
   polling and direct WebSocket are routed: polling advertises `upgrades: []`,
   EIO3 and binary packets are rejected, and polling-to-WebSocket upgrade is not
   implemented.
-- Content-addressed loading for that platform shim, so an older upstream
-  service worker cannot keep serving an obsolete adapter after deployment.
+- Content-addressed loading for the official Socket.IO client and the small
+  tenant-query adapter, so an older upstream service worker cannot keep
+  serving an obsolete transport boundary after deployment.
 - A response-header adapter that preserves upstream asset bytes while supplying
   the UTF-8 charset normally added by Nightscout's Express server. The Split
   route also overrides Cloudflare's incorrect `text/plain` metadata, strips
@@ -216,11 +220,10 @@ preprocessing on root updates, remaining background-task kinds, general server
 plugin execution, automatic BWP and remaining plugin alarm generation,
 external push providers, plugin-derived v2 summary
 state/persistence, and end-to-end verification of every official page workflow.
-The polling shim only keeps the official browser bundle supplied
-with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
-homepage to the official Socket.IO client is a later slice that also requires
-safe non-default tenant propagation and integration with the still-missing
-server-side notification/plugin pipeline.
+The official homepage now uses the implemented EIO4 polling endpoint and
+`/alarm` namespace. It does not yet prove polling-to-WebSocket upgrade, EIO3,
+every pushed mutation workflow or the still-missing server-side plugin
+preprocessing pipeline.
 Entries also remains incomplete beyond its now-adapted locked test file:
 `times/echo`, `times` and dateString `slice` support only the bounded numeric-
 brace fixtures, while non-Entries `echo`, client-supplied count aggregation
@@ -343,12 +346,13 @@ v15.0.7 tree currently reports 66 inherited findings (9 low, 18 moderate, 37
 high, 2 critical). They are recorded rather than silently changed because
 `npm audit fix` would mutate the official release dependency graph.
 
-The routed EIO4 root namespace is read-only even when a credential could grant
-HTTP writes: its authorization ACK is always `{read:true, write:false,
-write_treatment:false}`. Anonymous reads follow the current readable default;
-invalid explicit credentials disconnect only the root namespace without
-closing the Engine.IO SID. This narrow transport surface does not authorize any
-database mutation event. The separate `/storage` namespace accepts only a
+The routed EIO4 root namespace derives read, write and treatment-write flags
+from the same credential permissions as upstream. Anonymous reads follow the
+current readable default and retain `{read:true, write:false,
+write_treatment:false}`; invalid explicit credentials disconnect only the root
+namespace without closing the Engine.IO SID. Authorized `dbAdd`, `dbUpdate`,
+`dbUpdateUnset` and `dbRemove` events use the bounded shared repository and
+preserve the locked ACK-before-delta order. The separate `/storage` namespace accepts only a
 subject access token, joins only rooms for which that subject has the locked
 read permission (`api:settings:admin` for Settings), and emits notifications
 about successful HTTP API v3 mutations; it does not grant mutation permission.
@@ -508,12 +512,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 12 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit
-`27ffb4256baeb4ecef0c91b91aa176cad2381504`. The 62-file Workers-runtime
+The deployed runtime candidate is commit `5173326`. The 62-file Workers-runtime
 suite passes 692/692 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty locked server/data-plugin
-files pass 134/134 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1183.78 KiB raw / 218.53 KiB gzip and exposes only
+files pass 134/134 unchanged. Wrangler dry-run reads 250 Static Assets entries,
+reports 1183.81 KiB raw / 218.54 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -637,8 +640,11 @@ Entries migration remains intentionally
 fresh-only: an incompatible pre-1.0 narrow `entries` shadow is reset instead of
 being imported, while canonical documents and other collections such as
 profile are preserved. A pre-seeding read found zero Entries and one profile in
-the public tenant. The later 25 `simulator://nscf-demo` rows are new test data,
-not imported history. This is not a general legacy-data migration guarantee.
+the public tenant. The later 25 `simulator://nscf-demo` rows were new test data,
+not imported history; they were removed by exact device/type matching on
+2026-07-22 after the intentionally idle stream triggered the official stale-
+data alarm. The Profile was preserved, and ordinary deployments do not
+auto-generate fake glucose. This is not a general legacy-data migration guarantee.
 
 The planned first-release onboarding path is a fresh deployment for a new
 family. “Fresh” means a new Worker/SQLite Durable Object namespace or an
@@ -659,17 +665,19 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `70e49b47-bc2a-4f9e-82ba-b5e2eafbb922` (ordinal 74) was made
-current at `2026-07-22T00:21:36.094Z`, with a reported 32 ms startup. No asset bytes needed
-uploading because all 248 official asset entries were unchanged.
+Cloudflare version `0359d367-2317-41c2-a8cd-f9d840a29610` (ordinal 76) was
+created at `2026-07-22T00:56:23.047Z`; Wrangler reported a 34 ms startup and no
+asset changes relative to version 75. Version 75
+`3c124be0-a30c-48b2-9a6f-0faa84240e01` uploaded the official Socket.IO client,
+the tenant-query adapter and the six rebuilt page/service-worker entries.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
 version, matching v1/v2 Settings snapshots, real ddata/database-size values,
 the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB,
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
-missing-token API3 Entries returned the expected 401. The 72-assertion script
-used fresh tenant `public-smoke-1784679706217`, observed 262,144 SQLite bytes and a
+missing-token API3 Entries returned the expected 401. The final 72-assertion script
+used fresh tenant `public-smoke-1784681840536`, observed 262,144 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -716,6 +724,19 @@ Admin authorized and Nightscout version 15.0.7; clicking the unchanged official
 Save button completed successfully and closed the form. The only console errors
 were the browser's expected audio autoplay-policy rejections before interaction.
 Version 74 also passed the same 72-assertion credential-free API/Engine.IO gate.
+
+Versions 75/76 replaced the REST polling shim with the locked official
+Socket.IO 4.5.4 client and then repaired a Cloudflare edge difference where a
+bodyless `DELETE` can arrive as a zero-byte stream. A remote isolated-tenant
+contract created one simulated SGV, deleted it with a genuinely bodyless
+request and observed HTTP 200, `deletedCount:1` and zero remaining rows. The
+final official Socket.IO client smoke connected the root and `/alarm`, received
+the initial `dataUpdate`, authorized anonymous read and subscribed for alarms.
+A new browser profile loaded both content-addressed transport assets, used real
+EIO4 polling, logged the four corresponding connection/data/subscription
+events and had zero console errors or warnings. After the 25 stale simulator
+rows were removed, the page title remained `Nightscout` without a stale-data
+alarm.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

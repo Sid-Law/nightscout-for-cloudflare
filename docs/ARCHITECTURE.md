@@ -6,17 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate
-`27ffb4256baeb4ecef0c91b91aa176cad2381504` and Cloudflare version
-`70e49b47-bc2a-4f9e-82ba-b5e2eafbb922`, reported as 100% active. The
+“Current” below describes deployed evidence candidate `5173326` and Cloudflare
+version `0359d367-2317-41c2-a8cd-f9d840a29610`. The
 candidate's 62-file Workers-runtime suite passes 692/692 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 134/134 unchanged tests across twenty
 locked upstream server/data-plugin files.
-Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1183.78 KiB raw / 218.53 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 74
-reported a 32 ms startup and passed credential-free API, EIO4 and real-browser
-gates, including the unchanged official Settings Save workflow.
+Wrangler processed 250 Static Assets entries; its dry run reported 1183.81 KiB
+raw / 218.54 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 76 reported a 34 ms startup and passed credential-free
+API, official Socket.IO-client, EIO4 and clean-profile real-browser gates.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -79,7 +77,7 @@ eleven complete official client files run 42/42 unchanged only after a byte-equa
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
 evidence is 62 Workers files / 692 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty direct upstream server/data-plugin files / 134 tests; the
-dry run is 1183.78 KiB raw / 218.53 KiB gzip with the same 248 assets and two bindings.
+dry run is 1183.81 KiB raw / 218.54 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -87,8 +85,8 @@ Remote API/EIO4 and real-browser gates passed against the same active version.
 ```text
 Official Nightscout v15.0.7 pages and browser bundle / compatible uploader
         |
-        | static HTML/CSS/JS, v1/v2 page API, REST shim polling
-        | or independent EIO4 polling/direct-WebSocket clients
+        | static HTML/CSS/JS and v1/v2 page API
+        | official Socket.IO 4.5.4 over EIO4 polling or direct-WebSocket clients
         v
 Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
@@ -100,7 +98,7 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - request-local locked Settings defaults, accessors, feature/alarm resolution
     and secure status filtering
   - inherited v1/v2 notification ACK authorization and HTTP adaptation
-  - Socket.IO client-surface polling adapter
+  - byte-identical official Socket.IO browser client plus optional test-tenant query adapter
   - strict `/socket.io/` EIO4 polling and direct-WebSocket adapters
   - SIO5 root plus API3 `/storage` and `/alarm` namespace protocol adaptation
         |
@@ -162,17 +160,25 @@ response/cache adaptations; the upstream HTML bytes and UI are unchanged.
 The default cache and ETag behavior is documented in Cloudflare's
 [Static Assets response headers](https://developers.cloudflare.com/workers/static-assets/headers/).
 
+Cloudflare's public edge can represent a bodyless `DELETE` as a non-null,
+zero-byte request stream, while locally constructed Fetch requests usually
+expose `request.body === null`. The bounded body reader treats only that
+zero-byte DELETE form as an absent authorization payload. POST/PUT and nonempty
+malformed bodies remain strict JSON/form parses. This is a platform transport
+normalization, not a Nightscout API behavior change; an isolated remote v1
+Entries create/bodyless-delete/read contract verifies the public edge path.
+
 The official client expects Socket.IO and consumes a `dataUpdate` runtime shape
-rather than loading entries directly. At `/socket.io/socket.io.js`, a thin
-transport adapter implements only the page-used `connect`, `authorize`,
-`subscribe`, `loadRetro`, and `dataUpdate` surface. It polls
-`/api/v2/ddata/at` every 15 seconds, receives SGVs, treatments, food, profiles
-and device status in one aggregate response, and hands control to the untouched
-upstream client/chart/plugin code. This replaces the long-lived Node Socket.IO
-server for the current subset; it is not a Socket.IO or Engine.IO server.
-The adapter dispatches the first `dataUpdate` before completing `authorize`, as
-the upstream `lib/server/websocket.js` path does, so profile-dependent plugins
-can initialize from the first payload.
+rather than loading entries directly. `/socket.io/socket.io.js` is now the
+byte-identical Socket.IO 4.5.4 client shipped by locked Nightscout v15.0.7. It
+connects the unchanged upstream page/client/chart/plugin code directly to the
+tenant-local EIO4 polling root and `/alarm` namespace described below. A
+separate `platform/socket-tenant-adapter.js` changes only `io.connect` query
+options when the visible URL explicitly selects NSCF's optional test tenant;
+ordinary one-instance deployments execute the official client unchanged. The
+server preserves the upstream ordering in which the first `dataUpdate` is
+available before authorization completes, so profile-dependent plugins can
+initialize from that payload.
 
 The same aggregate snapshot feeds the wider v2 REST adapters without introducing a
 process-global `ctx.ddata`. `src/realtime/ddata-snapshot.ts` represents the
@@ -318,18 +324,19 @@ When those plugins are disabled, IOB/COB remain JSON `null`, matching the
 locked mapper. BWP and remaining plugin-derived/persisted state are
 intentionally not synthesized.
 
-Separately, exact `/socket.io` and `/socket.io/` requests can now reach real
+Exact `/socket.io` and `/socket.io/` requests reach real
 tenant-local Engine.IO 4 polling and direct-WebSocket endpoints. Polling
 implements the official open
 shape with `upgrades: []`, 25-second server ping / 20-second client-pong
-heartbeat, RS payload framing, SIO5 root CONNECT, `clients`, read-only
+heartbeat, RS payload framing, SIO5 root CONNECT, `clients`, permission-derived
 `authorize`, initial and subsequent server-originated `dataUpdate`, and
 `loadRetro`. Sessions, root authorization
 and ordered outbound frames are stored in the existing tenant `EntryStore`
 SQLite database, while only an in-flight long-poll waiter is ephemeral. DO
 eviction therefore does not lose protocol authority or queued packets. This
-endpoint is independently tested but is not loaded by the official homepage;
-the built `/socket.io/socket.io.js` remains the REST shim described above.
+is the endpoint loaded by the official homepage; local and remote tests use the
+same upstream Socket.IO client and a clean browser verifies the root and
+`/alarm` workflows.
 Direct WebSocket opens with `EIO=4&transport=websocket`, is accepted by the DO
 through WebSocket Hibernation, and restores its tenant/SID authority from a
 validated attachment plus SQLite state after eviction. It is not an Engine.IO
@@ -1089,7 +1096,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`70e49b47-bc2a-4f9e-82ba-b5e2eafbb922`. Current credential-free remote smoke
+`0359d367-2317-41c2-a8cd-f9d840a29610`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal and AR2 properties and the opt-in-disabled
@@ -1104,14 +1111,18 @@ The version-73 browser acceptance additionally rendered 26 AR2 forecast dots.
 Version 74 reloaded the connected official homepage, opened the complete
 Settings form with Admin authorized/About 15.0.7, and successfully completed
 the unchanged Save workflow. Its only console errors were expected browser
-autoplay-policy rejections before user interaction.
+autoplay-policy rejections before user interaction. Version 76 replaced the
+former shim with the byte-identical official Socket.IO 4.5.4 client. A clean
+browser connected and authorized root, received `dataUpdate`, subscribed to
+`/alarm`, loaded both content-addressed transport assets and reported zero
+console errors or warnings. An independent official-client remote smoke
+confirmed the same four states.
 No real CGM or closed-loop traffic was used. Four fresh-tenant Admin-notification probes returned the readable-site
 count while hiding the body, and the real browser retained the official Admin,
 clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send
-crash window described above remains open for direct WebSocket. The official homepage
-intentionally still uses the REST polling shim. The inherited local transport
-contracts and the prior public EIO4 smoke prove only the separate server slice,
-not a page transport switch. The named
+crash window described above remains open for direct WebSocket. The official
+homepage now uses the EIO4 polling server; polling-to-WebSocket upgrade, EIO3
+and a pushed protected mutation observed in the page remain separate gates. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
@@ -1253,9 +1264,9 @@ object as well as every out-of-scope product binding.
   committed to Wrangler config or repository docs. Cloudflare metadata tooling
   can display a plaintext dashboard variable, so the lab credential must be
   rotated and converted to an encrypted Worker Secret before non-lab use.
-- The homepage polling shim is transport-only, runs every 15 seconds and has no
-  medical or display logic. The separately routed EIO4 root is read-only;
-  `/alarm` can persist only its bounded ACK/silence state. This server is not
-  yet the homepage transport.
+- The homepage ships the locked official Socket.IO 4.5.4 client. The adjacent
+  adapter only appends an optional test-tenant query and has no medical or
+  display logic. EIO4 polling is the current page transport; polling upgrade
+  and EIO3 remain unimplemented.
 - Text asset responses are streamed rather than buffered when UTF-8 headers are
   adapted, keeping the extra Worker CPU and memory work constant.
