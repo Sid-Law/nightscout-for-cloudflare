@@ -57,6 +57,85 @@ describe("locked Nightscout v15.0.7 v2 data contracts", () => {
     )).toEqual([{ identifier: "loop-id", carbs: 0 }]);
   });
 
+  it("projects the locked two-day Activity bucket into current v2 ddata only", async () => {
+    const name = tenant("v2-ddata-activity");
+    const now = Date.now();
+    const recentAt = new Date(now - 5 * 60_000).toISOString();
+    const futureAt = new Date(now + 60 * 60_000).toISOString();
+    const stub = env.ENTRY_STORE.getByName(name);
+    await stub.createDocuments("activity", JSON.stringify([
+      {
+        _id: "111111111111111111111111",
+        created_at: new Date(now - 3 * 24 * 60 * 60_000).toISOString(),
+        heartrate: 80,
+      },
+      {
+        _id: "222222222222222222222222",
+        created_at: recentAt,
+        heartrate: 101,
+        steps: 22,
+        activitylevel: 3,
+      },
+      {
+        _id: "333333333333333333333333",
+        created_at: recentAt,
+        heartrate: 999,
+        steps: 999,
+        activitylevel: 999,
+      },
+      {
+        _id: "444444444444444444444444",
+        created_at: futureAt,
+        steps: 44,
+      },
+    ]));
+
+    const response = await SELF.fetch(endpoint("/api/v2/ddata/at", name));
+    expect(response.status).toBe(200);
+    const body = await response.json() as Record<string, unknown>;
+    expect(body.activity).toEqual([
+      { mills: recentAt, heartrate: 101, steps: 22, activitylevel: 3 },
+      { mills: futureAt, steps: 44 },
+    ]);
+    // dataWithRecentStatuses(), used for root Socket.IO authorization, does
+    // not expose Activity; this bucket belongs to ddata.clone() only.
+    expect(body).not.toHaveProperty("page");
+  });
+
+  it("caps Activity at explicit historical ddata frames and exposes frame metadata", async () => {
+    const name = tenant("v2-ddata-activity-frame");
+    const now = Date.now();
+    const frameAt = now - 10 * 60_000;
+    const beforeAt = new Date(frameAt - 60_000).toISOString();
+    const afterAt = new Date(frameAt + 60_000).toISOString();
+    const stub = env.ENTRY_STORE.getByName(name);
+    await stub.createDocuments("activity", JSON.stringify([
+      {
+        _id: "555555555555555555555555",
+        created_at: new Date(frameAt - 3 * 24 * 60 * 60_000).toISOString(),
+        heartrate: 70,
+      },
+      {
+        _id: "666666666666666666666666",
+        created_at: beforeAt,
+        heartrate: 96,
+      },
+      {
+        _id: "777777777777777777777777",
+        created_at: afterAt,
+        heartrate: 120,
+      },
+    ]));
+
+    const response = await SELF.fetch(endpoint(`/api/v2/ddata/at/${frameAt}`, name));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      lastUpdated: frameAt,
+      page: { frame: true, after: frameAt },
+      activity: [{ mills: beforeAt, heartrate: 96 }],
+    });
+  });
+
   it("supports the locked properties wildcard selection and truthy pretty query", async () => {
     const name = tenant("v2-properties-selection");
     const now = Date.now();

@@ -159,6 +159,19 @@ checked(ddataResponse.status === 200, "v2 ddata status");
 const ddata = await ddataResponse.json();
 checked(ddata.dbstats?.dataSize > 0, "SQLite databaseSize is published");
 checked(ddata.dbstats?.indexSize === 0, "SQLite total is not double-counted");
+equal(ddata.activity, [], "current ddata publishes the Activity bucket");
+checked(!Object.hasOwn(ddata, "page"), "current ddata omits historical frame metadata");
+
+const ddataFrameAt = Date.now() - 10 * 60_000;
+const ddataFrameResponse = await request(`/api/v2/ddata/at/${ddataFrameAt}`);
+checked(ddataFrameResponse.status === 200, "historical v2 ddata frame status");
+const ddataFrame = await ddataFrameResponse.json();
+equal(ddataFrame.activity, [], "historical ddata publishes the Activity bucket");
+equal(
+  ddataFrame.page,
+  { frame: true, after: ddataFrameAt },
+  "historical ddata exposes locked frame metadata",
+);
 
 const propertiesResponse = await request("/api/v2/properties/dbsize");
 checked(propertiesResponse.status === 200, "dbsize property status");

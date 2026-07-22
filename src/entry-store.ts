@@ -3540,10 +3540,74 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
   async getDdataSnapshotJson(at: number, frame: boolean): Promise<string> {
     if (!Number.isFinite(at)) throw new Error("invalid ddata frame time");
-    return JSON.stringify({
+    const timestamp = Math.trunc(at);
+    const snapshot = this.realtimeSnapshot(timestamp, frame);
+    const result: RealtimeSnapshot & {
+      activity: RealtimeDocument[];
+      lastUpdated: number;
+      page?: { frame: true; after: number };
+    } = {
+      ...snapshot,
+      activity: [],
       lastUpdated: at,
-      ...this.realtimeSnapshot(Math.trunc(at), frame),
-    });
+      ...(frame ? { page: { frame: true, after: at } } : {}),
+    };
+
+    // Locked dataloader.loadActivity() projects only these four fields, sorts
+    // oldest-first, keeps two days, caps explicit historical frames at `at`,
+    // and de-duplicates equal instants. Activity is part of ddata.clone(), but
+    // deliberately not part of dataWithRecentStatuses() used by the root
+    // Socket.IO authorization snapshot.
+    let budget: RealtimeJsonBudget;
+    try {
+      budget = new RealtimeJsonBudget(
+        result,
+        snapshot.devicestatus.length + snapshot.sgvs.length + snapshot.cals.length +
+          snapshot.profiles.length + snapshot.mbgs.length + snapshot.food.length +
+          snapshot.treatments.length,
+      );
+    } catch {
+      // The ordinary snapshot already consumed the platform payload budget.
+      // Preserve the glucose-first truncation policy and return an empty
+      // lower-priority Activity bucket instead of failing the whole request.
+      return JSON.stringify(result);
+    }
+
+    const upperClause = frame ? "AND sort_time <= ?" : "";
+    const bindings: SqlStorageValue[] = frame
+      ? [timestamp - REALTIME_ENTRY_WINDOW_MS, timestamp]
+      : [timestamp - REALTIME_ENTRY_WINDOW_MS];
+    const seenMills = new Set<number>();
+    for (const row of this.ctx.storage.sql.exec<DbDocument>(
+      `SELECT id, body, sort_time
+       FROM documents
+       WHERE collection = 'activity'
+         AND sort_time >= ?
+         ${upperClause}
+       ORDER BY sort_time ASC, id ASC`,
+      ...bindings,
+    )) {
+      if (!realtimeStoredBodyAllowed(row.body)) break;
+      let document: RealtimeDocument;
+      try {
+        document = toDocument(row);
+      } catch {
+        break;
+      }
+      if (typeof document.created_at !== "string") continue;
+      const mills = Date.parse(document.created_at);
+      if (!Number.isFinite(mills) || seenMills.has(mills)) continue;
+      const activity: RealtimeDocument = {
+        mills: new Date(mills).toISOString(),
+        heartrate: document.heartrate,
+        steps: document.steps,
+        activitylevel: document.activitylevel,
+      };
+      if (!budget.reserveArrayItem(activity, result.activity.length)) break;
+      seenMills.add(mills);
+      result.activity.push(activity);
+    }
+    return JSON.stringify(result);
   }
 
   async getPluginPropertyContextJson(at: number): Promise<string> {
