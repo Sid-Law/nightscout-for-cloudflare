@@ -233,7 +233,8 @@ export function migrateRealtimeSessions(storage: DurableObjectStorage): void {
       poll_token TEXT,
       poll_deadline INTEGER,
       post_token TEXT,
-      post_deadline INTEGER
+      post_deadline INTEGER,
+      jsonp_index TEXT
     );
     CREATE INDEX IF NOT EXISTS realtime_sessions_expiry
       ON realtime_sessions(expires_at, sid);
@@ -389,6 +390,24 @@ export function migrateRealtimeProtocolsV19(storage: DurableObjectStorage): void
     CREATE INDEX realtime_sessions_expiry
       ON realtime_sessions(expires_at, sid);
   `);
+}
+
+/**
+ * Engine.IO chooses its polling implementation when the SID is created. A
+ * JSONP SID therefore keeps the sanitized callback index even when later
+ * requests omit or change the `j` query. The Node server kept that choice in
+ * the transport instance; v21 persists it beside the durable polling session.
+ */
+export function migrateRealtimeJsonpV21(storage: DurableObjectStorage): void {
+  const columns = new Set(
+    storage.sql
+      .exec<TableInfoRow>("PRAGMA table_info(realtime_sessions)")
+      .toArray()
+      .map((row) => row.name),
+  );
+  if (!columns.has("jsonp_index")) {
+    storage.sql.exec("ALTER TABLE realtime_sessions ADD COLUMN jsonp_index TEXT");
+  }
 }
 
 interface TableInfoRow {
@@ -563,6 +582,7 @@ export class SqliteRealtimeSessionRepository {
     now: number,
     transport: RealtimeTransport = REALTIME_TRANSPORT,
     engineProtocol: RealtimeEngineProtocol = REALTIME_ENGINE_PROTOCOL,
+    jsonpIndex: string | null = null,
   ): RealtimeSession {
     const count = this.storage.sql
       .exec<CountRow>("SELECT COUNT(*) AS count FROM realtime_sessions")
@@ -582,21 +602,58 @@ export class SqliteRealtimeSessionRepository {
     const nextPingAt = engineProtocol === 4
       ? now + REALTIME_PING_INTERVAL_MS
       : expiresAt;
-    this.storage.sql.exec(
-      `INSERT INTO realtime_sessions (
-         sid, socket_sid, engine_protocol, transport, created_at, last_seen_at,
-         next_ping_at, expires_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      sid,
-      socketSid,
-      engineProtocol,
-      transport,
-      now,
-      now,
-      nextPingAt,
-      expiresAt,
-    );
+    if (jsonpIndex === null) {
+      this.storage.sql.exec(
+        `INSERT INTO realtime_sessions (
+           sid, socket_sid, engine_protocol, transport, created_at, last_seen_at,
+           next_ping_at, expires_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        sid,
+        socketSid,
+        engineProtocol,
+        transport,
+        now,
+        now,
+        nextPingAt,
+        expiresAt,
+      );
+    } else {
+      if (transport !== REALTIME_TRANSPORT) {
+        throw new RealtimeRepositoryError(
+          "unknown_sid",
+          "JSONP is available only for polling sessions",
+        );
+      }
+      this.storage.sql.exec(
+        `INSERT INTO realtime_sessions (
+           sid, socket_sid, engine_protocol, transport, created_at, last_seen_at,
+           next_ping_at, expires_at, jsonp_index
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sid,
+        socketSid,
+        engineProtocol,
+        transport,
+        now,
+        now,
+        nextPingAt,
+        expiresAt,
+        jsonpIndex,
+      );
+    }
     return this.requireSession(sid);
+  }
+
+  jsonpIndex(sid: string): string | null {
+    const row = this.storage.sql
+      .exec<{ jsonp_index: string | null }>(
+        "SELECT jsonp_index FROM realtime_sessions WHERE sid = ? LIMIT 1",
+        sid,
+      )
+      .toArray()[0];
+    if (row === undefined) {
+      throw new RealtimeRepositoryError("unknown_sid", "Engine.IO session is unknown");
+    }
+    return row.jsonp_index;
   }
 
   getSession(sid: string): RealtimeSession | null {

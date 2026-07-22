@@ -47,6 +47,46 @@ function postOk(): Response {
   });
 }
 
+const JSONP_DOUBLE_ESCAPED_NEWLINE = /\\\\n/g;
+const JSONP_ESCAPED_NEWLINE = /(\\)?\\n/g;
+
+function initialJsonpIndex(url: URL): string | null {
+  const values = url.searchParams.getAll("j");
+  // Node's querystring parser produces an array for repeated keys. Engine.IO
+  // selects JSONP only when the initial `j` value is a string.
+  if (values.length !== 1) return null;
+  return values[0]!.replace(/[^0-9]/g, "");
+}
+
+/** Locked polling-jsonp.js response envelope, including JavaScript separators. */
+export function encodeJsonpPollingPayload(payload: string, index: string): string {
+  const encoded = JSON.stringify(payload)
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return `___eio[${index}](${encoded});`;
+}
+
+/** Locked polling-jsonp.js `d=` form extraction and browser newline repair. */
+export function decodeJsonpPollingPost(body: string): string | null {
+  const values = new URLSearchParams(body).getAll("d");
+  if (values.length !== 1) return null;
+  return values[0]!
+    .replace(JSONP_ESCAPED_NEWLINE, (match, slash: string | undefined) =>
+      slash ? match : "\n"
+    )
+    .replace(JSONP_DOUBLE_ESCAPED_NEWLINE, "\\n");
+}
+
+function pollingPayloadResponse(payload: string, jsonpIndex: string | null): Response {
+  return new Response(
+    jsonpIndex === null ? payload : encodeJsonpPollingPayload(payload, jsonpIndex),
+    {
+      status: 200,
+      headers: pollingHeaders("text/plain; charset=UTF-8"),
+    },
+  );
+}
+
 function rpcFailure(error: RealtimeRpcError): Response {
   if (error.code === "overlap") return empty(500);
   if (error.code === "unknown_sid" || error.code === "invalid_post_lease") {
@@ -128,7 +168,8 @@ export async function handleSocketIo(
 /**
  * Engine.IO 3/4 HTTP long-polling adapter for the tenant EntryStore Durable
  * Object. Both supported protocols advertise the separately routed WebSocket
- * upgrade. JSONP polling and binary polling remain outside this slice.
+ * upgrade. XHR and JSONP share the same durable packet/session state; binary
+ * polling remains outside this slice.
  */
 export async function handleSocketIoPolling(
   request: Request,
@@ -143,27 +184,20 @@ export async function handleSocketIoPolling(
   const rawEngineProtocol = url.searchParams.get("EIO");
   if (rawEngineProtocol !== "3" && rawEngineProtocol !== "4") return engineError(5);
   const engineProtocol: RealtimeEngineProtocol = rawEngineProtocol === "3" ? 3 : 4;
-  if (url.searchParams.has("j")) return engineError(3);
-
   const rawSid = url.searchParams.get("sid");
   const sid = rawSid === null || rawSid === "" ? null : rawSid;
   if (sid === null) {
     if (request.method !== "GET") return engineError(2);
-    const opened = await store.realtimeHandshake(engineProtocol);
+    const jsonpIndex = initialJsonpIndex(url);
+    const opened = await store.realtimeHandshake(engineProtocol, jsonpIndex);
     if (!opened.ok) return rpcFailure(opened.error);
-    return new Response(opened.value.payload, {
-      status: 200,
-      headers: pollingHeaders("text/plain; charset=UTF-8"),
-    });
+    return pollingPayloadResponse(opened.value.payload, jsonpIndex);
   }
 
   if (request.method === "GET") {
-    const polled = await store.realtimePoll(sid, engineProtocol);
+    const polled = await store.realtimePollEnvelope(sid, engineProtocol);
     if (!polled.ok) return rpcFailure(polled.error);
-    return new Response(polled.value, {
-      status: 200,
-      headers: pollingHeaders("text/plain; charset=UTF-8"),
-    });
+    return pollingPayloadResponse(polled.value.payload, polled.value.jsonpIndex);
   }
   if (request.method !== "POST") {
     const validated = await store.realtimeValidateSession(sid, engineProtocol);
@@ -171,10 +205,10 @@ export async function handleSocketIoPolling(
     return empty(500);
   }
 
-  const lease = await store.realtimeBeginPost(sid, engineProtocol);
+  const lease = await store.realtimeBeginPostEnvelope(sid, engineProtocol);
   if (!lease.ok) return rpcFailure(lease.error);
   if (!pollingPostContentType(request)) {
-    const rejected = await store.realtimeRejectPost(sid, lease.value);
+    const rejected = await store.realtimeRejectPost(sid, lease.value.token);
     if (!rejected.ok) return rpcFailure(rejected.error);
     return engineError(3);
   }
@@ -183,18 +217,27 @@ export async function handleSocketIoPolling(
   try {
     payload = await readPollingBody(request);
   } catch (error) {
-    await store.realtimeAbortPost(sid, lease.value);
+    await store.realtimeAbortPost(sid, lease.value.token);
     if (error instanceof RangeError) return empty(413);
     throw error;
   }
   if (payload === null) {
-    await store.realtimeAbortPost(sid, lease.value);
+    await store.realtimeAbortPost(sid, lease.value.token);
     return engineError(3);
+  }
+
+  if (lease.value.jsonpIndex !== null) {
+    const decoded = decodeJsonpPollingPost(payload);
+    if (decoded === null) {
+      await store.realtimeAbortPost(sid, lease.value.token);
+      return postOk();
+    }
+    payload = decoded;
   }
 
   const submitted = await store.realtimeSubmitPost(
     sid,
-    lease.value,
+    lease.value.token,
     payload,
     engineProtocol,
   );

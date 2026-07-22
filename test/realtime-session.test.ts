@@ -15,6 +15,7 @@ import {
 } from "../src/protocol";
 import {
   migrateRealtimeSessions,
+  migrateRealtimeJsonpV21,
   migrateRealtimeProtocolsV19,
   migrateRealtimeWriteAuthorityV12,
   SqliteRealtimeSessionRepository,
@@ -611,6 +612,57 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       });
       expect(repository.createSession(2_000, "polling", 3).engineProtocol).toBe(3);
       expect(() => migrateRealtimeProtocolsV19(state.storage)).not.toThrow();
+    });
+  });
+
+  it("adds the v21 JSONP callback column without changing a live v20 session", async () => {
+    const stub = store("realtime-jsonp-migration");
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(`
+        DROP INDEX IF EXISTS realtime_sessions_expiry;
+        DROP TABLE realtime_sessions;
+        CREATE TABLE realtime_sessions (
+          sid TEXT PRIMARY KEY,
+          socket_sid TEXT NOT NULL UNIQUE,
+          engine_protocol INTEGER NOT NULL CHECK (engine_protocol IN (3, 4)),
+          transport TEXT NOT NULL CHECK (transport IN ('polling', 'websocket')),
+          socket_connected INTEGER NOT NULL DEFAULT 0 CHECK (socket_connected IN (0, 1)),
+          authorized INTEGER NOT NULL DEFAULT 0 CHECK (authorized IN (0, 1)),
+          read_allowed INTEGER NOT NULL DEFAULT 0 CHECK (read_allowed IN (0, 1)),
+          write_allowed INTEGER NOT NULL DEFAULT 0 CHECK (write_allowed IN (0, 1)),
+          treatment_write_allowed INTEGER NOT NULL DEFAULT 0
+            CHECK (treatment_write_allowed IN (0, 1)),
+          created_at INTEGER NOT NULL,
+          last_seen_at INTEGER NOT NULL,
+          next_ping_at INTEGER NOT NULL,
+          pong_deadline INTEGER,
+          expires_at INTEGER NOT NULL,
+          next_sequence INTEGER NOT NULL DEFAULT 1,
+          outbound_packets INTEGER NOT NULL DEFAULT 0,
+          outbound_bytes INTEGER NOT NULL DEFAULT 0,
+          poll_token TEXT,
+          poll_deadline INTEGER,
+          post_token TEXT,
+          post_deadline INTEGER
+        );
+        CREATE INDEX realtime_sessions_expiry ON realtime_sessions(expires_at, sid);
+        INSERT INTO realtime_sessions (
+          sid, socket_sid, engine_protocol, transport, created_at, last_seen_at,
+          next_ping_at, expires_at
+        ) VALUES ('v20-live', 'v20-socket', 4, 'polling', 1000, 1000, 26000, 46000);
+      `);
+
+      migrateRealtimeJsonpV21(state.storage);
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      expect(repository.requireSession("v20-live")).toMatchObject({
+        sid: "v20-live",
+        engineProtocol: 4,
+        transport: "polling",
+      });
+      expect(repository.jsonpIndex("v20-live")).toBeNull();
+      const jsonp = repository.createSession(2_000, "polling", 4, "007");
+      expect(repository.jsonpIndex(jsonp.sid)).toBe("007");
+      expect(() => migrateRealtimeJsonpV21(state.storage)).not.toThrow();
     });
   });
 

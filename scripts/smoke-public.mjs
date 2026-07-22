@@ -45,6 +45,20 @@ async function request(path, init = {}, scoped = true) {
   return response;
 }
 
+async function isolatedRequest(path, isolatedTenant, init = {}) {
+  const url = new URL(path, `${origin}/`);
+  url.searchParams.set("tenant", isolatedTenant);
+  const response = await fetch(url, init);
+  checked(response.headers.get("Access-Control-Allow-Origin") === "*", `${path} CORS`);
+  return response;
+}
+
+function unwrapJsonp(body, index) {
+  const head = `___eio[${index}](`;
+  checked(body.startsWith(head) && body.endsWith(");"), `JSONP callback ${index}`);
+  return JSON.parse(body.slice(head.length, -2));
+}
+
 class WebSocketInbox {
   constructor(socket) {
     this.messages = [];
@@ -352,6 +366,88 @@ const loopPushV1 = await request("/api/v1/notifications/loop", {
 });
 checked(loopPushV1.status === 404, "Loop remote notification remains v2-only");
 
+const jsonp4Tenant = `${tenant}-jsonp4`;
+const jsonp4OpenResponse = await isolatedRequest(
+  "/socket.io/?EIO=4&transport=polling&j=x1y2",
+  jsonp4Tenant,
+);
+checked(jsonp4OpenResponse.status === 200, "EIO4 JSONP handshake status");
+const jsonp4Open = unwrapJsonp(await jsonp4OpenResponse.text(), "12");
+checked(jsonp4Open.startsWith("0"), "EIO4 JSONP open packet");
+const jsonp4 = JSON.parse(jsonp4Open.slice(1));
+checked(/^[A-Za-z0-9_-]{20}$/.test(jsonp4.sid), "EIO4 JSONP SID");
+equal(jsonp4.upgrades, ["websocket"], "EIO4 JSONP advertises WebSocket");
+const jsonp4Post = await isolatedRequest(
+  `/socket.io/?EIO=4&transport=polling&sid=${encodeURIComponent(jsonp4.sid)}&j=999`,
+  jsonp4Tenant,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "d=40",
+  },
+);
+checked(jsonp4Post.status === 200 && await jsonp4Post.text() === "ok", "EIO4 JSONP form POST");
+const jsonp4RootResponse = await isolatedRequest(
+  `/socket.io/?EIO=4&transport=polling&sid=${encodeURIComponent(jsonp4.sid)}`,
+  jsonp4Tenant,
+);
+const jsonp4Root = unwrapJsonp(await jsonp4RootResponse.text(), "12");
+checked(jsonp4Root.startsWith('40{"sid":"'), "EIO4 JSONP persisted callback/root");
+checked(jsonp4Root.includes('42["clients",1]'), "EIO4 JSONP clients event");
+await isolatedRequest(
+  `/socket.io/?EIO=4&transport=polling&sid=${encodeURIComponent(jsonp4.sid)}`,
+  jsonp4Tenant,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "d=1",
+  },
+);
+
+const jsonp3Tenant = `${tenant}-jsonp3`;
+const jsonp3OpenResponse = await isolatedRequest(
+  "/socket.io/?EIO=3&transport=polling&j=7",
+  jsonp3Tenant,
+);
+checked(jsonp3OpenResponse.status === 200, "EIO3 JSONP handshake status");
+const jsonp3Open = decodeEio3Polling(unwrapJsonp(await jsonp3OpenResponse.text(), "7"));
+checked(jsonp3Open.length === 1 && jsonp3Open[0]?.startsWith("0"), "EIO3 JSONP open packet");
+const jsonp3 = JSON.parse(jsonp3Open[0].slice(1));
+checked(/^[A-Za-z0-9_-]{20}$/.test(jsonp3.sid), "EIO3 JSONP SID");
+const jsonp3RootResponse = await isolatedRequest(
+  `/socket.io/?EIO=3&transport=polling&sid=${encodeURIComponent(jsonp3.sid)}&j=321`,
+  jsonp3Tenant,
+);
+equal(
+  decodeEio3Polling(unwrapJsonp(await jsonp3RootResponse.text(), "7")),
+  ["40", '42["clients",1]'],
+  "EIO3 JSONP persisted callback/root",
+);
+const jsonp3Ping = await isolatedRequest(
+  `/socket.io/?EIO=3&transport=polling&sid=${encodeURIComponent(jsonp3.sid)}`,
+  jsonp3Tenant,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "d=1%3A2",
+  },
+);
+checked(jsonp3Ping.status === 200 && await jsonp3Ping.text() === "ok", "EIO3 JSONP ping POST");
+const jsonp3Pong = await isolatedRequest(
+  `/socket.io/?EIO=3&transport=polling&sid=${encodeURIComponent(jsonp3.sid)}`,
+  jsonp3Tenant,
+);
+equal(unwrapJsonp(await jsonp3Pong.text(), "7"), "1:3", "EIO3 JSONP pong poll");
+await isolatedRequest(
+  `/socket.io/?EIO=3&transport=polling&sid=${encodeURIComponent(jsonp3.sid)}`,
+  jsonp3Tenant,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "d=1%3A1",
+  },
+);
+
 const eioResponse = await request("/socket.io/?EIO=4&transport=polling");
 checked(eioResponse.status === 200, "EIO4 handshake status");
 const eioText = await eioResponse.text();
@@ -468,5 +564,9 @@ process.stdout.write(`${JSON.stringify({
     upgrades: eio3.upgrades,
     pingInterval: eio3.pingInterval,
     pingTimeout: eio3.pingTimeout,
+  },
+  jsonp: {
+    eio4Callback: "12",
+    eio3Callback: "7",
   },
 })}\n`);

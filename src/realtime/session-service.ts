@@ -63,6 +63,16 @@ export interface RealtimeAuthorization {
   write_treatment: boolean;
 }
 
+export interface RealtimePollingEnvelope {
+  payload: string;
+  jsonpIndex: string | null;
+}
+
+export interface RealtimePostLease {
+  token: string;
+  jsonpIndex: string | null;
+}
+
 export type RealtimeRootWriteCollection =
   | "activity"
   | "devicestatus"
@@ -426,12 +436,18 @@ export class RealtimeSessionService {
 
   createHandshake(
     engineProtocol: RealtimeEngineProtocol = 4,
+    jsonpIndex: string | null = null,
   ): { sid: string; payload: string } {
     const now = this.now();
     this.cleanup(now);
     let session: RealtimeSession;
     try {
-      session = this.repository.createSession(now, REALTIME_TRANSPORT, engineProtocol);
+      session = this.repository.createSession(
+        now,
+        REALTIME_TRANSPORT,
+        engineProtocol,
+        jsonpIndex,
+      );
     } catch (error) {
       throw this.translateRepositoryError(error);
     }
@@ -639,6 +655,17 @@ export class RealtimeSessionService {
       throw new RealtimeSessionError("overlap", "concurrent polling POST closed the session");
     }
     return token;
+  }
+
+  beginPostEnvelope(
+    sid: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): RealtimePostLease {
+    const token = this.beginPost(sid, engineProtocol);
+    return {
+      token,
+      jsonpIndex: this.repository.jsonpIndex(sid),
+    };
   }
 
   abortPost(sid: string, token: string): void {
@@ -1019,6 +1046,17 @@ export class RealtimeSessionService {
       this.repository.updateSession(session);
       return payload;
     });
+  }
+
+  async pollEnvelope(
+    sid: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): Promise<RealtimePollingEnvelope> {
+    const payload = await this.poll(sid, engineProtocol);
+    return {
+      payload,
+      jsonpIndex: this.repository.jsonpIndex(sid),
+    };
   }
 
   nextDeadline(): number | null {

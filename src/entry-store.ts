@@ -60,6 +60,7 @@ import {
   migrateRealtimeTransportsV7,
   migrateRealtimeNotificationStateV13,
   migrateRealtimeProtocolsV19,
+  migrateRealtimeJsonpV21,
   migrateRealtimeWriteAuthorityV12,
 } from "./realtime/session-repository";
 import {
@@ -842,6 +843,14 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       `);
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (20)",
+      );
+
+      // Engine.IO fixes the XHR-versus-JSONP polling implementation at the
+      // initial handshake. Persist the sanitized callback index so a JSONP
+      // SID retains its response envelope across Durable Object eviction.
+      migrateRealtimeJsonpV21(this.ctx.storage);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (21)",
       );
 
       // This named, idempotent auth state is intentionally independent of the
@@ -3525,9 +3534,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
   realtimeHandshake(
     engineProtocol: RealtimeEngineProtocol = 4,
+    jsonpIndex: string | null = null,
   ): Promise<RealtimeRpcResult<{ sid: string; payload: string }>> {
     return this.realtimeScheduledResult(() =>
-      this.realtime.createHandshake(engineProtocol)
+      this.realtime.createHandshake(engineProtocol, jsonpIndex)
     );
   }
 
@@ -3547,6 +3557,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): Promise<RealtimeRpcResult<string>> {
     return this.realtimeScheduledResult(() =>
       this.realtime.beginPost(sid, engineProtocol)
+    );
+  }
+
+  realtimeBeginPostEnvelope(
+    sid: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): Promise<RealtimeRpcResult<{ token: string; jsonpIndex: string | null }>> {
+    return this.realtimeScheduledResult(() =>
+      this.realtime.beginPostEnvelope(sid, engineProtocol)
     );
   }
 
@@ -3582,6 +3601,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): Promise<RealtimeRpcResult<string>> {
     return this.realtimeScheduledResult(() =>
       this.realtime.poll(sid, engineProtocol)
+    );
+  }
+
+  realtimePollEnvelope(
+    sid: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): Promise<RealtimeRpcResult<{ payload: string; jsonpIndex: string | null }>> {
+    return this.realtimeScheduledResult(() =>
+      this.realtime.pollEnvelope(sid, engineProtocol)
     );
   }
 
