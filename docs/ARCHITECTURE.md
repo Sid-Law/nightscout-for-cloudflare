@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `86dd941` and
-Cloudflare version `117d0d35-e696-41b5-a12f-06a7e0e274c4`. The
-candidate's 70-file Workers-runtime suite passes 782/782 plus 23/23 audit tests,
+“Current” below describes deployed evidence candidate `329aaca` and
+Cloudflare version `1f7badbb-cdab-4031-8f55-f350c5277ae2`. The
+candidate's 71-file Workers-runtime suite passes 785/785 plus 23/23 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1288.03 KiB
-raw / 236.93 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Project release 93 reported a 29 ms startup and passed the
-139-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1289.67 KiB
+raw / 237.03 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Project release 94 reported a 24 ms startup and passed the
+150-assertion credential-free API, real EIO3/EIO4 direct-or-upgraded WSS, Pebble and
 real-browser gates. The authenticated Profile save/reload/restore and its
 live-page `dataUpdate`/`retroUpdate` observation are current release evidence;
 the broader Food/Admin/Reports acceptance remains version-80 evidence.
@@ -108,10 +108,10 @@ realtime snapshot both apply the official treatment-marker curve placement. It r
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 70 Workers files / 782 tests, 23/23 audits, eleven direct upstream
+evidence is 71 Workers files / 785 tests, 23/23 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1288.03 KiB raw / 236.93 KiB gzip with 250 assets and two bindings.
-Remote API/EIO4-upgrade/EIO3-polling and real-browser gates passed against the same active version.
+dry run is 1289.67 KiB raw / 237.03 KiB gzip with 250 assets and two bindings.
+Remote API/EIO3-and-EIO4-WebSocket and real-browser gates passed against the same active version.
 
 ## Current request and data flow
 
@@ -120,7 +120,7 @@ Official Nightscout v15.0.7 pages and browser bundle / compatible uploader
         |
         | static HTML/CSS/JS and v1/v2 page API
         | official Socket.IO 4.5.4 over EIO4 polling; compatible EIO3 polling;
-        | EIO4 direct-WebSocket or standard polling-upgrade clients
+        | EIO3/EIO4 direct-WebSocket or standard polling-upgrade clients
         v
 Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
@@ -135,8 +135,8 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
     Entries/plugin context
   - inherited v1/v2 notification ACK authorization and HTTP adaptation
   - byte-identical official Socket.IO browser client plus optional test-tenant query adapter
-  - strict `/socket.io/` EIO4 polling, direct-WebSocket and polling-upgrade adapters
-  - SIO5 root plus API3 `/storage` and `/alarm` namespace protocol adaptation
+  - strict `/socket.io/` EIO3/EIO4 polling, direct-WebSocket and polling-upgrade adapters
+  - SIO4/SIO5 root plus API3 `/storage` and `/alarm` namespace protocol adaptation
         |
         | ENTRY_STORE.getByName(tenant), typed RPC
         v
@@ -151,7 +151,7 @@ Embedded SQLite
   - food, profile, treatments, devicestatus, activity, roles and subjects
   - per-collection sort and lookup indexes
   - tenant-local JWT signing material
-  - persisted EIO4 sessions and bounded outbound packet queues
+  - persisted EIO3/EIO4 sessions and bounded outbound packet queues
   - persisted root `dataUpdate` baseline for server-originated deltas
   - persisted `/storage` namespace connections and collection subscriptions
   - persisted `/alarm` connections, shared HTTP/Socket ACK authority and snoozes
@@ -385,8 +385,8 @@ When those plugins are disabled, IOB/COB/BWP remain JSON `null`, matching the
 locked mapper. Remaining plugin-derived/persisted state is intentionally not
 synthesized.
 
-Exact `/socket.io` and `/socket.io/` requests reach real tenant-local EIO4
-polling/direct-WebSocket and EIO3 polling endpoints. EIO4 polling implements
+Exact `/socket.io` and `/socket.io/` requests reach real tenant-local EIO3 and
+EIO4 polling/direct-WebSocket endpoints. EIO4 polling implements
 the official open shape with `upgrades:["websocket"]`, 25-second server ping / 20-second
 client-pong heartbeat, RS payload framing, SIO5 root CONNECT, `clients`, permission-derived
 `authorize`, initial and subsequent server-originated `dataUpdate`, and
@@ -401,14 +401,14 @@ eviction therefore does not lose protocol authority or queued packets. This
 is the endpoint loaded by the official homepage; local and remote tests use the
 same upstream Socket.IO client and a clean browser verifies the root and
 `/alarm` workflows.
-Direct WebSocket opens with `EIO=4&transport=websocket`, is accepted by the DO
-through WebSocket Hibernation, and restores its tenant/SID authority from a
-validated attachment plus SQLite state after eviction. A live EIO4 polling SID
-can also open a candidate WebSocket, complete the upstream probe/noop/upgrade
-sequence and atomically replace its persisted transport. Candidate phase and
-deadline live in a validated attachment plus SQLite closure row; abort, bad
-frames, duplicate admission and the ten-second alarm timeout preserve the
-original polling session. EIO3 continues to advertise no upgrade.
+Direct WebSocket opens with either `EIO=3` or `EIO=4`, is accepted by the DO
+through WebSocket Hibernation, and restores its tenant/SID/protocol authority
+from a validated attachment plus SQLite state after eviction. A live polling
+SID of either protocol can also open a candidate WebSocket, complete its locked
+probe/noop/upgrade sequence and atomically replace the persisted transport.
+Candidate phase and deadline live in a validated attachment plus SQLite closure
+row; abort, bad frames, cross-protocol admission, duplicate admission and the
+ten-second alarm timeout preserve the original polling session.
 
 `src/realtime/calcdelta.ts` ports the locked `lib/data/calcdelta.js` comparison
 semantics without keeping Node process state. Schema v11 stores one complete
@@ -1080,7 +1080,7 @@ The byte-identical official Socket.IO 4.5.4 client supplies browser-side
 `connect`, `authorize`, `subscribe`, `loadRetro` and `dataUpdate` events through
 the real server endpoint. Locked `lib/client/index.js` explicitly requests the
 polling transport; `platform/socket-tenant-adapter.js` adds only the optional
-lab-tenant query. The endpoint implements strict EIO4 HTTP polling, direct
+lab-tenant query. The endpoint implements strict EIO3/EIO4 HTTP polling, direct
 Hibernatable WebSocket and standard polling-to-WebSocket upgrade with persisted session/queue state, root
 namespace CONNECT, read/write/treatment-write authorization ACKs, initial/retro data and
 connection-count broadcasts. It also implements the API v3 `/storage`
@@ -1090,10 +1090,9 @@ and trusted live notification outlet.
 
 The current server boundary is explicit:
 
-- EIO4 polling/direct WebSocket/polling upgrade and EIO3 HTTP polling; EIO3
-  direct WebSocket/upgrade, JSONP and binary packets are rejected. EIO4 polling
-  advertises `upgrades:["websocket"]`; EIO3 advertises `upgrades: []`;
-  an exact
+- EIO3/EIO4 polling, direct WebSocket and polling upgrade; both polling
+  handshakes advertise `upgrades:["websocket"]`. JSONP and binary packets are
+  rejected; an exact
   `application/octet-stream` POST closes its leased SID and receives a
   controlled 400/code-3 response;
 - 256 sessions per tenant, 128 queued packets and a 1,000,000-byte whole
@@ -1169,8 +1168,8 @@ against the persisted root baseline and attach a fresh status after eviction.
 `loadRetro` require exactly one object payload; this is a resource/safety
 tightening over permissive upstream JavaScript call shapes.
 
-Polling, direct Hibernatable WebSocket and EIO4 polling upgrade are live in
-Cloudflare version `117d0d35-e696-41b5-a12f-06a7e0e274c4`. Current
+EIO3/EIO4 polling, direct Hibernatable WebSocket and polling upgrade are live in
+Cloudflare version `1f7badbb-cdab-4031-8f55-f350c5277ae2`. Current
 credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, exact Food
 helper reads and invalid Food/Profile route rejection, matching
@@ -1214,12 +1213,20 @@ count while hiding the body, and the real browser retained the official Admin,
 clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official
 homepage uses the EIO4 polling server because its locked source requests
-polling; the independently tested EIO4 upgrade now serves standard external
-clients. EIO3 WebSocket/upgrade remains a separate gate; the protected Profile
+polling; independently tested EIO3 and EIO4 WebSocket paths serve compatible
+external clients. The protected Profile
 save/pushed-page path passed in project release 93. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
+
+Project release 94 completes EIO3 direct WebSocket and polling upgrade without
+changing the official page transport. The locked Socket.IO 4.5.4
+`allowEIO3` server supplied the direct-open and probe/noop/upgrade byte oracle;
+persisted EIO3 protocol authority, SIO4 namespace state and client-ping/server-
+pong behavior survive DO eviction. The 150-assertion public smoke exercised
+real EIO3 direct WSS plus both protocol upgrades after Cloudflare propagation.
+JSONP/binary and the direct-send dequeue/send crash window remain explicit.
 
 Project release 93 keeps the same Worker runtime contract and adds a
 clean-source build/deployment boundary. Root `npm run build` installs the
@@ -1338,7 +1345,7 @@ urgent threshold-plus-one-millisecond deadlines, source expiry, future status
 activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
 The remaining transport work is non-Profile-Switch, non-Treatment preprocessing,
-EIO3 WebSocket/upgrade and the direct-send replay/acknowledgement boundary.
+Engine.IO JSONP/binary and the direct-send replay/acknowledgement boundary.
 Uploader Battery, BWP, CAGE/SAGE/IAGE/BAGE and DBSize are complete producers.
 
 ### Background work and server plugins
@@ -1440,7 +1447,8 @@ object as well as every out-of-scope product binding.
 - The homepage ships the locked official Socket.IO 4.5.4 client. The adjacent
   adapter only appends an optional test-tenant query and has no medical or
   display logic. EIO4 polling is the current page transport; standard EIO4
-  polling upgrade is available for external clients and EIO3 HTTP polling for
-  legacy clients, while EIO3 WebSocket/upgrade remains unimplemented.
+  polling upgrade is available for external clients and EIO3 polling/direct/
+  upgraded WebSocket is available for legacy clients. JSONP/binary remain
+  unimplemented.
 - Text asset responses are streamed rather than buffered when UTF-8 headers are
   adapted, keeping the extra Worker CPU and memory work constant.

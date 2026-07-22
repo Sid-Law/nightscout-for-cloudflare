@@ -132,19 +132,19 @@ for diagnosis, dosing, or medical decisions.
   profile, food and activity, including exact ACK/error ordering, upstream
   treatment/device/AAPS-profile dedupe behavior and ACK-before-`dataUpdate`
   delivery. Writes remain bounded to 100 documents per event.
-- A direct EIO4 WebSocket transport accepted by the same Durable Object through
-  WebSocket Hibernation. It persists protocol authority in SQLite and restores
-  tagged socket attachments after eviction. Standard EIO4 clients can also
-  upgrade an existing polling SID through the locked `2probe`/`3probe`, polling
-  noop and `5` sequence. Candidate timeout/abort state is alarm-backed and does
-  not delete the still-valid polling session.
-- The API v3 `/storage` Socket.IO namespace on those EIO4/SIO5 transports.
+- Direct EIO3 and EIO4 WebSocket transports accepted by the same Durable Object
+  through WebSocket Hibernation. Protocol authority persists in SQLite and
+  tagged socket attachments restore after eviction. Both protocol generations
+  can also upgrade an existing polling SID through the locked `2probe`/
+  `3probe`, polling noop and `5` sequence. Candidate timeout/abort state is
+  alarm-backed and does not delete the still-valid polling session.
+- The API v3 `/storage` Socket.IO namespace on those protocol-aware transports.
   Subject access-token authorization, the official six-collection default
   order, per-collection rooms, the Settings-admin exception and subscription
   state persist in SQLite. API v3 create/upsert/PUT/PATCH/soft-delete/permanent-
   delete events use the official `create`, `update` and `delete` payloads;
   changes made through v1 are deliberately not broadcast, as upstream specifies.
-- The API v3 `/alarm` Socket.IO namespace on both current EIO4 transports.
+- The API v3 `/alarm` Socket.IO namespace on the current EIO3/EIO4 transports.
   It can connect independently, preserves the locked native-access-token and
   web secret/JWT/anonymous subscription branches and ACK shapes, persists
   ACK/silence authority across Durable Object eviction, and exposes a trusted
@@ -208,13 +208,12 @@ for diagnosis, dosing, or medical decisions.
   one current reading rather than fabricating a long backlog. The generated
   rows use the official Entries schema and flow through the official root
   `dataUpdate`; no client UI, medical formula or dosing logic is added.
-- Routed official EIO4/SIO5 and legacy EIO3/SIO4 HTTP polling through the same
+- Routed official EIO4/SIO5 and legacy EIO3/SIO4 polling and WebSocket through the same
   persisted tenant transport. EIO3 keeps its client-ping/server-pong heartbeat,
   length-prefixed payloads and two-stage root CONNECT/`clients` sequence; EIO4
-  retains RS framing and server-ping/client-pong. EIO4 polling advertises and
-  completes the WebSocket upgrade; direct WebSocket remains EIO4 only. EIO3
-  continues to advertise no upgrades, and EIO3 WebSocket/upgrade, JSONP and
-  binary transports are not implemented.
+  retains RS framing and server-ping/client-pong. Both polling protocols
+  advertise and complete the upstream WebSocket upgrade, and both accept a
+  direct WebSocket open. JSONP and binary transports are not implemented.
 - Content-addressed loading for the official Socket.IO client and the small
   tenant-query adapter, so an older upstream service worker cannot keep
   serving an obsolete transport boundary after deployment.
@@ -233,7 +232,7 @@ This is not yet a drop-in Nightscout server. Important missing work includes
 the complete v1/v2 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
 Mongo query/collection parity beyond the tested safe subset, Engine.IO
-EIO3 direct WebSocket/upgrade and JSONP/binary,
+JSONP/binary,
 the direct-WebSocket at-most-once crash window, remaining non-Treatment
 dataloader/server-plugin preprocessing on root updates, remaining background-task kinds, general server plugin
 execution, remaining plugin alarm generation,
@@ -241,9 +240,8 @@ external push providers, plugin-derived v2 summary
 state/persistence, and broader plugin-specific page workflows.
 The official homepage now uses the implemented EIO4 polling endpoint and
 `/alarm` namespace and is intentionally pinned to polling by the locked
-v15.0.7 client source. The separate standard EIO4 polling-to-WebSocket upgrade
-passes local and public WSS contracts. The page does not yet prove EIO3
-WebSocket/upgrade, every pushed mutation workflow or the still-missing server-side plugin
+v15.0.7 client source. Standard EIO3 and EIO4 polling-to-WebSocket upgrades
+pass local and public WSS contracts. The page does not yet prove every pushed mutation workflow or the still-missing server-side plugin
 preprocessing pipeline.
 Entries also remains incomplete beyond its now-adapted locked test file:
 `times/echo`, `times` and dateString `slice` support only the bounded numeric-
@@ -558,11 +556,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `86dd941`. The 70-file Workers-runtime
-suite passes 782/782 tests, the audit suites pass 23/23, eleven complete
+The deployed runtime candidate is commit `329aaca`. The 71-file Workers-runtime
+suite passes 785/785 tests, the audit suites pass 23/23, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1288.03 KiB raw / 236.93 KiB gzip and exposes only
+reports 1289.67 KiB raw / 237.03 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -688,7 +686,7 @@ Its Node configuration audit rejects stored plaintext vars and prohibited
 D1/R2/KV/Queues/routes while locking the existing footprint.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
-byte parity, EIO3 WebSocket/upgrade/JSONP/binary, server-side
+byte parity, Engine.IO JSONP/binary, server-side
 summary/activity persistence and remaining non-plugin task kinds remain
 missing. The user-supplied construction credential is active and was used only
 for the named simulated SGV batch; its value is not stored or quoted in this
@@ -1041,6 +1039,22 @@ and `Admin authorized`. Immediately before this deployment, an authenticated
 Profile rename/save emitted live-page `dataUpdate` and `retroUpdate` events;
 the original name was then restored and reloaded successfully. No real health
 data or closed-loop instruction was used.
+
+Project release 94 (`1f7badbb-cdab-4031-8f55-f350c5277ae2`) deploys commit
+`329aaca` and closes the ordinary legacy EIO3 WebSocket transport gap. The
+locked Socket.IO 4.5.4 `allowEIO3` server was used as a byte-level oracle for
+both direct open and polling upgrade. EIO3 now advertises `websocket`, accepts
+the upstream probe/noop/upgrade sequence, and retains its client-ping/server-
+pong and SIO4 namespace behavior after Durable Object eviction. The complete
+local gate passed 71 Workers files / 785 tests, 23/23 audits, 42/42 unchanged
+client tests and 143/143 unchanged server/data-plugin tests; the dry bundle was
+1289.67 KiB raw / 237.03 KiB gzip. After Cloudflare propagation, a
+150-assertion public smoke passed on `public-smoke-1784713764749`, including
+real EIO3 direct WSS plus EIO3 and EIO4 polling upgrades. A clean browser then
+displayed current `113 mg/dL`, one-minute-old simulated data and the official
+chart; Admin Tools loaded seven default roles and reported `Admin authorized`.
+JSONP/binary and the direct-send crash window remain explicit gaps; no real
+device or closed-loop instruction was used.
 
 The APNs transport follows Apple's current provider-token and notification
 request specifications and Cloudflare's current Web Crypto/fetch APIs:

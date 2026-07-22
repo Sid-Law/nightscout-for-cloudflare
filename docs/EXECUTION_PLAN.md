@@ -52,7 +52,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 5. API v2 | Partial; property/notification registries and Loop remote push adapted | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary uses the complete 24-assertion `profile.test.js` adapter and receives enabled official IOB/COB/BWP/BAGE state. The complete locked `ddata`, `dataloader`, `dbsize`, `bgnow`, `direction`, `rawbg`, `upbat`, `ar2`, `basalprofileplugin`, `simplealarms`, `errorcodes`, `treatmentnotify`, `cannulaage`, `sensorage`, `insulinage`, `timeago`, `iob`, `cob`, `openaps`, `pump`, treatment-to-curve and five-case `loop` files are adapted; xDrip-js, Battery Age and Runtime State are separately locked against their upstream sources. `/properties` executes every property-producing plugin in the official server registry. Ddata publishes real SQLite bytes and applies official Treatment marker placement. Basal receives the current Profile plus bounded Temp Basal/Profile Switch/Combo Bolus treatments and meter-BG projection; BAGE uses the newest nonfuture 62-day Pump Battery Change; upbat preserves the official recent-device minimum and `UPBAT_*` thresholds. The platform reports the one-GB ceiling as 953.67 MiB. One persisted task now evaluates all sixteen official producers. The v2-only `/notifications/loop` route preserves all four official event payloads and uses Workers Web Crypto plus bounded `fetch` for APNs; local tests inject the transport, while the public lab intentionally has no Apple credentials and sends no real instruction. Summary/activity persistence, remaining non-plugin task kinds and a credentialed non-medical APNs acceptance fixture remain; ddata uses a bounded two-day SGV window. |
 | 6. API v3 | Locked 16-file test set adapted; platform hardening remains | Public `/version`, JWT-protected `/status`, all eight generic routes for each of the six official collections and six-collection `/lastModified` are implemented with locked JSON/CSV/XML rendering. All 16 locked `api3.*` files are completely represented by named Workers-runtime contracts, including create/update/patch/delete, shape handling, AAPS patterns, storage adapter/socket behavior, implicit HEAD and API CORS. Keep the hard 1,000-row Workers Free ceiling and configurable lower search/history limit explicit; finish large-response controls and broader Mongo mixed-type/nested/array differential parity. |
 | 7. Authentication/admin | Core plus Admin notices adapted; named hardening retained | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. Schema v15 persists the official readable-site and failed-auth Admin notices, message aggregation, public-count/admin-body split, eight/twelve-hour windows and disable gate across DO eviction. The deployed platform configuration preserves dashboard variables across Wrangler deploys and audits that no plaintext credential is committed; encrypted Secrets remain preferred. A user-provided construction credential successfully authorized one 25-entry simulated SGV batch without recording its value. The Workers boundary caps enforced delay at 60 seconds, bounds transient Admin notices at 128 per tenant, and handles repeated/bracket `secret` arrays safely instead of reproducing the locked upstream unhandled rejection. |
-| 8. Engine.IO/Socket.IO | Partial EIO3/EIO4 polling + EIO4 direct/upgrade WebSocket; official browser remains polling | Strict EIO4 polling, direct Hibernatable WebSocket, standard polling-to-WebSocket upgrade and legacy EIO3 HTTP polling are routed to tenant `EntryStore` DOs with persisted protocol/session/queue authority. EIO4 preserves server-ping/client-pong, RS framing and the locked probe/noop/upgrade order; abandoned candidates close through the persisted alarm without deleting polling. EIO3 preserves client-ping/server-pong, length-prefixed framing and the two-stage SIO4 root CONNECT/`clients` order. Root authorization, initial/retro data, deltas, official Treatment-to-curve preprocessing, four locked write events and API3 `/storage`/`/alarm` remain protocol-aware. The byte-identical official Socket.IO 4.5.4 browser client explicitly requests polling and uses root plus `/alarm`; external standard EIO4 clients can upgrade. Add remaining non-Treatment preprocessing, close the direct-send at-most-once crash window and add EIO3 WebSocket only if ordinary legacy clients require it; JSONP/binary remain explicit non-ordinary gaps. |
+| 8. Engine.IO/Socket.IO | Partial protocol surface; EIO3/EIO4 polling, direct WebSocket and polling upgrade deployed | EIO3 and EIO4 polling, direct Hibernatable WebSocket and standard polling-to-WebSocket upgrade are routed to tenant `EntryStore` DOs with persisted protocol/session/queue authority. EIO4 preserves server-ping/client-pong and RS framing; EIO3 preserves client-ping/server-pong, length-prefixed framing and the two-stage SIO4 root CONNECT/`clients` order. Both follow the locked probe/noop/upgrade sequence and retain protocol authority across eviction. Root authorization, initial/retro data, deltas, official Treatment-to-curve preprocessing, four locked write events and API3 `/storage`/`/alarm` remain protocol-aware. The byte-identical official Socket.IO 4.5.4 browser client explicitly requests polling and uses root plus `/alarm`; standard and legacy external clients can use WebSocket. Add remaining non-Treatment preprocessing and close the direct-send at-most-once crash window; JSONP/binary remain explicit non-ordinary gaps. |
 | 9. Real-time storage updates | Root server/client mutations, Treatment markers, Profile Switch status and API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. Initial and reconstructed snapshots run the locked Treatment marker preprocessing before payload budgeting. Initial `status:true` authorization and later zero-duration Profile Switch writes publish the locked `activeProfile`, with the comparison marker surviving DO eviction. Version 93 observed a protected Profile mutation through the already-open official page's `dataUpdate`/`retroUpdate`; complete remaining non-Treatment preprocessing. Keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
 | 10. Alarms/background tasks | Generic SQLite scheduler + complete official notification producer task | Schema v14 stores logical tasks, due times, attempts and update times in SQLite. The DO's one Cloudflare alarm is derived from the minimum of persisted realtime, authorization-cleanup, task, schema-v16 debounce and optional schema-v17 lab-CGM deadlines. One `plugin-notifications` task evaluates all sixteen official producers in server order from a bounded SGV/MBG/DeviceStatus/Profile/Treatment/SQLite-stat context; Uploader Battery preserves future activation, heartbeat and exact 30-minute expiry, while BAGE preserves its threshold, 20-minute window, heartbeat and clear deadlines. Schema v20 additionally persists xDrip-js's small last-state throttle marker so eviction cannot reset its repeat interval. The disabled-by-default lab CGM uses the same alarm, writes one current SGV per five-minute due turn and never backfills an unbounded outage. Mutations run the leading edge; rapid batches receive exactly one persisted trailing evaluation after one quiet second or at the five-second max wait. Failures persist two-second exponential retry capped at five minutes; early at-least-once delivery is a no-op. Add summary/activity persistence and future maintenance/pruning. |
 | 11. Server plugins/notifications | Complete property and notification producer registries + persisted core/Admin/push state | Stateless ports of every property-producing and notification-producing official server plugin plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. All sixteen producers are automatically evaluated by schema v14; schema v15 persists Admin notices, schema v16 persists data-update debounce and schema v20 persists xDrip-js state-notification cadence. Runtime State preserves the normal request-time `loaded` value. BAGE preserves latest nonfuture Pump Battery Change selection, day/hour display, Summary age, threshold metadata and automatic clear. Uploader Battery preserves `UPBAT_*`, recent-30-minute selection, per-device ten-minute minimum, multi-device message, future activation, heartbeat and clear. Version 81 completely maps the locked Maker, Pushover and Pushnotify files: schema v18 persists dedupe leases, receipts and Maker All Clear state, and v1/v2 expose the official receipt callback. The processor preserves priority, information/announcement handling, snooze arbitration and automatic all-clear. External Pushover/IFTTT send/cancel remains disabled until explicitly authorized and connected through a persisted outbox. |
@@ -93,7 +93,7 @@ relabeled as scope exclusions.
 
 ## Current deployed increment
 
-The deployed runtime candidate `86dd941` retains schema-v15 persisted Admin
+The deployed runtime candidate `329aaca` retains schema-v15 persisted Admin
 notifications, the complete storage-shape adapter and schema-v16 durable
 bootevent debounce while retaining the locked v1/v2 `experiments/test` permission
 probe, named API security/verifyauth/API_SECRET mappings, Query/Language
@@ -175,16 +175,27 @@ authorization and notification-ACK contracts remain green. The v2-only Loop
 remote-notification route now preserves upstream validation/payload behavior
 and replaces Node-only `@parse/node-apn` mechanics with Workers Web Crypto and
 an awaited bounded APNs fetch. Cloudflare Worker version
-`117d0d35-e696-41b5-a12f-06a7e0e274c4` is active as project release 93;
+`1f7badbb-cdab-4031-8f55-f350c5277ae2` is active as project release 94;
 Wrangler 4.113.0 did not print a numeric Cloudflare ordinal for this deployment.
-It reported a 29 ms startup and processes 250 Static Assets entries. The
-Wrangler 4.113.0 dry run reports 1288.03 KiB raw / 236.93 KiB gzip and exposes
-only `ENTRY_STORE` plus `ASSETS`. The 70-file Workers-runtime suite passes
-782/782, all four audit suites pass
+It reported a 24 ms startup and processes 250 Static Assets entries. The
+Wrangler 4.113.0 dry run reports 1289.67 KiB raw / 237.03 KiB gzip and exposes
+only `ENTRY_STORE` plus `ASSETS`. The 71-file Workers-runtime suite passes
+785/785, all four audit suites pass
 23/23, eleven official client files pass 42/42 unchanged, twenty-one locked
 server/data-plugin files pass 143/143 unchanged and TypeScript passes. The
 manifest records sixteen direct passes, 86 adapted, seven unresolved and
 two fixed-scope excluded files.
+
+Version 94 completes the locked `allowEIO3` WebSocket transport for ordinary
+legacy clients. Direct EIO3 WebSocket and polling-to-WebSocket upgrade now use
+the same Hibernatable Durable Object path as EIO4 while retaining EIO3 length-
+prefixed payloads, client-ping/server-pong and SIO4 packet forms. The upstream
+Socket.IO 4.5.4 server supplied exact direct-open and probe/noop/upgrade wire
+oracles. A 150-assertion remote smoke passed on
+`public-smoke-1784713764749`, including real EIO3 direct WSS and both EIO3/EIO4
+polling upgrades. Browser acceptance showed current `113 mg/dL`, one-minute-
+old simulated data and the official chart; Admin Tools loaded seven roles and
+`Admin authorized`. JSONP/binary and the direct-send crash boundary remain.
 
 Version 93 prepares clean-source deployment without changing the runtime
 contract. Root `npm run build` now runs the locked Nightscout install/bundle
@@ -546,14 +557,14 @@ named simulated SGV batch.
 
 The code is still not a full port: non-Entries echo, arbitrary aggregation,
 large-response CSV/XML resource adaptation, broader Mongo query/type parity,
-EIO3 direct WebSocket/upgrade/JSONP/binary, remaining non-Treatment preprocessing before
+Engine.IO JSONP/binary, remaining non-Treatment preprocessing before
 deltas, live external provider delivery,
 summary/activity persistence and nine upstream test files (seven unresolved
 plus two fixed-scope exclusions) remain incomplete.
 The homepage consumes the implemented EIO4 polling server through the official
 Socket.IO client, whose locked source explicitly requests polling. Standard
-EIO4 polling upgrade is complete and independently public-tested; EIO3
-WebSocket/upgrade remains incomplete. Version 93 closes the named protected
+EIO3 and EIO4 polling upgrades are complete and independently public-tested.
+Version 93 closes the named protected
 Profile-save push gate; additional plugin workflows remain incremental gates.
 
 The deployed polling slice is intentionally bounded to 256 sessions per tenant,
@@ -588,8 +599,8 @@ local contracts prove API3 Treatment polling delivery, unauthorized
 silence, baseline survival across service reconstruction and update
 classification. Client `dbAdd`, `dbUpdate`, `dbUpdateUnset` and `dbRemove`
 handlers now adapt the complete locked `websocket.shape-handling.test.js` file;
-remaining non-Treatment preprocessing, the direct-send replay boundary,
-and EIO3 WebSocket/upgrade remain the next realtime slices.
+remaining non-Treatment preprocessing and the direct-send replay boundary
+remain the next realtime slices.
 
 ## Ordered implementation milestones
 
@@ -646,8 +657,8 @@ Token-bearing authorization paths are redacted from adapter error logs.
 1. **Complete for the named slice:** route exact `/socket.io` and `/socket.io/`
    polling requests to the tenant DO without intercepting the static,
    byte-identical official `/socket.io/socket.io.js` client asset.
-2. **Partial:** EIO4/SIO5 polling sessions and direct Hibernatable WebSocket,
-   plus EIO3/SIO4 HTTP polling,
+2. **Partial:** EIO4/SIO5 and EIO3/SIO4 polling sessions, direct Hibernatable
+   WebSocket and polling-to-WebSocket upgrade,
    server-ping/client-pong, persisted queues, root CONNECT and a SQL-derived DO
    alarm for ping/pong/session/lease/closure deadlines are implemented. API3
    `/storage` CONNECT, access-token room authorization and live mutation events
@@ -656,13 +667,11 @@ Token-bearing authorization paths are redacted from adapter error logs.
    notification outlet are also implemented on both current transports;
    inherited v1/v2 HTTP ACK commits through the same SQLite core.
    EIO3 uses its locked client-ping/server-pong and two-stage root-connect wire
-   sequence. EIO4 polling advertises and completes the locked WebSocket upgrade;
-   EIO3 continues to advertise `upgrades: []`, and EIO3 WebSocket/upgrade,
-   JSONP and binary remain rejected.
-3. **Complete for EIO4:** direct WebSocket open and polling-to-WebSocket upgrade
-   are implemented and tested across DO eviction, candidate abort, duplicate
-   admission and alarm-driven timeout. Add EIO3 direct WebSocket only if the
-   ordinary-client compatibility matrix demonstrates a real need.
+   sequence. Both protocols advertise and complete the locked WebSocket
+   upgrade; JSONP and binary remain rejected.
+3. **Complete for EIO3 and EIO4:** direct WebSocket open and polling-to-
+   WebSocket upgrade are implemented and tested across DO eviction, candidate
+   abort, duplicate admission and alarm-driven timeout.
 4. **Complete for the named `/storage` and `/alarm` transport slices:** preserve
    the tested persisted namespace/room/subscription behavior, exact alarm ACKs,
    live-only delivery and tenant isolation. All sixteen official automatic
@@ -679,9 +688,9 @@ Token-bearing authorization paths are redacted from adapter error logs.
 7. **Complete for the official polling client switch:** the locked Socket.IO
    4.5.4 client is shipped byte-identically, a small platform adapter adds only
    the optional test-tenant query, and local/remote/client/browser protocol
-   gates pass. The protected Profile save/push gate also passes. Keep EIO3
-   WebSocket/upgrade as separate remaining transport work; the locked page
-   remains polling-only.
+   gates pass. The protected Profile save/push gate also passes. Keep both
+   protocol-generation WebSocket gates green; the locked page remains
+   polling-only by upstream choice.
 
 ### Milestone E — background/server behavior
 
