@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `73fdf64` and
-Cloudflare version `4dbd8a38-3f35-4e85-b379-324cbe2f5577`. The
-candidate's 69-file Workers-runtime suite passes 769/769 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `5309eff` and
+Cloudflare version `d044403f-469f-4aad-9ff2-9829d0cb177d`. The
+candidate's 69-file Workers-runtime suite passes 773/773 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1273.27 KiB
-raw / 233.63 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 90 reported a 38 ms startup and passed the
-129-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1275.98 KiB
+raw / 234.06 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 91 reported a 25 ms startup and passed the
+134-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
 real-browser gates; the earlier authenticated official-page workflows remain
 separate version-80 evidence.
 These are release facts for the named subset, not
@@ -46,12 +46,13 @@ strict threshold cases. The
 notification processor preserves priority, snooze and automatic all-clear,
 with schema-v13 state and atomic live `/alarm` publication. Schema v14 adds a
 generic persisted task scheduler. One `plugin-notifications` task automatically
-evaluates AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE, SAGE, IAGE, BAGE,
+evaluates Uploader Battery, AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE, SAGE, IAGE, BAGE,
 officially enabled Treatment Notify, opt-in Timeago and opt-in DBSize alerts in
 official server order. Error Codes retains the upstream display/sound map,
 default and literal-`off` custom level mapping, newest nonfuture SGV selection,
-strict ten-minute freshness and exact future activation/expiry; Uploader
-Battery alert production and external delivery remain missing. xDrip-js retains
+strict ten-minute freshness and exact future activation/expiry. Uploader
+Battery preserves `UPBAT_*`, recent-device selection, per-device minimum,
+heartbeat, expiry and All Clear; only external delivery remains missing. xDrip-js retains
 its newest eligible 24-hour DeviceStatus, exact `sensorState` projection,
 transmitter-state/battery alerts and whole-minute repeat rule. Schema v20
 persists its last state-notification marker per tenant so isolate eviction does
@@ -106,9 +107,9 @@ realtime snapshot both apply the official treatment-marker curve placement. It r
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 69 Workers files / 769 tests, 22/22 audits, eleven direct upstream
+evidence is 69 Workers files / 773 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1273.27 KiB raw / 233.63 KiB gzip with 250 assets and two bindings.
+dry run is 1275.98 KiB raw / 234.06 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4-upgrade/EIO3-polling and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -449,10 +450,10 @@ all-clear object. The official v1 `/notifications/ack` route and its inherited
 v2 mount use the same SQLite transaction and live broadcast path, require
 `notifications:*:ack`, and return Express's exact `200 OK` text body. The
 adapter bounds state to 256 distinct group names of at most 256 characters.
-AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE,
+Uploader Battery, AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE,
 SAGE, IAGE, BAGE, Treatment
 Notify, Timeago and DBSize now run through the persisted scheduler under their
-official gates; Uploader Battery is the remaining non-automatic source.
+official gates; all sixteen official server notification producers are automatic.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
 deadlines, bounded WebSocket close retries and stale authorization-failure
 cleanup plus background-task deadlines are multiplexed through the DO's single
@@ -1103,9 +1104,8 @@ The current server boundary is explicit:
   Broken/overflow recipients are dropped independently and disconnected
   clients receive no replay. The bounded notification processor can persist and
   publish upstream request arrays through this outlet. A schema-v14 task now
-  computes and publishes fifteen producers in official server order, including
-  Error Codes, xDrip-js, BWP and BAGE; the Uploader Battery alert adapter
-  remains missing;
+  computes and publishes all sixteen producers in official server order,
+  including Uploader Battery, Error Codes, xDrip-js, BWP and BAGE;
 - root `subscribe` has no handler or ACK, matching the locked root. The four
   locked client-originated mutation events validate collection, authority,
   required `_id` and bounded payloads in upstream order, then return the exact
@@ -1127,9 +1127,10 @@ are durable idempotency state. A stale already-due platform alarm is replaced
 with a short prompt rather than being allowed to disappear after the current
 RPC; a still-future earlier prompt is preserved to avoid starvation. WebSocket
 closure tombstones and authorization failure rows add their own due times to
-the same derived minimum. API3 pruning and the remaining server-plugin jobs
-still need task adapters in the shared table before using the same one-alarm
-slot. API3 pruning and Uploader Battery are the remaining task adapters.
+the same derived minimum. API3 pruning and the remaining non-plugin jobs still
+need task adapters in the shared table before using the same one-alarm
+slot. API3 pruning, summary/activity persistence and other non-plugin jobs are
+the remaining task adapters.
 
 Initial authorization data mirrors `dataWithRecentStatuses()`. `loadRetro`
 uses a separate unfiltered device-status view over the same one-day raw SQL
@@ -1148,7 +1149,7 @@ against the persisted root baseline and attach a fresh status after eviction.
 tightening over permissive upstream JavaScript call shapes.
 
 Polling, direct Hibernatable WebSocket and EIO4 polling upgrade are live in
-Cloudflare version `4dbd8a38-3f35-4e85-b379-324cbe2f5577`. Current
+Cloudflare version `d044403f-469f-4aad-9ff2-9829d0cb177d`. Current
 credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, exact Food
 helper reads and invalid Food/Profile route rejection, matching
@@ -1198,6 +1199,19 @@ page remain separate gates. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
+
+Version 91 completes the official server `checkNotifications` registry.
+`src/plugins/upbat.ts` maps the locked `UPBAT_WARN`, `UPBAT_URGENT` and
+`UPBAT_ENABLE_ALERTS` settings, recent-30-minute selection, per-device
+ten-minute-lowest battery calculation and multi-device/voltage message. The
+schema-v14 task evaluates it before AR2 in official order and preserves future
+activation, heartbeat repetition, exact 30-minute-plus-one-millisecond expiry,
+All Clear and live `/alarm` publication without adding another Cloudflare
+alarm. Alerts remain opt-in while the request-time property remains enabled by
+the official default. Four new Workers tests raise the suite to 773; the
+134-assertion remote gate and browser confirmed default configuration, empty
+property output, current `113 mg/dL` simulated data, About 15.0.7 and zero
+warnings/errors.
 
 Version 90 adds the final two request-time producers missing from the official
 server property registry. `src/plugins/runtimestate.ts` receives the status
@@ -1279,9 +1293,8 @@ urgent threshold-plus-one-millisecond deadlines, source expiry, future status
 activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
 The remaining transport work is non-Profile-Switch, non-Treatment preprocessing,
-EIO3 WebSocket/upgrade and the direct-send replay/acknowledgement boundary;
-the automatic Uploader Battery alarm stays as background work. BWP,
-CAGE/SAGE/IAGE/BAGE and DBSize are complete producers.
+EIO3 WebSocket/upgrade and the direct-send replay/acknowledgement boundary.
+Uploader Battery, BWP, CAGE/SAGE/IAGE/BAGE and DBSize are complete producers.
 
 ### Background work and server plugins
 
@@ -1292,7 +1305,7 @@ generic SQLite task table containing `kind`, `due_at`, `attempt_count` and
 them transactionally and derives the next wake from storage. This follows
 Cloudflare's one-alarm model: multiple logical events are stored and
 multiplexed through the one Durable Object alarm. The generic substrate is
-deployed; one unified notification task connects AR2, Simple Alarms, Error
+deployed; one unified notification task connects Uploader Battery, AR2, Simple Alarms, Error
 Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE, SAGE, IAGE, BAGE, Treatment Notify,
 Timeago and DBSize with
 their official enable gates today.
@@ -1317,15 +1330,15 @@ when the official alert gates enable them;
 IOB/COB/BWP use the locked official formulas and can populate request-time
 Summary state when enabled; BWP computes a preview but does not execute a
 Treatment or add a dosing formula.
-AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE,
+Uploader Battery, AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE,
 SAGE, IAGE, BAGE, Treatment
 Notify, Timeago and DBSize request objects are arbitrated, persisted and delivered to
 live `/alarm` clients by the same
 internal engine. Mutations evaluate the leading edge and the schema-v14
 scheduler retains only the earliest logical activation, strict threshold-plus-
 one-millisecond transition, source expiry, quiet-night boundary or heartbeat.
-The remaining automatic Uploader Battery output still needs an adapter around
-the locked upstream module rather than a downstream formula. The age producers use bounded latest
+All sixteen official notification-producing server plugins are connected; no
+downstream medical formula was invented. The age producers use bounded latest
 current/earliest-future Treatment rows, exact whole-hour thresholds, the locked
 inclusive 20-minute window and automatic clear. DBSize uses the actual SQLite
 file byte count and remains opt-in.

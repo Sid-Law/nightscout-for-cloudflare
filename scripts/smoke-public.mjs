@@ -114,6 +114,10 @@ checked(
   statusV1.extendedSettings?.dbsize?.max === 1_000_000_000 / (1024 * 1024),
   "Workers Free database quota mapping",
 );
+checked(
+  !Object.hasOwn(statusV1.extendedSettings ?? {}, "upbat"),
+  "UPBAT alerts remain unconfigured by default",
+);
 
 for (const [path, expected] of [
   ["/api/v1/entries.json?count=1", []],
@@ -164,6 +168,11 @@ checked(properties.dbsize?.details?.dataSize > 0, "dbsize current bytes");
 checked(properties.dbsize?.display === "0%", "dbsize display");
 checked(properties.dbsize?.status === "current", "dbsize level");
 
+const upbatResponse = await request("/api/v2/properties/upbat");
+checked(upbatResponse.status === 200, "Uploader Battery property status");
+const upbatProperties = await upbatResponse.json();
+equal(upbatProperties.upbat, { display: "?%", devices: {} }, "empty Uploader Battery property");
+
 const loopResponse = await request("/api/v2/properties/loop");
 checked(loopResponse.status === 200, "disabled Loop property status");
 equal(await loopResponse.json(), {}, "Loop remains opt-in");
@@ -193,6 +202,7 @@ const enabledPlugins = Array.isArray(statusV1.settings?.enable)
   : [];
 checked(enabledPlugins.includes("basal"), "basal remains default-enabled");
 checked(enabledPlugins.includes("errorcodes"), "errorcodes remains default-enabled");
+checked(enabledPlugins.includes("upbat"), "upbat remains default-enabled");
 equal(basalProperties, {}, "basal does not fabricate a property without a Profile");
 checked(!enabledPlugins.includes("treatmentnotify"), "treatmentnotify remains opt-in by default");
 checked(!enabledPlugins.includes("xdripjs"), "xdripjs remains opt-in by default");

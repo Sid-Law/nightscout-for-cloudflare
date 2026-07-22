@@ -194,12 +194,12 @@ for diagnosis, dosing, or medical decisions.
   survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
   abandoned poll/POST lease cleanup, stale authorization-failure cleanup and
-  automatic AR2, Simple Alarm, Dexcom Error Codes, Pump, OpenAPS, xDrip-js,
+  automatic Uploader Battery, AR2, Simple Alarm, Dexcom Error Codes, Pump, OpenAPS, xDrip-js,
   Loop, BWP, CAGE, SAGE, IAGE, BAGE,
   Treatment Notify, Timeago and opt-in DBSize re-evaluation without
   relying on a process-lifetime `setInterval`. Mutations evaluate the leading
   edge inside their originating request; no future deadline is retained when
-  all fifteen enabled producers are inactive.
+  all sixteen enabled producers are inactive.
 - An NSCF platform-only, per-tenant simulated CGM switch for the public lab.
   It is disabled by default, requires the ordinary Entries write/delete
   permissions to change, seeds twelve deterministic five-minute SGVs when
@@ -551,11 +551,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `73fdf64`. The 69-file Workers-runtime
-suite passes 769/769 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `5309eff`. The 69-file Workers-runtime
+suite passes 773/773 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1273.27 KiB raw / 233.63 KiB gzip and exposes only
+reports 1275.98 KiB raw / 234.06 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -588,10 +588,10 @@ Workers Static Assets, all 33 JSON files are audited as valid and byte-identical
 to v15.0.7, `LANGUAGE` reaches HTTP/Socket settings, and the default Sandbox
 uses the same request-local translator.
 This runtime connects a single `plugin-notifications` SQLite task to the locked
-official AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP,
+official Uploader Battery, AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP,
 CAGE, SAGE, IAGE, BAGE,
 Treatment Notify, Timeago and DBSize calculations and the core notification
-processor. The engine evaluates the fifteen
+processor. The engine evaluates all sixteen official
 producers in official server order from one bounded context, arbitrates requests and snoozes in one
 transaction, atomically publishes the selected live `/alarm` frame, and stores
 the next exact logical deadline. AR2 preserves the official coefficients,
@@ -681,9 +681,8 @@ Its Node configuration audit rejects stored plaintext vars and prohibited
 D1/R2/KV/Queues/routes while locking the existing footprint.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
-byte parity, EIO3 WebSocket/upgrade/JSONP/binary and the server-side
-the remaining Uploader Battery alert producer, remaining plugin-derived summary
-persistence and task kinds remain
+byte parity, EIO3 WebSocket/upgrade/JSONP/binary, server-side
+summary/activity persistence and remaining non-plugin task kinds remain
 missing. The user-supplied construction credential is active and was used only
 for the named simulated SGV batch; its value is not stored or quoted in this
 repository.
@@ -968,6 +967,25 @@ passed on `public-smoke-1784704705985`, including default Runtime State,
 default-disabled BAGE, Summary omission, EIO4 WebSocket upgrade and EIO3
 polling. A fresh official homepage rendered `127 mg/dL` and its chart;
 Settings/About reported Nightscout 15.0.7 and the captured browser log contained
+zero warnings or errors.
+
+Version 91 (`d044403f-469f-4aad-9ff2-9829d0cb177d`) deploys commit `5309eff`
+and completes the official server `checkNotifications` registry. Uploader
+Battery now maps `UPBAT_WARN`, `UPBAT_URGENT` and `UPBAT_ENABLE_ALERTS`, uses
+the official recent-30-minute, per-device ten-minute-lowest calculation and
+multi-device/voltage message, and runs before AR2 in locked server order. The
+schema-v14 task preserves future DeviceStatus activation, heartbeat repetition,
+the inclusive 30-minute source boundary, millisecond-after expiry All Clear and
+live `/alarm` delivery. Alerts remain opt-in; the default official property is
+still available without background alarm work.
+
+The full local gate passed 69 Workers files / 773 tests, 22/22 audits, 42/42
+unchanged client tests, 143/143 unchanged server/data-plugin tests, TypeScript
+and a 1275.98-KiB raw / 234.06-KiB gzip dry run. The 134-assertion public smoke
+passed on `public-smoke-1784706560346`, including default UPBAT configuration,
+empty-property output, EIO4 WebSocket upgrade and EIO3 polling. A fresh official
+homepage rendered `113 mg/dL`, `-1`, one-minute-old simulated data and its
+chart; Settings/About reported Nightscout 15.0.7 and the browser log contained
 zero warnings or errors.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
