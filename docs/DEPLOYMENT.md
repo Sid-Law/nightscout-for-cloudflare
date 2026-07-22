@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `750e9ec`
-- Runtime source candidate: `750e9ec`
-- Git commit matching the deployed runtime worktree: `750e9ec`
-- Cloudflare Version ID: `44f94fa0-8061-4a7e-a30b-113e239488e6`
-- Cloudflare ordinal version number: `86`
+- Deployed runtime candidate: `8ee5c73`
+- Runtime source candidate: `8ee5c73`
+- Git commit matching the deployed runtime worktree: `8ee5c73`
+- Cloudflare Version ID: `d8c70ff9-3370-4745-b9ee-45da662c1689`
+- Cloudflare ordinal version number: `87`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T05:12:52.069Z`
+- Version creation time: `2026-07-22T05:35:41.556Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 29 ms
+- Worker startup: 24 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -33,8 +33,8 @@ is not counted as API, plugin or real-time compatibility.
   v19 persisted EIO3/EIO4 session-protocol authority
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–86 reused them unchanged
-- Upload: 1251.44 KiB raw / 229.59 KiB gzip
+  versions 76–87 reused them unchanged
+- Upload: 1253.33 KiB raw / 230.07 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -254,6 +254,36 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   remains on polling by upstream choice. Its fresh reload displayed
   `121 mg/dL`, `+4`, three minutes old with the chart and no warning or console
   error. EIO3 direct WebSocket/upgrade, JSONP and binary remain explicit gaps.
+
+## Version 87 legacy Food/Profile read-contract increment
+
+- Commit `8ee5c73` separates the locked Food/Profile helpers from the generic
+  document query path. Food root and `regular` retain stored shapes and ignore
+  unused query options; `quickpicks` additionally requires exact
+  `type:"quickpick"` plus string `hidden:"false"` and applies Mongo-like
+  ascending `position` order.
+- Non-Treatment reads no longer run the Treatment numeric mapper, which had
+  fabricated `carbs`/`insulin` values on Profile, Food, Activity and
+  DeviceStatus responses. Singular `/profile/` is count-only, plural
+  `/profiles/` is the query/read-only route, and invalid collection children
+  return 404 as in the locked Express routers.
+- Local gates passed: 67 Workers files / 736 tests, 22/22 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript, Wrangler type generation and dry run. The dry bundle was
+  1253.33 KiB raw / 230.07 KiB gzip with 250 assets and only `ENTRY_STORE`
+  plus `ASSETS`.
+- Cloudflare version `d8c70ff9-3370-4745-b9ee-45da662c1689` is ordinal 87,
+  created at `2026-07-22T05:35:41.556Z`; startup was 24 ms. The expanded
+  120-assertion public smoke passed on isolated tenant
+  `public-smoke-1784698633397`, retained real EIO4 WSS upgrade/EIO3 polling
+  and reported 299,008 SQLite bytes.
+- A fresh official Food Editor session displayed `Database loaded`, the full
+  record editor and Quick-picks controls with no console warning/error. A
+  separate fresh homepage displayed `118 mg/dL`, `-3`, four minutes old, no
+  dialog and no console issue. The simulator remained enabled. The browser
+  automation did not expose its page-local authorization object, so no remote
+  protected Food write is claimed; mixed write/read/order behavior is proved
+  by the real SQLite Durable Object contract.
 
 ## Version 86 root Treatment-to-curve preprocessing increment
 
@@ -701,7 +731,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `750e9ec`. It retains schema-v15 persisted
+The deployed runtime candidate is `8ee5c73`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -740,13 +770,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 67 files, 735/735 passed |
-| Worker dry run | 1251.44 KiB raw / 229.59 KiB gzip |
+| Workers integration tests | 67 files, 736/736 passed |
+| Worker dry run | 1253.33 KiB raw / 230.07 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 735 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 736 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 21
 server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 files,
@@ -774,7 +804,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `44f94fa0-8061-4a7e-a30b-113e239488e6` as the current
+Wrangler reports version `d8c70ff9-3370-4745-b9ee-45da662c1689` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -789,6 +819,8 @@ not only Wrangler command success.
 | GET `/api/v1/status.json` and `/api/v2/status.json` | HTTP 200 with byte-equivalent filtered Settings snapshots: 63 JSON-visible keys, 14 enabled defaults, official title/plugin values and no secure fields or method functions |
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
+| GET `/api/v1/food/quickpicks.json` and v2 `/food/regular.json` | HTTP 200 with empty fresh-tenant arrays; query arguments that the locked Food helpers ignore do not alter routing |
+| Invalid Food/Profile children and POST `/api/v1/profiles/` | HTTP 404; plural Profile remains the locked read-only query route |
 | GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and locked `null` IOB/COB fields because both plugins are disabled |
 | GET `/api/v2/ddata/at` | HTTP 200 with real isolated-tenant SQLite `dataSize:299008` bytes and `indexSize:0`; the total is not double-counted |
 | GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.29`, `display:"0%"` and `status:"current"` |
@@ -933,11 +965,18 @@ broader version-72/73/74 page checks:
   errors. Its batch-specific Treatment write/eviction/delta proof remains the
   real SQLite DO contract because the remote smoke intentionally used no
   credential.
+- version 87 opened the official Food Editor and observed `Database loaded`,
+  the complete record and Quick-picks controls and zero console warnings or
+  errors. A separate fresh homepage showed `118 mg/dL`, `-3`, four minutes old,
+  no dialog and no console issue. The expanded remote gate added exact
+  Food/Profile read-only route assertions; protected Food writes remain local
+  real-DO contract evidence because the page-local credential object was not
+  exposed to browser automation.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `44f94fa0-8061-4a7e-a30b-113e239488e6` reused the same
-250 Static Assets entries and passed the 106-assertion credential-free remote
+Cloudflare version `d8c70ff9-3370-4745-b9ee-45da662c1689` reused the same
+250 Static Assets entries and passed the 120-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
@@ -947,7 +986,8 @@ comparison and locked `status.activeProfile` publication; version 83 adds the
 opt-in locked BWP server chain and twelve-producer persisted scheduler; version
 84 adds upstream-exact legacy EIO3 HTTP polling and schema-v19 protocol state;
 version 85 adds the EIO4 polling-to-WebSocket upgrade and alarm-backed candidate timeout;
-version 86 adds bounded Treatment-to-curve preprocessing to initial and reconstructed root updates.
+version 86 adds bounded Treatment-to-curve preprocessing to initial and reconstructed root updates;
+version 87 restores the locked Food/Profile read routes and raw non-Treatment shapes.
 
 This does not prove longer-running stability, a protected mutation observed
 through the pushed live-update path, every plugin workflow or real closed-loop

@@ -550,11 +550,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `750e9ec`. The 67-file Workers-runtime
-suite passes 735/735 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `8ee5c73`. The 67-file Workers-runtime
+suite passes 736/736 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1251.44 KiB raw / 229.59 KiB gzip and exposes only
+reports 1253.33 KiB raw / 230.07 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -891,6 +891,20 @@ to 735/735 while every unchanged upstream and audit gate stayed green. The
 106-assertion public smoke passed on `public-smoke-1784697190440`. A fresh
 official-page session displayed current simulated glucose, two SVGs, no dialog,
 and zero console warnings or errors while receiving root and alarm events.
+
+Version 87 (`d8c70ff9-3370-4745-b9ee-45da662c1689`) deploys commit `8ee5c73`
+and restores the official Food/Profile read split. Food `quickpicks` now keeps
+only exact string `hidden:"false"` records and applies Mongo-like ascending
+position order; Food root/regular/quickpicks ignore query controls that locked
+v15.0.7 does not read. Singular Profile remains count-only, plural Profiles is
+the read-only query route, and invalid child paths return 404. The generic
+non-Treatment reader no longer fabricates `carbs` or `insulin` fields. All
+736/736 Workers tests, unchanged upstream suites, audits, TypeScript and the
+1253.33-KiB dry run passed. The expanded 120-assertion public smoke passed on
+`public-smoke-1784698633397`; the unchanged Food Editor reported `Database
+loaded` with complete Quick-picks controls, while the homepage displayed a
+fresh `118 mg/dL` simulated value. Both pages had zero console warnings or
+errors.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

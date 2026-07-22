@@ -119,11 +119,29 @@ for (const [path, expected] of [
   ["/api/v1/entries.json?count=1", []],
   ["/api/v1/treatments.json?count=1", []],
   ["/api/v1/profile/current", null],
+  ["/api/v1/food/quickpicks.json?count=1&find[name]=ignored", []],
+  ["/api/v2/food/regular.json?count=1", []],
 ]) {
   const response = await request(path);
   checked(response.status === 200, `${path} status`);
   equal(await response.json(), expected, `${path} empty tenant`);
 }
+
+for (const path of [
+  "/api/v1/food/not-a-route",
+  "/api/v2/profile/not-a-route",
+  "/api/v1/profiles/current",
+]) {
+  const response = await request(path);
+  checked(response.status === 404, `${path} remains an unknown upstream route`);
+}
+
+const pluralProfileMutation = await request("/api/v1/profiles/", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ defaultProfile: "must-not-exist", store: {} }),
+});
+checked(pluralProfileMutation.status === 404, "plural Profile route remains read-only");
 
 const pebbleResponse = await request("/pebble?count=2");
 checked(pebbleResponse.status === 200, "Pebble status");

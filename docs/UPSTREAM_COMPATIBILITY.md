@@ -17,7 +17,7 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-Deployed runtime candidate `750e9ec` passes 735/735 tests across 67
+Deployed runtime candidate `8ee5c73` passes 736/736 tests across 67
 Workers-runtime files plus 22/22 audit tests, 42/42 unchanged tests across
 eleven complete upstream-client files and 143/143 unchanged tests across twenty-one locked upstream
 server/data-plugin files. The suite retains focused EIO4,
@@ -53,13 +53,13 @@ mutation by themselves; version 80's separate authenticated browser pass does
 cover the named Profile/Food/Admin/Reports workflows. This is not full-port
 evidence.
 The runtime code is deployed as Cloudflare version
-`44f94fa0-8061-4a7e-a30b-113e239488e6`; exact release
+`d8c70ff9-3370-4745-b9ee-45da662c1689`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
 
-The candidate Wrangler dry-run reports 250 Static Assets entries, 1251.44 KiB raw /
-229.59 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The candidate Wrangler dry-run reports 250 Static Assets entries, 1253.33 KiB raw /
+230.07 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 The deployed increment connects AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP,
@@ -224,7 +224,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | ObjectId, UUID and dedupe | `lib/server/query.js`, `lib/server/treatments.js`, `lib/api3/storage/mongoCollection/utils.js` | **Locked Query, validation, UUID, issue-6923, identity-matrix, GAP-TREAT-012, ObjectIdCache, deduplication and partial-failure files adapted; broader BSON behavior partial.** `src/server-query.ts` replaces Mongo's ObjectId class with a Worker-safe 24-hex value object at the adapter boundary while preserving the locked `toString()` result, non-ObjectId strings and current UUID identifier fallback. Generated IDs remain random 24-hex strings. Treatments match exact true-by-default `UUID_HANDLING` parsing and legacy repair. Identifier-first upsert, AAPS/Loop/xDrip field isolation, repeated-identifier dedupe and MongoDB 5 `{acknowledged,deletedCount}` deletes are locked. Entries use `sysTime + type`; Treatments prefer `identifier`/`_id`, then `created_at + eventType`. Descriptive `pump`, `sync` and generic `id` fields do not become invented unique indexes. Profile/Food and API3 retain their tested selectors; Settings has no fallback. | Extend mixed BSON/type and remaining collection fixtures. The 4,096-character identity and 100-item v1 batch caps are Free-plan controls. |
 | Mongo query behavior | `lib/server/query.js`, `lib/api3/storage/mongoCollection/**` | **Complete locked `query.test.js`; wider Mongo surface partial.** A request-local adapter preserves the four-day default, configurable date field/window, ID date-filter bypass, non-ObjectId strings and ObjectId-shaped normalization without `mongodb`, `traverse` or `moment`; live Entries parsing reuses its default and ID normalization. V1 Entries supports equality/comparison for numeric and bounded string fields, supported-field sort-before-limit and final time ordering. Legal shapes above SQLite limits fail as controlled 400. API3 supports locked scalar operators, safe nested/unknown fields, projection/paging, ordered sort chains and a bounded case-sensitive `$re` subset compiled to GLOB. Mixed types, arrays, projections and collation remain incomplete. | Add `$in`/`$nin`/regex/exists and nested/array/mixed-type differential coverage before widening the v1 allowlist or calling generic search compatible. Other v1 collections still use limited filtering. |
 | API v1 entries | `lib/api/entries/index.js`, `lib/server/entries.js` | **Complete locked Entries, Entries UUID, deduplication and partial-failure mappings; broader route semantics partial.** Create/list/current/model/ID/delete include single/array/extended-urlencoded uploads, preview, uploader identity, ordered-prefix failures, collection-specific dedupe, bounded query/sort, four-day reads, JSON/plain/CSV/TSV, validators and HEAD. Exact numeric-date, exact `dateString` and open dateString-range deletion are implemented. Cloudflare zero-byte DELETE streams normalize to the same absent body as upstream/local requests, with a public-edge create/delete/read contract. Entries `echo` plus SQL count are inherited by v2. The locked numeric-brace `times/echo`, `times` and dateString `slice` fixtures run through at most eight prefixes, 256 expansions and 10,000 candidates per prefix. Non-Entries echo, arbitrary aggregation, arbitrary regex/slice fields, large-detail materialization control and wider Mongo/document semantics remain incomplete. | Port the remaining related route/error surface while retaining explicit Free-plan pattern/query bounds and the fresh-only pre-1.0 reset. |
-| API v1 document CRUD | food/profile/treatments/devicestatus modules | **Food/Profile/DeviceStatus and the named Treatment/Loop uploader files adapted.** Food and Profile cover their complete named upstream files. DeviceStatus covers both its base and Loop SGV/DeviceStatus files plus the locked prediction policy. Treatments maps XSS/time/numeric/upload/query behavior plus complete `api.treatments`, UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, carb/dose and ObjectIdCache contracts, including exact flag parsing, UUID repair, ordered server-ID responses, cached-ID mutations and MongoDB 5 delete results. Its Worker sanitizer retains reviewed safe tags but strips all attributes, deliberately stricter than DOMPurify beyond the locked malicious fixture. `api.shape-handling.test.js` locks cross-collection scalar/array and NightscoutKit shapes. | Configure a Worker Secret before credentialed remote mutation evidence; keep safe-attribute DOMPurify byte parity as a documented platform difference. |
+| API v1 document CRUD | food/profile/treatments/devicestatus modules | **Food/Profile/DeviceStatus and the named Treatment/Loop uploader files adapted.** Food and Profile cover their complete named upstream files. Food root/regular reads ignore unused query options, while quickpicks applies exact `type:quickpick` plus string `hidden:false` matching and Mongo-like position order. Profile preserves the distinct singular count-only, plural query/read-only and current routes; invalid children return 404. Non-Treatment reads preserve stored fields instead of receiving the Treatment numeric mapper. DeviceStatus covers both its base and Loop SGV/DeviceStatus files plus the locked prediction policy. Treatments maps XSS/time/numeric/upload/query behavior plus complete `api.treatments`, UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, carb/dose and ObjectIdCache contracts, including exact flag parsing, UUID repair, ordered server-ID responses, cached-ID mutations and MongoDB 5 delete results. Its Worker sanitizer retains reviewed safe tags but strips all attributes, deliberately stricter than DOMPurify beyond the locked malicious fixture. `api.shape-handling.test.js` locks cross-collection scalar/array and NightscoutKit shapes. | Keep bounded count limits and safe-attribute DOMPurify byte parity as documented platform differences; add protected pushed-update evidence separately. |
 | API v1 activity | `lib/api/activity/index.js`, `lib/server/activity.js`, `tests/api.activity.test.js` | **Locked upstream file adapted.** Create/list/filter/conditional GET/update/delete, empty-array create, ID validation and the official `{}` delete response follow the complete named upstream file. | Add credentialed remote CRUD evidence when a test credential is explicitly supplied; retain the current bounded platform controls. |
 | Remaining API v1 | notifications, Alexa, Google Home and remaining utilities | **Partial.** Inherited GET `/notifications/ack` is adapted on v1 and v2 with durable repeat suppression, Urgent-to-Warning silence and live `clear_alarm` delivery. Admin notices preserve the public count/admin-body split and persisted readable-site/failed-auth producers. The locked Alexa test file is adapted as a local en-US REST/Speechlet envelope for LaunchRequest, unknown intent and SessionEndedRequest; it performs no Amazon call. Pushover/Google Home/external Alexa connectivity remain disabled. | Port remaining scope-allowed routes from the generated inventory. Keep external integrations disabled in the simulated-data deployment, but retain mocked internal contracts. |
 | API v2 properties and ddata | `lib/api2/index.js`, `lib/data/{endpoints,dataloader,treatmenttocurve}.js`, `lib/api2/properties.js`, `lib/{times,units,levels}.js`, `lib/plugins/{bgnow,direction,rawbg,upbat,basalprofile,loop,openaps,pump,iob,cob,dbsize,cannulaage,sensorage,insulinage,timeago,ar2}.js` | **Twenty-two named files adapted; wider plugin-property surface partial.** `/ddata/at` selects live versus explicit frames with a bounded two-day SGV window, publishes the real tenant SQLite file total and applies official Treatment-to-curve marker fields. The prior complete data/property files plus Basal, all ten AR2, all six OpenAPS, ten Pump, 14 IOB, nine COB and one treatment-to-curve cases are represented. `/properties`, wildcard/comma selection and truthy `pretty` are deployed; default Basal/uploader/database-size and opt-in Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE execute through the registry, while AR2 follows the official `ALARM_TYPES=predict` gate. The projection includes 64 SGVs, latest calibration, ten recent MBGs, recent DeviceStatus/stats/current Profile, one latest 62-day age event per type, one-year zero-duration Profile Switch and the newest 1,000 ordinary Treatments from the upstream 2.5-day window, with Profile Switch/Temp Basal/Combo Bolus groupings. Timeago is correctly not fabricated as a property. Basal describes recorded Profile/Treatment state; AR2 derives only the official display/forecast/notification values from SGVs; OpenAPS/Pump display uploader-provided state; IOB/COB preserve official formulas; none recommends a dose. The rolling-deploy adapter falls back only when an old live DO lacks the property-context RPC. | Add every remaining property produced by the official server plugin registry, then extend endpoint/error/retro and multi-device differential fixtures beyond the twenty-two complete named files. Keep the 1,000-Treatment Free-plan cap explicit. |
@@ -389,7 +389,7 @@ controls, not upstream claims.
 
 ## Current deployed integration evidence
 
-Runtime candidate `750e9ec` passes 735/735 tests in 67
+Runtime candidate `8ee5c73` passes 736/736 tests in 67
 Workers-runtime files plus 22/22 audit tests, 42/42 unchanged direct upstream
 client tests across eleven complete files and 143/143 unchanged tests across twenty-one locked server/data-plugin
 files. It connects schema-v14 background work to automatic AR2, Simple Alarm,
@@ -403,21 +403,22 @@ dataloader/database-size, Sandbox, Settings, Loop, Profile, uploader, identity,
 root-delta/write, API3, authorization, realtime and notification-ACK slices.
 Schema v17 adds the disabled-by-default, per-tenant lab-CGM schedule described
 above and its official Entries/root-delta integration tests.
-Cloudflare version `44f94fa0-8061-4a7e-a30b-113e239488e6` (ordinal 86) is
-current and reported a 29 ms startup. Wrangler processed 250 Static Assets entries; the
-final dry run reported 1251.44 KiB raw / 229.59 KiB gzip, with only
+Cloudflare version `d8c70ff9-3370-4745-b9ee-45da662c1689` (ordinal 87) is
+current and reported a 24 ms startup. Wrangler processed 250 Static Assets entries; the
+final dry run reported 1253.33 KiB raw / 230.07 KiB gzip, with only
 `ENTRY_STORE` and `ASSETS`.
 This deployment had no explicit version annotation; none is invented.
 
-The reusable credential-free remote smoke passed 106 assertions for health,
-bounded v1 Entries/Treatments reads, fresh Profile/current and v2 Summary,
+The reusable credential-free remote smoke passed 120 assertions for health,
+bounded v1 Entries/Treatments and Food helper reads, fresh Profile/current,
+unknown Food/Profile 404s, plural-Profile read-only behavior and v2 Summary,
 API3 version, matching v1/v2 filtered Settings and database-size settings,
 real ddata SQLite bytes, the default-enabled `dbsize` and Basal properties,
 opt-in-disabled Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE, null disabled IOB/COB Summary
 state, property-absent timeago, EIO3 polling and a real EIO4 WSS upgrade through
 probe/noop/upgrade/root-CONNECT/`clients`;
 missing-token
-API3 Entries returned 401. Isolated tenant `public-smoke-1784696258002` reported
+API3 Entries returned 401. Isolated tenant `public-smoke-1784698633397` reported
 299,008 SQLite bytes,
 `indexSize:0`, a 953.67 MiB maximum and `0%`/`current` state. This run sent no
 API secret value and performed no protected mutation. A name-only encrypted-
@@ -469,6 +470,15 @@ smoke remained credential-free and therefore did not fabricate a protected
 write claim. A fresh official-page session displayed current simulated glucose,
 two SVGs and no dialog; root and alarm events were received with zero console
 warning or error.
+Version 87's 120-assertion smoke passed on isolated tenant
+`public-smoke-1784698633397`, including the exact read-only Food/Profile route
+surface added to the reusable remote gate. Local contracts populate mixed
+quickpicks, prove exact hidden-string filtering, numeric/string position order,
+query ignoring and raw non-Treatment shapes across v1/v2. A fresh official
+Food Editor session reached `Database loaded`, rendered the full record and
+Quick-picks controls and logged no warning/error. The homepage displayed
+`118 mg/dL`, `-3`, four minutes old with no dialog or console issue; the
+five-minute simulator remained enabled.
 Version 83's 77-assertion smoke passed on isolated tenant
 `public-smoke-1784692181407`. Public defaults correctly left BWP absent from
 Properties and Pebble and `null` in Summary; the opt-in path is covered by a

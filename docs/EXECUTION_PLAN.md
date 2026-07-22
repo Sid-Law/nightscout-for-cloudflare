@@ -93,7 +93,7 @@ relabeled as scope exclusions.
 
 ## Current deployed increment
 
-The deployed runtime candidate `750e9ec` retains schema-v15 persisted Admin
+The deployed runtime candidate `8ee5c73` retains schema-v15 persisted Admin
 notifications, the complete storage-shape adapter and schema-v16 durable
 bootevent debounce while retaining the locked v1/v2 `experiments/test` permission
 probe, named API security/verifyauth/API_SECRET mappings, Query/Language
@@ -162,15 +162,29 @@ document transport budget; this is an explicit Workers Free adaptation.
 All prior registry, ddata/database-size, age/timeago, Sandbox, Settings, Loop,
 Profile, uploader, identity, root-write/delta, API3 `/storage`, `/alarm`,
 authorization and notification-ACK contracts remain green. Cloudflare Worker
-version `44f94fa0-8061-4a7e-a30b-113e239488e6` (ordinal 86) is active;
-Wrangler reported a 29 ms startup. It processes 250 Static Assets entries. The
-Wrangler 4.112.0 dry run reports 1251.44 KiB raw / 229.59 KiB gzip and exposes
+version `d8c70ff9-3370-4745-b9ee-45da662c1689` (ordinal 87) is active;
+Wrangler reported a 24 ms startup. It processes 250 Static Assets entries. The
+Wrangler 4.112.0 dry run reports 1253.33 KiB raw / 230.07 KiB gzip and exposes
 only `ENTRY_STORE` plus `ASSETS`. The 67-file Workers-runtime suite passes
-735/735, all four audit suites pass
+736/736, all four audit suites pass
 22/22, eleven official client files pass 42/42 unchanged, twenty-one locked
 server/data-plugin files pass 143/143 unchanged and TypeScript passes. The
 manifest records sixteen direct passes, 86 adapted, seven unresolved and
 two fixed-scope excluded files.
+
+Version 87 restores the locked legacy Food/Profile read distinctions instead
+of treating every document collection as one generic query router. Food
+`quickpicks` now requires exact string `hidden:"false"`, orders by Mongo-like
+`position` ascending and, like `regular` and the root Food list, ignores query
+options that upstream never consumes. Non-Treatment reads no longer receive
+fabricated numeric `carbs`/`insulin` fields. Singular `/profile/` honors only
+its count and ignores `find`, plural `/profiles/` remains the query endpoint
+and is read-only, and unknown child paths return 404. Local Workers coverage
+rose to 736/736. The 120-assertion remote smoke passed on
+`public-smoke-1784698633397`; the official Food Editor loaded its complete
+database/Quick-picks workflow with no console warning/error, while the
+unchanged homepage displayed a fresh `118 mg/dL` simulated reading without a
+dialog or console issue.
 
 Version 86 connects the already adapted Treatment-to-curve function to the
 root Socket.IO snapshot instead of leaving it in the v2 ddata route. The

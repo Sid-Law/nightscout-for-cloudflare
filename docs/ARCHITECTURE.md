@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `750e9ec` and
-Cloudflare version `44f94fa0-8061-4a7e-a30b-113e239488e6`. The
-candidate's 67-file Workers-runtime suite passes 735/735 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `8ee5c73` and
+Cloudflare version `d8c70ff9-3370-4745-b9ee-45da662c1689`. The
+candidate's 67-file Workers-runtime suite passes 736/736 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1251.44 KiB
-raw / 229.59 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 86 reported a 29 ms startup and passed the
-106-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1253.33 KiB
+raw / 230.07 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 87 reported a 24 ms startup and passed the
+120-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
 real-browser gates; the earlier authenticated official-page workflows remain
 separate version-80 evidence.
 These are release facts for the named subset, not
@@ -94,9 +94,9 @@ realtime snapshot both apply the official treatment-marker curve placement. It r
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 67 Workers files / 735 tests, 22/22 audits, eleven direct upstream
+evidence is 67 Workers files / 736 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1251.44 KiB raw / 229.59 KiB gzip with 250 assets and two bindings.
+dry run is 1253.33 KiB raw / 230.07 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4-upgrade/EIO3-polling and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -1136,9 +1136,10 @@ against the persisted root baseline and attach a fresh status after eviction.
 tightening over permissive upstream JavaScript call shapes.
 
 Polling, direct Hibernatable WebSocket and EIO4 polling upgrade are live in
-Cloudflare version `44f94fa0-8061-4a7e-a30b-113e239488e6`. Current
+Cloudflare version `d8c70ff9-3370-4745-b9ee-45da662c1689`. Current
 credential-free remote smoke
-returned 200 for health, bounded v1 Entries and Treatments reads, matching
+returned 200 for health, bounded v1 Entries and Treatments reads, exact Food
+helper reads and invalid Food/Profile route rejection, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal and AR2 properties and the opt-in-disabled
 Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE property gates, null disabled IOB/COB Summary
