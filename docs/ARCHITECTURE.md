@@ -7,17 +7,16 @@ architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
 “Current” below describes deployed evidence candidate
-`58b33fc2b068a42a033be29ea8d2ca34fef0081a` and Cloudflare version
-`83c08370-341c-4c4c-b7ea-4378e499eb24`, reported as 100% active. The
-candidate's 62-file Workers-runtime suite passes 687/687 plus 22/22 audit tests,
+`27ffb4256baeb4ecef0c91b91aa176cad2381504` and Cloudflare version
+`70e49b47-bc2a-4f9e-82ba-b5e2eafbb922`, reported as 100% active. The
+candidate's 62-file Workers-runtime suite passes 692/692 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 134/134 unchanged tests across twenty
 locked upstream server/data-plugin files.
 Wrangler processed 248 unchanged official
-asset entries; its dry run reported 1175.66 KiB raw / 217.19 KiB gzip and only
-the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 73
-reported a 40 ms startup and passed credential-free API, EIO4, Admin-notification
-and real-browser gates. One immediate old Admin-notification response during
-activation is explicitly retained; four same-region new-tenant retries converged.
+asset entries; its dry run reported 1183.78 KiB raw / 218.53 KiB gzip and only
+the `ENTRY_STORE` Durable Object and `ASSETS` product bindings. Version 74
+reported a 32 ms startup and passed credential-free API, EIO4 and real-browser
+gates, including the unchanged official Settings Save workflow.
 These are release facts for the named subset, not
 evidence of a complete port.
 
@@ -45,9 +44,10 @@ strict threshold cases. The
 notification processor preserves priority, snooze and automatic all-clear,
 with schema-v13 state and atomic live `/alarm` publication. Schema v14 adds a
 generic persisted task scheduler. One `plugin-notifications` task automatically
-evaluates AR2, Simple Alarms, Pump, OpenAPS, Loop, officially enabled Treatment
-Notify and opt-in Timeago alerts in official server order; task sources for the
-remaining notification plugins and external delivery remain missing. Pump,
+evaluates AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, officially
+enabled Treatment Notify, opt-in Timeago and opt-in DBSize alerts in official
+server order; BWP, remaining notification plugins and external delivery remain
+missing. Pump,
 OpenAPS and Loop retain their official plugin and alert gates behind the same
 registry.
 Schema v15 replaces the upstream process-local Admin-notification array with
@@ -77,9 +77,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 62 Workers files / 687 tests, 22/22 audits, eleven direct upstream
+evidence is 62 Workers files / 692 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty direct upstream server/data-plugin files / 134 tests; the
-dry run is 1175.66 KiB raw / 217.19 KiB gzip with the same 248 assets and two bindings.
+dry run is 1183.78 KiB raw / 218.53 KiB gzip with the same 248 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -277,9 +277,9 @@ storage/runtime adapter; the official plugin formulas and UI remain unchanged.
 contracts. It selects six hours of recent DeviceStatus, preserves enacted,
 failure and `received=false` display states, emits the official forecast-point
 shape, evaluates stale Loop warning/urgent levels and builds the official
-notification request and English virtual-assistant responses. The current
-adapter does not persist or broadcast that request on a timer; schema v14
-provides the generic scheduler, but Loop has no automatic task kind yet. No downstream dosing
+notification request and English virtual-assistant responses. Schema v14
+persists its exact stale transitions, heartbeat repetition, clear and live
+`/alarm` publication under the official opt-in alert gate. No downstream dosing
 or recommendation formula is introduced.
 
 `src/sandbox.ts` is the request-local port of the public `lib/sandbox.js`
@@ -395,9 +395,9 @@ all-clear object. The official v1 `/notifications/ack` route and its inherited
 v2 mount use the same SQLite transaction and live broadcast path, require
 `notifications:*:ack`, and return Express's exact `200 OK` text body. The
 adapter bounds state to 256 distinct group names of at most 256 characters.
-AR2, Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago now run through
-the persisted scheduler under their official gates; CAGE/SAGE/IAGE and the
-remaining notification sources are not yet automatic producers.
+AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment Notify,
+Timeago and DBSize now run through the persisted scheduler under their official
+gates; BWP and remaining notification sources are not yet automatic producers.
 Server ping, pong timeout, session expiry and abandoned poll/POST lease
 deadlines, bounded WebSocket close retries and stale authorization-failure
 cleanup plus background-task deadlines are multiplexed through the DO's single
@@ -1046,9 +1046,10 @@ The current server boundary is explicit:
   Broken/overflow recipients are dropped independently and disconnected
   clients receive no replay. The bounded notification processor can persist and
   publish upstream request arrays through this outlet. A schema-v14 task now
-  computes and publishes AR2, Simple Alarms, Pump, OpenAPS, Loop, officially enabled
-  Treatment Notify and opt-in Timeago alerts automatically; adapters for the
-  remaining notification plugins remain missing;
+  computes and publishes AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE,
+  IAGE, officially enabled Treatment Notify, opt-in Timeago and opt-in DBSize
+  alerts automatically; adapters for BWP and the remaining notification plugins
+  remain missing;
 - root `subscribe` has no handler or ACK, matching the locked root. The four
   locked client-originated mutation events validate collection, authority,
   required `_id` and bounded payloads in upstream order, then return the exact
@@ -1088,7 +1089,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`83c08370-341c-4c4c-b7ea-4378e499eb24`. Current credential-free remote smoke
+`70e49b47-bc2a-4f9e-82ba-b5e2eafbb922`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal and AR2 properties and the opt-in-disabled
@@ -1099,9 +1100,11 @@ expected 401. Anonymous mutation and experiment probes fail closed with the
 configured construction credential. A separate credentialed 25-entry
 `simulator://nscf-demo` batch wrote and read back successfully, after which the
 official homepage rendered `101 mg/dL`, its upward trend and a populated chart.
-The version-73 browser acceptance additionally rendered 26 AR2 forecast dots;
-its only console errors were expected browser autoplay-policy rejections before
-user interaction.
+The version-73 browser acceptance additionally rendered 26 AR2 forecast dots.
+Version 74 reloaded the connected official homepage, opened the complete
+Settings form with Admin authorized/About 15.0.7, and successfully completed
+the unchanged Save workflow. Its only console errors were expected browser
+autoplay-policy rejections before user interaction.
 No real CGM or closed-loop traffic was used. Four fresh-tenant Admin-notification probes returned the readable-site
 count while hiding the body, and the real browser retained the official Admin,
 clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send
@@ -1154,8 +1157,8 @@ activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
 The remaining transport work is profile-switch status/plugin preprocessing,
 EIO3, polling upgrade and the direct-send replay/acknowledgement boundary;
-automatic alarm producers for CAGE/SAGE/IAGE/BWP/DBSize remain
-background work.
+automatic alarm producers for BWP and other remaining plugins stay as
+background work. CAGE/SAGE/IAGE and DBSize are complete producers.
 
 ### Background work and server plugins
 
@@ -1166,8 +1169,9 @@ generic SQLite task table containing `kind`, `due_at`, `attempt_count` and
 them transactionally and derives the next wake from storage. This follows
 Cloudflare's one-alarm model: multiple logical events are stored and
 multiplexed through the one Durable Object alarm. The generic substrate is
-deployed; one unified notification task connects AR2, Simple Alarms, Pump, OpenAPS,
-Loop, Treatment Notify and Timeago with their official enable gates today.
+deployed; one unified notification task connects AR2, Simple Alarms, Pump,
+OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment Notify, Timeago and DBSize with their
+official enable gates today.
 
 Official plugin formulas and medical calculations are not rewritten. The
 build-time registry lists the locked server plugins so bundling is deterministic;
@@ -1188,13 +1192,17 @@ request time and their existing request objects now also execute automatically
 when the official alert gates enable them;
 IOB/COB use the locked official formulas and can populate
 request-time Summary state when enabled; they do not recommend insulin.
-AR2, Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago request objects
-are arbitrated, persisted and delivered to live `/alarm` clients by the same
+AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment Notify,
+Timeago and DBSize request objects are arbitrated, persisted and delivered to
+live `/alarm` clients by the same
 internal engine. Mutations evaluate the leading edge and the schema-v14
 scheduler retains only the earliest logical activation, strict threshold-plus-
 one-millisecond transition, source expiry, quiet-night boundary or heartbeat.
-CAGE/SAGE/IAGE, BWP/DBSize and remaining automatic outputs still need
-adapters around locked upstream modules rather than downstream formulas.
+BWP and remaining automatic outputs still need adapters around locked upstream
+modules rather than downstream formulas. The age producers use bounded latest
+current/earliest-future Treatment rows, exact whole-hour thresholds, the locked
+inclusive 20-minute window and automatic clear. DBSize uses the actual SQLite
+file byte count and remains opt-in.
 
 ## Why no D1 or R2
 

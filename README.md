@@ -108,8 +108,9 @@ for diagnosis, dosing, or medical decisions.
   the official pills, thresholds, notes and environment normalization.
   Timeago keeps the unchanged official client behavior and has a request-local
   server request/display adapter. The schema-v14 durable task runner now
-  evaluates Simple Alarms and opt-in Timeago alerts automatically. Automatic
-  CAGE/SAGE/IAGE evaluation remains a later task kind.
+  evaluates CAGE, SAGE, IAGE, Simple Alarms and opt-in Timeago alerts
+  automatically, preserving exact future thresholds, the inclusive 20-minute
+  age-alert window, heartbeat repetition and automatic clear.
 - The official Nightscout v15.0.7 homepage, Admin Tools, Profile Editor, Food
   Editor, Reporting, multiframe view, clock faces and Swagger pages, built from
   the unmodified source snapshot in `vendor/nightscout`.
@@ -183,11 +184,11 @@ for diagnosis, dosing, or medical decisions.
   survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
   abandoned poll/POST lease cleanup, stale authorization-failure cleanup and
-  automatic Simple Alarm, Pump, OpenAPS, Loop, Treatment Notify and Timeago
-  re-evaluation without
+  automatic AR2, Simple Alarm, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE,
+  Treatment Notify, Timeago and opt-in DBSize re-evaluation without
   relying on a process-lifetime `setInterval`. Mutations evaluate the leading
   edge inside their originating request; no future deadline is retained when
-  all six enabled producers are inactive.
+  all eleven enabled producers are inactive.
 - Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs. Only EIO4
   polling and direct WebSocket are routed: polling advertises `upgrades: []`,
   EIO3 and binary packets are rejected, and polling-to-WebSocket upgrade is not
@@ -212,8 +213,8 @@ Mongo query/collection parity beyond the tested safe subset, Engine.IO
 polling-to-WebSocket upgrade, EIO3 HTTP transport,
 the direct-WebSocket at-most-once crash window, profile-switch/plugin
 preprocessing on root updates, remaining background-task kinds, general server
-plugin execution, automatic CAGE/SAGE/IAGE/BWP/DBSize/admin
-alarm generation, external push providers, plugin-derived v2 summary
+plugin execution, automatic BWP and remaining plugin alarm generation,
+external push providers, plugin-derived v2 summary
 state/persistence, and end-to-end verification of every official page workflow.
 The polling shim only keeps the official browser bundle supplied
 with aggregate REST data; it does not use the new EIO4 endpoint. Switching the
@@ -508,11 +509,11 @@ The prior eight v1 additions are
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
 The deployed runtime candidate is commit
-`58b33fc2b068a42a033be29ea8d2ca34fef0081a`. The 62-file Workers-runtime
-suite passes 687/687 tests, the four audit suites pass 22/22, eleven complete
+`27ffb4256baeb4ecef0c91b91aa176cad2381504`. The 62-file Workers-runtime
+suite passes 692/692 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty locked server/data-plugin
 files pass 134/134 unchanged. Wrangler dry-run reads the same
-248 official assets, reports 1175.66 KiB raw / 217.19 KiB gzip and exposes only
+248 official assets, reports 1183.78 KiB raw / 218.53 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -545,8 +546,9 @@ Workers Static Assets, all 33 JSON files are audited as valid and byte-identical
 to v15.0.7, `LANGUAGE` reaches HTTP/Socket settings, and the default Sandbox
 uses the same request-local translator.
 This runtime connects a single `plugin-notifications` SQLite task to the locked
-official AR2, Simple Alarms, Pump, OpenAPS, Loop, Treatment Notify and Timeago
-calculations and the core notification processor. The engine evaluates the seven
+official AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment
+Notify, Timeago and DBSize calculations and the core notification processor.
+The engine evaluates the eleven
 producers in official server order from one bounded context, arbitrates requests and snoozes in one
 transaction, atomically publishes the selected live `/alarm` frame, and stores
 the next exact logical deadline. AR2 preserves the official coefficients,
@@ -594,11 +596,13 @@ newest 1,000 under the existing Workers Free response budget. API v2 ddata now
 also applies the locked treatment-to-glucose-curve marker placement, including
 explicit units and raw-BG fallback. These are official calculations and display
 placement only; NSCF adds no dose recommendation.
-The prior age/timeago and database-size adapters remain. Timeago warning and
-urgent alerts are now automatically scheduled when the locked setting enables
-them; CAGE/SAGE/IAGE remain request-local. Ddata continues to publish the
-Durable Object's real SQLite file size and the official `dbsize` calculation
-consumes it without double-counting indexes. Its platform maximum defaults to the documented
+The prior age/timeago and database-size adapters remain. Timeago, CAGE, SAGE
+and IAGE alerts are now automatically scheduled when their locked settings
+enable them. The opt-in DBSize producer consumes the same real SQLite byte
+count, persists heartbeat scheduling and publishes through `/alarm`; it remains
+off by default, so ordinary deployments do not spend extra alarm work for this
+diagnostic. Ddata continues to publish the Durable Object's real SQLite file
+size without double-counting indexes. Its platform maximum defaults to the documented
 Workers Free one-GB per-object ceiling expressed as 953.67 MiB; the official
 [`databaseSize` API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)
 and [Durable Object limits](https://developers.cloudflare.com/durable-objects/platform/limits/)
@@ -655,8 +659,8 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `83c08370-341c-4c4c-b7ea-4378e499eb24` (ordinal 73) was made
-current at `2026-07-21T23:44:59.295697Z`, with a reported 25 ms startup. No asset bytes needed
+Cloudflare version `70e49b47-bc2a-4f9e-82ba-b5e2eafbb922` (ordinal 74) was made
+current at `2026-07-22T00:21:36.094Z`, with a reported 32 ms startup. No asset bytes needed
 uploading because all 248 official asset entries were unchanged.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
 and Treatments reads, a fresh-tenant current Profile and v2 Summary, API3
@@ -665,7 +669,7 @@ the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
 missing-token API3 Entries returned the expected 401. The 72-assertion script
-used fresh tenant `public-smoke-1784677520758`, observed 262,144 SQLite bytes and a
+used fresh tenant `public-smoke-1784679706217`, observed 262,144 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -704,6 +708,14 @@ callers. One immediate post-activation request returned the old zero-count
 behavior; the 100% deployment status and same-region retries then converged.
 Administrator-body, Profile/Food/Admin mutation and real closed-loop paths
 remain for the final user environment test.
+
+After the age/DBSize scheduler deployment, a version 74 browser pass reloaded
+the official homepage, connected to the live transport, displayed the preserved
+simulated stream and opened the complete official Settings form. The form showed
+Admin authorized and Nightscout version 15.0.7; clicking the unchanged official
+Save button completed successfully and closed the form. The only console errors
+were the browser's expected audio autoplay-policy rejections before interaction.
+Version 74 also passed the same 72-assertion credential-free API/Engine.IO gate.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
