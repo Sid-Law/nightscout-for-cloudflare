@@ -6,14 +6,14 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `5173326` and Cloudflare
-version `0359d367-2317-41c2-a8cd-f9d840a29610`. The
-candidate's 62-file Workers-runtime suite passes 692/692 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `1ffa2ab` and Cloudflare
+version `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930`. The
+candidate's 63-file Workers-runtime suite passes 695/695 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 134/134 unchanged tests across twenty
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1183.81 KiB
-raw / 218.54 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 76 reported a 34 ms startup and passed credential-free
+Wrangler processed 250 Static Assets entries; its dry run reported 1190.22 KiB
+raw / 219.90 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 79 reported a 33 ms startup and passed credential-free
 API, official Socket.IO-client, EIO4 and clean-profile real-browser gates.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -60,6 +60,16 @@ one persisted trailing deadline to one second after the last event, bounded by
 five seconds from burst start. DO request serialization prevents overlapping
 evaluation, and the existing alarm multiplexer survives isolate eviction.
 Root/API realtime publication remains immediate and is not coalesced.
+Schema v17 adds one optional `simulated_cgm_state` row per tenant. It is absent
+from official API contracts and disabled by default. The protected platform
+route can enable a lab tenant, seed twelve ordinary v1 Entries and persist its
+next five-minute deadline. That deadline participates in the same minimum-
+deadline alarm calculation as realtime, auth cleanup, background tasks and
+debounce. A committed turn advances the state before rescheduling; a late wake
+writes one current SGV instead of replaying an unbounded backlog. The small
+test-only crash gap between the Entry commit and schedule advance can produce
+one extra sample and remains an explicit non-critical boundary.
+The generated Entries still drive the normal root delta pipeline.
 The legacy document adapter additionally preserves the locked storage-shape
 semantics: scalar and array API writes map to explicit batches, Profile/Food/
 Activity direct saves create a fresh ObjectId when their internal ID is absent
@@ -75,9 +85,9 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 62 Workers files / 692 tests, 22/22 audits, eleven direct upstream
+evidence is 63 Workers files / 695 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty direct upstream server/data-plugin files / 134 tests; the
-dry run is 1183.81 KiB raw / 218.54 KiB gzip with 250 assets and two bindings.
+dry run is 1190.22 KiB raw / 219.90 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4 and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -1096,7 +1106,7 @@ API/careportal/boluscalc enablement and no active profile. `authorize` and
 tightening over permissive upstream JavaScript call shapes.
 
 Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`0359d367-2317-41c2-a8cd-f9d840a29610`. Current credential-free remote smoke
+`d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930`. Current credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal and AR2 properties and the opt-in-disabled
@@ -1111,12 +1121,17 @@ The version-73 browser acceptance additionally rendered 26 AR2 forecast dots.
 Version 74 reloaded the connected official homepage, opened the complete
 Settings form with Admin authorized/About 15.0.7, and successfully completed
 the unchanged Save workflow. Its only console errors were expected browser
-autoplay-policy rejections before user interaction. Version 76 replaced the
+autoplay-policy rejections before user interaction. Version 78 replaced the
 former shim with the byte-identical official Socket.IO 4.5.4 client. A clean
 browser connected and authorized root, received `dataUpdate`, subscribed to
 `/alarm`, loaded both content-addressed transport assets and reported zero
 console errors or warnings. An independent official-client remote smoke
 confirmed the same four states.
+Version 79 explicitly enabled the schema-v17 feed only for the public `demo`
+tenant. The official homepage rendered its one-hour seed through the existing
+Entries/root-delta path; the `01:40` and `01:45` alarm turns appended new rows
+and the open page advanced without reload. All other tenants remain disabled
+by default.
 No real CGM or closed-loop traffic was used. Four fresh-tenant Admin-notification probes returned the readable-site
 count while hiding the body, and the real browser retained the official Admin,
 clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send

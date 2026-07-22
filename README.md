@@ -183,7 +183,8 @@ for diagnosis, dosing, or medical decisions.
   registry properties; IOB/COB remain `null` when disabled. BWP and other
   unported plugin state are not invented.
 - A tenant-local Durable Object alarm derived from persisted realtime
-  deadlines, authorization-delay cleanup and schema-v14 background tasks. It
+  deadlines, authorization-delay cleanup, schema-v14 background tasks and an
+  optional schema-v17 lab-CGM deadline. It
   survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
   abandoned poll/POST lease cleanup, stale authorization-failure cleanup and
@@ -192,6 +193,14 @@ for diagnosis, dosing, or medical decisions.
   relying on a process-lifetime `setInterval`. Mutations evaluate the leading
   edge inside their originating request; no future deadline is retained when
   all eleven enabled producers are inactive.
+- An NSCF platform-only, per-tenant simulated CGM switch for the public lab.
+  It is disabled by default, requires the ordinary Entries write/delete
+  permissions to change, seeds twelve deterministic five-minute SGVs when
+  enabled and then appends one fresh SGV every five minutes through the same
+  Durable Object alarm. Eviction preserves its schedule; a delayed wake emits
+  one current reading rather than fabricating a long backlog. The generated
+  rows use the official Entries schema and flow through the official root
+  `dataUpdate`; no client UI, medical formula or dosing logic is added.
 - Tested official EIO4/SIO5 and legacy EIO3/SIO4 packet codecs. Only EIO4
   polling and direct WebSocket are routed: polling advertises `upgrades: []`,
   EIO3 and binary packets are rejected, and polling-to-WebSocket upgrade is not
@@ -307,6 +316,20 @@ Read it back:
 ```sh
 curl 'http://localhost:8787/api/v1/entries.json?count=10&tenant=demo'
 ```
+
+For a continuously moving **test-only** curve, enable the NSCF platform
+adapter for that tenant. This is not an upstream Nightscout API and is disabled
+until explicitly enabled:
+
+```sh
+curl -X POST 'http://localhost:8787/_nscf/simulated-cgm?tenant=demo' \
+  -H 'Content-Type: application/json' \
+  -H "api-secret: ${NSCF_API_HASH}" \
+  --data '{"enabled":true}'
+```
+
+Post `{"enabled":false}` to stop future readings; existing simulated Entries
+remain ordinary Entries and can be deleted with the official APIs.
 
 Tenant names are lowercase letters/numbers followed by up to 63 lowercase
 letters, numbers, `_` or `-`. The selector provides storage isolation only; it
@@ -512,11 +535,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; 12 files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `5173326`. The 62-file Workers-runtime
-suite passes 692/692 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `1ffa2ab`. The 63-file Workers-runtime
+suite passes 695/695 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty locked server/data-plugin
 files pass 134/134 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1183.81 KiB raw / 218.54 KiB gzip and exposes only
+reports 1190.22 KiB raw / 219.90 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -665,9 +688,9 @@ limited and must not receive real health data. Deployment resources, remote
 smoke evidence and rollback details are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Cloudflare version `0359d367-2317-41c2-a8cd-f9d840a29610` (ordinal 76) was
-created at `2026-07-22T00:56:23.047Z`; Wrangler reported a 34 ms startup and no
-asset changes relative to version 75. Version 75
+Cloudflare version `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930` (ordinal 79) was
+created at `2026-07-22T01:34:33.270Z`; Wrangler reported a 33 ms startup and no
+asset changes relative to the preceding version. Version 75
 `3c124be0-a30c-48b2-9a6f-0faa84240e01` uploaded the official Socket.IO client,
 the tenant-query adapter and the six rebuilt page/service-worker entries.
 Credential-free remote smoke returned HTTP 200 for health, bounded v1 Entries
@@ -676,8 +699,8 @@ version, matching v1/v2 Settings snapshots, real ddata/database-size values,
 the default-enabled `dbsize` and Basal properties, opt-in-disabled Loop, IOB/COB,
 OpenAPS/Pump and age
 properties, null disabled IOB/COB Summary state, and EIO4 polling;
-missing-token API3 Entries returned the expected 401. The final 72-assertion script
-used fresh tenant `public-smoke-1784681840536`, observed 262,144 SQLite bytes and a
+missing-token API3 Entries returned the expected 401. The current 72-assertion script
+used fresh tenant `public-smoke-1784684130172`, observed 270,336 SQLite bytes and a
 `0%`/`current` database-size pill.
 The Settings
 snapshot retained 63 JSON-visible keys and 14 enabled defaults while excluding
@@ -725,7 +748,7 @@ Save button completed successfully and closed the form. The only console errors
 were the browser's expected audio autoplay-policy rejections before interaction.
 Version 74 also passed the same 72-assertion credential-free API/Engine.IO gate.
 
-Versions 75/76 replaced the REST polling shim with the locked official
+Versions 75–78 replaced the REST polling shim with the locked official
 Socket.IO 4.5.4 client and then repaired a Cloudflare edge difference where a
 bodyless `DELETE` can arrive as a zero-byte stream. A remote isolated-tenant
 contract created one simulated SGV, deleted it with a genuinely bodyless
@@ -737,6 +760,13 @@ EIO4 polling, logged the four corresponding connection/data/subscription
 events and had zero console errors or warnings. After the 25 stale simulator
 rows were removed, the page title remained `Nightscout` without a stale-data
 alarm.
+
+Version 79 adds only the opt-in schema-v17 lab simulator and its protected
+platform endpoint. The public `demo` tenant was explicitly enabled after
+deployment: twelve one-hour seed points appeared in the official chart and the
+same DO appended the `01:40` and `01:45` readings. The already-open official
+page advanced to the newest value without a reload. Fresh or ordinary tenants
+remain disabled, so this does not fabricate glucose for normal deployments.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

@@ -12,27 +12,28 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `5173326d3792efb246537d088079d45188b5e95d`
-- Runtime source candidate: `5173326d3792efb246537d088079d45188b5e95d`
-- Git HEAD used by Wrangler: `5173326d3792efb246537d088079d45188b5e95d`
-- Cloudflare Version ID: `0359d367-2317-41c2-a8cd-f9d840a29610`
-- Cloudflare ordinal version number: `76`
+- Deployed runtime candidate: `1ffa2ab86234ed31d66f5dd8161566453651909a`
+- Runtime source candidate: `1ffa2ab86234ed31d66f5dd8161566453651909a`
+- Git commit matching the deployed worktree: `1ffa2ab86234ed31d66f5dd8161566453651909a`
+- Cloudflare Version ID: `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930`
+- Cloudflare ordinal version number: `79`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T00:56:23.047Z`
+- Version creation time: `2026-07-22T01:34:33.270Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 34 ms
+- Worker startup: 33 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
   silence tables, the v11 root-delta baseline and the v12 persisted root-write
   authority columns, the v13 notification last-emission column, the v14
   persisted background-task table/index, the v15 Admin-notification table and
-  the v16 persisted data-update debounce table/index
+  the v16 persisted data-update debounce table/index and the v17 optional
+  simulated-CGM scheduling row
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  version 76 reused them unchanged
-- Upload: 1183.81 KiB raw / 218.54 KiB gzip
+  versions 76–79 reused them unchanged
+- Upload: 1190.22 KiB raw / 219.90 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -41,7 +42,9 @@ The user supplied a construction `API_SECRET`. The 25-entry
 by exact device/type matching after its idle timestamps triggered the official
 stale-data alarm; the Profile and nonmatching collections were not deleted.
 The value is not committed or recorded in this document. Anonymous probes
-still fail closed. Ordinary deployments do not auto-generate glucose.
+still fail closed. Version 79 explicitly enables the disabled-by-default
+schema-v17 simulator only for the public `demo` lab tenant; ordinary and fresh
+tenants do not auto-generate glucose.
 Cloudflare's current Wrangler documentation states that dashboard text
 variables are overwritten by a normal deployment unless `keep_vars` is true,
 while encrypted Secrets are not deleted by ordinary deployments. The current
@@ -59,6 +62,32 @@ The project uses exactly:
 It does not create or use D1, R2, KV, Queues, a custom domain or a zone route.
 The public instance is for simulated data only and must not receive real health
 data, CGM credentials, pump credentials or closed-loop traffic.
+
+## Version 79 lab-feed increment
+
+- `/_nscf/simulated-cgm` is an NSCF platform endpoint, not an upstream
+  Nightscout route. GET uses the ordinary Entries read permission; POST
+  requires Entries create permission to enable and delete permission to stop.
+- The switch is persisted independently per tenant and defaults to disabled.
+  Enabling seeds twelve deterministic SGVs at five-minute spacing, then adds
+  its next deadline to the existing Durable Object alarm multiplexer.
+- A due turn writes one current official v1 Entry, publishes the normal root
+  `dataUpdate`, advances the sequence and schedules five minutes later.
+  Repeated delivery after a committed turn is a no-op; eviction retains the
+  state and a long suspension produces one current reading rather than a
+  fabricated historical backlog. A crash in the small test-only gap between
+  the Entry commit and schedule advance can add one extra sample, not an
+  unbounded replay; closing that gap is deferred with the direct-send crash
+  boundary rather than delaying ordinary-family testing.
+- The public `demo` tenant was explicitly enabled after deployment at
+  `2026-07-22T01:35:00Z`; status returned `intervalMs:300000`, twelve seed rows
+  appeared in the official chart, and isolated smoke tenants remained empty.
+  Durable alarms then appended `116` at `01:40:00Z` and `114` at `01:45:00Z`;
+  the already-open official page changed to `114`, `-2`, one minute ago without
+  a manual reload and the next deadline advanced to `01:50:00Z`.
+- This mechanism contains no real CGM bridge, dose recommendation, user-facing
+  substitute UI or new medical calculation. Disabling stops future writes but
+  does not secretly delete ordinary Entries.
 
 ## Release content
 
@@ -477,7 +506,7 @@ bounded date partitions for long exports.
 ## Pre-deployment gate
 
 The deployed runtime candidate is
-`5173326d3792efb246537d088079d45188b5e95d`. It retains schema-v15 persisted
+`1ffa2ab86234ed31d66f5dd8161566453651909a`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -485,7 +514,9 @@ work, and adds the official AR2 prediction/property/notification adapter while r
 request-local Basal Profile state and all prior OpenAPS/Pump, IOB/COB/
 Treatment-to-curve, registry, age/timeago, dataloader/database-size, Sandbox,
 Settings, Loop, Profile, uploader, identity, root-write/delta, v1, API3,
-authorization, realtime, notification-ACK and official-page work.
+authorization, realtime, notification-ACK and official-page work. Schema v17
+adds the opt-in per-tenant lab feed and its one-alarm continuation without
+changing official request/response contracts.
 The table below records the exact current local gate for the immutable deployed
 runtime and assets. The unchanged-client runner now includes the original
 client Hashauth, Admin Tools, report-settings and complete Reports workflows;
@@ -507,13 +538,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 62 files, 692/692 passed |
-| Worker dry run | 1183.81 KiB raw / 218.54 KiB gzip |
+| Workers integration tests | 63 files, 695/695 passed |
+| Worker dry run | 1190.22 KiB raw / 219.90 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 692 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 695 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 20
 server/data-plugin files run unchanged in a separate 134/134 gate. All 16 API3 files,
@@ -541,7 +572,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `0359d367-2317-41c2-a8cd-f9d840a29610` as the current
+Wrangler reports version `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -557,8 +588,8 @@ not only Wrangler command success.
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
 | GET `/api/v2/summary/?hours=6` | HTTP 200 with an empty SGV array, empty temp-basal/treatment/target groups, `{}` Profile and locked `null` IOB/COB fields because both plugins are disabled |
-| GET `/api/v2/ddata/at` | HTTP 200 with real SQLite `dataSize:262144` bytes and `indexSize:0`; the total is not double-counted |
-| GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.25`, `display:"0%"` and `status:"current"` |
+| GET `/api/v2/ddata/at` | HTTP 200 with real isolated-tenant SQLite `dataSize:270336` bytes and `indexSize:0`; the total is not double-counted |
+| GET `/api/v2/properties/dbsize` | HTTP 200 with `maxSize:953.67`, `dataSize:0.26`, `display:"0%"` and `status:"current"` |
 | GET `/api/v2/properties/basal` | HTTP 200 on the public simulated profile with `display:"0.100U"`, scheduled `basal:0.1` and no fabricated active treatment contribution |
 | GET `/api/v2/properties/ar2` | HTTP 200 with six input-derived predicted points (`103` through `111`), average loss and `displayLine:"BG 15m: 107 mg/dl"` |
 | GET `/api/v2/properties/loop` | HTTP 200 with `{}` because Loop is opt-in and the deployed `ENABLE` setting does not enable it; no synthetic property was fabricated |
@@ -567,9 +598,10 @@ not only Wrangler command success.
 | GET `/api/v2/properties/cage,sage,iage,timeago` | HTTP 200; CAGE/SAGE/IAGE presence follows the deployed opt-in `ENABLE` set and all are absent by default, while timeago remains a client/notification plugin rather than a fabricated property |
 | Credentialed simulator mutation | The historical 25-entry v1 SGV batch from `simulator://nscf-demo` returned HTTP 200 and rendered the chart; all 25 exact simulator rows were later deleted because their intentionally idle timestamps triggered stale-data alarms |
 | Cloudflare bodyless DELETE | An isolated tenant created one simulated SGV, deleted it with a genuinely bodyless v1 request and returned HTTP 200 with `deletedCount:1`; a follow-up read returned zero rows |
+| GET/POST `/_nscf/simulated-cgm` | Public `demo` reported enabled with `intervalMs:300000`; twelve deterministic seed rows used `simulator://nscf-test`. Fresh smoke tenants remained disabled/empty. |
 
 The reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784681840536` and passed 72 behavior/CORS assertions.
+`public-smoke-1784684130172` and passed 72 behavior/CORS assertions.
 The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
 `pingTimeout:20000`.
 
@@ -653,6 +685,9 @@ automatic all-clear and atomic live publication. Schema-v14 contracts
 add automatic AR2/Simple/Pump/OpenAPS/Loop/CAGE/SAGE/IAGE/Treatment-Notify/Timeago/DBSize publication, single-alarm
 multiplexing, activation/expiry, in-range/fresh clearing, data-preserving
 partial repair, persistent retry and recovery. The
+schema-v17 contracts add default-off tenant isolation, protected
+enable/disable, a twelve-point seed, idempotent re-enable, root `dataUpdate`,
+alarm continuation and eviction recovery. The
 credential-free remote pass did not publish a trusted notification or perform
 an alarm ACK; the separate simulator batch exercised only v1 SGV upload. Neither layer proves
 polling upgrade, EIO3, profile-switch/plugin preprocessing or automatic task
@@ -660,13 +695,13 @@ execution for the remaining server plugins.
 
 ## Real-browser evidence
 
-A real browser session exercised Cloudflare version 76's official UI after the
+A real browser session exercised Cloudflare version 78's official UI after the
 broader version-72/73/74 page checks:
 
 - the homepage rendered its official chart region, loaded locked
   `bundle.app.js` and displayed the live database-size pill as `0%`;
 - version 74 historically preserved the stale simulated stream and saved its
-  two client stale-data alarm checkboxes off; version 76 removed all 25 exact
+  two client stale-data alarm checkboxes off; version 78 removed all 25 exact
   `simulator://nscf-demo` SGVs, preserved Profile state and loaded a clean
   `Nightscout` heading without auto-generating replacement glucose;
 - after the credentialed simulator batch, the official current display showed
@@ -677,18 +712,21 @@ broader version-72/73/74 page checks:
   probes reported the readable-site count while hiding bodies from anonymous callers;
 - Admin Tools and the official `clock-color` page loaded in the earlier
   version-72 pass with no captured console error;
-- a new version-76 browser profile loaded
+- a new version-78 browser profile loaded
   `/socket.io/socket.io.js?7a8ec840e096` and
   `/platform/socket-tenant-adapter.js?a083f014e6e1`, completed real EIO4
   polling, logged connected/authorize/`dataUpdate`/alarm-subscribe and reported
   zero console errors or warnings;
 - no real health data or protected Profile/Food/Admin mutation was attempted.
+- version 79 then rendered the explicitly enabled `demo` tenant's twelve-point
+  one-hour lab seed in the same unchanged official chart.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `0359d367-2317-41c2-a8cd-f9d840a29610` reused version 75's
-250 Static Assets entries and passed credential-free remote API, official-
-client Engine.IO and the named real-browser acceptance.
+Cloudflare version `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930` reused the same
+250 Static Assets entries and passed the 72-assertion credential-free remote
+API/Engine.IO gate. Version 78 retains the named official-client and clean-
+browser transport acceptance; version 79 adds the displayed lab feed.
 
 Authenticated Profile Save remains historical evidence from an earlier
 version; the current load is recorded above, but no authenticated Food/Profile

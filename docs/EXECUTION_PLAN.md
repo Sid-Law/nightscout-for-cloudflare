@@ -46,7 +46,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | --- | --- | --- |
 | 0. Upstream lock and clean vendor | Complete | Keep v15.0.7 commit/archive hash immutable until an explicit upstream update. |
 | 1. Compatibility inventory | Tooling complete | Keep the generated 161-route/111-test manifest current; update a file from unresolved only with whole-file or complete adapted evidence. |
-| 2. Official browser assets/pages | Partial | Versions 72–74 established the official homepage/chart, Settings/About 15.0.7, Admin/clock and AR2 rendering/Save workflows. Version 75 replaced the REST shim with the byte-identical official Socket.IO 4.5.4 client; version 76's new browser profile loaded it plus the tenant-query adapter, connected/authorized, received `dataUpdate`, subscribed to `/alarm` and reported zero console errors or warnings. The 25 stale simulator SGVs were then removed without deleting Profile state. Protected Profile/Food/Admin mutation, report-generation and a pushed live mutation observed in the page remain. |
+| 2. Official browser assets/pages | Partial | Versions 72–74 established the official homepage/chart, Settings/About 15.0.7, Admin/clock and AR2 rendering/Save workflows. Version 75 replaced the REST shim with the byte-identical official Socket.IO 4.5.4 client; version 78's clean browser loaded it plus the tenant-query adapter, connected/authorized, received `dataUpdate`, subscribed to `/alarm` and reported zero console errors or warnings. Version 79 then displayed the opt-in lab feed in the unchanged chart. Protected Profile/Food/Admin mutation, report-generation and a pushed protected mutation observed in the page remain. |
 | 3. SQLite collection compatibility | In progress | All six official API3 collections share the generic repository; v1 Food shares its identity/history and older Food rows receive idempotent metadata repair. The complete 13-case concurrent-write contract proves five-way scalar/batch writes, unique IDs and 50-SMB/100-SGV/30-cross-collection recovery. The 26-case upstream storage-shape file is now adapted: scalar/one/many/20-document writes, Profile/Food/Activity save identity and created-at behavior, authorization replacement and explicit SQLite one/many batches are locked. Public invalid-ID checks remain strict while direct legacy saves retain upstream fresh-ObjectId fallback. `/storage` atomically queues bounded frames for current subscribers without consuming the unbounded `document_changes` snapshot journal. Close Mongo mixed-type/nested parity and define journal retention/pruning separately. Entries uses a deliberate fresh-only reset for an incompatible pre-1.0 narrow shadow; it is not a legacy importer. |
 | 4. API v1 | In progress; 26 locked files plus shared query contract adapted | Entries adapts its complete locked upstream file plus deduplication, Entries UUID and partial-failure contracts. The locked `query.test.js` defaults, ID date-bypass and ObjectId behavior now use one Worker-safe adapter shared by live Entries parsing. Treatments additionally adapts complete UUID-handling, issue-6923, identity-matrix, GAP-TREAT-012, Loop carb/dose and ObjectIdCache files. The complete Loop SGV/DeviceStatus file locks directions, device metadata, replay behavior and nested Loop/pump payloads; DeviceStatus retains official prediction trimming. Root, Status, AndroidAPS, Alexa, unauthorized and Loop/Trio batch files are mapped. Status consumes the request-local Settings adapter. Complete non-Entries echo, bounded aggregation-pipeline parity, safe-attribute DOMPurify byte parity, wider Mongo query/document behavior and remaining v1 routes/test files. |
 | 5. API v2 | Partial | JWT issuance/refresh, strict v2 Status, inherited v1 notification ACK/Treatments behavior, `/ddata/at`, property selection/pretty formatting and the summary SGV/treatment/target/temp-basal/profile mapper are deployed. Summary uses the complete 24-assertion `profile.test.js` adapter and receives opt-in official IOB/COB state. The complete locked `ddata`, `dataloader`, `dbsize`, `bgnow`, `direction`, `rawbg`, `upbat`, `ar2`, `basalprofileplugin`, `simplealarms`, `treatmentnotify`, `cannulaage`, `sensorage`, `insulinage`, `timeago`, `iob`, `cob`, `openaps`, `pump`, treatment-to-curve and five-case `loop` files are adapted. `/properties` runs the official default-enabled Basal and AR2 properties plus opt-in OpenAPS and Pump calculations through the same registry. Ddata publishes real SQLite bytes and applies official Treatment marker placement. Basal receives the current Profile plus bounded Temp Basal/Profile Switch/Combo Bolus treatments and meter-BG projection; AR2 maps official `ALARM_TYPES`/`AR2_CONE_FACTOR`, and IOB/COB preserve their upstream `ENABLE` gates and bounded Profile/Treatment inputs. The platform reports the one-GB ceiling as 953.67 MiB. One persisted task now evaluates eleven official producers: AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, Treatment Notify, Timeago and opt-in DBSize. BWP and remaining plugin/summary fields, summary persistence, remaining task sources and v2-only `/notifications/loop` delivery remain; ddata uses a bounded two-day SGV window. |
@@ -54,7 +54,7 @@ Opening a page or serving an official asset does not satisfy this standard.
 | 7. Authentication/admin | Core plus Admin notices adapted; named hardening retained | Tenant JWT keys, eight-hour HS256 tokens, derived access-token/prefix matching, body/query/header credential order, live subject/role lookup, persisted per-IP delay, Shiro matching and `verifyauth` are implemented. Schema v15 persists the official readable-site and failed-auth Admin notices, message aggregation, public-count/admin-body split, eight/twelve-hour windows and disable gate across DO eviction. The deployed platform configuration preserves dashboard variables across Wrangler deploys and audits that no plaintext credential is committed; encrypted Secrets remain preferred. A user-provided construction credential successfully authorized one 25-entry simulated SGV batch without recording its value. The Workers boundary caps enforced delay at 60 seconds, bounds transient Admin notices at 128 per tenant, and handles repeated/bracket `secret` arrays safely instead of reproducing the locked upstream unhandled rejection. |
 | 8. Engine.IO/Socket.IO | Partial EIO4 polling + direct WebSocket; official browser uses polling | Strict EIO4 polling and direct Hibernatable EIO4 WebSocket are routed to tenant `EntryStore` DOs with persisted sessions/queues, heartbeat, SIO5 root CONNECT/read/write/treatment-write authorization, initial/retro data, server-originated deltas and the locked `dbAdd`/`dbUpdate`/`dbUpdateUnset`/`dbRemove` events, plus API3 `/storage` and `/alarm`. The byte-identical official Socket.IO 4.5.4 browser client now uses root polling and `/alarm`; the only browser adapter adds an optional test-tenant query. Add remaining plugin evaluation, profile-switch preprocessing, close the direct-send at-most-once crash window, then add polling upgrade/EIO3. |
 | 9. Real-time storage updates | Root server/client mutations plus API3 `/storage` implemented | Successful HTTP API3 mutations atomically enqueue official collection-room frames and root deltas; implemented v1/v2 changes publish root deltas in a follow-up DO transaction. Schema-v11 baseline and schema-v12 write authority survive reconstruction. Authorized client root writes preserve exact ACK/error ordering and queue any delta after the ACK; unauthorized/read-only sessions stay unable to mutate. The official client now receives its initial root update remotely; add a credentialed pushed mutation observed in the page and profile/plugin preprocessing. Keep the unbounded `document_changes` journal and its future retention policy distinct from the bounded live transport queue. |
-| 10. Alarms/background tasks | Generic SQLite scheduler + unified automatic notification task | Schema v14 stores logical tasks, due times, attempts and update times in SQLite. The DO's one Cloudflare alarm is derived from the minimum of persisted realtime, authorization-cleanup, task and schema-v16 debounce deadlines. One `plugin-notifications` task evaluates eleven official producers in server order from a bounded SGV/MBG/DeviceStatus/Profile/Treatment/SQLite-stat context. Mutations run the leading edge; rapid batches receive exactly one persisted trailing evaluation after one quiet second or at the five-second max wait. The task retains the earliest heartbeat, exact age threshold/window clear, strict threshold-plus-one-millisecond transition, expiry, quiet-night boundary or future activation deadline only while needed. Notification state, live queueing and task completion/reschedule commit together. Failures persist two-second exponential retry capped at five minutes; early at-least-once delivery is a no-op. Add BWP/remaining plugin producers, summary/activity persistence and future maintenance/pruning. |
+| 10. Alarms/background tasks | Generic SQLite scheduler + unified automatic notification task | Schema v14 stores logical tasks, due times, attempts and update times in SQLite. The DO's one Cloudflare alarm is derived from the minimum of persisted realtime, authorization-cleanup, task, schema-v16 debounce and optional schema-v17 lab-CGM deadlines. One `plugin-notifications` task evaluates eleven official producers in server order from a bounded SGV/MBG/DeviceStatus/Profile/Treatment/SQLite-stat context. The disabled-by-default lab CGM uses the same alarm, writes one current SGV per five-minute due turn and never backfills an unbounded outage. Mutations run the leading edge; rapid batches receive exactly one persisted trailing evaluation after one quiet second or at the five-second max wait. Failures persist two-second exponential retry capped at five minutes; early at-least-once delivery is a no-op. Add BWP/remaining plugin producers, summary/activity persistence and future maintenance/pruning. |
 | 11. Server plugins/notifications | Static registry + eleven automatic producers + persisted core/Admin notices | Stateless ports of official `bgnow`, `direction`, `rawbg`, `upbat`, `basal`, `ar2`, `simplealarms`, `loop`, `openaps`, `pump`, `iob`, `cob`, `dbsize`, `cannulaage`, `sensorage`, `insulinage`, `timeago`, Treatment Notify and treatment-to-curve plus shared `times`, `units`, `levels`, Profile calculations and the complete public `lib/sandbox.js` surface now exist. AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, officially enabled Treatment Notify, opt-in Timeago and opt-in DBSize alerts are automatically evaluated by schema v14 under their official gates. Schema v15 adapts official Admin notices without a process-global array. Schema v16 persists the upstream one-second trailing/five-second max-wait data-update debounce across DO eviction while keeping the leading evaluation and root publication immediate. The official processor preserves urgent/warning priority, information/announcement handling, snooze arbitration and automatic all-clear. The static registry replaces Node dynamic `require`, preserves the locked catalogs/order/gates/hooks, and drives implemented v2 properties and IOB/COB Summary state. No public processing endpoint was added. BWP, remaining plugin alarm producers and external providers remain incomplete. Build those adapters without rewriting formulas. |
 | 12. Upstream regression suite | Tracked; 15 pass + 82 adapted files | Work through `docs/UPSTREAM_TEST_MANIFEST.md` in dependency order; all 16 API3 files, the complete storage-shape and bootevent-debounce files, the named storage/concurrency/notification/data/dataloader/database-size/age/timeago/AR2/Basal/Treatment-Notify/Simple-Alarms/OpenAPS/Pump/IOB/COB/treatment-curve/property/Profile/Settings/Language/Query/Sandbox/registry/realtime foundations, four server authentication files and 25 v1 client/API files are adapted. Eleven complete client files run 42/42 unchanged after proving the public bundle is byte-identical to the locked upstream build. Care Portal/Profile Editor/Admin/Reports mutations use their locked mocks and do not replace the final credentialed environment test. Twenty locked server/data-plugin files, now including AR2, Admin notices, ObjectId cache compatibility, the official environment parser and Express extension middleware, run unchanged as a reusable 134/134-test gate. The env pass locks upstream parsing but does not claim every Node process variable or external provider is mapped to Workers. 12 files remain unresolved and two are fixed-scope exclusions. |
 
@@ -93,7 +93,7 @@ relabeled as scope exclusions.
 
 ## Current deployed increment
 
-The deployed runtime candidate `5173326` retains schema-v15 persisted Admin
+The deployed runtime candidate `1ffa2ab` retains schema-v15 persisted Admin
 notifications, the complete storage-shape adapter and schema-v16 durable
 bootevent debounce while retaining the locked v1/v2 `experiments/test` permission
 probe, named API security/verifyauth/API_SECRET mappings, Query/Language
@@ -131,6 +131,14 @@ announcement request shapes and SHA-1 hash. When officially enabled, those
 requests and snoozes are now evaluated automatically; external delivery remains
 unfinished.
 
+Schema v17 adds a separate, NSCF-only lab-CGM state row. It is disabled by
+default and changed only through the protected `/_nscf/simulated-cgm` platform
+boundary. Enabling one tenant seeds twelve deterministic five-minute Entries,
+then multiplexes its next deadline into the existing DO alarm. A late wake
+emits one fresh reading instead of manufacturing an outage-sized backlog. All
+rows use the official v1 Entries schema and root `dataUpdate`; this is test
+infrastructure, not an upstream API, external CGM bridge or medical algorithm.
+
 The automatic context is bounded to 64 SGVs, ten MBGs, up to 1,000 matching
 current DeviceStatus rows plus the earliest future matching DeviceStatus, the
 latest Profile and the newest 1,000 Treatments within the existing time window.
@@ -151,17 +159,18 @@ document transport budget; this is an explicit Workers Free adaptation.
 All prior registry, ddata/database-size, age/timeago, Sandbox, Settings, Loop,
 Profile, uploader, identity, root-write/delta, API3 `/storage`, `/alarm`,
 authorization and notification-ACK contracts remain green. Cloudflare Worker
-version `0359d367-2317-41c2-a8cd-f9d840a29610` (ordinal 76) is active;
-deployment metadata was created at `2026-07-22T00:56:23.047Z`, and Wrangler
-reported a 34 ms startup. It processes 250 Static Assets entries. The Wrangler
-4.112.0 dry run reports 1183.81 KiB raw / 218.54 KiB gzip and exposes only `ENTRY_STORE` plus
-`ASSETS`. The 62-file Workers-runtime suite passes 692/692, all four audit suites pass
+version `d1249e2d-e5b7-42c4-8c4d-b6bf2b93c930` (ordinal 79) is active;
+deployment metadata was created at `2026-07-22T01:34:33.270Z`, and Wrangler
+reported a 33 ms startup. It processes 250 Static Assets entries. The Wrangler
+4.112.0 dry run reports 1190.22 KiB raw / 219.90 KiB gzip and exposes only `ENTRY_STORE` plus
+`ASSETS`. The 63-file Workers-runtime suite passes 695/695, all four audit suites pass
 22/22, eleven official client files pass 42/42 unchanged, twenty locked
 server/data-plugin files pass 134/134 unchanged and TypeScript passes. The
 manifest records fifteen direct passes, 82 adapted, 12 unresolved and
 two fixed-scope excluded files.
 
-Version 76's 72-assertion credential-free API/Engine.IO smoke passed. A real
+Version 79's 72-assertion credential-free API/Engine.IO smoke passed on isolated
+tenant `public-smoke-1784684130172`. The prior version-78 real
 official Socket.IO 4.5.4 client also connected root and `/alarm`, received the
 initial `dataUpdate`, authorized read and subscribed for alarms. Its clean
 browser profile loaded the content-addressed official client and tenant
@@ -173,8 +182,9 @@ probes fail closed for anonymous callers because the active runtime has a valid
 `API_SECRET`. A credentialed 25-entry simulated SGV batch wrote and read back
 successfully, and the homepage rendered the latest value and populated chart.
 Those 25 intentionally idle simulator rows were removed by exact device/type
-matching after stale-data verification; Profile state remains and ordinary
-deployments do not auto-generate glucose.
+matching after stale-data verification. Version 79 explicitly enabled only the
+public `demo` lab tenant's durable simulator; fresh and ordinary tenants remain
+disabled and do not auto-generate glucose.
 These remain subset facts, not a full-port claim. The configuration guard
 preserves operator-managed dashboard variables across deploys; the credential
 value is not committed or recorded in project documentation.
@@ -182,7 +192,7 @@ value is not committed or recorded in project documentation.
 Current remote reads, API3 version and EIO4 polling pass. The reusable 72-case
 acceptance run sent no API secret. A separate isolated-tenant remote mutation
 created one simulated SGV and then deleted it using a genuinely bodyless
-`DELETE`; version 76 returned HTTP 200, `deletedCount:1` and zero remaining
+`DELETE`; version 78 returned HTTP 200, `deletedCount:1` and zero remaining
 rows. The credential value was neither printed nor recorded.
 
 The delta adapter preserves the locked SGV/MBG/calibration/device-status field
@@ -344,21 +354,26 @@ The deployed increment includes:
   `notifications:*:ack`, with exact `200 OK`, durable repeated suppression,
   Urgent-to-Warning snooze, Hibernation delivery and broken-recipient isolation.
 
-Version 76's 72-assertion credential-free remote smoke returned HTTP 200 for
+Version 79's 72-assertion credential-free remote smoke returned HTTP 200 for
 health, bounded v1
 Entries and Treatments reads, fresh-tenant Profile/current and v2 Summary,
 matching v1/v2 filtered Settings snapshots, API3 version, real ddata/database
 stats, default-enabled `dbsize`, Basal and AR2, opt-in-disabled Loop/IOB/COB/OpenAPS/Pump/CAGE/SAGE/IAGE,
 null disabled IOB/COB Summary state, absent property-only `timeago` and EIO4
 polling; missing-token API3 Entries returned the expected 401. Tenant
-`public-smoke-1784681840536` observed 262,144 SQLite bytes. No deployed
+`public-smoke-1784684130172` observed 270,336 SQLite bytes. No deployed
 credential was read or sent, and no protected mutation was attempted. The same
-version 76 browser pass loaded the official homepage through the locked
+version 78 browser pass loaded the official homepage through the locked
 Socket.IO 4.5.4 client, received the initial update, authorized and subscribed
 to alarms with zero console errors or warnings. The preceding version-74
 Settings Save and version-73 AR2 gates remain valid. A separate authenticated
 simulator batch proved v1 SGV write/read and the populated official chart; real
 closed-loop/device testing remains deferred to the user's final environment.
+Version 79 additionally enabled the opt-in lab feed only for tenant `demo`;
+its status reported a 300,000-ms interval and the official page rendered the
+new one-hour SGV curve without a reload-specific substitute UI. Alarms appended
+the `01:40` and `01:45` readings, and the already-open official page advanced to
+the latest value without a manual refresh.
 The immediately preceding compatible version's
 root protocol returned `{read:true,write:false,write_treatment:false}` to a
 fresh anonymous-readable session, rejected Food `dbAdd` with `Not permitted`,
