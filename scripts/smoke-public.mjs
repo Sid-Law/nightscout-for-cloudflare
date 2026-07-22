@@ -168,6 +168,10 @@ const loopResponse = await request("/api/v2/properties/loop");
 checked(loopResponse.status === 200, "disabled Loop property status");
 equal(await loopResponse.json(), {}, "Loop remains opt-in");
 
+const xdripJsResponse = await request("/api/v2/properties/sensorState");
+checked(xdripJsResponse.status === 200, "disabled xDrip-js property status");
+equal(await xdripJsResponse.json(), {}, "xDrip-js remains opt-in");
+
 const insulinCarbResponse = await request("/api/v2/properties/iob,cob");
 checked(insulinCarbResponse.status === 200, "IOB/COB property status");
 const insulinCarbProperties = await insulinCarbResponse.json();
@@ -189,6 +193,7 @@ checked(enabledPlugins.includes("basal"), "basal remains default-enabled");
 checked(enabledPlugins.includes("errorcodes"), "errorcodes remains default-enabled");
 equal(basalProperties, {}, "basal does not fabricate a property without a Profile");
 checked(!enabledPlugins.includes("treatmentnotify"), "treatmentnotify remains opt-in by default");
+checked(!enabledPlugins.includes("xdripjs"), "xdripjs remains opt-in by default");
 for (const plugin of ["iob", "cob"]) {
   checked(
     Object.hasOwn(insulinCarbProperties, plugin) === enabledPlugins.includes(plugin),

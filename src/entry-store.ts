@@ -103,6 +103,10 @@ import {
 import { calculateSimpleAlarmRequest } from "./plugins/simplealarms";
 import { calculateAr2NotificationRequest } from "./plugins/ar2";
 import { calculateErrorCodeNotification } from "./plugins/errorcodes";
+import {
+  calculateXdripJsEvaluation,
+  type XdripJsStateNotification,
+} from "./plugins/xdripjs";
 import { calculateAgeNotificationEvaluation } from "./plugins/age";
 import {
   calculateDatabaseSizeProperty,
@@ -170,6 +174,12 @@ interface DbSimulatedCgmState {
   enabled: number;
   next_at: number | null;
   sequence: number;
+  updated_at: number;
+}
+
+interface DbPluginRuntimeState {
+  [key: string]: SqlStorageValue;
+  body: string;
   updated_at: number;
 }
 
@@ -293,6 +303,7 @@ interface AutomaticNotificationRuntime {
   ar2: boolean;
   simpleAlarms: boolean;
   errorCodes: boolean;
+  xdripJs: boolean;
   pump: boolean;
   openAps: boolean;
   loop: boolean;
@@ -319,6 +330,8 @@ interface AutomaticNotificationEvaluation {
   notifications: RealtimeDocument[];
   snoozes: RealtimeDocument[];
   nextDueAt: number | null;
+  xdripStateNotification: XdripJsStateNotification | null;
+  xdripStateNotificationChanged: boolean;
 }
 
 type RealtimeWebSocketCloseResult = "inactive" | "closed" | "failed";
@@ -784,6 +797,20 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       migrateRealtimeProtocolsV19(this.ctx.storage);
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (19)",
+      );
+
+      // Some locked plugins retain small notification throttling markers in
+      // module globals. Keep generic per-plugin JSON state in tenant SQLite so
+      // isolate eviction cannot reset their ordinary-user alert cadence.
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS plugin_runtime_state (
+          plugin TEXT PRIMARY KEY,
+          body TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+      `);
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (20)",
       );
 
       // This named, idempotent auth state is intentionally independent of the
@@ -1272,6 +1299,50 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return JSON.stringify(this.adminNotifies().listForApi(timestamp));
   }
 
+  private xdripStateNotification(): XdripJsStateNotification | null {
+    const row = this.ctx.storage.sql.exec<DbPluginRuntimeState>(
+      "SELECT body, updated_at FROM plugin_runtime_state WHERE plugin = 'xdripjs' LIMIT 1",
+    ).toArray()[0];
+    if (row === undefined) return null;
+    try {
+      const parsed: unknown = JSON.parse(row.body);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+      const record = parsed as Record<string, unknown>;
+      if (!Object.prototype.hasOwnProperty.call(record, "state")) return null;
+      const timestamp = Number(record.timestamp);
+      if (!Number.isSafeInteger(timestamp)) return null;
+      return { state: record.state, timestamp };
+    } catch {
+      return null;
+    }
+  }
+
+  private persistXdripStateNotification(state: XdripJsStateNotification): void {
+    const timestamp = Number(state.timestamp);
+    if (!Number.isSafeInteger(timestamp)) return;
+    let normalizedState = state.state === undefined ? null : state.state;
+    let body: string;
+    try {
+      body = JSON.stringify({ state: normalizedState, timestamp });
+    } catch {
+      normalizedState = String(state.state).slice(0, 256);
+      body = JSON.stringify({ state: normalizedState, timestamp });
+    }
+    if (body.length > 1_024) {
+      normalizedState = String(state.state).slice(0, 256);
+      body = JSON.stringify({ state: normalizedState, timestamp });
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT INTO plugin_runtime_state (plugin, body, updated_at)
+       VALUES ('xdripjs', ?, ?)
+       ON CONFLICT(plugin) DO UPDATE SET
+         body = excluded.body,
+         updated_at = excluded.updated_at`,
+      body,
+      timestamp,
+    );
+  }
+
   private resolvedAutomaticNotificationRuntime(now: number): AutomaticNotificationRuntime {
     const status = nightscoutStatus(
       new Date(now),
@@ -1289,6 +1360,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const pumpPreferences = recordValue(extendedSettings.pump);
     const openApsPreferences = recordValue(extendedSettings.openaps);
     const loopPreferences = recordValue(extendedSettings.loop);
+    const xdripPreferences = recordValue(extendedSettings.xdripjs);
     const cagePreferences = recordValue(extendedSettings.cage);
     const sagePreferences = recordValue(extendedSettings.sage);
     const iagePreferences = recordValue(extendedSettings.iage);
@@ -1300,6 +1372,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       ar2: enabled.has("ar2"),
       simpleAlarms: enabled.has("simplealarms"),
       errorCodes: enabled.has("errorcodes"),
+      xdripJs: enabled.has("xdripjs") && Boolean(xdripPreferences.enableAlerts),
       pump: enabled.has("pump") && Boolean(pumpPreferences.enableAlerts),
       openAps: enabled.has("openaps") && Boolean(openApsPreferences.enableAlerts),
       loop: enabled.has("loop") && Boolean(loopPreferences.enableAlerts),
@@ -1330,7 +1403,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const now = Date.now();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
     const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
-      || runtime.pump || runtime.openAps
+      || runtime.pump || runtime.openAps || runtime.xdripJs
       || runtime.loop || runtime.bwp || runtime.cage || runtime.sage || runtime.iage
       || runtime.treatmentNotify || runtime.timeAgo || runtime.dbSize;
     const inputChanged = runtime.dbSize || (collection === "profile"
@@ -1342,7 +1415,8 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           ? runtime.bwp || runtime.treatmentNotify || runtime.pump || runtime.openAps
             || runtime.cage || runtime.sage || runtime.iage
           : collection === "devicestatus"
-            && (runtime.bwp || runtime.pump || runtime.openAps || runtime.loop));
+            && (runtime.bwp || runtime.pump || runtime.openAps
+              || runtime.xdripJs || runtime.loop));
     if (!inputChanged) return;
     if (this.dataUpdateDebounce().record(PLUGIN_NOTIFICATIONS_TASK, now)) {
       tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
@@ -1450,10 +1524,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       result.mbgs.reverse();
     }
 
-    if (runtime.pump || runtime.openAps || runtime.loop) {
+    if (runtime.pump || runtime.openAps || runtime.xdripJs || runtime.loop) {
       const enabledFields = [
         runtime.pump ? "json_type(body, '$.pump') IS NOT NULL" : null,
         runtime.openAps ? "json_type(body, '$.openaps') IS NOT NULL" : null,
+        runtime.xdripJs ? "json_type(body, '$.xdripjs') IS NOT NULL" : null,
         runtime.loop ? "json_type(body, '$.loop') IS NOT NULL" : null,
       ].filter((predicate): predicate is string => predicate !== null).join(" OR ");
       const safeFields = `CASE WHEN json_valid(body) THEN (${enabledFields}) ELSE 0 END`;
@@ -1560,6 +1635,8 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   ): AutomaticNotificationEvaluation {
     const notifications: RealtimeDocument[] = [];
     const snoozes: RealtimeDocument[] = [];
+    let xdripStateNotification = this.xdripStateNotification();
+    let xdripStateNotificationChanged = false;
     let nextDueAt: number | null = null;
     const schedule = (deadline: number | null): void => {
       if (deadline === null || !Number.isFinite(deadline)) return;
@@ -1590,7 +1667,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     );
 
     // Preserve the locked server plugin order for every implemented producer:
-    // ar2, simplealarms, errorcodes, pump, openaps, loop, bwp, cage, sage,
+    // ar2, simplealarms, errorcodes, pump, openaps, xdripjs, loop, bwp, cage, sage,
     // iage, treatmentnotify, timeago, then dbsize. The shared engine can therefore
     // arbitrate identical requests and treatment snoozes in Node-server order.
     if (runtime.ar2) {
@@ -1643,6 +1720,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       }
     }
 
+    const loopNotifications: RealtimeDocument[] = [];
     if (runtime.pump || runtime.openAps || runtime.loop) {
       const profile = runtime.pump
         ? createNightscoutProfileFunctions(
@@ -1672,9 +1750,44 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
             : {}),
         },
       );
-      notifications.push(...closedLoop.notifications);
+      for (const notification of closedLoop.notifications) {
+        if (recordValue(notification.plugin).name === "loop") {
+          loopNotifications.push(notification);
+        } else {
+          notifications.push(notification);
+        }
+      }
       schedule(closedLoop.nextDueAt);
     }
+
+    if (runtime.xdripJs) {
+      for (const status of data.devicestatus) {
+        if (!Object.prototype.hasOwnProperty.call(status, "xdripjs")) continue;
+        const mills = Number(status.mills);
+        if (!Number.isFinite(mills)) continue;
+        if (mills > now) {
+          schedule(mills);
+        } else if (mills >= now - nightscoutTimes.hours(24).msecs) {
+          // The locked 24-hour predicate is inclusive at the boundary.
+          schedule(mills + nightscoutTimes.hours(24).msecs + 1);
+        }
+      }
+      const xdrip = calculateXdripJsEvaluation(
+        data.devicestatus,
+        now,
+        recordValue(runtime.extendedSettings.xdripjs),
+        xdripStateNotification,
+      );
+      if (xdrip.notification !== null) notifications.push(xdrip.notification);
+      if (xdrip.repeatsAtHeartbeat) schedule(now + heartbeatMs);
+      schedule(xdrip.nextStateDueAt);
+      xdripStateNotification = xdrip.stateNotification;
+      xdripStateNotificationChanged = xdrip.stateNotificationChanged;
+    }
+
+    // The closed-loop helper computes one shared deadline, but xdripjs sits
+    // between OpenAPS and Loop in the locked server registry.
+    notifications.push(...loopNotifications);
 
     if (runtime.bwp && bwpContext !== null) {
       const property = recordValue(bwpProperties.bwp) as BwpProperty;
@@ -1756,14 +1869,20 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         schedule(now + heartbeatMs);
       }
     }
-    return { notifications, snoozes, nextDueAt };
+    return {
+      notifications,
+      snoozes,
+      nextDueAt,
+      xdripStateNotification,
+      xdripStateNotificationChanged,
+    };
   }
 
   private seedAutomaticNotificationTask(now: number): void {
     const tasks = this.backgroundTasks();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
     const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
-      || runtime.pump || runtime.openAps
+      || runtime.pump || runtime.openAps || runtime.xdripJs
       || runtime.loop || runtime.bwp || runtime.cage || runtime.sage || runtime.iage
       || runtime.treatmentNotify || runtime.timeAgo || runtime.dbSize;
     if (tasks.has(PLUGIN_NOTIFICATIONS_TASK)) {
@@ -1784,6 +1903,12 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       evaluation.snoozes,
       now,
       () => {
+        if (
+          evaluation.xdripStateNotificationChanged
+          && evaluation.xdripStateNotification !== null
+        ) {
+          this.persistXdripStateNotification(evaluation.xdripStateNotification);
+        }
         this.backgroundTasks().complete(
           task.kind,
           evaluation.nextDueAt,

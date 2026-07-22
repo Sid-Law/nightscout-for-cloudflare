@@ -35,6 +35,10 @@ import { calculateUploaderBatteryProperty } from "./upbat";
 import { calculateBasalProperty } from "./basal";
 import { calculateAr2Property, type Ar2Settings } from "./ar2";
 import { calculateBolusWizardPreview } from "./bwp";
+import {
+  calculateXdripJsProperty,
+  type XdripJsPreferences,
+} from "./xdripjs";
 
 export interface PluginPropertyContext {
   sgvs: RealtimeDocument[];
@@ -308,6 +312,15 @@ export function calculatePluginProperties(
           context.devicestatus,
           now,
           pluginPreferences<OpenApsPreferences>(pluginSandbox),
+        );
+      },
+    },
+    xdripjs: {
+      setProperties: (pluginSandbox) => {
+        properties.sensorState = calculateXdripJsProperty(
+          context.devicestatus,
+          now,
+          pluginPreferences<XdripJsPreferences>(pluginSandbox),
         );
       },
     },

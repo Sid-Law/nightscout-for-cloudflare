@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { runInDurableObject, SELF } from "cloudflare:test";
+import { evictDurableObject, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import {
   migrateBackgroundTasksV14,
@@ -17,7 +17,7 @@ import {
   type SocketIoV5Packet,
 } from "../src/protocol";
 import type { NightscoutStatusEnvironment } from "../src/status";
-import { URGENT } from "../src/runtime/levels";
+import { INFO, URGENT, WARN } from "../src/runtime/levels";
 
 interface MutableEntryStoreSurface {
   env: NightscoutStatusEnvironment;
@@ -72,6 +72,9 @@ function resetAgeAndDatabaseNotificationSettings(instance: EntryStore): void {
     ERRORCODES_INFO: undefined,
     ERRORCODES_WARN: undefined,
     ERRORCODES_URGENT: undefined,
+    XDRIPJS_ENABLE_ALERTS: undefined,
+    XDRIPJS_WARN_BAT_V: undefined,
+    XDRIPJS_STATE_NOTIFY_INTRVL: undefined,
     CAGE_ENABLE_ALERTS: undefined,
     CAGE_INFO: undefined,
     CAGE_WARN: undefined,
@@ -88,6 +91,19 @@ function resetAgeAndDatabaseNotificationSettings(instance: EntryStore): void {
     DBSIZE_MAX: undefined,
     DBSIZE_WARN_PERCENTAGE: undefined,
     DBSIZE_URGENT_PERCENTAGE: undefined,
+  });
+}
+
+function enableXdripJs(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "xdripjs",
+    DISABLE: "ar2 simplealarms errorcodes treatmentnotify timeago pump openaps loop bwp cage sage iage dbsize",
+    ALARM_TYPES: "predict",
+    XDRIPJS_ENABLE_ALERTS: "true",
+    XDRIPJS_WARN_BAT_V: "300",
+    XDRIPJS_STATE_NOTIFY_INTRVL: "0.5",
+    HEARTBEAT: "60",
   });
 }
 
@@ -418,6 +434,211 @@ describe("SQLite Durable Object background notification scheduler", () => {
         message: "???",
         group: "CGM Error Code",
         plugin: expect.objectContaining({ name: "errorcodes" }),
+      })],
+    }]);
+  });
+
+  it("persists xDrip-js state throttling across eviction and repeats at minute 31", async () => {
+    const name = tenant("background-xdrip-state");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const statusAt = Date.now() - 1_000;
+
+    const first = await runInDurableObject(stub, async (instance, state) => {
+      enableXdripJs(instance);
+      await instance.createDocuments("devicestatus", JSON.stringify([{
+        created_at: new Date(statusAt).toISOString(),
+        device: "xdripjs://family-phone",
+        xdripjs: {
+          timestamp: new Date(statusAt).toISOString(),
+          state: 2,
+          stateString: "Warmup",
+          stateStringShort: "WARM",
+          voltagea: 310,
+          voltageb: 300,
+        },
+      }]));
+      const persisted = state.storage.sql.exec<{ body: string }>(
+        "SELECT body FROM plugin_runtime_state WHERE plugin = 'xdripjs'",
+      ).one();
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      return { marker: JSON.parse(persisted.body) as { state: number; timestamp: number }, task };
+    });
+    expect(first.marker.state).toBe(2);
+    expect(first.task.due_at).toBe(first.marker.timestamp + 31 * 60_000);
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expect.objectContaining({
+        level: WARN,
+        title: "CGM Transmitter state: Warmup",
+        group: "xDrip-js",
+        pushoverSound: "incoming",
+        plugin: expect.objectContaining({ name: "xdripjs" }),
+      })],
+    }]);
+
+    await evictDurableObject(stub);
+    const repeated = await runInDurableObject(stub, async (instance, state) => {
+      enableXdripJs(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      expect(task.due_at).toBe(first.task.due_at);
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        task.due_at,
+      );
+      const marker = JSON.parse(state.storage.sql.exec<{ body: string }>(
+        "SELECT body FROM plugin_runtime_state WHERE plugin = 'xdripjs'",
+      ).one().body) as { state: number; timestamp: number };
+      const next = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      return { marker, next };
+    });
+    expect(repeated.marker).toEqual({ state: 2, timestamp: first.task.due_at });
+    expect(repeated.next.due_at).toBe(first.task.due_at + 31 * 60_000);
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expect.objectContaining({
+        level: WARN,
+        title: "CGM Transmitter state: Warmup",
+        group: "xDrip-js",
+      })],
+    }]);
+
+    const recoveredAt = Date.now();
+    await runInDurableObject(stub, async (instance) => {
+      enableXdripJs(instance);
+      await instance.createDocuments("devicestatus", JSON.stringify([{
+        created_at: new Date(recoveredAt).toISOString(),
+        device: "xdripjs://family-phone",
+        xdripjs: {
+          timestamp: new Date(recoveredAt).toISOString(),
+          state: 6,
+          stateString: "OK",
+          stateStringShort: "OK",
+          voltagea: 310,
+          voltageb: 300,
+        },
+      }]));
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["clear_alarm", {
+        clear: true,
+        title: "All Clear",
+        message: "Auto ack'd alarm(s)",
+        group: "xDrip-js",
+      }],
+    }]);
+  });
+
+  it("repeats an xDrip-js low-battery warning at the configured heartbeat", async () => {
+    const name = tenant("background-xdrip-battery");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const statusAt = Date.now() - 1_000;
+
+    const dueAt = await runInDurableObject(stub, async (instance, state) => {
+      enableXdripJs(instance);
+      await instance.createDocuments("devicestatus", JSON.stringify([{
+        created_at: new Date(statusAt).toISOString(),
+        device: "xdripjs://family-phone",
+        xdripjs: {
+          timestamp: new Date(statusAt).toISOString(),
+          state: 6,
+          stateString: "OK",
+          stateStringShort: "OK",
+          voltagea: 310,
+          voltageb: 289,
+        },
+      }]));
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM plugin_runtime_state WHERE plugin = 'xdripjs'",
+      ).one().count).toBe(0);
+      return state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at;
+    });
+    const expected = expect.objectContaining({
+      level: WARN,
+      title: "CGM Transmitter Battery Low",
+      message: "CGM Transmitter Battery B Low Voltage: 289",
+      group: "xDrip-js",
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expected],
+    }]);
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableXdripJs(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      expect(task.due_at).toBe(dueAt);
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        dueAt,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(dueAt + 60_000);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expected],
+    }]);
+  });
+
+  it("activates a future xDrip-js calibration request at the exact status time", async () => {
+    const name = tenant("background-xdrip-future");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const futureAt = Date.now() + 5 * 60_000;
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableXdripJs(instance);
+      await instance.createDocuments("devicestatus", JSON.stringify([{
+        created_at: new Date(futureAt).toISOString(),
+        device: "xdripjs://future-phone",
+        xdripjs: {
+          timestamp: new Date(futureAt).toISOString(),
+          state: 7,
+          stateString: "Calibration Requested",
+          stateStringShort: "CAL",
+          voltagea: 310,
+          voltageb: 300,
+        },
+      }]));
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      expect(task.due_at).toBe(futureAt);
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        futureAt,
+      );
+      expect(JSON.parse(state.storage.sql.exec<{ body: string }>(
+        "SELECT body FROM plugin_runtime_state WHERE plugin = 'xdripjs'",
+      ).one().body)).toEqual({ state: 7, timestamp: futureAt });
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["notification", expect.objectContaining({
+        level: INFO,
+        title: "CGM Transmitter state: Calibration Requested",
+        group: "xDrip-js",
+        plugin: expect.objectContaining({ name: "xdripjs" }),
       })],
     }]);
   });

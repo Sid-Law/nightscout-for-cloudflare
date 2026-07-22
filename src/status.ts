@@ -30,6 +30,9 @@ export interface NightscoutStatusEnvironment {
   ERRORCODES_INFO?: string;
   ERRORCODES_WARN?: string;
   ERRORCODES_URGENT?: string;
+  XDRIPJS_ENABLE_ALERTS?: string;
+  XDRIPJS_WARN_BAT_V?: string;
+  XDRIPJS_STATE_NOTIFY_INTRVL?: string;
   DBSIZE_MAX?: string;
   DBSIZE_WARN_PERCENTAGE?: string;
   DBSIZE_URGENT_PERCENTAGE?: string;
@@ -202,6 +205,11 @@ function platformExtendedSettings(
     }
     if (Object.keys(errorcodes).length > 0) extended.errorcodes = errorcodes;
   }
+  addPlugin("xdripjs", [
+    ["enableAlerts", environment.XDRIPJS_ENABLE_ALERTS],
+    ["warnBatV", environment.XDRIPJS_WARN_BAT_V],
+    ["stateNotifyIntrvl", environment.XDRIPJS_STATE_NOTIFY_INTRVL],
+  ]);
   addPlugin("timeago", [["enableAlerts", environment.TIMEAGO_ENABLE_ALERTS]]);
   addPlugin("cage", [
     ["info", environment.CAGE_INFO],
