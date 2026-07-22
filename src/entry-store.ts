@@ -94,6 +94,11 @@ import {
 } from "./status";
 import { calculateSimpleAlarmRequest } from "./plugins/simplealarms";
 import { calculateAr2NotificationRequest } from "./plugins/ar2";
+import { calculateAgeNotificationEvaluation } from "./plugins/age";
+import {
+  calculateDatabaseSizeProperty,
+  databaseSizeNotification,
+} from "./plugins/dbsize";
 import { nightscoutDirectionInfo } from "./plugins/direction";
 import { calculateClosedLoopNotificationEvaluation } from "./plugins/closed-loop-notifications";
 import { calculateTreatmentNotificationEvaluation } from "./plugins/treatmentnotify";
@@ -225,8 +230,12 @@ interface AutomaticNotificationRuntime {
   pump: boolean;
   openAps: boolean;
   loop: boolean;
+  cage: boolean;
+  sage: boolean;
+  iage: boolean;
   treatmentNotify: boolean;
   timeAgo: boolean;
+  dbSize: boolean;
 }
 
 interface AutomaticNotificationData {
@@ -235,6 +244,8 @@ interface AutomaticNotificationData {
   devicestatus: RealtimeDocument[];
   profiles: RealtimeDocument[];
   treatments: RealtimeDocument[];
+  ageTreatments: RealtimeDocument[];
+  dbstats: Record<string, unknown>;
 }
 
 interface AutomaticNotificationEvaluation {
@@ -1054,6 +1065,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const pumpPreferences = recordValue(extendedSettings.pump);
     const openApsPreferences = recordValue(extendedSettings.openaps);
     const loopPreferences = recordValue(extendedSettings.loop);
+    const cagePreferences = recordValue(extendedSettings.cage);
+    const sagePreferences = recordValue(extendedSettings.sage);
+    const iagePreferences = recordValue(extendedSettings.iage);
+    const dbSizePreferences = recordValue(extendedSettings.dbsize);
     return {
       settings,
       extendedSettings,
@@ -1062,8 +1077,12 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       pump: enabled.has("pump") && Boolean(pumpPreferences.enableAlerts),
       openAps: enabled.has("openaps") && Boolean(openApsPreferences.enableAlerts),
       loop: enabled.has("loop") && Boolean(loopPreferences.enableAlerts),
+      cage: enabled.has("cage") && Boolean(cagePreferences.enableAlerts),
+      sage: enabled.has("sage") && Boolean(sagePreferences.enableAlerts),
+      iage: enabled.has("iage") && Boolean(iagePreferences.enableAlerts),
       treatmentNotify: enabled.has("treatmentnotify"),
       timeAgo: enabled.has("timeago") && Boolean(timeAgoPreferences.enableAlerts),
+      dbSize: enabled.has("dbsize") && Boolean(dbSizePreferences.enableAlerts),
     };
   }
 
@@ -1084,14 +1103,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const now = Date.now();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
     const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.pump || runtime.openAps
-      || runtime.loop || runtime.treatmentNotify || runtime.timeAgo;
-    const inputChanged = collection === "profile"
+      || runtime.loop || runtime.cage || runtime.sage || runtime.iage
+      || runtime.treatmentNotify || runtime.timeAgo || runtime.dbSize;
+    const inputChanged = runtime.dbSize || (collection === "profile"
       ? anyEnabled
       : collection === "entries"
         ? runtime.ar2 || runtime.simpleAlarms || runtime.treatmentNotify || runtime.timeAgo
         : collection === "treatments"
           ? runtime.treatmentNotify || runtime.pump || runtime.openAps
-          : collection === "devicestatus" && (runtime.pump || runtime.openAps || runtime.loop);
+            || runtime.cage || runtime.sage || runtime.iage
+          : collection === "devicestatus" && (runtime.pump || runtime.openAps || runtime.loop));
     if (!inputChanged) return;
     if (this.dataUpdateDebounce().record(PLUGIN_NOTIFICATIONS_TASK, now)) {
       tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
@@ -1132,6 +1153,8 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       devicestatus: [],
       profiles: [],
       treatments: [],
+      ageTreatments: [],
+      dbstats: sqliteNightscoutDatabaseStats(this.ctx.storage.sql.databaseSize),
     };
     const budget = new RealtimeJsonBudget(result);
     if (runtime.ar2 || runtime.simpleAlarms || runtime.timeAgo) {
@@ -1262,6 +1285,42 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         normalizeRealtimeDocument,
       );
     }
+
+    if (runtime.cage || runtime.sage || runtime.iage) {
+      const eventTypes = [
+        ...(runtime.cage ? ["Site Change"] : []),
+        ...(runtime.sage ? ["Sensor Start", "Sensor Change"] : []),
+        ...(runtime.iage ? ["Insulin Change"] : []),
+      ];
+      for (const eventType of eventTypes) {
+        result.ageTreatments.push(...this.realtimeDocuments(
+          `SELECT id, body, sort_time
+           FROM documents
+           WHERE collection = 'treatments'
+             AND json_extract(body, '$.eventType') = ?
+             AND sort_time >= ?
+             AND sort_time <= ?
+           ORDER BY sort_time DESC, updated_at DESC, id ASC
+           LIMIT 1`,
+          [eventType, now - AGE_TREATMENT_WINDOW_MS, now],
+          budget,
+          normalizeRealtimeDocument,
+        ));
+        result.ageTreatments.push(...this.realtimeDocuments(
+          `SELECT id, body, sort_time
+           FROM documents
+           WHERE collection = 'treatments'
+             AND json_extract(body, '$.eventType') = ?
+             AND sort_time > ?
+           ORDER BY sort_time ASC, updated_at DESC, id ASC
+           LIMIT 1`,
+          [eventType, now],
+          budget,
+          normalizeRealtimeDocument,
+        ));
+      }
+      result.ageTreatments.sort((left, right) => Number(left.mills) - Number(right.mills));
+    }
     return result;
   }
 
@@ -1281,9 +1340,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const data = this.automaticNotificationData(now, runtime);
 
     // Preserve the locked server plugin order for every implemented producer:
-    // ar2, simplealarms, pump, openaps, loop, treatmentnotify, then timeago. The
-    // shared engine can therefore arbitrate identical requests and treatment
-    // snoozes in the same order as the Node server.
+    // ar2, simplealarms, pump, openaps, loop, cage, sage, iage,
+    // treatmentnotify, timeago, then dbsize. The shared engine can therefore
+    // arbitrate identical requests and treatment snoozes in Node-server order.
     if (runtime.ar2) {
       schedule(this.earliestFutureEntryAt(data.sgvs, now));
       const latest = this.latestSgvAtOrBefore(data.sgvs, now);
@@ -1348,6 +1407,28 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       schedule(closedLoop.nextDueAt);
     }
 
+    if (runtime.cage || runtime.sage || runtime.iage) {
+      schedule(this.earliestFutureEntryAt(data.ageTreatments, now));
+      const age = calculateAgeNotificationEvaluation(
+        data.ageTreatments,
+        now,
+        heartbeatMs,
+        {
+          ...(runtime.cage
+            ? { cage: recordValue(runtime.extendedSettings.cage) }
+            : {}),
+          ...(runtime.sage
+            ? { sage: recordValue(runtime.extendedSettings.sage) }
+            : {}),
+          ...(runtime.iage
+            ? { iage: recordValue(runtime.extendedSettings.iage) }
+            : {}),
+        },
+      );
+      notifications.push(...age.notifications);
+      schedule(age.nextDueAt);
+    }
+
     if (runtime.treatmentNotify) {
       const treatment = calculateTreatmentNotificationEvaluation(
         data.treatments,
@@ -1378,6 +1459,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       if (timeAgo.notification !== null) notifications.push(timeAgo.notification);
       schedule(timeAgo.nextDueAt);
     }
+    if (runtime.dbSize) {
+      const preferences = recordValue(runtime.extendedSettings.dbsize);
+      const property = calculateDatabaseSizeProperty(data.dbstats, preferences);
+      const notification = databaseSizeNotification(property, preferences);
+      if (notification !== null) {
+        notifications.push(notification);
+        schedule(now + heartbeatMs);
+      }
+    }
     return { notifications, snoozes, nextDueAt };
   }
 
@@ -1385,7 +1475,8 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const tasks = this.backgroundTasks();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
     const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.pump || runtime.openAps
-      || runtime.loop || runtime.treatmentNotify || runtime.timeAgo;
+      || runtime.loop || runtime.cage || runtime.sage || runtime.iage
+      || runtime.treatmentNotify || runtime.timeAgo || runtime.dbSize;
     if (tasks.has(PLUGIN_NOTIFICATIONS_TASK)) {
       if (!anyEnabled) tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
       return;

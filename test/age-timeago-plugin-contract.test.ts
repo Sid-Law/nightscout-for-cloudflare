@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import worker from "../src/index";
 import {
   calculateCannulaAgeProperty,
+  calculateAgeNotificationEvaluation,
   calculateInsulinAgeProperty,
   calculateSensorAgeProperty,
   cannulaAgeNotification,
@@ -166,6 +167,56 @@ describe("locked Nightscout sensorage.test.js", () => {
           nightscoutTimes.hours(23).msecs },
     ], now, { enableAlerts: true }));
     expect(request).toBeNull();
+  });
+});
+
+describe("Durable Object age-notification deadlines", () => {
+  it("preserves server order and the exact threshold/21-minute window", () => {
+    const changedAt = now - nightscoutTimes.hour().msecs;
+    const evaluation = calculateAgeNotificationEvaluation([
+      { eventType: "Site Change", mills: changedAt },
+      { eventType: "Sensor Start", mills: changedAt },
+      { eventType: "Insulin Change", mills: changedAt },
+    ], now, 60_000, {
+      cage: { info: 1, warn: 1, urgent: 1, enableAlerts: true },
+      sage: { info: 1, warn: 1, urgent: 1, enableAlerts: true },
+      iage: { info: 1, warn: 1, urgent: 1, enableAlerts: true },
+    });
+
+    expect(evaluation.notifications.map((request) => request.group)).toEqual([
+      "CAGE",
+      "SAGE",
+      "IAGE",
+    ]);
+    expect(evaluation.notifications.map((request) => request.level)).toEqual([
+      URGENT,
+      URGENT,
+      WARN,
+    ]);
+    expect(evaluation.nextDueAt).toBe(now + 60_000);
+  });
+
+  it("schedules the next whole-hour threshold without periodic polling", () => {
+    const changedAt = now - 30 * 60_000;
+    expect(calculateAgeNotificationEvaluation([
+      { eventType: "Site Change", mills: changedAt },
+    ], now, 60_000, {
+      cage: { info: 1, warn: 2, urgent: 3, enableAlerts: true },
+    })).toEqual({
+      notifications: [],
+      nextDueAt: changedAt + nightscoutTimes.hour().msecs,
+    });
+  });
+
+  it("wakes at minute 21 so the persisted alarm can clear", () => {
+    const changedAt = now - nightscoutTimes.hour().msecs - 20 * 60_000;
+    const evaluation = calculateAgeNotificationEvaluation([
+      { eventType: "Site Change", mills: changedAt },
+    ], now, 30 * 60_000, {
+      cage: { info: 1, warn: 1, urgent: 1, enableAlerts: true },
+    });
+    expect(evaluation.notifications).toHaveLength(1);
+    expect(evaluation.nextDueAt).toBe(changedAt + nightscoutTimes.hour().msecs + 21 * 60_000);
   });
 });
 

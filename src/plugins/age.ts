@@ -30,6 +30,17 @@ export interface AgeVisualization extends RealtimeDocument {
   pillClass: "urgent" | "warn" | null;
 }
 
+export interface AgeNotificationOptions {
+  cage?: AgePreferences;
+  sage?: AgePreferences;
+  iage?: AgePreferences;
+}
+
+export interface AgeNotificationEvaluation {
+  notifications: RealtimeDocument[];
+  nextDueAt: number | null;
+}
+
 const CANNULA_PLUGIN = {
   name: "cage",
   label: "Cannula Age",
@@ -107,6 +118,46 @@ function notificationRequest(
     plugin,
     debug: { age: property.age },
   };
+}
+
+function numericPreference(value: unknown, fallback: number): number {
+  return Number(value ? value : fallback);
+}
+
+function selectedSensorProperty(property: RealtimeDocument): RealtimeDocument {
+  const selected = property.min === "Sensor Change" ? "Sensor Change" : "Sensor Start";
+  return sensorEventInfo(property[selected]);
+}
+
+function ageDeadlines(
+  property: RealtimeDocument,
+  thresholds: readonly number[],
+  notification: RealtimeDocument | null,
+  now: number,
+  heartbeatMs: number,
+): number[] {
+  if (!property.found) return [];
+  const treatmentDate = Number(property.treatmentDate);
+  if (!Number.isFinite(treatmentDate)) return [];
+
+  const deadlines = new Set<number>();
+  for (const threshold of thresholds) {
+    const deadline = treatmentDate + nightscoutTimes.hours(threshold).msecs;
+    if (Number.isFinite(deadline) && deadline > now) deadlines.add(Math.trunc(deadline));
+  }
+  if (notification !== null) {
+    if (Number.isFinite(heartbeatMs) && heartbeatMs > 0) {
+      deadlines.add(Math.trunc(now + heartbeatMs));
+    }
+    // Locked plugins alert while minFractions <= 20. Because minFractions is
+    // floored, the request disappears at the exact start of minute 21.
+    const age = Number(property.age);
+    const clearsAt = treatmentDate
+      + nightscoutTimes.hours(age).msecs
+      + nightscoutTimes.mins(21).msecs;
+    if (Number.isFinite(clearsAt) && clearsAt > now) deadlines.add(Math.trunc(clearsAt));
+  }
+  return [...deadlines];
 }
 
 /** Direct request-local port of locked plugins/cannulaage.findLatestTimeChange(). */
@@ -453,5 +504,70 @@ export function sensorAgeVisualization(
     label: "SAGE",
     info,
     pillClass: statusClass(sensor.level),
+  };
+}
+
+/**
+ * Durable Object scheduling adapter for the three locked age plugins. The
+ * property and request payloads above remain the source of truth; this helper
+ * only derives the persisted logical deadlines that replace Node's heartbeat.
+ */
+export function calculateAgeNotificationEvaluation(
+  treatments: RealtimeDocument[],
+  now: number,
+  heartbeatMs: number,
+  options: AgeNotificationOptions,
+): AgeNotificationEvaluation {
+  const notifications: RealtimeDocument[] = [];
+  const deadlines: number[] = [];
+  const collect = (
+    property: RealtimeDocument,
+    thresholds: readonly number[],
+    notification: RealtimeDocument | null,
+  ): void => {
+    if (notification !== null) notifications.push(notification);
+    deadlines.push(...ageDeadlines(property, thresholds, notification, now, heartbeatMs));
+  };
+
+  // Preserve the locked server registry order: CAGE, SAGE, then IAGE.
+  if (options.cage !== undefined && options.cage.enableAlerts) {
+    const property = calculateCannulaAgeProperty(treatments, now, options.cage);
+    collect(property, [
+      numericPreference(options.cage.info, 44),
+      numericPreference(options.cage.warn, 48),
+      numericPreference(options.cage.urgent, 72),
+    ], cannulaAgeNotification(property));
+  }
+
+  if (options.sage !== undefined && options.sage.enableAlerts) {
+    const property = calculateSensorAgeProperty(treatments, now, options.sage);
+    const selected = selectedSensorProperty(property);
+    collect(selected, [
+      numericPreference(options.sage.info, Number(nightscoutTimes.days(6).hours)),
+      numericPreference(
+        options.sage.warn,
+        Number(nightscoutTimes.days(7).hours) - 4,
+      ),
+      numericPreference(
+        options.sage.urgent,
+        Number(nightscoutTimes.days(7).hours) - 2,
+      ),
+    ], sensorAgeNotification(property));
+  }
+
+  if (options.iage !== undefined && options.iage.enableAlerts) {
+    const property = calculateInsulinAgeProperty(treatments, now, options.iage);
+    // Preserve v15.0.7's urgent-comparison bug: IAGE can schedule only its
+    // information and warning transitions because result.urgent is undefined.
+    collect(property, [
+      numericPreference(options.iage.info, 44),
+      numericPreference(options.iage.warn, 48),
+    ], insulinAgeNotification(property));
+  }
+
+  const future = deadlines.filter((deadline) => Number.isFinite(deadline) && deadline > now);
+  return {
+    notifications,
+    nextDueAt: future.length === 0 ? null : Math.min(...future),
   };
 }

@@ -67,7 +67,29 @@ async function openAlarm(name: string): Promise<{
   return { sid, poll };
 }
 
+function resetAgeAndDatabaseNotificationSettings(instance: EntryStore): void {
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    CAGE_ENABLE_ALERTS: undefined,
+    CAGE_INFO: undefined,
+    CAGE_WARN: undefined,
+    CAGE_URGENT: undefined,
+    SAGE_ENABLE_ALERTS: undefined,
+    SAGE_INFO: undefined,
+    SAGE_WARN: undefined,
+    SAGE_URGENT: undefined,
+    IAGE_ENABLE_ALERTS: undefined,
+    IAGE_INFO: undefined,
+    IAGE_WARN: undefined,
+    IAGE_URGENT: undefined,
+    DBSIZE_ENABLE_ALERTS: undefined,
+    DBSIZE_MAX: undefined,
+    DBSIZE_WARN_PERCENTAGE: undefined,
+    DBSIZE_URGENT_PERCENTAGE: undefined,
+  });
+}
+
 function enableSimpleAlarms(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: undefined,
     DISABLE: undefined,
@@ -81,6 +103,7 @@ function enableSimpleAlarms(instance: EntryStore): void {
 }
 
 function enableAr2(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: undefined,
     DISABLE: "simplealarms treatmentnotify timeago pump openaps loop",
@@ -107,6 +130,7 @@ function flushDataUpdateTrailing(
 }
 
 function enableTreatmentNotify(instance: EntryStore, simpleAlarms = false): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "careportal",
     DISABLE: simpleAlarms ? "timeago" : "simplealarms timeago",
@@ -121,6 +145,7 @@ function enableTreatmentNotify(instance: EntryStore, simpleAlarms = false): void
 }
 
 function enableTimeAgo(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "timeago",
     DISABLE: "simplealarms treatmentnotify",
@@ -139,6 +164,7 @@ function enableTimeAgo(instance: EntryStore): void {
 }
 
 function enableLoopNotifications(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "loop",
     DISABLE: "simplealarms treatmentnotify timeago pump openaps",
@@ -158,6 +184,7 @@ function enableLoopNotifications(instance: EntryStore): void {
 }
 
 function enableOpenApsNotifications(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "openaps",
     DISABLE: "simplealarms treatmentnotify timeago pump loop",
@@ -177,6 +204,7 @@ function enableOpenApsNotifications(instance: EntryStore): void {
 }
 
 function enablePumpNotifications(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
   Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
     ENABLE: "pump",
     DISABLE: "simplealarms treatmentnotify timeago openaps loop",
@@ -192,6 +220,35 @@ function enablePumpNotifications(instance: EntryStore): void {
     PUMP_URGENT_CLOCK: "2",
     PUMP_WARN_BATT_QUIET_NIGHT: undefined,
     TIMEAGO_ENABLE_ALERTS: undefined,
+    HEARTBEAT: "60",
+  });
+}
+
+function enableCannulaAgeNotifications(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "cage",
+    DISABLE: "ar2 simplealarms treatmentnotify timeago pump openaps loop sage iage",
+    ALARM_TYPES: "predict",
+    CAGE_ENABLE_ALERTS: "true",
+    CAGE_INFO: "1",
+    CAGE_WARN: "1",
+    CAGE_URGENT: "1",
+    DBSIZE_ENABLE_ALERTS: undefined,
+    HEARTBEAT: "60",
+  });
+}
+
+function enableDatabaseSizeNotifications(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "dbsize",
+    DISABLE: "ar2 simplealarms treatmentnotify timeago pump openaps loop cage sage iage",
+    ALARM_TYPES: "predict",
+    DBSIZE_ENABLE_ALERTS: "true",
+    DBSIZE_MAX: "0.01",
+    DBSIZE_WARN_PERCENTAGE: "1",
+    DBSIZE_URGENT_PERCENTAGE: "2",
     HEARTBEAT: "60",
   });
 }
@@ -239,6 +296,104 @@ describe("SQLite Durable Object background notification scheduler", () => {
         eventName: "high",
         group: "default",
         plugin: expect.objectContaining({ name: "ar2" }),
+      })],
+    }]);
+  });
+
+  it("schedules, emits, and clears the exact cannula-age alert window", async () => {
+    const name = tenant("background-cage");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const changedAt = Date.now();
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableCannulaAgeNotifications(instance);
+      await instance.createDocuments("treatments", JSON.stringify([{
+        eventType: "Site Change",
+        enteredBy: "scheduler-test",
+        created_at: new Date(changedAt).toISOString(),
+      }]));
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(changedAt + 60 * 60_000);
+    });
+
+    const alertAt = changedAt + 60 * 60_000;
+    await runInDurableObject(stub, async (instance, state) => {
+      enableCannulaAgeNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        alertAt,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one().due_at).toBe(alertAt + 60_000);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["urgent_alarm", expect.objectContaining({
+        level: URGENT,
+        title: "Cannula age 1 hours",
+        message: "Cannula change overdue!",
+        group: "CAGE",
+        plugin: expect.objectContaining({ name: "cage" }),
+      })],
+    }]);
+
+    const clearAt = alertAt + 21 * 60_000;
+    await runInDurableObject(stub, async (instance, state) => {
+      enableCannulaAgeNotifications(instance);
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      (instance as unknown as MutableEntryStoreSurface).processPluginNotificationTask(
+        task,
+        clearAt,
+      );
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).toArray()).toEqual([]);
+    });
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["clear_alarm", {
+        clear: true,
+        title: "All Clear",
+        message: "Auto ack'd alarm(s)",
+        group: "CAGE",
+      }],
+    }]);
+  });
+
+  it("publishes the opt-in database-size alert from the real SQLite file", async () => {
+    const name = tenant("background-dbsize");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableDatabaseSizeNotifications(instance);
+      await instance.createDocuments("food", JSON.stringify([{
+        name: "scheduler test",
+        carbs: 1,
+      }]));
+      expect(state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one()).toMatchObject({ kind: PLUGIN_NOTIFICATIONS_TASK, attempt_count: 0 });
+    });
+
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["urgent_alarm", expect.objectContaining({
+        level: URGENT,
+        title: "Urgent Database Size near its limits!",
+        group: "Database Size",
+        plugin: expect.objectContaining({ name: "dbsize" }),
       })],
     }]);
   });
