@@ -17,7 +17,7 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-Deployed runtime candidate `45074b9` passes 731/731 tests across 67
+Deployed runtime candidate `3c4b82a` passes 734/734 tests across 67
 Workers-runtime files plus 22/22 audit tests, 42/42 unchanged tests across
 eleven complete upstream-client files and 143/143 unchanged tests across twenty-one locked upstream
 server/data-plugin files. The suite retains focused EIO4,
@@ -53,13 +53,13 @@ mutation by themselves; version 80's separate authenticated browser pass does
 cover the named Profile/Food/Admin/Reports workflows. This is not full-port
 evidence.
 The runtime code is deployed as Cloudflare version
-`c779b136-0f3f-4aaa-88ab-48309e1a53cf`; exact release
+`1eb859ef-2feb-4c42-b9c2-aa533be7cc7e`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
 
-The candidate Wrangler dry-run reports 250 Static Assets entries, 1244.44 KiB raw /
-228.40 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The candidate Wrangler dry-run reports 250 Static Assets entries, 1251.01 KiB raw /
+229.54 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 The deployed increment connects AR2, Simple Alarms, Pump, OpenAPS, Loop, BWP,
@@ -198,7 +198,7 @@ required and unresolved.
 | MongoDB connection and collections | `lib/storage/mongo-storage.js:105-221` creates a connection pool, retries forever, exposes `db.collection()` and creates indexes. | **Cannot run unchanged within the fixed platform scope.** This project deliberately has no Mongo service and must use SQLite Durable Objects. | Implement a Mongo-compatible repository contract over DO SQLite, including query conversion, indexes, collection behavior and migration tests. [SQLite-backed DO storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/). |
 | Mongo ObjectId and query semantics | `lib/server/query.js:28-175`, `lib/server/entries.js`, `lib/server/treatments.js` and `lib/authorization/storage.js` depend on ObjectId, nested Mongo operators, sort, projection and upsert behavior. | **Engineering adaptation.** ObjectId formatting is easy; behavioral parity is not. | Preserve 24-hex identity and UUID fallback rules, then port operators and collection-specific dedupe as contract-tested SQL/JSON operations. |
 | Process-global bus and mutable caches | `lib/bus.js:4-36`, `lib/server/bootevent.js:271-330`, `lib/notifications.js` and `lib/adminnotifies.js` keep timers, listeners and alarm state in memory. | **Runtime lifecycle conflict with a platform adaptation.** Workers and DOs may be evicted and reconstructed. Notification snooze/emission state, realtime and authorization deadlines, schema-v14 task/retry state, schema-v15 Admin notices and schema-v16 data-update debounce are authoritative in SQLite. The complete nine-case `bootevent-debounce.test.js` contract is adapted with leading/trailing/max-wait behavior and DO serialization; twelve alert producers run automatically, while remaining process-timer plugin evaluation does not. | Add idempotent task kinds for the remaining locked plugins; never make isolate memory authoritative. |
-| Socket.IO / Engine.IO | `lib/server/websocket.js:87-164` attaches Socket.IO with polling and WebSocket transports. The official 4.5.4 browser bundle uses EIO4/SIO5; `allowEIO3` retains EIO3/SIO4 legacy clients. Later handlers implement authorization and database mutations. | **Partial platform adaptation; EIO4 official polling plus legacy EIO3 polling deployed.** Persisted EIO4 polling/direct Hibernatable WebSocket and EIO3 HTTP-polling slices run on the tenant DO. EIO3 keeps client-ping/server-pong, length-prefixed framing and the locked two-stage SIO4 root CONNECT/`clients` order; protocol authority and per-recipient encoding persist in schema v19. The byte-identical official 4.5.4 client drives homepage root and `/alarm` over EIO4; only an optional test-tenant query is adapted. Root plus API3 `/storage` and `/alarm`, root writes, core notifications and twelve automatic producers are named compatible subsets. Polling upgrade, EIO3 WebSocket/upgrade, JSONP/binary, remaining plugin evaluation and the direct-send replay boundary remain incomplete. | Keep the official-client/browser and EIO3-polling gates green; implement polling-to-WebSocket upgrade, EIO3 WebSocket if needed by ordinary legacy clients, remaining plugin preprocessing and the direct-send replay boundary. [DO WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/). |
+| Socket.IO / Engine.IO | `lib/server/websocket.js:87-164` attaches Socket.IO with polling and WebSocket transports. Locked `lib/client/index.js` explicitly requests polling for the official 4.5.4 browser bundle; `allowEIO3` retains EIO3/SIO4 legacy clients. Later handlers implement authorization and database mutations. | **Partial platform adaptation; EIO4 polling/direct WebSocket/polling upgrade plus legacy EIO3 polling deployed.** Persisted transport authority runs on the tenant DO. EIO4 follows the upstream `2probe`/`3probe`, polling-noop and `5` upgrade order and preserves polling on duplicate, malformed, abandoned or alarm-timed-out candidates. EIO3 keeps client-ping/server-pong, length-prefixed framing and the locked two-stage SIO4 root CONNECT/`clients` order; protocol authority and per-recipient encoding persist in schema v19. The byte-identical official client remains polling-only by upstream choice; only an optional test-tenant query is adapted. Root plus API3 `/storage` and `/alarm`, root writes, core notifications and twelve automatic producers are named compatible subsets. EIO3 WebSocket/upgrade, JSONP/binary, remaining plugin evaluation and the direct-send replay boundary remain incomplete. | Keep official-client polling, external EIO4-upgrade and EIO3-polling gates green; add EIO3 WebSocket only if needed by ordinary legacy clients, then complete remaining plugin preprocessing and the direct-send replay boundary. [DO WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/). |
 | `setInterval` and periodic work | `lib/bus.js:35`, `lib/plugins/bridge.js:116` and `lib/plugins/mmconnect.js:25` assume a permanent event loop. | **Runtime conflict with a deployed scheduling substrate.** Intervals cannot be authoritative. Schema v14 stores logical work in SQLite and multiplexes twelve producer timelines with realtime/auth deadlines through the DO's one alarm. Schema v17 proves the same platform boundary with a disabled-by-default lab CGM: one persisted five-minute deadline, one fresh SGV per due turn and no outage-sized backfill. This is NSCF test infrastructure, not an upstream plugin or real bridge. | Add the remaining bounded, retry-idempotent task kinds. Alarms are at-least-once and Cloudflare documents one scheduled alarm per DO. [DO alarms](https://developers.cloudflare.com/durable-objects/api/alarms/). |
 | Server plugin registration | `lib/plugins/index.js:25-80` statically requires the official plugin set; `lib/server/bootevent.js:209-246` creates server plugins from runtime settings. | **Mostly build/runtime adaptation.** Static requires can bundle; process-global contexts and plugin state cannot be trusted. | Generate a build-time registry from the locked tree and give each server plugin a persisted, tenant-scoped execution context. Do not rewrite official calculations. |
 
@@ -231,7 +231,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | Legacy Pebble endpoint | `lib/server/pebble.js`, `tests/pebble.test.js` | **Complete locked endpoint contract adapted with bounded platform context.** `/pebble` and `/pebble/` preserve newest-first count selection, mg/dL/mmol formatting, direction/trend, delta, uploader battery, raw filtered/unfiltered/noise/calibration fields and official IOB/COB/BWP display mapping. The live route applies `api:pebble,entries:read`, tenant routing and HEAD behavior. Cloudflare bounds `count` to 1,000 and replaces process-global `ddata`/dynamic plugin access with request-local DO context. | Keep the locked contract and remote smoke green; BWP remains opt-in and is omitted under public defaults. |
 | API v3 version/status/security | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.{basic,security}.test.js` | **Two adapted whole-file contracts.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. Missing and invalid Bearer errors, denied/allowed permissions, API OPTIONS and implicit HEAD are locked. | Named Workers-runtime coverage adapts the complete locked `api3.basic.test.js` and `api3.security.test.js`; the security fixture uses its exact empty default-role setting. Current-version remote GET/HEAD/OPTIONS and missing-token smoke confirm the public boundary. |
 | API v3 generic collections/lastModified/history/rendering | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js`, `tests/api3.*.test.js` | **Locked 16-file API3 test set adapted; bounded platform parity.** All eight generic routes are wired for entries, treatments, device status, profile, food and settings, and all six participate independently in `/lastModified`. JWT auth, validation/permission order, shape handling, UUID/ObjectId/fallback identity, dedupe/resurrection, conditional/projection reads, complete CRUD/history/tombstone/permanent-delete workflow, v1-created reads, AAPS patterns, ordered search, storage paging/mutation metadata and locked JSON/CSV/XML negotiation are represented. Settings retains its admin/read exception. Search/history share the configured lower `API3_MAX_LIMIT` under a hard 1,000-row Workers ceiling. | All 16 locked `api3.*` files have complete named Workers-runtime contract mappings. Keep large-result CPU/memory controls and broader Mongo mixed-type/nested/array/regex differential behavior documented as controlled platform work; do not infer unrestricted behavior beyond the locked suite. |
-| Main Socket.IO namespace | `lib/server/websocket.js`, `lib/data/calcdelta.js` | **Partial EIO3/EIO4 polling plus EIO4 direct WebSocket; official polling client, root writes and Profile Switch status adapted.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted sessions/queues, protocol-aware heartbeat/framing, SIO4/SIO5 root CONNECT, `clients`, read/write/treatment-write authorize/ACK, initial/retro data and subsequent locked `dataUpdate` deltas are tested across polling, reconstruction, mixed-protocol broadcast and tenant/authorization boundaries. Initial `status:true` authorization includes the latest one-year zero-duration Profile Switch as `status.activeProfile`; later switches compare against the persisted SQLite root baseline and publish fresh status after eviction. The byte-identical official Socket.IO 4.5.4 page client connects root and `/alarm` over EIO4. The locked write-shape contract covers all four events across six collections and ACK-before-delta delivery. A SQL-derived alarm persists transport deadlines. Polling upgrade, EIO3 WebSocket/upgrade, JSONP/binary and remaining plugin preprocessing remain missing; direct-WebSocket dequeue/send still has an at-most-once crash window. | Complete remaining plugin preprocessing, close the direct-send crash window and add polling upgrade/EIO3 WebSocket plus a protected remote Profile Switch/page mutation; extend Mongo/BSON differential coverage without removing Free-plan bounds. |
+| Main Socket.IO namespace | `lib/server/websocket.js`, `lib/data/calcdelta.js` | **Partial EIO3/EIO4 polling plus EIO4 direct/upgrade WebSocket; official polling client, root writes and Profile Switch status adapted.** Exact `/socket.io` and `/socket.io/` requests route to tenant DOs. Persisted sessions/queues, protocol-aware heartbeat/framing, SIO4/SIO5 root CONNECT, `clients`, read/write/treatment-write authorize/ACK, initial/retro data and subsequent locked `dataUpdate` deltas are tested across polling, reconstruction, mixed-protocol broadcast and tenant/authorization boundaries. EIO4 polling advertises `websocket`; probe/noop/upgrade, abort, duplicate and alarm-timeout paths are tested through DO eviction. Initial `status:true` authorization includes the latest one-year zero-duration Profile Switch as `status.activeProfile`; later switches compare against the persisted SQLite root baseline and publish fresh status after eviction. The byte-identical official Socket.IO 4.5.4 page client connects root and `/alarm` over polling by its own locked option. The write-shape contract covers all four events across six collections and ACK-before-delta delivery. A SQL-derived alarm persists transport deadlines. EIO3 WebSocket/upgrade, JSONP/binary and remaining plugin preprocessing remain missing; direct-WebSocket dequeue/send still has an at-most-once crash window. | Complete remaining plugin preprocessing, close the direct-send crash window, add EIO3 WebSocket only when ordinary-client evidence requires it and run a protected remote Profile Switch/page mutation; extend Mongo/BSON differential coverage without removing Free-plan bounds. |
 | API v3 storage/alarm namespaces | `lib/api3/storageSocket.js`, `lib/api3/alarmSocket.js` | **Named `/storage` and `/alarm` protocol-aware polling slices plus EIO4 direct WebSocket and core notification processing implemented.** EIO3/SIO4 and EIO4/SIO5 polling can connect either namespace independently; EIO4 direct WebSocket remains available. `/storage` locks subject access-token authorization, official default collection order, unknown-name filtering, duplicate response behavior, per-room read checks, the Settings-admin exception, persisted rooms and API3-only create/update/delete events. `/alarm` locks native-access-token priority, web secret/JWT/anonymous branches, exact subscription responses, accumulated ACK authority, all five event classifications, broadcast to every current namespace connection, live-only tenant isolation, persisted snooze/all-clear behavior and eviction/Hibernation repair. Socket ACK and v1/v2 HTTP ACK share SQLite state. The bounded internal processor consumes upstream request/snooze arrays, persists its selection and publishes atomically. One schema-v14 task publishes twelve named producers through this outlet. | Add EIO3 WebSocket/upgrade only if required by ordinary clients, credentialed remote delivery/ACK evidence and automatic producers for the remaining upstream plugins. Preserve live-only/no-disconnected-replay behavior and bounded broken-recipient isolation. |
 | Real-time database updates | `lib/server/bootevent.js:271-330`, `lib/data/calcdelta.js`, websocket and API3 storage socket | **Partial: API3 storage, root deltas, locked client root writes and Profile Switch status implemented.** Each implemented document mutation persists `document_changes` atomically with its current document. Successful HTTP API3 mutations enqueue bounded `/storage` frames and a root delta in the transaction; implemented legacy and Socket.IO root writes advance/publish the root baseline through the DO. Schema v11 delta state and schema v12 write authority survive reconstruction; unauthorized/read-only sessions cannot mutate, and successful client ACKs precede their delta. V1 writes correctly do not emit `/storage`. The official homepage receives its initial root update through EIO4 polling. Profile Switch writes now publish the locked active-profile status after SQLite DO reconstruction. | Implement remaining plugin preprocessing and a protected remote Profile Switch/page mutation workflow. Define retention/pruning for the unbounded `document_changes` journal separately; it is not the live transport queue and upstream `/storage` provides no disconnected replay. |
 | Background tick and pruning | `lib/bus.js`, `lib/api3/generic/collection.js:127-163` | **Generic scheduler and a unified automatic notification task implemented; remaining jobs partial.** Schema v14 stores task kind, due time, attempt count and update time. Schema v16 persists the upstream one-second trailing/five-second max-wait data-update burst. The DO derives one Cloudflare alarm from persisted transport/session/lease/closure, authorization-cleanup, debounce, task and optional schema-v17 lab-CGM deadlines. Early at-least-once delivery is a no-op; failures persist two-second exponential retries capped at five minutes. The lab feed is separately opt-in per tenant and uses ordinary Entries/root deltas. API3 pruning and other plugin ticks are not scheduled. | Add bounded producers for the remaining official plugins, summary/activity persistence and future maintenance/pruning; retain idempotent repair and Free-plan alarm tests. |
@@ -385,7 +385,7 @@ controls, not upstream claims.
 
 ## Current deployed integration evidence
 
-Runtime candidate `45074b9` passes 731/731 tests in 67
+Runtime candidate `3c4b82a` passes 734/734 tests in 67
 Workers-runtime files plus 22/22 audit tests, 42/42 unchanged direct upstream
 client tests across eleven complete files and 143/143 unchanged tests across twenty-one locked server/data-plugin
 files. It connects schema-v14 background work to automatic AR2, Simple Alarm,
@@ -399,20 +399,21 @@ dataloader/database-size, Sandbox, Settings, Loop, Profile, uploader, identity,
 root-delta/write, API3, authorization, realtime and notification-ACK slices.
 Schema v17 adds the disabled-by-default, per-tenant lab-CGM schedule described
 above and its official Entries/root-delta integration tests.
-Cloudflare version `c779b136-0f3f-4aaa-88ab-48309e1a53cf` (ordinal 84) is
-current and reported a 39 ms startup. Wrangler processed 250 Static Assets entries; the
-final dry run reported 1244.44 KiB raw / 228.40 KiB gzip, with only
+Cloudflare version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e` (ordinal 85) is
+current and reported a 25 ms startup. Wrangler processed 250 Static Assets entries; the
+final dry run reported 1251.01 KiB raw / 229.54 KiB gzip, with only
 `ENTRY_STORE` and `ASSETS`.
 This deployment had no explicit version annotation; none is invented.
 
-The reusable credential-free remote smoke passed 99 assertions for health,
+The reusable credential-free remote smoke passed 106 assertions for health,
 bounded v1 Entries/Treatments reads, fresh Profile/current and v2 Summary,
 API3 version, matching v1/v2 filtered Settings and database-size settings,
 real ddata SQLite bytes, the default-enabled `dbsize` and Basal properties,
 opt-in-disabled Loop/OpenAPS/Pump/IOB/COB/CAGE/SAGE/IAGE, null disabled IOB/COB Summary
-state, property-absent timeago and parseable EIO4 plus EIO3 polling handshakes;
+state, property-absent timeago, EIO3 polling and a real EIO4 WSS upgrade through
+probe/noop/upgrade/root-CONNECT/`clients`;
 missing-token
-API3 Entries returned 401. Isolated tenant `public-smoke-1784694550269` reported
+API3 Entries returned 401. Isolated tenant `public-smoke-1784696258002` reported
 299,008 SQLite bytes,
 `indexSize:0`, a 953.67 MiB maximum and `0%`/`current` state. This run sent no
 API secret value and performed no protected mutation. A name-only encrypted-
@@ -445,8 +446,15 @@ Version 84's 99-assertion smoke passed on isolated tenant
 open/root-CONNECT order and client-ping/server-pong while retaining EIO4. The
 unchanged homepage displayed `127 mg/dL`, `-3`, one minute old with the chart
 present, a connected live client and no console warning/error. The persisted
-five-minute simulator remains enabled. EIO3 direct WebSocket/upgrade,
-polling-to-WebSocket upgrade, JSONP and binary remain explicit gaps.
+five-minute simulator remains enabled. Polling-to-WebSocket upgrade was still a
+gap in that version.
+Version 85's 106-assertion smoke passed on isolated tenant
+`public-smoke-1784696258002`. It completed the standard EIO4 WSS upgrade and
+received root CONNECT plus `clients`; duplicate, malformed and alarm-timeout
+candidates preserve the polling session in local DO contracts. The refreshed
+unchanged homepage displayed `121 mg/dL`, `+4`, three minutes old without a
+warning or console error. EIO3 direct WebSocket/upgrade, JSONP and binary remain
+explicit gaps.
 Version 83's 77-assertion smoke passed on isolated tenant
 `public-smoke-1784692181407`. Public defaults correctly left BWP absent from
 Properties and Pebble and `null` in Summary; the opt-in path is covered by a
@@ -502,11 +510,13 @@ row writes and index maintenance remain account-wide daily resources, and each
 Entries candidates at 10,000 with controlled 413, synchronous deletion/history
 cleanup at 128, and `$re` to the safe GLOB-compilable subset.
 
-The official homepage now uses the deployed polling slice through the locked
-Socket.IO 4.5.4 client; direct WebSocket remains a separate transport. Their
+The official homepage uses the deployed polling slice because the locked
+Socket.IO 4.5.4 client explicitly requests it; direct and polling-upgraded
+WebSocket remain separate external-client transports. Their
 current bounds and named differences are:
 
-- strict `EIO=4`, `transport=polling`, non-binary payloads and `upgrades: []`;
+- strict EIO4 polling with `upgrades:["websocket"]`, direct WebSocket and the
+  locked probe/noop/upgrade sequence; EIO3 polling keeps `upgrades: []`;
 - exact `application/octet-stream` POSTs close the SID with a controlled
   400/code-3 response; malformed UTF-8 uses replacement decoding, while
   raw-versus-replacement accounting at the 1,000,000-byte edge remains P2;
@@ -655,9 +665,10 @@ completion claim.
    green while completing remaining authorization surfaces.
 4. Port v1, then v2, then v3 modules in dependency order, reusing upstream
    calculation code rather than translating it by hand.
-5. Keep the completed official EIO4 browser and EIO3 legacy polling gates green. Add
-   polling-to-WebSocket upgrade, EIO3 WebSocket/upgrade and a protected pushed page mutation as
-   separate gates; the optional test-tenant adapter must remain the only
+5. Keep the completed official EIO4 polling browser, external EIO4 upgrade and
+   EIO3 legacy polling gates green. Add EIO3 WebSocket only when ordinary-client
+   evidence requires it, and add a protected pushed page mutation as a separate
+   gate; the optional test-tenant adapter must remain the only
    browser-side Cloudflare logic.
 6. Add bounded tick/prune/plugin producers to the deployed persisted alarm
    table; AR2, Simple Alarms, Pump, OpenAPS, Loop, CAGE, SAGE, IAGE, enabled

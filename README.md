@@ -134,8 +134,10 @@ for diagnosis, dosing, or medical decisions.
   delivery. Writes remain bounded to 100 documents per event.
 - A direct EIO4 WebSocket transport accepted by the same Durable Object through
   WebSocket Hibernation. It persists protocol authority in SQLite and restores
-  tagged socket attachments after eviction. It does not implement an
-  Engine.IO polling-to-WebSocket upgrade; clients open the direct transport.
+  tagged socket attachments after eviction. Standard EIO4 clients can also
+  upgrade an existing polling SID through the locked `2probe`/`3probe`, polling
+  noop and `5` sequence. Candidate timeout/abort state is alarm-backed and does
+  not delete the still-valid polling session.
 - The API v3 `/storage` Socket.IO namespace on those EIO4/SIO5 transports.
   Subject access-token authorization, the official six-collection default
   order, per-collection rooms, the Settings-admin exception and subscription
@@ -208,8 +210,9 @@ for diagnosis, dosing, or medical decisions.
 - Routed official EIO4/SIO5 and legacy EIO3/SIO4 HTTP polling through the same
   persisted tenant transport. EIO3 keeps its client-ping/server-pong heartbeat,
   length-prefixed payloads and two-stage root CONNECT/`clients` sequence; EIO4
-  retains RS framing and server-ping/client-pong. Direct WebSocket remains EIO4
-  only, polling advertises `upgrades: []`, and EIO3 WebSocket/upgrade, JSONP and
+  retains RS framing and server-ping/client-pong. EIO4 polling advertises and
+  completes the WebSocket upgrade; direct WebSocket remains EIO4 only. EIO3
+  continues to advertise no upgrades, and EIO3 WebSocket/upgrade, JSONP and
   binary transports are not implemented.
 - Content-addressed loading for the official Socket.IO client and the small
   tenant-query adapter, so an older upstream service worker cannot keep
@@ -229,7 +232,7 @@ This is not yet a drop-in Nightscout server. Important missing work includes
 the complete v1/v2 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
 Mongo query/collection parity beyond the tested safe subset, Engine.IO
-polling-to-WebSocket upgrade, EIO3 direct WebSocket/upgrade and JSONP/binary,
+EIO3 direct WebSocket/upgrade and JSONP/binary,
 the direct-WebSocket at-most-once crash window, remaining plugin preprocessing
 on root updates, remaining background-task kinds, general server plugin
 execution, remaining plugin alarm generation,
@@ -237,7 +240,9 @@ external push providers, plugin-derived v2 summary
 state/persistence, and a protected mutation observed through the pushed live
 page update path.
 The official homepage now uses the implemented EIO4 polling endpoint and
-`/alarm` namespace. It does not yet prove polling-to-WebSocket upgrade, EIO3
+`/alarm` namespace and is intentionally pinned to polling by the locked
+v15.0.7 client source. The separate standard EIO4 polling-to-WebSocket upgrade
+passes local and public WSS contracts. The page does not yet prove EIO3
 WebSocket/upgrade, every pushed mutation workflow or the still-missing server-side plugin
 preprocessing pipeline.
 Entries also remains incomplete beyond its now-adapted locked test file:
@@ -545,11 +550,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `45074b9`. The 67-file Workers-runtime
-suite passes 731/731 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `3c4b82a`. The 67-file Workers-runtime
+suite passes 734/734 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1244.44 KiB raw / 228.40 KiB gzip and exposes only
+reports 1251.01 KiB raw / 229.54 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -669,7 +674,7 @@ Its Node configuration audit rejects stored plaintext vars and prohibited
 D1/R2/KV/Queues/routes while locking the existing footprint.
 Non-Entries echo, arbitrary aggregation pipelines, unrestricted Mongo mixed-
 type/nested/array and BSON numeric/object-ID semantics, safe-attribute DOMPurify
-byte parity, EIO3 WebSocket/upgrade/JSONP/binary, polling-to-WebSocket upgrade and the server-side
+byte parity, EIO3 WebSocket/upgrade/JSONP/binary and the server-side
 remaining plugin evaluators/task kinds, remaining plugin-derived summary
 fields and their persistence remain
 missing. The user-supplied construction credential is active and was used only
@@ -846,7 +851,8 @@ the next poll returns root CONNECT before `clients`, exactly preserving the
 two-stage Socket.IO 2.x sequence. Client ping/server pong, namespace query
 parsing, per-session EIO3/SIO4 packet conversion, ACKs and mixed EIO3/EIO4
 broadcasts are covered without changing EIO4 behavior. EIO3 direct WebSocket,
-polling-to-WebSocket upgrade, JSONP and binary transports remain explicit gaps.
+polling-to-WebSocket upgrade, JSONP and binary transports remained explicit
+gaps in version 84.
 The 67-file, 731-test Workers gate, all audit/source gates, dry run and the
 99-assertion public smoke passed; the smoke used isolated tenant
 `public-smoke-1784694550269` and exercised both EIO4 and EIO3 polling. A fresh
@@ -855,6 +861,21 @@ real-browser reload of the unchanged official homepage displayed `127 mg/dL`,
 console warning or error. The five-minute persisted simulator remains enabled,
 so the public lab does not age into a stale-data alarm while migration work
 continues.
+
+Version 85 (`1eb859ef-2feb-4c42-b9c2-aa533be7cc7e`) deploys commit `3c4b82a`
+and completes the standard EIO4 polling-to-WebSocket upgrade path. The polling
+open packet now advertises `upgrades:["websocket"]`; a live SID accepts the
+locked probe/noop/upgrade order, preserves SQLite session authority across
+transport replacement and survives Durable Object eviction through a validated
+Hibernation attachment. Duplicate, malformed, abandoned and timed-out upgrade
+candidates close without deleting the original polling session. The 734-test
+Workers gate, all source/audit gates, TypeScript and the 1251.01-KiB dry run
+passed. A 106-assertion public smoke on tenant
+`public-smoke-1784696258002` completed a real WSS upgrade and received root
+CONNECT plus `clients`; the refreshed unchanged homepage displayed `121 mg/dL`,
+`+4`, three minutes old with no warning or console error. The locked homepage
+client remains polling-only by upstream choice; external standard EIO4 clients
+can use the newly deployed upgrade.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

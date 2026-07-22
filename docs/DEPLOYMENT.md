@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `45074b9`
-- Runtime source candidate: `45074b9`
-- Git commit matching the deployed runtime worktree: `45074b9`
-- Cloudflare Version ID: `c779b136-0f3f-4aaa-88ab-48309e1a53cf`
-- Cloudflare ordinal version number: `84`
+- Deployed runtime candidate: `3c4b82a`
+- Runtime source candidate: `3c4b82a`
+- Git commit matching the deployed runtime worktree: `3c4b82a`
+- Cloudflare Version ID: `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e`
+- Cloudflare ordinal version number: `85`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T04:28:56.791942Z`
+- Version creation time: `2026-07-22T04:57:24.298446Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 39 ms
+- Worker startup: 25 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -33,8 +33,8 @@ is not counted as API, plugin or real-time compatibility.
   v19 persisted EIO3/EIO4 session-protocol authority
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–84 reused them unchanged
-- Upload: 1244.44 KiB raw / 228.40 KiB gzip
+  versions 76–85 reused them unchanged
+- Upload: 1251.01 KiB raw / 229.54 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -227,7 +227,33 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   the official chart, a connected live client and no console warning/error.
   The persisted simulator remains enabled on its five-minute schedule. EIO3
   direct WebSocket/upgrade, polling-to-WebSocket upgrade, JSONP and binary
-  transports remain explicit gaps.
+  transports remained explicit gaps in version 84.
+
+## Version 85 EIO4 polling-to-WebSocket upgrade increment
+
+- Commit `3c4b82a` adds the standard EIO4 upgrade path without changing the
+  byte-identical official client. EIO4 polling now advertises
+  `upgrades:["websocket"]`; a live SID follows `2probe`, `3probe`, polling noop
+  and `5` before the persisted session atomically changes to WebSocket.
+- Direct and upgraded sockets use Cloudflare WebSocket Hibernation. Upgrade
+  phase/deadline state is attachment-validated and the ten-second timeout uses
+  the existing SQLite closure row plus the DO's single alarm. Duplicate,
+  malformed, abandoned and timed-out candidates close without deleting the
+  original polling session.
+- Local gates passed: 67 Workers files / 734 tests, 22/22 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript, Wrangler type generation and dry run. The dry bundle was 1251.01
+  KiB raw / 229.54 KiB gzip with 250 assets and only `ENTRY_STORE` plus
+  `ASSETS`.
+- Cloudflare version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e` is ordinal 85,
+  created at `2026-07-22T04:57:24.298446Z`; startup was 25 ms. The
+  106-assertion public smoke passed on isolated tenant
+  `public-smoke-1784696258002`, completed a real WSS upgrade and received root
+  CONNECT plus `clients` over that upgraded transport.
+- The locked homepage source explicitly requests polling, so the official page
+  remains on polling by upstream choice. Its fresh reload displayed
+  `121 mg/dL`, `+4`, three minutes old with the chart and no warning or console
+  error. EIO3 direct WebSocket/upgrade, JSONP and binary remain explicit gaps.
 
 ## Release content
 
@@ -604,9 +630,9 @@ The cumulative deployed surface also includes:
   while POST/PUT and nonempty malformed bodies remain strict.
 
 The homepage uses the deployed EIO4 polling root and `/alarm` namespace through
-the official client, while legacy clients can use EIO3 HTTP polling. Polling-
-to-WebSocket upgrade, EIO3 direct WebSocket/upgrade, JSONP and binary remain
-separate incomplete transport work.
+the official client, while standard external EIO4 clients can upgrade to
+WebSocket and legacy clients can use EIO3 HTTP polling. EIO3 direct
+WebSocket/upgrade, JSONP and binary remain separate incomplete transport work.
 
 ## Fresh-family and storage policy
 
@@ -646,7 +672,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `45074b9`. It retains schema-v15 persisted
+The deployed runtime candidate is `3c4b82a`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -661,6 +687,8 @@ server BWP property/Summary/Pebble/notification chain and shared Profile
 preprocessing without adding a medical formula or Treatment action.
 Schema v19 additionally persists Engine protocol authority and routes the
 upstream-exact EIO3/SIO4 HTTP-polling sequence alongside EIO4.
+The current transport adapter additionally completes EIO4 polling-to-WebSocket
+upgrade and persists candidate timeout work in the existing alarm multiplexer.
 The table below records the exact current local gate for the immutable deployed
 runtime and assets. The unchanged-client runner now includes the original
 client Hashauth, Admin Tools, report-settings and complete Reports workflows;
@@ -682,13 +710,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 67 files, 731/731 passed |
-| Worker dry run | 1244.44 KiB raw / 228.40 KiB gzip |
+| Workers integration tests | 67 files, 734/734 passed |
+| Worker dry run | 1251.01 KiB raw / 229.54 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 731 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 734 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 21
 server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 files,
@@ -716,7 +744,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `c779b136-0f3f-4aaa-88ab-48309e1a53cf` as the current
+Wrangler reports version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -743,11 +771,13 @@ not only Wrangler command success.
 | Credentialed simulator mutation | The historical 25-entry v1 SGV batch from `simulator://nscf-demo` returned HTTP 200 and rendered the chart; all 25 exact simulator rows were later deleted because their intentionally idle timestamps triggered stale-data alarms |
 | Cloudflare bodyless DELETE | An isolated tenant created one simulated SGV, deleted it with a genuinely bodyless v1 request and returned HTTP 200 with `deletedCount:1`; a follow-up read returned zero rows |
 | GET/POST `/_nscf/simulated-cgm` | Public `demo` reported enabled with `intervalMs:300000`; twelve deterministic seed rows used `simulator://nscf-test`. Fresh smoke tenants remained disabled/empty. |
+| Current EIO4 polling open | HTTP 200 with a 20-character SID, `upgrades:["websocket"]`, `pingInterval:25000` and `pingTimeout:20000` |
+| Current EIO4 WebSocket upgrade | Real WSS completed `2probe`/`3probe`, released the pending poll with noop, accepted `5`, then returned root CONNECT and `clients` over the upgraded socket |
 
 The latest reusable `scripts/smoke-public.mjs` run used isolated tenant
-`public-smoke-1784690470717` and passed 77 behavior/CORS assertions.
-The EIO4 open packet carried a 20-character SID, `pingInterval:25000` and
-`pingTimeout:20000`.
+`public-smoke-1784696258002` and passed 106 behavior/CORS/protocol assertions.
+It observed 299,008 SQLite bytes and the EIO4 open/upgrade sequence above while
+also retaining the EIO3 client-ping/server-pong contract.
 
 The reusable smoke itself sends no credential and confirms that anonymous
 mutation fails closed. The separate simulator batch used the user-supplied
@@ -776,15 +806,16 @@ deployment-variable preservation/configuration audit, complete request-local
 Sandbox contract, Settings, Loop property
 calculation, concurrent uploader, Profile, Loop client and client/server root
 transport runtime. The current version repeated a fresh credential-free EIO4
-polling-open check and then connected the locked official Socket.IO 4.5.4
-client remotely to both root and `/alarm`. No API secret was required for that
+polling-open check, completed a real standard WSS upgrade and retained the
+locked official Socket.IO 4.5.4 polling client on both root and `/alarm`. No API secret was required for that
 anonymous-readable transport check. Successful write/change delivery remains
 proved by local integration contracts; the isolated bodyless-delete smoke is
 an HTTP mutation contract, not a pushed-delta claim.
 
 | Check | Result |
 | --- | --- |
-| Current EIO4 polling open | HTTP 200, a 20-character Engine.IO 4 SID, `pingInterval:25000` and `pingTimeout:20000` |
+| Current EIO4 polling open | HTTP 200, a 20-character Engine.IO 4 SID, `upgrades:["websocket"]`, `pingInterval:25000` and `pingTimeout:20000` |
+| Current EIO4 polling upgrade | Real WSS passed probe/noop/upgrade, root CONNECT and `clients`; local contracts also cover duplicate, malformed and alarm-timeout candidates |
 | Current official Socket.IO client | Root connected, initial `dataUpdate` received, authorize ACK granted read, and `/alarm` subscribed with read success |
 | Live database stats/property | ddata published 262,144 SQLite bytes; the default-enabled registry property returned the same total and 953.67 MiB Free-plan maximum |
 | Local plugin registry contract | both named client/server cases plus order, enable/shown gates, hook/error behavior, event aggregation, iterators and settings projection |
@@ -835,7 +866,7 @@ alarm continuation and eviction recovery. The
 credential-free remote pass did not publish a trusted notification, perform
 an alarm ACK or mutate a Profile Switch; the separate simulator batch exercised only v1 SGV upload.
 The real DO reconstruction test covers the active-Profile push. Remote evidence does not yet prove
-polling upgrade, EIO3 WebSocket/upgrade, remaining plugin preprocessing or automatic task
+EIO3 WebSocket/upgrade, remaining plugin preprocessing or automatic task
 execution for the remaining server plugins.
 
 ## Real-browser evidence
@@ -869,16 +900,17 @@ broader version-72/73/74 page checks:
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `c779b136-0f3f-4aaa-88ab-48309e1a53cf` reused the same
-250 Static Assets entries and passed the 99-assertion credential-free remote
-API/Engine.IO/Pebble gate. Version 78 retains the named official-client and
+Cloudflare version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e` reused the same
+250 Static Assets entries and passed the 106-assertion credential-free remote
+API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
 81 adds persisted push-provider contracts/callback state and the fresh-data
 All Clear/browser acceptance; version 82 adds persisted active-Profile
 comparison and locked `status.activeProfile` publication; version 83 adds the
 opt-in locked BWP server chain and twelve-producer persisted scheduler; version
-84 adds upstream-exact legacy EIO3 HTTP polling and schema-v19 protocol state.
+84 adds upstream-exact legacy EIO3 HTTP polling and schema-v19 protocol state;
+version 85 adds the EIO4 polling-to-WebSocket upgrade and alarm-backed candidate timeout.
 
 This does not prove longer-running stability, a protected mutation observed
 through the pushed live-update path, every plugin workflow or real closed-loop
@@ -918,16 +950,17 @@ client compatibility.
 - Cloudflare can strip `Content-Length` from some dynamic Status/finalhandler
   responses. This release's Entries GET/HEAD smoke retained its exact length;
   the remaining transport difference stays scoped and non-blocking.
-- Polling-to-WebSocket upgrade, EIO3 direct WebSocket/upgrade, JSONP and binary
-  remain missing. EIO3 HTTP polling is deployed. The main namespace
+- EIO4 polling-to-WebSocket upgrade is deployed; EIO3 direct WebSocket/upgrade,
+  JSONP and binary remain missing. EIO3 HTTP polling is deployed. The main namespace
   now emits server-originated deltas from a schema-v11 persisted baseline and
   implements the locked client root write shape contract with schema-v12
-  authority, but profile-switch status injection, server-plugin preprocessing
-  and a protected pushed mutation observed in the official page remain
-  incomplete. Broader Mongo/BSON
+  authority and persisted Profile Switch status injection, but remaining
+  server-plugin preprocessing and a protected pushed mutation observed in the
+  official page remain incomplete. Broader Mongo/BSON
   numeric, object-ID and mixed-type behavior is not implied by the named write
   contract. `/storage` and `/alarm` currently
-  support EIO3/SIO4 and EIO4/SIO5 polling plus EIO4 direct WebSocket. Direct WebSocket retains
+  support EIO3/SIO4 and EIO4/SIO5 polling plus EIO4 direct and upgraded
+  WebSocket. Direct WebSocket retains
   a named at-most-once crash window between durable dequeue and `send()`.
   `/alarm` now combines its live transport/auth/ACK outlet with the internal
   core processor: inherited v1/v2 HTTP ACK and schema-v13 emission state are

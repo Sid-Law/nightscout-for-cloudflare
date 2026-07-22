@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `45074b9` and
-Cloudflare version `c779b136-0f3f-4aaa-88ab-48309e1a53cf`. The
-candidate's 67-file Workers-runtime suite passes 731/731 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `3c4b82a` and
+Cloudflare version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e`. The
+candidate's 67-file Workers-runtime suite passes 734/734 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1244.44 KiB
-raw / 228.40 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 84 reported a 39 ms startup and passed the
-99-assertion credential-free API, official Socket.IO-client, EIO4/EIO3 polling, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1251.01 KiB
+raw / 229.54 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 85 reported a 25 ms startup and passed the
+106-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
 real-browser gates; the earlier authenticated official-page workflows remain
 separate version-80 evidence.
 These are release facts for the named subset, not
@@ -94,10 +94,10 @@ official treatment-marker curve placement. It retains the age/timeago,
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 67 Workers files / 731 tests, 22/22 audits, eleven direct upstream
+evidence is 67 Workers files / 734 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1244.44 KiB raw / 228.40 KiB gzip with 250 assets and two bindings.
-Remote API/EIO4/EIO3-polling and real-browser gates passed against the same active version.
+dry run is 1251.01 KiB raw / 229.54 KiB gzip with 250 assets and two bindings.
+Remote API/EIO4-upgrade/EIO3-polling and real-browser gates passed against the same active version.
 
 ## Current request and data flow
 
@@ -106,7 +106,7 @@ Official Nightscout v15.0.7 pages and browser bundle / compatible uploader
         |
         | static HTML/CSS/JS and v1/v2 page API
         | official Socket.IO 4.5.4 over EIO4 polling; compatible EIO3 polling;
-        | EIO4 direct-WebSocket clients
+        | EIO4 direct-WebSocket or standard polling-upgrade clients
         v
 Cloudflare Worker (nscf-phase1) + Workers Static Assets
   - official upstream pages/assets/Swagger specifications
@@ -121,7 +121,7 @@ Cloudflare Worker (nscf-phase1) + Workers Static Assets
     Entries/plugin context
   - inherited v1/v2 notification ACK authorization and HTTP adaptation
   - byte-identical official Socket.IO browser client plus optional test-tenant query adapter
-  - strict `/socket.io/` EIO4 polling and direct-WebSocket adapters
+  - strict `/socket.io/` EIO4 polling, direct-WebSocket and polling-upgrade adapters
   - SIO5 root plus API3 `/storage` and `/alarm` namespace protocol adaptation
         |
         | ENTRY_STORE.getByName(tenant), typed RPC
@@ -348,7 +348,7 @@ synthesized.
 
 Exact `/socket.io` and `/socket.io/` requests reach real tenant-local EIO4
 polling/direct-WebSocket and EIO3 polling endpoints. EIO4 polling implements
-the official open shape with `upgrades: []`, 25-second server ping / 20-second
+the official open shape with `upgrades:["websocket"]`, 25-second server ping / 20-second
 client-pong heartbeat, RS payload framing, SIO5 root CONNECT, `clients`, permission-derived
 `authorize`, initial and subsequent server-originated `dataUpdate`, and
 `loadRetro`. EIO3 polling uses the same 25/20-second advertised values but
@@ -364,9 +364,12 @@ same upstream Socket.IO client and a clean browser verifies the root and
 `/alarm` workflows.
 Direct WebSocket opens with `EIO=4&transport=websocket`, is accepted by the DO
 through WebSocket Hibernation, and restores its tenant/SID authority from a
-validated attachment plus SQLite state after eviction. It is not an Engine.IO
-upgrade from an existing polling SID: polling continues to advertise no
-upgrade.
+validated attachment plus SQLite state after eviction. A live EIO4 polling SID
+can also open a candidate WebSocket, complete the upstream probe/noop/upgrade
+sequence and atomically replace its persisted transport. Candidate phase and
+deadline live in a validated attachment plus SQLite closure row; abort, bad
+frames, duplicate admission and the ten-second alarm timeout preserve the
+original polling session. EIO3 continues to advertise no upgrade.
 
 `src/realtime/calcdelta.ts` ports the locked `lib/data/calcdelta.js` comparison
 semantics without keeping Node process state. Schema v11 stores one complete
@@ -1033,11 +1036,12 @@ either contract and remains outside the fixed deployment footprint.
 
 ### Real-time transport
 
-`platform/socket-io-polling-shim.js` currently creates browser-side `connect`,
-`authorize`, `subscribe`, `loadRetro` and `dataUpdate` events and polls every
-15 seconds. It still supplies the official page and does not use the new
-server endpoint. The separate endpoint now implements strict EIO4 HTTP polling
-and direct Hibernatable WebSocket with persisted session/queue state, root
+The byte-identical official Socket.IO 4.5.4 client supplies browser-side
+`connect`, `authorize`, `subscribe`, `loadRetro` and `dataUpdate` events through
+the real server endpoint. Locked `lib/client/index.js` explicitly requests the
+polling transport; `platform/socket-tenant-adapter.js` adds only the optional
+lab-tenant query. The endpoint implements strict EIO4 HTTP polling, direct
+Hibernatable WebSocket and standard polling-to-WebSocket upgrade with persisted session/queue state, root
 namespace CONNECT, read/write/treatment-write authorization ACKs, initial/retro data and
 connection-count broadcasts. It also implements the API v3 `/storage`
 namespace, persisted authorized collection rooms and API3-only mutation events,
@@ -1046,9 +1050,9 @@ and trusted live notification outlet.
 
 The current server boundary is explicit:
 
-- EIO4 polling/direct WebSocket and EIO3 HTTP polling; an Engine.IO upgrade
-  from an existing polling SID, EIO3 direct WebSocket/upgrade, JSONP and binary
-  packets are rejected, and every polling handshake advertises `upgrades: []`;
+- EIO4 polling/direct WebSocket/polling upgrade and EIO3 HTTP polling; EIO3
+  direct WebSocket/upgrade, JSONP and binary packets are rejected. EIO4 polling
+  advertises `upgrades:["websocket"]`; EIO3 advertises `upgrades: []`;
   an exact
   `application/octet-stream` POST closes its leased SID and receives a
   controlled 400/code-3 response;
@@ -1126,8 +1130,9 @@ against the persisted root baseline and attach a fresh status after eviction.
 `loadRetro` require exactly one object payload; this is a resource/safety
 tightening over permissive upstream JavaScript call shapes.
 
-Both polling and direct Hibernatable WebSocket remain live in Cloudflare version
-`baade90c-d738-4a8b-a6c2-f1b19af68d9b`. Current credential-free remote smoke
+Polling, direct Hibernatable WebSocket and EIO4 polling upgrade are live in
+Cloudflare version `1eb859ef-2feb-4c42-b9c2-aa533be7cc7e`. Current
+credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, matching
 v1/v2 Settings snapshots, fresh-tenant Profile/current and v2 Summary, API3
 version, real ddata/database-size values, the default-enabled Basal and AR2 properties and the opt-in-disabled
@@ -1167,9 +1172,10 @@ No real CGM or closed-loop traffic was used. Four fresh-tenant Admin-notificatio
 count while hiding the body, and the real browser retained the official Admin,
 clock and Settings/About 15.0.7 surfaces. The at-most-once dequeue/send
 crash window described above remains open for direct WebSocket. The official
-homepage now uses the EIO4 polling server; polling-to-WebSocket upgrade, EIO3
-WebSocket/upgrade and a pushed protected mutation observed in the page remain
-separate gates. The named
+homepage uses the EIO4 polling server because its locked source requests
+polling; the independently tested EIO4 upgrade now serves standard external
+clients. EIO3 WebSocket/upgrade and a pushed protected mutation observed in the
+page remain separate gates. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
@@ -1214,7 +1220,7 @@ urgent threshold-plus-one-millisecond deadlines, source expiry, future status
 activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
 The remaining transport work is non-Profile-Switch plugin preprocessing,
-EIO3 WebSocket/upgrade, polling upgrade and the direct-send replay/acknowledgement boundary;
+EIO3 WebSocket/upgrade and the direct-send replay/acknowledgement boundary;
 automatic alarm producers for other remaining plugins stay as background work.
 BWP, CAGE/SAGE/IAGE and DBSize are complete producers.
 
@@ -1314,8 +1320,8 @@ object as well as every out-of-scope product binding.
   rotated and converted to an encrypted Worker Secret before non-lab use.
 - The homepage ships the locked official Socket.IO 4.5.4 client. The adjacent
   adapter only appends an optional test-tenant query and has no medical or
-  display logic. EIO4 polling is the current page transport; EIO3 HTTP polling
-  is available for legacy clients, while polling upgrade and EIO3
-  WebSocket/upgrade remain unimplemented.
+  display logic. EIO4 polling is the current page transport; standard EIO4
+  polling upgrade is available for external clients and EIO3 HTTP polling for
+  legacy clients, while EIO3 WebSocket/upgrade remains unimplemented.
 - Text asset responses are streamed rather than buffered when UTF-8 headers are
   adapted, keeping the extra Worker CPU and memory work constant.
