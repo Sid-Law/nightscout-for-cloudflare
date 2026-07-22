@@ -70,30 +70,60 @@ describe("official Nightscout UI assets", () => {
     expect(bundle.status).toBe(200);
     expect(bundle.headers.get("Content-Type")).toMatch(/charset=utf-8/i);
 
-    const socketAdapter = await SELF.fetch("https://example.test/socket.io/socket.io.js");
-    expect(socketAdapter.status).toBe(200);
-    const socketAdapterSource = await socketAdapter.text();
-    expect(socketAdapterSource).toContain("/api/v2/ddata/at?");
-    expect(socketAdapterSource).toContain("this.poll(true, function afterInitialData()");
+    const socketClient = await SELF.fetch("https://example.test/socket.io/socket.io.js");
+    expect(socketClient.status).toBe(200);
+    const socketClientSource = await socketClient.text();
+    expect(socketClientSource).toContain("Socket.IO v4.5.4");
+    expect(socketClientSource).not.toContain("/api/v2/ddata/at?");
 
-    const adapterDigest = await crypto.subtle.digest(
+    const socketClientDigest = await crypto.subtle.digest(
       "SHA-256",
-      new TextEncoder().encode(socketAdapterSource),
+      new TextEncoder().encode(socketClientSource),
     );
-    const adapterCachebuster = Array.from(
-      new Uint8Array(adapterDigest),
+    const socketClientHash = Array.from(
+      new Uint8Array(socketClientDigest),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+    expect(socketClientHash).toBe(
+      "7a8ec840e096ddb18a8acc585baadcb3575b35cd6208b0193bdecfb43184fa42",
+    );
+
+    const tenantAdapter = await SELF.fetch(
+      "https://example.test/platform/socket-tenant-adapter.js",
+    );
+    expect(tenantAdapter.status).toBe(200);
+    const tenantAdapterSource = await tenantAdapter.text();
+    expect(tenantAdapterSource).toContain("connectWithTenant");
+    expect(tenantAdapterSource).toContain('query.set("tenant", selected)');
+    const tenantAdapterDigest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(tenantAdapterSource),
+    );
+    const tenantAdapterHash = Array.from(
+      new Uint8Array(tenantAdapterDigest),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+    const combinedDigest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(socketClientSource + tenantAdapterSource),
+    );
+    const transportCachebuster = Array.from(
+      new Uint8Array(combinedDigest),
       (byte) => byte.toString(16).padStart(2, "0"),
     ).join("").slice(0, 12);
-    expect(html).toContain(`src="/socket.io/socket.io.js?${adapterCachebuster}"`);
+    expect(html).toContain(`src="/socket.io/socket.io.js?${socketClientHash.slice(0, 12)}"`);
     expect(html).toContain(
-      `navigator.serviceWorker.register('/sw.js?v15.0.7-7e0e77f88fc1-${adapterCachebuster}'`,
+      `src="/platform/socket-tenant-adapter.js?${tenantAdapterHash.slice(0, 12)}"`,
+    );
+    expect(html).toContain(
+      `navigator.serviceWorker.register('/sw.js?v15.0.7-7e0e77f88fc1-${transportCachebuster}'`,
     );
 
     const serviceWorker = await SELF.fetch("https://example.test/sw.js");
     expect(serviceWorker.status).toBe(200);
     const serviceWorkerSource = await serviceWorker.text();
     expect(serviceWorkerSource).toContain(
-      `var CACHE = 'v15.0.7-7e0e77f88fc1-${adapterCachebuster}'`,
+      `var CACHE = 'v15.0.7-7e0e77f88fc1-${transportCachebuster}'`,
     );
     expect(serviceWorkerSource).not.toContain("'/socket.io/socket.io.js'");
 

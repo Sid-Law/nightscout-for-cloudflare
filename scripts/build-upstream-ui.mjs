@@ -19,24 +19,50 @@ const upstreamBundleRoot = path.join(
 const manifest = JSON.parse(
   await readFile(path.join(projectRoot, "upstream", "manifest.json"), "utf8"),
 );
-const socketShimPath = path.join(projectRoot, "platform", "socket-io-polling-shim.js");
-const socketShim = await readFile(socketShimPath, "utf8");
-const adapterCachebuster = createHash("sha256")
-  .update(socketShim)
+const socketClientPath = path.join(
+  vendorRoot,
+  "node_modules",
+  "socket.io",
+  "client-dist",
+  "socket.io.js",
+);
+const socketClient = await readFile(socketClientPath, "utf8");
+const socketTenantAdapterPath = path.join(
+  projectRoot,
+  "platform",
+  "socket-tenant-adapter.js",
+);
+const socketTenantAdapter = await readFile(socketTenantAdapterPath, "utf8");
+const socketClientCachebuster = createHash("sha256")
+  .update(socketClient)
   .digest("hex")
   .slice(0, 12);
-const cachebuster = `${manifest.release}-${manifest.commit.slice(0, 12)}-${adapterCachebuster}`;
+const socketTenantCachebuster = createHash("sha256")
+  .update(socketTenantAdapter)
+  .digest("hex")
+  .slice(0, 12);
+const transportCachebuster = createHash("sha256")
+  .update(socketClient)
+  .update(socketTenantAdapter)
+  .digest("hex")
+  .slice(0, 12);
+const cachebuster = `${manifest.release}-${manifest.commit.slice(0, 12)}-${transportCachebuster}`;
 const locals = { bundle: "/bundle", cachebuster };
+
+const transportScripts = [
+  `<script src="/socket.io/socket.io.js?${socketClientCachebuster}"></script>`,
+  `<script src="/platform/socket-tenant-adapter.js?${socketTenantCachebuster}"></script>`,
+].join("\n  ");
 
 function applyPlatformAssetVersions(html) {
   return html
     .replaceAll(
-      'src="socket.io/socket.io.js"',
-      `src="/socket.io/socket.io.js?${adapterCachebuster}"`,
+      '<script src="socket.io/socket.io.js"></script>',
+      transportScripts,
     )
     .replaceAll(
-      'src="/socket.io/socket.io.js"',
-      `src="/socket.io/socket.io.js?${adapterCachebuster}"`,
+      '<script src="/socket.io/socket.io.js"></script>',
+      transportScripts,
     )
     .replace(
       "navigator.serviceWorker.register('/sw.js', { scope: '/' })",
@@ -123,7 +149,12 @@ const serviceWorker = ejs
 await writeFile(path.join(publicRoot, "sw.js"), serviceWorker);
 
 await mkdir(path.join(publicRoot, "socket.io"), { recursive: true });
-await writeFile(path.join(publicRoot, "socket.io", "socket.io.js"), socketShim);
+await writeFile(path.join(publicRoot, "socket.io", "socket.io.js"), socketClient);
+await mkdir(path.join(publicRoot, "platform"), { recursive: true });
+await writeFile(
+  path.join(publicRoot, "platform", "socket-tenant-adapter.js"),
+  socketTenantAdapter,
+);
 await mkdir(path.join(publicRoot, "api-docs"), { recursive: true });
 await cp(
   path.join(vendorRoot, "static", "api-docs.html"),

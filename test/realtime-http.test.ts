@@ -86,13 +86,15 @@ function jsonNodeCount(value: unknown): number {
 }
 
 describe("Engine.IO 4 polling HTTP adapter", () => {
-  it("leaves the versioned homepage transport asset on the static asset path", async () => {
+  it("leaves the versioned official Socket.IO client on the static asset path", async () => {
     const response = await SELF.fetch(
       "https://example.test/socket.io/socket.io.js?cachebuster-test",
     );
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toMatch(/^(?:text|application)\/javascript/);
-    expect(await response.text()).toContain("function installCloudflareTransport(global)");
+    const source = await response.text();
+    expect(source).toContain("Socket.IO v4.5.4");
+    expect(source).not.toContain("/api/v2/ddata/at");
   });
 
   it("serves the exact polling open contract and Engine.IO query errors", async () => {
