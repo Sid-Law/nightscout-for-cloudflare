@@ -194,11 +194,12 @@ for diagnosis, dosing, or medical decisions.
   survives eviction and drives
   server ping, pong timeout, session expiry, bounded WebSocket closure retry,
   abandoned poll/POST lease cleanup, stale authorization-failure cleanup and
-  automatic AR2, Simple Alarm, Dexcom Error Codes, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
+  automatic AR2, Simple Alarm, Dexcom Error Codes, Pump, OpenAPS, xDrip-js,
+  Loop, BWP, CAGE, SAGE, IAGE,
   Treatment Notify, Timeago and opt-in DBSize re-evaluation without
   relying on a process-lifetime `setInterval`. Mutations evaluate the leading
   edge inside their originating request; no future deadline is retained when
-  all thirteen enabled producers are inactive.
+  all fourteen enabled producers are inactive.
 - An NSCF platform-only, per-tenant simulated CGM switch for the public lab.
   It is disabled by default, requires the ordinary Entries write/delete
   permissions to change, seeds twelve deterministic five-minute SGVs when
@@ -550,11 +551,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `7298f45`. The 68-file Workers-runtime
-suite passes 749/749 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `31d0260`. The 69-file Workers-runtime
+suite passes 763/763 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1256.42 KiB raw / 230.69 KiB gzip and exposes only
+reports 1269.08 KiB raw / 233.24 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -587,16 +588,22 @@ Workers Static Assets, all 33 JSON files are audited as valid and byte-identical
 to v15.0.7, `LANGUAGE` reaches HTTP/Socket settings, and the default Sandbox
 uses the same request-local translator.
 This runtime connects a single `plugin-notifications` SQLite task to the locked
-official AR2, Simple Alarms, Error Codes, Pump, OpenAPS, Loop, BWP, CAGE, SAGE, IAGE,
+official AR2, Simple Alarms, Error Codes, Pump, OpenAPS, xDrip-js, Loop, BWP,
+CAGE, SAGE, IAGE,
 Treatment Notify, Timeago and DBSize calculations and the core notification
-processor. The engine evaluates the thirteen
+processor. The engine evaluates the fourteen
 producers in official server order from one bounded context, arbitrates requests and snoozes in one
 transaction, atomically publishes the selected live `/alarm` frame, and stores
 the next exact logical deadline. AR2 preserves the official coefficients,
 six-point loss divisor, prediction cone, exact alert titles/messages/sounds,
 `ALARM_TYPES` and `AR2_CONE_FACTOR`; it is also exposed by the v2 property
 registry and renders through the unchanged official client. Simple Alarms preserves strict high/low
-thresholds and ten-minute SGV expiry. Treatment Notify preserves its strict
+thresholds and ten-minute SGV expiry. Error Codes retains its locked display,
+sound and strict ten-minute selection. The opt-in xDrip-js adapter exposes the
+official `sensorState` property, CGM pill fields, transmitter-state and battery
+alerts, and persists its last state-notification marker in schema v20 so
+Durable Object eviction cannot reset the configured repeat interval. Treatment
+Notify preserves its strict
 ten-minute window, manual/automatic filtering, snooze rules and synchronous
 upstream SHA-1 `notifyhash`. Timeago preserves strict `>` warning/urgent
 boundaries by waking one millisecond after the threshold. Pump, OpenAPS and Loop
@@ -923,6 +930,25 @@ warning/error, Settings still reported Nightscout 15.0.7, and the durable
 five-minute simulator remained enabled. The public run confirms the official
 default enable flag; information, urgent, future-activation and clear behavior
 are proven without polluting the lab by the real SQLite DO integration tests.
+
+Version 89 (`aa72dd6d-4307-41fc-8162-27211ed6dbb8`) deploys commit `31d0260`
+and ports the opt-in official xDrip-js CGM Status server plugin. The v2 property
+registry now exposes the locked `sensorState` shape from the newest eligible
+24-hour DeviceStatus row, including device, transmitter, session, calibration,
+signal and battery fields. Transmitter-state and low-battery notifications run
+in official server order between OpenAPS and Loop. Schema v20 persists the
+small last-state notification marker so the default 31-minute repeat behavior
+survives Durable Object eviction; future activation, exact 24-hour expiry,
+battery heartbeat repeats and automatic All Clear use the existing atomic
+SQLite scheduler/outlet. xDrip-js remains disabled by the official default.
+The full local gate passed 69 Workers files / 763 tests, 22/22 audits, 42/42
+unchanged client tests, 143/143 unchanged server/data-plugin tests, TypeScript
+and a 1269.08-KiB raw / 233.24-KiB gzip dry run. The 125-assertion public smoke
+passed on `public-smoke-1784702685161`; the official homepage rendered a fresh
+`114 mg/dL`, `+2` simulated reading and chart, Settings reported Nightscout
+15.0.7, and the browser produced zero warnings or errors. The persisted
+five-minute simulator remained enabled and independently wrote the current row
+at `2026-07-22T06:45:00.168Z`.
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See
