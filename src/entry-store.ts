@@ -46,6 +46,7 @@ import {
   type ValidatedEntry,
 } from "./model";
 import { sqliteNightscoutDatabaseStats } from "./data-loader";
+import { fitTreatmentsToBgCurve } from "./data/treatment-to-curve";
 import {
   normalizeLegacyDeviceStatusDocument,
   parseLegacyPredictionsMaxSize,
@@ -2231,6 +2232,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     }
     snapshot.mbgs.reverse();
 
+    const realtimeSettings = this.resolvedAutomaticNotificationRuntime(now);
     snapshot.treatments = this.realtimeDocuments(
       `SELECT id, body, sort_time
        FROM documents
@@ -2239,7 +2241,24 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
        LIMIT 1000`,
       [],
       budget,
-      normalizeRealtimeDocument,
+      (document) => {
+        const treatment = normalizeRealtimeDocument(document);
+        // The locked dataloader runs treatmenttocurve before websocket.js
+        // clones ddata. Apply the same official display-only preprocessing at
+        // the Durable Object snapshot boundary so both initial root data and
+        // later calcdelta frames place Treatment markers on the BG curve.
+        // Transform before the shared budget reserves this item so the added
+        // eventType/mgdl/mmol fields remain inside the Free-plan payload cap.
+        fitTreatmentsToBgCurve({
+          sgvs: snapshot.sgvs as RealtimeDocument[],
+          cals: snapshot.cals as RealtimeDocument[],
+          treatments: [treatment],
+        }, {
+          units: realtimeSettings.settings.units,
+          rawBgEnabled: realtimeSettings.enabled.has("rawbg"),
+        });
+        return treatment;
+      },
     );
     snapshot.food = this.realtimeDocuments(
       `SELECT id, body, sort_time

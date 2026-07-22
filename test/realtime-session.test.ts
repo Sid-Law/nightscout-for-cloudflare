@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { EntryStore } from "../src/entry-store";
+import { parseEntryPayload } from "../src/model";
 import {
   decodeEngineIoV3Handshake,
   decodeEngineIoV3PollingPayload,
@@ -202,6 +203,95 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         status: expect.objectContaining({ activeProfile: "Weekend" }),
         treatments: expect.arrayContaining([
           expect.objectContaining({ eventType: "Profile Switch", profile: "Weekend" }),
+        ]),
+      })],
+    }));
+  });
+
+  it("curves Treatment markers in initial and reconstructed root updates", async () => {
+    const stub = store("realtime-treatment-curve");
+    const now = Date.now();
+    await stub.putEntries(parseEntryPayload([
+      {
+        type: "sgv",
+        sgv: 90,
+        date: now - 5 * 60_000,
+        dateString: new Date(now - 5 * 60_000).toISOString(),
+        device: "simulator://cgm",
+      },
+      {
+        type: "sgv",
+        sgv: 100,
+        date: now + 5 * 60_000,
+        dateString: new Date(now + 5 * 60_000).toISOString(),
+        device: "simulator://cgm",
+      },
+    ]));
+    await stub.createDocuments("profile", JSON.stringify([{
+      defaultProfile: "Child",
+      startDate: new Date(now - 24 * 60 * 60_000).toISOString(),
+      units: "mmol/L",
+      store: { Child: { timezone: "UTC", units: "mmol/L", dia: 3 } },
+    }]));
+    await stub.createDocuments("treatments", JSON.stringify([
+      {
+        eventType: "Meal Bolus",
+        insulin: 1,
+        created_at: new Date(now).toISOString(),
+      },
+      {
+        eventType: "BG Check",
+        glucose: 5.5,
+        created_at: new Date(now + 30_000).toISOString(),
+      },
+    ]));
+
+    const opened = await stub.realtimeHandshake();
+    if (!opened.ok) throw new Error(opened.error.message);
+    await rpcPost(stub, opened.value.sid, clientPayload({
+      type: "connect",
+      namespace: "/",
+    }));
+    await stub.realtimePoll(opened.value.sid);
+    await rpcPost(stub, opened.value.sid, clientPayload({
+      type: "event",
+      namespace: "/",
+      id: 3,
+      data: ["authorize", { client: "web" }],
+    }));
+    const authorized = await stub.realtimePoll(opened.value.sid);
+    if (!authorized.ok) throw new Error(authorized.error.message);
+    const initial = decodeEngineIoV4PollingPayload(authorized.value)
+      .map((packet) => unwrapSocketIoV5Packet(packet));
+    expect(initial).toContainEqual(expect.objectContaining({
+      type: "event",
+      namespace: "/",
+      data: ["dataUpdate", expect.objectContaining({
+        treatments: expect.arrayContaining([
+          expect.objectContaining({ eventType: "Meal Bolus", mgdl: 95 }),
+          expect.objectContaining({ eventType: "BG Check", mmol: 5.5 }),
+        ]),
+      })],
+    }));
+
+    await evictDurableObject(stub);
+    const resumed = env.ENTRY_STORE.getByName(stub.name!);
+    await resumed.createDocuments("treatments", JSON.stringify([{
+      eventType: "Carb Correction",
+      carbs: 8,
+      created_at: new Date(now + 60_000).toISOString(),
+    }]));
+    const pushed = await resumed.realtimePoll(opened.value.sid);
+    if (!pushed.ok) throw new Error(pushed.error.message);
+    const delta = decodeEngineIoV4PollingPayload(pushed.value)
+      .map((packet) => unwrapSocketIoV5Packet(packet));
+    expect(delta).toContainEqual(expect.objectContaining({
+      type: "event",
+      namespace: "/",
+      data: ["dataUpdate", expect.objectContaining({
+        delta: true,
+        treatments: expect.arrayContaining([
+          expect.objectContaining({ eventType: "Carb Correction", mgdl: 95 }),
         ]),
       })],
     }));
