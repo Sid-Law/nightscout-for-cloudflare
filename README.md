@@ -281,6 +281,13 @@ The release deployment flow has one user-facing setting:
 > Set a family access password (at least 12 characters), then enter the same
 > password in the phone's Nightscout data-source settings.
 
+That is sufficient for ordinary CGM/closed-loop data upload and Nightscout
+viewing. The official Loop **remote override/carb/bolus push** feature is a
+separate advanced opt-in: it additionally requires an Apple Developer APNs
+`.p8` key, key ID, team ID and Profile `loopSettings` device metadata. Leaving
+those values unset disables only remote APNs commands; it does not disable
+ordinary Loop/AAPS data upload or the Nightscout display.
+
 The planned Deploy to Cloudflare flow will obtain this value from the
 human-readable binding description in `package.json`, without asking a family
 to calculate a hash. That one-click flow has not yet passed end-to-end release
@@ -551,11 +558,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `5309eff`. The 69-file Workers-runtime
-suite passes 773/773 tests, the four audit suites pass 22/22, eleven complete
+The deployed runtime candidate is commit `db85900`. The 70-file Workers-runtime
+suite passes 782/782 tests, the four audit suites pass 22/22, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1275.98 KiB raw / 234.06 KiB gzip and exposes only
+reports 1288.03 KiB raw / 236.93 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -987,6 +994,36 @@ empty-property output, EIO4 WebSocket upgrade and EIO3 polling. A fresh official
 homepage rendered `113 mg/dL`, `-1`, one-minute-old simulated data and its
 chart; Settings/About reported Nightscout 15.0.7 and the browser log contained
 zero warnings or errors.
+
+Version 92 (`8f11cd37-f90d-4b51-9ad6-5ce85091ac42`) deploys commit `db85900`
+and restores the v2-only `POST /api/v2/notifications/loop` route used by the
+official Loop plugin for Temporary Override, override cancellation, Remote
+Carbs and Remote Bolus requests. The request-local adapter preserves the locked
+credential/Profile validation order, exact callback error text, `loopSettings`
+device/topic lookup, alert text, custom payload keys and five-minute expiry.
+Workers Web Crypto signs Apple's ES256 provider JWT from the existing
+`LOOP_APNS_*` settings, and bounded awaited `fetch` replaces the Node-only
+`@parse/node-apn` client. Provider tokens are reused for fifty minutes inside
+an isolate, APNs error bodies are capped at 8 KiB and requests time out after
+ten seconds. No Apple credentials are configured in the public lab, so no real
+remote override, carb or bolus instruction was sent.
+
+The full local gate passed 70 Workers files / 782 tests, 22/22 audits, 42/42
+unchanged client tests, 143/143 unchanged server/data-plugin tests, TypeScript
+and a 1288.03-KiB raw / 236.93-KiB gzip dry run. The 139-assertion public smoke
+passed on `public-smoke-1784710160605`; it proved that the deployed v2 route
+reaches the locked permission boundary, that v1 does not invent the route, and
+retained real EIO4 WebSocket upgrade and EIO3 polling. A fresh official
+homepage rendered `117 mg/dL`, `+3`, one-minute-old simulated data and its
+chart. The official Admin page loaded all cleanup workflows, seven built-in
+roles, zero subjects and `Admin authorized` against the same active version.
+
+The APNs transport follows Apple's current provider-token and notification
+request specifications and Cloudflare's current Web Crypto/fetch APIs:
+[Apple token authentication](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns),
+[Apple notification requests](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns),
+[Workers Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/) and
+[Workers fetch](https://developers.cloudflare.com/workers/runtime-apis/fetch/).
 
 Rollback can restore a prior Worker version; removing the entire lab deletes
 the Worker, Static Assets deployment and Durable Object namespace. See

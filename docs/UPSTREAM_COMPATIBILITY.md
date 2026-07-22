@@ -17,7 +17,7 @@ evidence. A component is complete only when its upstream request/response,
 storage, authorization, real-time, persistence and error contracts are covered
 by Workers-runtime tests and post-deploy smoke tests.
 
-Deployed runtime candidate `5309eff` passes 773/773 tests across 69
+Deployed runtime candidate `db85900` passes 782/782 tests across 70
 Workers-runtime files plus 22/22 audit tests, 42/42 unchanged tests across
 eleven complete upstream-client files and 143/143 unchanged tests across twenty-one locked upstream
 server/data-plugin files. The suite retains focused EIO4,
@@ -53,13 +53,13 @@ mutation by themselves; version 80's separate authenticated browser pass does
 cover the named Profile/Food/Admin/Reports workflows. This is not full-port
 evidence.
 The runtime code is deployed as Cloudflare version
-`d044403f-469f-4aad-9ff2-9829d0cb177d`; exact release
+`8f11cd37-f90d-4b51-9ad6-5ce85091ac42`; exact release
 evidence is recorded in `DEPLOYMENT.md`. The locked upstream has 111
 `*.test.js` files and a static declaration audit finds 883 active `it(...)`
 cases plus one skipped case. Those sets are not directly comparable.
 
-The candidate Wrangler dry-run reports 250 Static Assets entries, 1275.98 KiB raw /
-234.06 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
+The candidate Wrangler dry-run reports 250 Static Assets entries, 1288.03 KiB raw /
+236.93 KiB gzip and only `ENTRY_STORE` plus `ASSETS`. Post-deployment API and
 browser evidence below is kept distinct from those local gates.
 
 The deployed increment connects Uploader Battery, AR2, Simple Alarms, Error Codes, Pump, OpenAPS,
@@ -244,7 +244,7 @@ only a named subset exists; **Missing** means no runtime implementation exists.
 | API v1/v2 Status | `lib/api/status.js`, v1/v2 router mounting and final error chain | **Strict named surface deployed, with one transport P2.** Locked extension/Accept negotiation, txt/json/js/png/svg paths, redirects, uppercase/trailing-path bugs, GET/HEAD representation lengths, method finalhandler behavior, query-only `authorized` derivation and production 406/404 bodies are contract-tested. Remote text/Accept forms returned 200 and an unknown extension returned 404. Cloudflare strips `Content-Length` from dynamic responses, including HEAD; status code, `Content-Type`, `Vary` and empty-body semantics are correct. | Preserve this P2 as an explicit platform difference and expand public smoke to every locked representation; do not infer other v1/v2 route compatibility. |
 | API v2 authorization | `lib/authorization/**`, `lib/api/verifyauth.js`, `lib/api/experiments/index.js` | **Four named server auth files plus Admin notices adapted with documented hardening.** Role/subject CRUD, per-tenant signing keys, eight-hour HS256 issuance/refresh, derived access tokens and prefix matching, body/query/header precedence, signature/expiry verification, live role lookup, persisted per-IP failure delay, Shiro 0.4.10 and `verifyauth` are implemented. The exact `authorization:debug:test` probe is inherited through v1/v2. Complete Workers mappings cover `api.security`, `api.verifyauth`, `verifyauth` and all three active `security.test.js` cases; client `hashauth.test.js` and server `adminnotifies.test.js` run unchanged. Failed attempts emit the upstream warning without retaining credentials. Enforced delay is capped at 60 seconds, transient Admin messages at 128 per tenant, and repeated/bracket `secret` arrays are safely resolved or rejected instead of reproducing the locked unhandled rejection. | Set a valid deployment API secret before final credentialed smoke; preserve the named platform caps and array hardening as explicit differences. |
 | Settings, language and status configuration | `lib/settings.js`, `lib/language.js`, `lib/server/env.js`, v1/v2 Status and Socket authorize | **Complete Settings and Language test-file adapters; process configuration partial.** Fresh request-local objects preserve locked defaults, environment accessors, feature/alarm rules, recursive secure filtering, English identity, positional/object placeholders, supported language metadata, case-sensitive/insensitive lookup and filename fallback. Static Assets replaces server `fs`; all 33 deployed translation JSON files are valid and byte-identical to v15.0.7. `LANGUAGE` reaches HTTP/Socket settings so the unchanged browser loader selects the official dictionary. The broader Node process/filesystem discovery and generic extended-settings loader are not ported. | Map remaining supported Worker variables through a deterministic tenant context, use the same request-local translator in every remaining server plugin/notification path, and keep secret fields out of status/logs. |
-| API v2 summary/notifications | `lib/api2/summary/**`, `lib/profilefunctions.js`, `lib/plugins/{iob,cob,boluswizardpreview,batteryage}.js`, `lib/api2/notifications-v2.js` | **Core summary mapper, complete Profile and IOB/COB/BWP/BAGE calculation contracts and inherited ACK adapted; persistence still partial.** `/summary/` ports the locked hour filter, SGV/noise mapping, carb/insulin events, temporary targets, temp-basal/profile schedule processor and recursive `timeAsSeconds` removal. Its current-profile path uses the 24-assertion Profile adapter. The route executes the complete request-time property-producing registry, so enabled official IOB/COB/BWP/BAGE populate state while disabled BAGE is omitted exactly as upstream. Workers-native arrays, `Map` and `Intl` replace only runtime mechanics. Request-time age state is calculated from bounded official context rather than fabricated persistence. API v2 also inherits the adapted v1 `/notifications/ack`; `/notifications/loop` external APNs delivery is disabled. | Add remaining summary/activity persistence without rewriting formulas; keep external delivery disabled while adapting internal notification contracts. |
+| API v2 summary/notifications | `lib/api2/summary/**`, `lib/profilefunctions.js`, `lib/plugins/{iob,cob,boluswizardpreview,batteryage}.js`, `lib/api2/notifications-v2.js`, `lib/server/loop.js` | **Core summary, inherited ACK and the Loop remote-push protocol/transport adapted; persistence still partial.** `/summary/` ports the locked hour filter, SGV/noise mapping, carb/insulin events, temporary targets, temp-basal/profile schedule processor and recursive `timeAsSeconds` removal. Its current-profile path uses the 24-assertion Profile adapter and the request-time registry supplies enabled official IOB/COB/BWP/BAGE state. `/notifications/loop` preserves the exact `notifications:loop:push` permission, JSON/form bodies, credential/Profile validation order, four official event types, alert/custom payload fields and upstream callback errors. Workers Web Crypto signs the Apple ES256 provider JWT; bounded awaited `fetch` replaces `@parse/node-apn`, selects sandbox/production and maps APNs failures. Nine local contracts inject the network and verify the signature/request without contacting Apple. The public lab has no `LOOP_APNS_*` credentials, sends no real override/carb/bolus instruction and therefore does not prove live Apple delivery. | Add remaining summary/activity persistence without rewriting formulas; run a separately authorized credentialed APNs acceptance only when a non-medical test device/key is available. |
 | Legacy Pebble endpoint | `lib/server/pebble.js`, `tests/pebble.test.js` | **Complete locked endpoint contract adapted with bounded platform context.** `/pebble` and `/pebble/` preserve newest-first count selection, mg/dL/mmol formatting, direction/trend, delta, uploader battery, raw filtered/unfiltered/noise/calibration fields and official IOB/COB/BWP display mapping. The live route applies `api:pebble,entries:read`, tenant routing and HEAD behavior. Cloudflare bounds `count` to 1,000 and replaces process-global `ddata`/dynamic plugin access with request-local DO context. | Keep the locked contract and remote smoke green; BWP remains opt-in and is omitted under public defaults. |
 | API v3 version/status/security | `lib/api3/specific/version.js`, `specific/status.js`, `security.js`, `tests/api3.{basic,security}.test.js` | **Two adapted whole-file contracts.** `/version` is public; `/status` requires a valid tenant JWT and returns the locked v15.0.7 error/envelope shapes. Its permission-loop bug is preserved: every collection is evaluated against `api:undefined:<action>`, so a readable JWT reports `r` for all six registry keys. Missing and invalid Bearer errors, denied/allowed permissions, API OPTIONS and implicit HEAD are locked. | Named Workers-runtime coverage adapts the complete locked `api3.basic.test.js` and `api3.security.test.js`; the security fixture uses its exact empty default-role setting. Current-version remote GET/HEAD/OPTIONS and missing-token smoke confirm the public boundary. |
 | API v3 generic collections/lastModified/history/rendering | `lib/api3/generic/**`, `specific/lastModified.js`, `shared/renderer.js`, `tests/api3.*.test.js` | **Locked 16-file API3 test set adapted; bounded platform parity.** All eight generic routes are wired for entries, treatments, device status, profile, food and settings, and all six participate independently in `/lastModified`. JWT auth, validation/permission order, shape handling, UUID/ObjectId/fallback identity, dedupe/resurrection, conditional/projection reads, complete CRUD/history/tombstone/permanent-delete workflow, v1-created reads, AAPS patterns, ordered search, storage paging/mutation metadata and locked JSON/CSV/XML negotiation are represented. Settings retains its admin/read exception. Search/history share the configured lower `API3_MAX_LIMIT` under a hard 1,000-row Workers ceiling. | All 16 locked `api3.*` files have complete named Workers-runtime contract mappings. Keep large-result CPU/memory controls and broader Mongo mixed-type/nested/array/regex differential behavior documented as controlled platform work; do not infer unrestricted behavior beyond the locked suite. |
@@ -402,7 +402,7 @@ controls, not upstream claims.
 
 ## Current deployed integration evidence
 
-Runtime candidate `5309eff` passes 773/773 tests in 69
+Runtime candidate `db85900` passes 782/782 tests in 70
 Workers-runtime files plus 22/22 audit tests, 42/42 unchanged direct upstream
 client tests across eleven complete files and 143/143 unchanged tests across twenty-one locked server/data-plugin
 files. It connects schema-v14 background work to automatic Uploader Battery, AR2, Simple Alarm,
@@ -416,13 +416,13 @@ dataloader/database-size, Sandbox, Settings, Loop, Profile, uploader, identity,
 root-delta/write, API3, authorization, realtime and notification-ACK slices.
 Schema v17 adds the disabled-by-default, per-tenant lab-CGM schedule described
 above and its official Entries/root-delta integration tests.
-Cloudflare version `d044403f-469f-4aad-9ff2-9829d0cb177d` (ordinal 91) is
-current and reported a 25 ms startup. Wrangler processed 250 Static Assets entries; the
-final dry run reported 1275.98 KiB raw / 234.06 KiB gzip, with only
+Cloudflare version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42` (ordinal 92) is
+current and reported a 26 ms startup. Wrangler processed 250 Static Assets entries; the
+final dry run reported 1288.03 KiB raw / 236.93 KiB gzip, with only
 `ENTRY_STORE` and `ASSETS`.
 This deployment had no explicit version annotation; none is invented.
 
-The reusable credential-free remote smoke passed 134 assertions for health,
+The reusable credential-free remote smoke passed 139 assertions for health,
 bounded v1 Entries/Treatments and Food helper reads, fresh Profile/current,
 unknown Food/Profile 404s, plural-Profile read-only behavior and v2 Summary,
 API3 version, matching v1/v2 filtered Settings and database-size settings,
@@ -432,9 +432,10 @@ state, property-absent timeago, EIO3 polling and a real EIO4 WSS upgrade through
 probe/noop/upgrade/root-CONNECT/`clients`;
 default-enabled Error Codes and Runtime State, default Uploader Battery
 configuration plus empty property output, default-disabled Uploader Battery
-alerts, xDrip-js and BAGE properties,
+alerts, xDrip-js and BAGE properties, plus the v2-only Loop push permission
+boundary and v1 non-route,
 and missing-token API3 Entries returned 401. Isolated tenant
-`public-smoke-1784706560346` reported
+`public-smoke-1784710160605` reported
 307,200 SQLite bytes,
 `indexSize:0`, a 953.67 MiB maximum and `0%`/`current` state. This run sent no
 API secret value and performed no protected mutation. A name-only encrypted-
@@ -531,6 +532,16 @@ message, future activation, heartbeat, exact expiry and All Clear. A fresh
 official page displayed `113 mg/dL`, `-1`, one-minute-old simulated data and
 the chart; Settings/About reported 15.0.7 and the captured browser log contained
 zero warnings/errors.
+Version 92's 139-assertion smoke passed on isolated tenant
+`public-smoke-1784710160605` and proved the protected v2 Loop route reaches its
+401 permission boundary while the same v1 path remains 404. Nine local tests
+cover exact configuration/Profile errors, all four payloads, a verifiable ES256
+JWT, APNs request headers/body, bounded provider failures, form parsing and
+route authorization. The lab has no Apple credentials, so this is not a live
+APNs or remote-bolus claim. EIO3 polling and real EIO4 WSS upgrade remained
+green. A fresh official page displayed `117 mg/dL`, `+3`, one-minute-old
+simulated data and its chart; the official Admin page loaded seven built-in
+roles, zero subjects, all cleanup groups and `Admin authorized`.
 Version 83's 77-assertion smoke passed on isolated tenant
 `public-smoke-1784692181407`. Public defaults correctly left BWP absent from
 Properties and Pebble and `null` in Summary; the opt-in path is covered by a

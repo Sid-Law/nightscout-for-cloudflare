@@ -12,16 +12,16 @@ is not counted as API, plugin or real-time compatibility.
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
 - Worker: `nscf-phase1`
-- Deployed runtime candidate: `5309eff`
-- Runtime source candidate: `5309eff`
-- Git commit matching the deployed runtime worktree: `5309eff`
-- Cloudflare Version ID: `d044403f-469f-4aad-9ff2-9829d0cb177d`
-- Cloudflare ordinal version number: `91`
+- Deployed runtime candidate: `db85900`
+- Runtime source candidate: `db85900`
+- Git commit matching the deployed runtime worktree: `db85900`
+- Cloudflare Version ID: `8f11cd37-f90d-4b51-9ad6-5ce85091ac42`
+- Cloudflare ordinal version number: `92`
 - Version tag/message: none printed or present in the deployment-list metadata
-- Version creation time: `2026-07-22T07:47:55.826414Z`
+- Version creation time: `2026-07-22T08:49:05.929209Z`
 - Activation: `wrangler deploy` completed Worker upload and trigger deployment;
   the current-version list reports this version last
-- Worker startup: 25 ms
+- Worker startup: 26 ms
 - Durable Object: class `EntryStore`, SQLite backend, Wrangler migration tag
   `v1`; internal schema includes the v6 Entries compatibility probe and the v9
   persisted API3 storage-namespace tables plus the v10 alarm connection and
@@ -34,8 +34,8 @@ is not counted as API, plugin or real-time compatibility.
   plugin-runtime-state table used by xDrip-js notification throttling
 - Static Assets: 250 entries. Version 75 uploaded the official Socket.IO client,
   the platform tenant-query adapter and six rebuilt page/service-worker files;
-  versions 76–91 reused them unchanged
-- Upload: 1275.98 KiB raw / 234.06 KiB gzip
+  versions 76–92 reused them unchanged
+- Upload: 1288.03 KiB raw / 236.93 KiB gzip
 - Provisioned product bindings: `ENTRY_STORE` Durable Object plus `ASSETS`
   only
 
@@ -379,6 +379,39 @@ data, CGM credentials, pump credentials or closed-loop traffic.
   live delta update. Settings/About reported Nightscout 15.0.7 and captured
   browser logs contained zero warnings/errors. No real health data or
   closed-loop client was used.
+
+## Version 92 Loop remote APNs increment
+
+- Commit `db85900` restores the v2-only
+  `POST /api/v2/notifications/loop` route from locked
+  `lib/api2/notifications-v2.js` and `lib/server/loop.js`. It preserves the
+  exact `notifications:loop:push` permission, configuration/Profile validation
+  order, four event payloads, alert text, custom keys, five-minute expiry and
+  callback error strings.
+- `src/loop-push.ts` replaces Node-only `@parse/node-apn` with Workers Web
+  Crypto PKCS8/ES256 provider-token signing and an awaited bounded `fetch` to
+  Apple's sandbox or production APNs endpoint. Provider tokens are reused for
+  fifty minutes per isolate; provider error bodies are capped at 8 KiB and the
+  subrequest times out after ten seconds. The network/token functions are
+  injectable for deterministic tests.
+- The public lab has no `LOOP_APNS_*` credentials. No real Temporary Override,
+  Remote Carbs or Remote Bolus instruction was sent. Nine local Workers tests
+  cover every payload/error branch, a verifiable JWT, APNs headers/body,
+  bounded/network failures, form parsing, permission enforcement and v2-only
+  mounting.
+- Local gates passed: 70 Workers files / 782 tests, 22/22 audits, 42/42
+  unchanged client tests, 143/143 unchanged server/data-plugin tests,
+  TypeScript and dry run. The dry bundle was 1288.03 KiB raw / 236.93 KiB gzip
+  with 250 assets and only `ENTRY_STORE` plus `ASSETS`.
+- Cloudflare version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42` is ordinal 92,
+  created at `2026-07-22T08:49:05.929209Z`; startup was 26 ms. The expanded
+  139-assertion public smoke passed on isolated tenant
+  `public-smoke-1784710160605`, proved the v2 route reaches HTTP 401 rather
+  than its former 404, kept v1 at 404, retained real EIO4 WSS upgrade and EIO3
+  polling, and reported 307,200 SQLite bytes.
+- A fresh official homepage displayed `117 mg/dL`, `+3`, one-minute-old
+  simulated data and a populated chart. The official Admin page loaded seven
+  built-in roles, zero subjects, all cleanup groups and `Admin authorized`.
 
 ## Version 91 Uploader Battery notification increment
 
@@ -855,7 +888,7 @@ bounded date partitions for long exports.
 
 ## Pre-deployment gate
 
-The deployed runtime candidate is `5309eff`. It retains schema-v15 persisted
+The deployed runtime candidate is `db85900`. It retains schema-v15 persisted
 Admin notices, adds the complete storage-shape adapter and schema-v16 durable
 bootevent debounce on top of the locked v1/v2 `experiments/test`, complete named API
 security/verifyauth/API_SECRET, query, language and schema-v14 notification
@@ -880,6 +913,10 @@ adapter and schema-v20 durable notification-throttle state.
 It completes the request-time official property registry with Runtime State
 and BAGE, and all sixteen automatic notification producers by adding Uploader
 Battery with its official opt-in settings and scheduling boundaries.
+It additionally restores the separate v2 Loop remote-notification route with
+Workers-native ES256/APNs transport; the public lab keeps Apple credentials
+absent, so only injected local transport and remote route/permission evidence
+are claimed.
 The table below records the exact current local gate for the immutable deployed
 runtime and assets. The unchanged-client runner now includes the original
 client Hashauth, Admin Tools, report-settings and complete Reports workflows;
@@ -901,13 +938,13 @@ in the current deployed candidate.
 | Cloudflare configuration audit | 1/1 passed; `keep_vars` true, no checked-in vars or out-of-scope products |
 | Translation asset audit | 1/1 passed; all 33 JSON files valid and byte-identical to locked v15.0.7 |
 | TypeScript | `tsc --noEmit` passed |
-| Workers integration tests | 69 files, 773/773 passed |
-| Worker dry run | 1275.98 KiB raw / 234.06 KiB gzip |
+| Workers integration tests | 70 files, 782/782 passed |
+| Worker dry run | 1288.03 KiB raw / 236.93 KiB gzip |
 | Dry-run bindings | `ENTRY_STORE` Durable Object and `ASSETS` only |
 | Deployment variables | `keep_vars` audited; a user-supplied construction credential is active but not committed or recorded here |
 
 The locked upstream contains 111 JavaScript test files; a static declaration
-audit finds 883 active `it(...)` cases plus one skipped case. The 773 Workers
+audit finds 883 active `it(...)` cases plus one skipped case. The 782 Workers
 tests cover the implemented adapter subset; eleven complete client files additionally
 run 42/42 unchanged against the shipped official client bundle, while 21
 server/data-plugin files run unchanged in a separate 143/143 gate. All 16 API3 files,
@@ -935,7 +972,7 @@ are unchanged and rechecked first.
 
 ## Post-deployment remote API evidence
 
-Wrangler reports version `d044403f-469f-4aad-9ff2-9829d0cb177d` as the current
+Wrangler reports version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42` as the current
 deployed version.
 These credential-free checks verified response content and protocol markers,
 not only Wrangler command success.
@@ -949,6 +986,7 @@ not only Wrangler command success.
 | GET `/healthz` and `/api/v1/entries.json?count=1` | HTTP 200; healthy SQLite DO marker and empty simulated-data Entries array |
 | GET `/api/v1/status.json` and `/api/v2/status.json` | HTTP 200 with byte-equivalent filtered Settings snapshots: 63 JSON-visible keys, 14 enabled defaults, official title/plugin values and no secure fields or method functions |
 | GET `/api/v1/treatments.json?count=1` | HTTP 200 with an empty fresh-tenant simulated-data Treatment array |
+| POST `/api/v2/notifications/loop` without push permission | HTTP 401 at the deployed locked permission boundary; the v1 lookalike remains HTTP 404. The public lab has no Apple credentials, so no APNs instruction is sent or claimed. |
 | GET `/api/v1/profile/current` | HTTP 200 with `null` for the fresh tenant |
 | GET `/api/v1/food/quickpicks.json` and v2 `/food/regular.json` | HTTP 200 with empty fresh-tenant arrays; query arguments that the locked Food helpers ignore do not alter routing |
 | Invalid Food/Profile children and POST `/api/v1/profiles/` | HTTP 404; plural Profile remains the locked read-only query route |
@@ -1129,11 +1167,16 @@ broader version-72/73/74 page checks:
   15.0.7 and recorded zero console warnings/errors. Remote Status/Properties
   confirmed default Uploader Battery thresholds, empty property output and
   opt-in alerts.
+- version 92 loaded a fresh official homepage showing `117 mg/dL`, `+3`,
+  one-minute-old simulated data and a populated chart. The official Admin page
+  loaded zero subjects, all seven built-in roles, every cleanup group and
+  `Admin authorized`. Remote smoke proved the new v2 Loop route's permission
+  boundary without supplying Apple credentials or sending an instruction.
 
 The combined passes assert rendered DOM, official-script presence, AR2 forecast
 geometry, Settings/Save acceptance and the current official transport switch.
-Cloudflare version `d044403f-469f-4aad-9ff2-9829d0cb177d` reused the same
-250 Static Assets entries and passed the 134-assertion credential-free remote
+Cloudflare version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42` reused the same
+250 Static Assets entries and passed the 139-assertion credential-free remote
 API/Engine.IO/WSS/Pebble gate. Version 78 retains the named official-client and
 clean-browser transport acceptance; version 79 adds the displayed lab feed;
 version 80 adds the authenticated Profile/Food/Admin/Reports acceptance; version
@@ -1150,7 +1193,8 @@ notification source; version 89 adds opt-in xDrip-js as the fourteenth plus
 schema-v20 durable throttle state; version 90 completes the request-time
 property registry and adds BAGE as the fifteenth persisted producer; version
 91 adds Uploader Battery as the sixteenth and completes the official server
-notification-producer registry.
+notification-producer registry; version 92 restores the separate protected
+Loop APNs route with Workers-native ES256/fetch transport and no lab delivery.
 
 This does not prove longer-running stability, a protected mutation observed
 through the pushed live-update path, every plugin workflow or real closed-loop
@@ -1167,8 +1211,10 @@ client compatibility.
   adapted. CAGE/SAGE/IAGE, IOB/COB, OpenAPS/Pump and timeago's request-local
   calculation and AR2 prediction are also adapted; ddata includes official Treatment marker
   placement and Summary receives enabled IOB/COB/BWP state. Remaining
-  plugin-derived state/persistence, v2 notification-loop and other
-  routes remain incomplete. API v3
+  plugin-derived state/persistence and other routes remain incomplete. The v2
+  Loop notification route and APNs transport are adapted, but the public lab
+  intentionally lacks Apple credentials and has no credentialed live-delivery
+  evidence. API v3
   routes all six official generic collections and all 16 locked upstream API3
   test files have named Workers-runtime adaptations. Broad large-response
   resource handling and Mongo mixed-type/nested/array semantics remain

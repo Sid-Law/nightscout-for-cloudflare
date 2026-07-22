@@ -6,15 +6,15 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `5309eff` and
-Cloudflare version `d044403f-469f-4aad-9ff2-9829d0cb177d`. The
-candidate's 69-file Workers-runtime suite passes 773/773 plus 22/22 audit tests,
+“Current” below describes deployed evidence candidate `db85900` and
+Cloudflare version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42`. The
+candidate's 70-file Workers-runtime suite passes 782/782 plus 22/22 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1275.98 KiB
-raw / 234.06 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Version 91 reported a 25 ms startup and passed the
-134-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
+Wrangler processed 250 Static Assets entries; its dry run reported 1288.03 KiB
+raw / 236.93 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Version 92 reported a 26 ms startup and passed the
+139-assertion credential-free API, real EIO4 WSS upgrade, EIO3 polling, Pebble and
 real-browser gates; the earlier authenticated official-page workflows remain
 separate version-80 evidence.
 These are release facts for the named subset, not
@@ -107,9 +107,9 @@ realtime snapshot both apply the official treatment-marker curve placement. It r
 official database-size calculation. The
 eleven complete official client files run 42/42 unchanged only after a byte-equality
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
-evidence is 69 Workers files / 773 tests, 22/22 audits, eleven direct upstream
+evidence is 70 Workers files / 782 tests, 22/22 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1275.98 KiB raw / 234.06 KiB gzip with 250 assets and two bindings.
+dry run is 1288.03 KiB raw / 236.93 KiB gzip with 250 assets and two bindings.
 Remote API/EIO4-upgrade/EIO3-polling and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -322,6 +322,26 @@ notification request and English virtual-assistant responses. Schema v14
 persists its exact stale transitions, heartbeat repetition, clear and live
 `/alarm` publication under the official opt-in alert gate. No downstream dosing
 or recommendation formula is introduced.
+
+`src/loop-push.ts` is the platform adapter for locked
+`lib/server/loop.js` and `lib/api2/notifications-v2.js`. It keeps the upstream
+credential/Profile validation order, four accepted event types, alert strings,
+custom payload keys, Profile `deviceToken`/`bundleIdentifier` lookup and
+five-minute expiry. The Node-only `@parse/node-apn` provider is replaced with
+an awaited Workers `fetch` to Apple's sandbox or production HTTP/2 endpoint.
+Workers Web Crypto imports the Apple `.p8` key as PKCS8 and signs an ES256
+provider JWT; a per-isolate credential-fingerprinted promise reuses the token
+for fifty minutes, inside Apple's 20-to-60-minute refresh guidance. APNs
+responses are streamed into an 8-KiB bound and the request has a ten-second
+timeout. The fetch and token provider are injectable in tests, so complete
+request/error mapping is exercised without contacting Apple. This forwards
+only the official authenticated Loop events; it adds no dosing calculation.
+The public lab deliberately has no Apple credentials and therefore cannot be
+used as evidence of live APNs delivery. See Apple's
+[provider-token](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns)
+and [notification-request](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns)
+specifications plus Cloudflare's [Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/)
+and [fetch](https://developers.cloudflare.com/workers/runtime-apis/fetch/) APIs.
 
 `src/sandbox.ts` is the request-local port of the public `lib/sandbox.js`
 surface used to host those official plugins. Its server and client initializers
@@ -1149,7 +1169,7 @@ against the persisted root baseline and attach a fresh status after eviction.
 tightening over permissive upstream JavaScript call shapes.
 
 Polling, direct Hibernatable WebSocket and EIO4 polling upgrade are live in
-Cloudflare version `d044403f-469f-4aad-9ff2-9829d0cb177d`. Current
+Cloudflare version `8f11cd37-f90d-4b51-9ad6-5ce85091ac42`. Current
 credential-free remote smoke
 returned 200 for health, bounded v1 Entries and Treatments reads, exact Food
 helper reads and invalid Food/Profile route rejection, matching
@@ -1199,6 +1219,17 @@ page remain separate gates. The named
 polling HTTP edge difference is admission at the
 1,000,000-byte boundary for malformed UTF-8: NSCF counts streamed raw bytes,
 while locked Node can count the replacement-decoded text differently.
+
+Version 92 adds the separate official Loop remote-notification transport.
+Unlike the display/alert plugin above, this is a protected API v2 request that
+can forward an official remote override, carb or bolus payload to APNs when a
+family intentionally configures the four Loop settings and Profile device
+metadata. Nine Workers tests cover ES256 signing, all event/error branches,
+bounded transport failures and HTTP permission/form behavior. The public lab
+keeps the credentials absent; its 139-assertion smoke proves route admission
+and v2-only mounting without sending a real instruction. The unchanged
+homepage displayed current `117 mg/dL` simulated data, and the official Admin
+page remained authorized and populated against the same active version.
 
 Version 91 completes the official server `checkNotifications` registry.
 `src/plugins/upbat.ts` maps the locked `UPBAT_WARN`, `UPBAT_URGENT` and
