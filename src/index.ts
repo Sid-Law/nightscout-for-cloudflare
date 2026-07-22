@@ -3109,11 +3109,15 @@ async function handlePebble(
   const units: NightscoutGlucoseUnits = requestedUnits === "mmol" ? "mmol" : "mg/dl";
   const parsedCount = Number.parseInt(url.searchParams.get("count") ?? "", 10) || 1;
   const count = Math.max(1, Math.min(1_000, parsedCount));
+  // Locked pebble.js invokes BWP whenever IOB output is requested, even when
+  // BWP is not independently enabled in the server plugin list.
+  const pebbleEnabled = new Set(enabled);
+  if (enabled.has("iob")) pebbleEnabled.add("bwp");
   const properties = calculatePluginProperties(
     context,
     units,
     now,
-    enabled,
+    pebbleEnabled,
     status.extendedSettings ?? {},
     status.settings ?? {},
   );

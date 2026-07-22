@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "c76515d633d1572f5afd749de2b0894787a811e3b0b6605f40b745ea35d78738",
+  "inputs_sha256": "364d74e0ab3f0bca03aed85e1c6fdd4af0bb6d1c110902aa5613e870f3b24b44",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -7862,7 +7862,7 @@
     {
       "file": "vendor/nightscout/tests/boluswizardpreview.test.js",
       "status": "pass",
-      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All ten mg/dl/mmol forecast, range, alarm, snooze and pill cases execute the official Bolus Wizard Preview plugin. NSCF adds no calculation or recommendation; persisted server evaluation remains a separate integration task.",
+      "reason": "The complete locked upstream file runs unchanged through scripts/run-upstream-client-contracts.mjs after the official client bundle byte-equality gate. All ten mg/dl/mmol forecast, range, alarm, snooze and pill cases execute the official Bolus Wizard Preview plugin. The request-local Workers port is represented by test/bwp-plugin-contract.test.ts and the real SQLite Durable Object scheduler: exact calculation, missing-data, warning/urgent, IOB-snooze, /api/v2 properties/summary and Pebble bwp/bwpo behavior are wired under the upstream opt-in gate. NSCF changes no formula and performs no treatment action.",
       "workstream": "4-plugins-and-calculations",
       "depends_on": [
         "1-storage-foundation"

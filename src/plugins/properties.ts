@@ -34,6 +34,7 @@ import {
 import { calculateUploaderBatteryProperty } from "./upbat";
 import { calculateBasalProperty } from "./basal";
 import { calculateAr2Property, type Ar2Settings } from "./ar2";
+import { calculateBolusWizardPreview } from "./bwp";
 
 export interface PluginPropertyContext {
   sgvs: RealtimeDocument[];
@@ -161,6 +162,75 @@ export async function loadPluginPropertyContext(
   }
 }
 
+function processProfileTreatmentDurations(
+  documents: RealtimeDocument[],
+  keepZeroDuration: boolean,
+): RealtimeDocument[] {
+  const seenMills = new Set<unknown>();
+  const treatments = documents
+    .filter((document) => {
+      if (seenMills.has(document.mills)) return false;
+      seenMills.add(document.mills);
+      return true;
+    })
+    .map((document) => JSON.parse(JSON.stringify(document)) as RealtimeDocument);
+  const endEvents = treatments.filter((treatment) => !treatment.duration);
+  const cutIfInInterval = (
+    base: RealtimeDocument,
+    end: RealtimeDocument,
+  ): void => {
+    const baseMills = Number(base.mills);
+    const endMills = Number(end.mills);
+    if (
+      baseMills < endMills
+      && baseMills + Number(base.duration) * 60_000 > endMills
+    ) {
+      base.duration = (endMills - baseMills) / 60_000;
+      if (end.profile) {
+        base.cuttedby = end.profile;
+        end.cutting = base.profile;
+      }
+    }
+  };
+  for (const treatment of treatments) {
+    if (!treatment.duration) continue;
+    for (const end of endEvents) cutIfInInterval(treatment, end);
+  }
+  for (const treatment of treatments) {
+    if (!treatment.duration) continue;
+    for (const end of treatments) cutIfInInterval(treatment, end);
+  }
+  return keepZeroDuration
+    ? treatments
+    : treatments.filter((treatment) => Boolean(treatment.duration));
+}
+
+/** Shared locked profile preprocessing for properties and persisted plugin tasks. */
+export function createPluginProfileFunctions(
+  context: Pick<PluginPropertyContext, "profiles" | "treatments">,
+): NightscoutProfileFunctions {
+  const profiles = JSON.parse(JSON.stringify(context.profiles ?? [])) as RealtimeDocument[];
+  const profile = createNightscoutProfileFunctions(profiles);
+  const treatments = context.treatments ?? [];
+  profile.updateTreatments(
+    processProfileTreatmentDurations(
+      treatments.filter((treatment) => treatment.eventType === "Profile Switch"),
+      true,
+    ),
+    processProfileTreatmentDurations(
+      treatments.filter((treatment) =>
+        typeof treatment.eventType === "string"
+        && treatment.eventType.includes("Temp Basal")
+      ),
+      false,
+    ),
+    treatments
+      .filter((treatment) => treatment.eventType === "Combo Bolus")
+      .map((treatment) => JSON.parse(JSON.stringify(treatment)) as RealtimeDocument),
+  );
+  return profile;
+}
+
 /**
  * Workers-safe equivalent of plugins.setProperties(): execute property
  * setters in locked server-plugin order and only for enabled plugins.
@@ -175,69 +245,9 @@ export function calculatePluginProperties(
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   let profile: NightscoutProfileFunctions | undefined;
-  const processDurations = (
-    documents: RealtimeDocument[],
-    keepZeroDuration: boolean,
-  ): RealtimeDocument[] => {
-    const seenMills = new Set<unknown>();
-    const treatments = documents
-      .filter((document) => {
-        if (seenMills.has(document.mills)) return false;
-        seenMills.add(document.mills);
-        return true;
-      })
-      .map((document) => JSON.parse(JSON.stringify(document)) as RealtimeDocument);
-    const endEvents = treatments.filter((treatment) => !treatment.duration);
-    const cutIfInInterval = (
-      base: RealtimeDocument,
-      end: RealtimeDocument,
-    ): void => {
-      const baseMills = Number(base.mills);
-      const endMills = Number(end.mills);
-      if (
-        baseMills < endMills &&
-        baseMills + Number(base.duration) * 60_000 > endMills
-      ) {
-        base.duration = (endMills - baseMills) / 60_000;
-        if (end.profile) {
-          base.cuttedby = end.profile;
-          end.cutting = base.profile;
-        }
-      }
-    };
-    for (const treatment of treatments) {
-      if (!treatment.duration) continue;
-      for (const end of endEvents) cutIfInInterval(treatment, end);
-    }
-    for (const treatment of treatments) {
-      if (!treatment.duration) continue;
-      for (const end of treatments) cutIfInInterval(treatment, end);
-    }
-    return keepZeroDuration
-      ? treatments
-      : treatments.filter((treatment) => Boolean(treatment.duration));
-  };
   const pluginProfile = (): NightscoutProfileFunctions => {
     if (profile !== undefined) return profile;
-    const profiles = JSON.parse(JSON.stringify(context.profiles ?? [])) as RealtimeDocument[];
-    profile = createNightscoutProfileFunctions(profiles);
-    const treatments = context.treatments ?? [];
-    profile.updateTreatments(
-      processDurations(
-        treatments.filter((treatment) => treatment.eventType === "Profile Switch"),
-        true,
-      ),
-      processDurations(
-        treatments.filter((treatment) =>
-          typeof treatment.eventType === "string" &&
-          treatment.eventType.includes("Temp Basal")
-        ),
-        false,
-      ),
-      treatments
-        .filter((treatment) => treatment.eventType === "Combo Bolus")
-        .map((treatment) => JSON.parse(JSON.stringify(treatment)) as RealtimeDocument),
-    );
+    profile = createPluginProfileFunctions(context);
     return profile;
   };
   const agePreferences = (pluginSandbox: PluginExecutionSandbox): AgePreferences =>
@@ -330,6 +340,23 @@ export function calculatePluginProperties(
           context.devicestatus,
           pluginProfile(),
           now,
+        );
+      },
+    },
+    bwp: {
+      setProperties: () => {
+        properties.bwp = calculateBolusWizardPreview(
+          context.sgvs,
+          context.treatments ?? [],
+          pluginProfile(),
+          typeof properties.iob === "object" && properties.iob !== null
+            ? properties.iob as RealtimeDocument
+            : undefined,
+          now,
+          { ...settings, units },
+          typeof properties.roundingStyle === "string"
+            ? properties.roundingStyle
+            : undefined,
         );
       },
     },

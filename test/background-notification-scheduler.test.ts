@@ -116,6 +116,20 @@ function enableAr2(instance: EntryStore): void {
   });
 }
 
+function enableBwp(instance: EntryStore): void {
+  resetAgeAndDatabaseNotificationSettings(instance);
+  Object.assign((instance as unknown as MutableEntryStoreSurface).env, {
+    ENABLE: "bwp iob",
+    DISABLE: "ar2 simplealarms treatmentnotify timeago pump openaps loop cage sage iage dbsize",
+    ALARM_TYPES: "predict",
+    BWP_SNOOZE: "0.10",
+    BWP_WARN: "0.50",
+    BWP_URGENT: "1.00",
+    BWP_SNOOZE_MINS: "10",
+    HEARTBEAT: "60",
+  });
+}
+
 function flushDataUpdateTrailing(
   instance: EntryStore,
   state: DurableObjectState,
@@ -254,6 +268,61 @@ function enableDatabaseSizeNotifications(instance: EntryStore): void {
 }
 
 describe("SQLite Durable Object background notification scheduler", () => {
+  it("runs the opt-in BWP producer from persisted Profile and SGV data", async () => {
+    const name = tenant("background-bwp");
+    const stub = store(name);
+    const socket = await openAlarm(name);
+    const currentAt = Date.now() - 1_000;
+
+    await runInDurableObject(stub, async (instance, state) => {
+      enableBwp(instance);
+      await instance.createDocuments("profile", JSON.stringify([{
+        startDate: new Date(currentAt - 60_000).toISOString(),
+        dia: 3,
+        sens: 90,
+        target_high: 120,
+        target_low: 100,
+        basal: 1,
+      }]));
+      await instance.putEntries(parseEntryPayload([
+        {
+          sgv: 175,
+          date: currentAt - 5 * 60_000,
+          dateString: new Date(currentAt - 5 * 60_000).toISOString(),
+          direction: "FortyFiveUp",
+          device: "simulator://scheduler",
+          type: "sgv",
+        },
+        {
+          sgv: 180,
+          date: currentAt,
+          dateString: new Date(currentAt).toISOString(),
+          direction: "FortyFiveUp",
+          device: "simulator://scheduler",
+          type: "sgv",
+        },
+      ]));
+      const task = state.storage.sql.exec<BackgroundTaskRow>(
+        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
+      ).one();
+      expect(task).toMatchObject({ kind: PLUGIN_NOTIFICATIONS_TASK, attempt_count: 0 });
+      expect(task.due_at).toBeGreaterThan(currentAt);
+    });
+
+    expect(await socket.poll()).toEqual([{
+      type: "event",
+      namespace: "/alarm",
+      data: ["alarm", expect.objectContaining({
+        level: 1,
+        title: "Warning, Check BG, time to bolus?",
+        message: "BG Now: 180 +5 ↗ mg/dl\nBWP: 0.66U",
+        eventName: "bwp",
+        group: "default",
+        plugin: expect.objectContaining({ name: "bwp" }),
+      })],
+    }]);
+  });
+
   it("automatically evaluates and emits the locked AR2 forecast alarm", async () => {
     const name = tenant("background-ar2");
     const stub = store(name);

@@ -28,7 +28,15 @@ function context(now: number): PluginPropertyContext {
       { device: "dexcom", mgdl: 90, direction: "Flat", filtered: 113984, unfiltered: 111920, rssi: 179, noise: 1, mills: now },
     ],
     cals: [{ device: "dexcom", slope: 895.8571693029189, intercept: 34281.06876195567, scale: 1, type: "cal", mills: now }],
-    profiles: [{ dia: 4, sens: 70, carbratio: 15, carbs_hr: 30 }],
+    profiles: [{
+      dia: 4,
+      sens: 70,
+      target_high: 120,
+      target_low: 80,
+      basal: 1,
+      carbratio: 15,
+      carbs_hr: 30,
+    }],
     // The locked fixture captures `now` before the HTTP request and the plugin
     // evaluates with a later Date.now(), so the just-entered carbs are already
     // one tick in the past when COB is calculated.
@@ -100,7 +108,7 @@ describe("locked Nightscout v15.0.7 Pebble endpoint", () => {
       data,
       "mg/dl",
       now,
-      new Set(["bgnow", "rawbg", "iob", "cob"]),
+      new Set(["bgnow", "rawbg", "iob", "cob", "bwp"]),
     );
     const response = build(data, now, {
       count: 2,
@@ -117,6 +125,8 @@ describe("locked Nightscout v15.0.7 Pebble endpoint", () => {
       noise: 1,
       iob: "1.50",
       cob: 22,
+      bwp: "-1.36",
+      bwpo: -15,
     });
     expect(response.bgs[0]).not.toHaveProperty("rssi");
     expect(response.cals).toEqual([{

@@ -112,6 +112,13 @@ export function buildNightscoutPebbleResponse(
     if (battery && Number(battery) >= 0) first.battery = String(battery);
 
     if (options.iob) first.iob = record(properties.iob)?.display || 0;
+    if (options.iob) {
+      const bwp = record(properties.bwp);
+      if (bwp !== undefined) {
+        first.bwp = bwp.bolusEstimateDisplay;
+        first.bwpo = bwp.outcomeDisplay;
+      }
+    }
     if (options.cob) first.cob = record(properties.cob)?.display || 0;
   }
 

@@ -23,6 +23,10 @@ export interface NightscoutStatusEnvironment {
   BG_LOW?: string;
   ALARM_TYPES?: string;
   AR2_CONE_FACTOR?: string;
+  BWP_SNOOZE?: string;
+  BWP_WARN?: string;
+  BWP_URGENT?: string;
+  BWP_SNOOZE_MINS?: string;
   DBSIZE_MAX?: string;
   DBSIZE_WARN_PERCENTAGE?: string;
   DBSIZE_URGENT_PERCENTAGE?: string;
@@ -175,6 +179,12 @@ function platformExtendedSettings(
     if (Object.keys(settings).length > 0) extended[name] = settings;
   }
   addPlugin("ar2", [["coneFactor", environment.AR2_CONE_FACTOR]]);
+  addPlugin("bwp", [
+    ["snooze", environment.BWP_SNOOZE],
+    ["warn", environment.BWP_WARN],
+    ["urgent", environment.BWP_URGENT],
+    ["snoozeMins", environment.BWP_SNOOZE_MINS],
+  ]);
   addPlugin("timeago", [["enableAlerts", environment.TIMEAGO_ENABLE_ALERTS]]);
   addPlugin("cage", [
     ["info", environment.CAGE_INFO],

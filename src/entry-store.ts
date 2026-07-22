@@ -106,6 +106,14 @@ import {
 } from "./plugins/dbsize";
 import { nightscoutDirectionInfo } from "./plugins/direction";
 import { calculateClosedLoopNotificationEvaluation } from "./plugins/closed-loop-notifications";
+import {
+  calculateBwpNotificationEvaluation,
+  type BwpProperty,
+} from "./plugins/bwp";
+import {
+  calculatePluginProperties,
+  createPluginProfileFunctions,
+} from "./plugins/properties";
 import { calculateTreatmentNotificationEvaluation } from "./plugins/treatmentnotify";
 import { calculateTimeAgoNotificationEvaluation } from "./plugins/timeago";
 import { createNightscoutProfileFunctions } from "./profile-functions";
@@ -274,11 +282,13 @@ interface PluginPropertyContext {
 interface AutomaticNotificationRuntime {
   settings: Record<string, unknown>;
   extendedSettings: Record<string, unknown>;
+  enabled: ReadonlySet<string>;
   ar2: boolean;
   simpleAlarms: boolean;
   pump: boolean;
   openAps: boolean;
   loop: boolean;
+  bwp: boolean;
   cage: boolean;
   sage: boolean;
   iage: boolean;
@@ -1150,11 +1160,13 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     return {
       settings,
       extendedSettings,
+      enabled,
       ar2: enabled.has("ar2"),
       simpleAlarms: enabled.has("simplealarms"),
       pump: enabled.has("pump") && Boolean(pumpPreferences.enableAlerts),
       openAps: enabled.has("openaps") && Boolean(openApsPreferences.enableAlerts),
       loop: enabled.has("loop") && Boolean(loopPreferences.enableAlerts),
+      bwp: enabled.has("bwp"),
       cage: enabled.has("cage") && Boolean(cagePreferences.enableAlerts),
       sage: enabled.has("sage") && Boolean(sagePreferences.enableAlerts),
       iage: enabled.has("iage") && Boolean(iagePreferences.enableAlerts),
@@ -1181,16 +1193,18 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const now = Date.now();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
     const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.pump || runtime.openAps
-      || runtime.loop || runtime.cage || runtime.sage || runtime.iage
+      || runtime.loop || runtime.bwp || runtime.cage || runtime.sage || runtime.iage
       || runtime.treatmentNotify || runtime.timeAgo || runtime.dbSize;
     const inputChanged = runtime.dbSize || (collection === "profile"
       ? anyEnabled
       : collection === "entries"
-        ? runtime.ar2 || runtime.simpleAlarms || runtime.treatmentNotify || runtime.timeAgo
+        ? runtime.ar2 || runtime.simpleAlarms || runtime.bwp
+          || runtime.treatmentNotify || runtime.timeAgo
         : collection === "treatments"
-          ? runtime.treatmentNotify || runtime.pump || runtime.openAps
+          ? runtime.bwp || runtime.treatmentNotify || runtime.pump || runtime.openAps
             || runtime.cage || runtime.sage || runtime.iage
-          : collection === "devicestatus" && (runtime.pump || runtime.openAps || runtime.loop));
+          : collection === "devicestatus"
+            && (runtime.bwp || runtime.pump || runtime.openAps || runtime.loop));
     if (!inputChanged) return;
     if (this.dataUpdateDebounce().record(PLUGIN_NOTIFICATIONS_TASK, now)) {
       tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
@@ -1416,9 +1430,29 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     };
     const heartbeatMs = this.notificationHeartbeatMs(runtime.settings);
     const data = this.automaticNotificationData(now, runtime);
+    const bwpContext = runtime.bwp ? this.pluginPropertyContext(now) : null;
+    const bwpProperties = bwpContext === null
+      ? {}
+      : calculatePluginProperties(
+        bwpContext,
+        runtime.settings.units === "mmol" ? "mmol" : "mg/dl",
+        now,
+        runtime.enabled,
+        runtime.extendedSettings,
+        runtime.settings,
+      );
+    const bwpProfile = bwpContext === null
+      ? undefined
+      : createPluginProfileFunctions(bwpContext);
+    const propertyLines = Object.fromEntries(
+      ["rawbg", "bwp", "iob", "cob"].flatMap((name) => {
+        const line = recordValue(bwpProperties[name]).displayLine;
+        return typeof line === "string" && line.length > 0 ? [[name, line]] : [];
+      }),
+    );
 
     // Preserve the locked server plugin order for every implemented producer:
-    // ar2, simplealarms, pump, openaps, loop, cage, sage, iage,
+    // ar2, simplealarms, pump, openaps, loop, bwp, cage, sage, iage,
     // treatmentnotify, timeago, then dbsize. The shared engine can therefore
     // arbitrate identical requests and treatment snoozes in Node-server order.
     if (runtime.ar2) {
@@ -1428,7 +1462,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         data.sgvs,
         now,
         runtime.settings,
-        latest === null ? {} : { direction: nightscoutDirectionInfo(latest) },
+        latest === null
+          ? { propertyLines }
+          : { direction: nightscoutDirectionInfo(latest), propertyLines },
       );
       if (request !== null) {
         notifications.push(request);
@@ -1483,6 +1519,25 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       );
       notifications.push(...closedLoop.notifications);
       schedule(closedLoop.nextDueAt);
+    }
+
+    if (runtime.bwp && bwpContext !== null) {
+      const property = recordValue(bwpProperties.bwp) as BwpProperty;
+      const bwp = calculateBwpNotificationEvaluation(
+        property,
+        bwpProfile,
+        bwpContext.sgvs,
+        now,
+        runtime.settings,
+        recordValue(runtime.extendedSettings.bwp),
+        bwpProperties,
+      );
+      notifications.push(...bwp.notifications);
+      snoozes.push(...bwp.snoozes);
+      // Node evaluates enabled server plugins on every heartbeat. Preserve
+      // that time-varying IOB/BWP behavior only for this explicitly opt-in
+      // plugin, using the existing persisted Durable Object task.
+      schedule(now + heartbeatMs);
     }
 
     if (runtime.cage || runtime.sage || runtime.iage) {
@@ -1553,7 +1608,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const tasks = this.backgroundTasks();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
     const anyEnabled = runtime.ar2 || runtime.simpleAlarms || runtime.pump || runtime.openAps
-      || runtime.loop || runtime.cage || runtime.sage || runtime.iage
+      || runtime.loop || runtime.bwp || runtime.cage || runtime.sage || runtime.iage
       || runtime.treatmentNotify || runtime.timeAgo || runtime.dbSize;
     if (tasks.has(PLUGIN_NOTIFICATIONS_TASK)) {
       if (!anyEnabled) tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
