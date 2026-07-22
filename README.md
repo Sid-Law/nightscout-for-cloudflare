@@ -222,7 +222,8 @@ production hardening do not block this first beta.
   length-prefixed payloads and two-stage root CONNECT/`clients` sequence; EIO4
   retains RS framing and server-ping/client-pong. Both polling protocols
   advertise and complete the upstream WebSocket upgrade, and both accept a
-  direct WebSocket open. JSONP and binary transports are not implemented.
+  direct WebSocket open. Engine.IO JSONP polling is implemented for EIO3 and
+  EIO4; binary packets are not implemented.
 - Content-addressed loading for the official Socket.IO client and the small
   tenant-query adapter, so an older upstream service worker cannot keep
   serving an obsolete transport boundary after deployment.
@@ -240,18 +241,20 @@ production hardening do not block this first beta.
 This is not yet a drop-in Nightscout server. Important missing work includes
 the complete v1/v2 route and error surface, large-response CSV/XML resource
 adaptation and broader generic API v3 mixed-type/nested/query parity,
-Mongo query/collection parity beyond the tested safe subset, Engine.IO
-JSONP/binary,
-remaining non-Treatment dataloader/server-plugin preprocessing on root updates,
+Mongo query/collection parity beyond the tested safe subset, Engine.IO binary
+packets,
 remaining background-task kinds, general server plugin
-execution, remaining plugin alarm generation,
-external push providers, plugin-derived v2 summary
+execution outside the adapted static registries,
+external push providers, plugin-derived v2 summary/activity
 state/persistence, and broader plugin-specific page workflows.
 The official homepage now uses the implemented EIO4 polling endpoint and
 `/alarm` namespace and is intentionally pinned to polling by the locked
 v15.0.7 client source. Standard EIO3 and EIO4 polling-to-WebSocket upgrades
-pass local and public WSS contracts. The page does not yet prove every pushed mutation workflow or the still-missing server-side plugin
-preprocessing pipeline.
+pass local and public WSS contracts. The page does not yet prove every pushed
+plugin-specific UI workflow. Locked upstream root `dataUpdate` sends
+`dataWithRecentStatuses()`;
+server plugin `setProperties`/notification work runs separately in the
+Sandbox and is not an extra root-payload preprocessing stage to invent.
 Entries also remains incomplete beyond its now-adapted locked test file:
 `times/echo`, `times` and the three-store arbitrary-string-field `slice` use a
 bounded numeric-brace/linear-regex adapter, while client-supplied count
@@ -586,11 +589,11 @@ The prior eight v1 additions are
 `api.unauthorized.test.js` and `api.v1-batch-operations.test.js`; seven files remain
 unresolved and two real-CGM bridge files are fixed-scope exclusions.
 
-The deployed runtime candidate is commit `ab101f5`. The 72-file Workers-runtime
-suite passes 793/793 tests, the audit suites pass 23/23, eleven complete
+The deployed runtime candidate is commit `56353da`. The 73-file Workers-runtime
+suite passes 799/799 tests, the audit suites pass 23/23, eleven complete
 official client files pass 42/42 unchanged, and twenty-one locked server/data-plugin
 files pass 143/143 unchanged. Wrangler dry-run reads 250 Static Assets entries,
-reports 1315.83 KiB raw / 242.12 KiB gzip and exposes only
+reports 1319.52 KiB raw / 242.79 KiB gzip and exposes only
 `ENTRY_STORE` and `ASSETS`.
 The deployed candidate retains the replacement of the upstream process-local Admin notification array
 with schema-v15 per-tenant SQLite state. It preserves aggregation, the public
@@ -716,7 +719,7 @@ Its Node configuration audit rejects stored plaintext vars and prohibited
 D1/R2/KV/Queues/routes while locking the existing footprint.
 Arbitrary aggregation pipelines, unrestricted Mongo mixed-type/nested/array and
 BSON numeric/object-ID semantics, safe-attribute DOMPurify
-byte parity, Engine.IO JSONP/binary, server-side
+byte parity, Engine.IO binary packets, server-side
 summary/activity persistence and remaining non-plugin task kinds remain
 missing. The user-supplied construction credential is active and was used only
 for the named simulated SGV batch; its value is not stored or quoted in this
@@ -1084,8 +1087,8 @@ real EIO3 direct WSS plus EIO3 and EIO4 polling upgrades. A clean browser then
 displayed current `113 mg/dL`, one-minute-old simulated data and the official
 chart; Admin Tools loaded seven default roles and reported `Admin authorized`.
 JSONP/binary remained explicit gaps; release 99 later closed the direct-send
-dequeue-before-send loss window. No real device or closed-loop instruction was
-used.
+dequeue-before-send loss window and release 100 closed JSONP polling. Binary
+packets remain. No real device or closed-loop instruction was used.
 
 Project release 95 (`607733cc-2c05-44bc-bde3-17c94be68aff`) deploys commit
 `a4e2267` and closes a separate API v2 ddata omission without changing the
@@ -1177,6 +1180,23 @@ the existing EIO3/EIO4 polling, direct WSS and upgrade gates. The unchanged
 homepage stayed on `/`, rendered two SVG charts and no dialog, and its title
 advanced from `125 +4 ↗` to `128 +4 ↗` while open. No real health data or
 closed-loop instruction was used.
+
+Project release 100 (`339263b5-c3d5-400a-b3b3-0c6299722d32`) deploys commit
+`56353da` and closes the Engine.IO JSONP polling gap for both EIO4/SIO5 and
+legacy EIO3/SIO4. The initial handshake stores the normalized callback index
+in tenant SQLite; later poll/POST requests retain that mode across Durable
+Object eviction and ignore changed or omitted `j` values exactly like the
+locked Engine.IO 6.2.1 oracle. URL-encoded `d=` POST bodies, callback wrapping,
+content types, EIO4 RS payloads and EIO3 length-prefixed payloads are covered.
+The full local gate passed 73 Workers files / 799 tests, 23/23 audits, 42/42
+unchanged client tests and 143/143 unchanged server/data-plugin tests; the dry
+bundle was 1319.52 KiB raw / 242.79 KiB gzip. The 213-assertion public smoke
+passed on `public-smoke-1784727265264`, including EIO4 callback 12 and EIO3
+callback 7 plus the existing polling/direct/upgrade WebSocket gates. The
+unchanged homepage rendered `118 mg/dL`, a trend arrow and two SVG charts with
+no dialog or console error; Admin Tools loaded zero subjects, seven default
+roles and `Admin authorized`. Engine.IO binary packets remain a non-ordinary
+gap. No real health data or closed-loop instruction was used.
 
 The APNs transport follows Apple's current provider-token and notification
 request specifications and Cloudflare's current Web Crypto/fetch APIs:

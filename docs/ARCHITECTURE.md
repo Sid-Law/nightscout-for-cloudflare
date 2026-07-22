@@ -6,17 +6,18 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `ab101f5` and
-Cloudflare version `37ceecb8-4f67-40c0-8af2-cfcd06ff8910`. The
-candidate's 72-file Workers-runtime suite passes 793/793 plus 23/23 audit tests,
+“Current” below describes deployed evidence candidate `56353da` and
+Cloudflare version `339263b5-c3d5-400a-b3b3-0c6299722d32`. The
+candidate's 73-file Workers-runtime suite passes 799/799 plus 23/23 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1315.83 KiB
-raw / 242.12 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
-product bindings. Project release 99 reported a 27 ms startup and passed the
-177-assertion credential-free API, real EIO3/EIO4 direct-or-upgraded WSS, Pebble and
-real-browser gates. The authenticated Profile save/reload/restore and its
-live-page `dataUpdate`/`retroUpdate` observation are current release evidence;
+Wrangler processed 250 Static Assets entries; its dry run reported 1319.52 KiB
+raw / 242.79 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
+product bindings. Project release 100 reported a 36 ms startup and passed the
+213-assertion credential-free API, EIO3/EIO4 JSONP polling,
+real direct-or-upgraded WSS, Pebble and real-browser gates. The authenticated
+Profile save/reload/restore and its live-page `dataUpdate`/`retroUpdate`
+observation remain release-93 evidence;
 the broader Food/Admin/Reports acceptance remains version-80 evidence.
 These are release facts for the named subset, not
 evidence of a complete port.
@@ -412,6 +413,11 @@ eviction therefore does not lose protocol authority or queued packets. This
 is the endpoint loaded by the official homepage; local and remote tests use the
 same upstream Socket.IO client and a clean browser verifies the root and
 `/alarm` workflows.
+Schema v21 adds the optional normalized JSONP callback index to that same
+session row. An initial single `j` selects JSONP; later polls and URL-encoded
+`d=` POSTs use the stored mode across eviction, so an omitted or changed query
+value cannot switch framing mid-session. Repeated initial `j` values retain
+XHR mode, matching the locked Node query parser/Engine.IO boundary.
 Direct WebSocket opens with either `EIO=3` or `EIO=4`, is accepted by the DO
 through WebSocket Hibernation, and restores its tenant/SID/protocol authority
 from a validated attachment plus SQLite state after eviction. A live polling
@@ -1113,9 +1119,11 @@ and trusted live notification outlet.
 
 The current server boundary is explicit:
 
-- EIO3/EIO4 polling, direct WebSocket and polling upgrade; both polling
-  handshakes advertise `upgrades:["websocket"]`. JSONP and binary packets are
-  rejected; an exact
+- EIO3/EIO4 XHR and JSONP polling, direct WebSocket and polling upgrade; both
+  polling handshakes advertise `upgrades:["websocket"]`. JSONP persists the
+  normalized initial callback index with the SID across Durable Object
+  eviction, retains upstream callback/content-type/form-POST framing and
+  ignores later changed or omitted `j` values. Binary packets are rejected; an exact
   `application/octet-stream` POST closes its leased SID and receives a
   controlled 400/code-3 response;
 - 256 sessions per tenant, 128 queued packets and a 1,000,000-byte whole
@@ -1276,8 +1284,9 @@ changing the official page transport. The locked Socket.IO 4.5.4
 persisted EIO3 protocol authority, SIO4 namespace state and client-ping/server-
 pong behavior survive DO eviction. The 150-assertion public smoke exercised
 real EIO3 direct WSS plus both protocol upgrades after Cloudflare propagation.
-JSONP/binary remained explicit, and release 99 later closed the direct-send
-dequeue-before-send loss window.
+JSONP/binary remained explicit in release 94; release 99 later closed the
+direct-send dequeue-before-send loss window and release 100 closed JSONP
+polling for both protocol generations. Binary packets remain unsupported.
 
 Project release 93 keeps the same Worker runtime contract and adds a
 clean-source build/deployment boundary. Root `npm run build` installs the
@@ -1395,8 +1404,10 @@ shared 900-KB/8,000-node/2,000-document budget. It retains exact strict warn/
 urgent threshold-plus-one-millisecond deadlines, source expiry, future status
 activation, OpenAPS Offline start and inclusive-end-plus-one suppression, and
 the next Pump quiet-night Profile-timezone boundary without minute polling.
-The remaining transport work is non-Profile-Switch, non-Treatment preprocessing
-and Engine.IO JSONP/binary. The post-send boundary is deliberately at-least-once:
+Locked upstream root `dataUpdate` sends `dataWithRecentStatuses()` directly;
+server plugin `setProperties` and notification evaluation run separately in
+the Sandbox and are not an extra root-payload preprocessing stage. The
+remaining transport work is Engine.IO/Socket.IO binary packets. The post-send boundary is deliberately at-least-once:
 a crash may replay a frame because Cloudflare cannot atomically commit SQLite
 and a network send, but it no longer loses an unsent durable frame.
 Uploader Battery, BWP, CAGE/SAGE/IAGE/BAGE and DBSize are complete producers.
@@ -1506,7 +1517,7 @@ object as well as every out-of-scope product binding.
   adapter only appends an optional test-tenant query and has no medical or
   display logic. EIO4 polling is the current page transport; standard EIO4
   polling upgrade is available for external clients and EIO3 polling/direct/
-  upgraded WebSocket is available for legacy clients. JSONP/binary remain
-  unimplemented.
+  upgraded WebSocket is available for legacy clients. EIO3/EIO4 JSONP polling
+  is implemented; binary packets remain unimplemented.
 - Text asset responses are streamed rather than buffered when UTF-8 headers are
   adapted, keeping the extra Worker CPU and memory work constant.
