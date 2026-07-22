@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const configUrl = new URL("../wrangler.jsonc", import.meta.url);
+const packageUrl = new URL("../package.json", import.meta.url);
+const secretExampleUrl = new URL("../.dev.vars.example", import.meta.url);
 
 test("deployment preserves dashboard variables without storing credentials or adding products", async () => {
   const config = JSON.parse(await readFile(configUrl, "utf8"));
@@ -19,4 +21,26 @@ test("deployment preserves dashboard variables without storing credentials or ad
   assert.deepEqual(config.durable_objects?.bindings, [
     { name: "ENTRY_STORE", class_name: "EntryStore" },
   ]);
+});
+
+test("Deploy to Cloudflare template declares one required secret and a clean-source build", async () => {
+  const packageJson = JSON.parse(await readFile(packageUrl, "utf8"));
+  const secretExample = await readFile(secretExampleUrl, "utf8");
+
+  assert.equal(
+    packageJson.cloudflare?.bindings?.API_SECRET?.description,
+    "家庭访问密码（至少 12 个字符）。部署完成后，在手机 Nightscout 数据源中填写同一个密码；不需要处理哈希。",
+  );
+  assert.equal(packageJson.scripts?.build, "npm run build:source");
+  assert.equal(
+    packageJson.scripts?.["build:source"],
+    "npm run upstream:install && npm run upstream:bundle && npm run build:ui",
+  );
+  assert.equal(packageJson.scripts?.deploy, "wrangler deploy");
+
+  const secretAssignments = secretExample
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
+  assert.deepEqual(secretAssignments, ["API_SECRET="]);
 });

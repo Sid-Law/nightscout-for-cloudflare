@@ -1,2 +1,3 @@
-# Nightscout upload password. Enter the same value in your phone uploader.
+# Required by the Deploy to Cloudflare flow. Choose a family access password
+# with at least 12 characters; phone uploaders use the same plain-text value.
 API_SECRET=
