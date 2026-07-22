@@ -98,9 +98,10 @@ async function readPollingBody(request: Request): Promise<string | null> {
 }
 
 /**
- * Routes EIO3/EIO4 polling, direct EIO4 WebSocket and the locked EIO4
+ * Routes EIO3/EIO4 polling, direct WebSocket and the locked
  * polling-to-WebSocket upgrade handshake. EntryStore validates whether an
- * optional WebSocket SID still owns a live EIO4 polling session.
+ * optional WebSocket SID still owns a live polling session for the requested
+ * Engine.IO protocol.
  */
 export async function handleSocketIo(
   request: Request,
@@ -114,7 +115,8 @@ export async function handleSocketIo(
   const transport = url.searchParams.get("transport");
   if (transport === "polling") return handleSocketIoPolling(request, url, store);
   if (transport !== "websocket") return engineError(0);
-  if (url.searchParams.get("EIO") !== "4") return engineError(5);
+  const rawEngineProtocol = url.searchParams.get("EIO");
+  if (rawEngineProtocol !== "3" && rawEngineProtocol !== "4") return engineError(5);
   if (url.searchParams.has("j")) return engineError(3);
   if (request.method !== "GET") return engineError(2);
   if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
@@ -125,8 +127,8 @@ export async function handleSocketIo(
 
 /**
  * Engine.IO 3/4 HTTP long-polling adapter for the tenant EntryStore Durable
- * Object. EIO4 advertises the separately routed WebSocket upgrade; EIO3
- * WebSocket/upgrade, JSONP polling and binary polling remain outside this slice.
+ * Object. Both supported protocols advertise the separately routed WebSocket
+ * upgrade. JSONP polling and binary polling remain outside this slice.
  */
 export async function handleSocketIoPolling(
   request: Request,

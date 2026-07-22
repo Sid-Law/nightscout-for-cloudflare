@@ -216,7 +216,7 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     expect(await noUpgrade.json()).toEqual({ code: 3, message: "Bad request" });
 
     const wrongProtocol = await SELF.fetch(
-      endpoint(name).replace("EIO=4", "EIO=3"),
+      endpoint(name).replace("EIO=4", "EIO=2"),
       { headers: { Upgrade: "websocket" } },
     );
     expect(wrongProtocol.status).toBe(400);

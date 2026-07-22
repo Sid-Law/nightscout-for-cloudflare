@@ -198,7 +198,7 @@ describe("Engine.IO 3/4 polling HTTP adapter", () => {
     expect(opened.packets).toHaveLength(1);
     expect(decodeEngineIoV3Handshake(opened.packets[0]!)).toEqual({
       sid: opened.sid,
-      upgrades: [],
+      upgrades: ["websocket"],
       pingInterval: 25_000,
       pingTimeout: 20_000,
       maxPayload: 1_000_000,

@@ -538,7 +538,7 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     const packets = decodeEngineIoV3PollingPayload(handshake.payload);
     expect(decodeEngineIoV3Handshake(packets[0]!)).toEqual({
       sid: handshake.sid,
-      upgrades: [],
+      upgrades: ["websocket"],
       pingInterval: 25_000,
       pingTimeout: 20_000,
       maxPayload: 1_000_000,

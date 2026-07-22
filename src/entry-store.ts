@@ -218,6 +218,8 @@ type EntryStoreEnv = Env & NightscoutStatusEnvironment & {
   UUID_HANDLING?: string;
 };
 
+// Keep the original tag strings so already-hibernated EIO4 sockets survive a
+// deployment; they now identify both accepted Engine.IO protocol versions.
 const REALTIME_WEBSOCKET_TAG = "eio4-websocket";
 const REALTIME_WEBSOCKET_SID_TAG_PREFIX = "eio4-sid:";
 const REALTIME_WEBSOCKET_ATTACHMENT_VERSION = 1;
@@ -837,10 +839,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
 
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    const rawEngineProtocol = url.searchParams.get("EIO");
     if (
       request.method !== "GET" ||
       request.headers.get("Upgrade")?.toLowerCase() !== "websocket" ||
-      url.searchParams.get("EIO") !== "4" ||
+      (rawEngineProtocol !== "3" && rawEngineProtocol !== "4") ||
       url.searchParams.get("transport") !== "websocket" ||
       url.searchParams.has("j")
     ) {
@@ -849,6 +852,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         { status: 400, headers: { "Cache-Control": "no-store" } },
       );
     }
+    const engineProtocol: RealtimeEngineProtocol = rawEngineProtocol === "3" ? 3 : 4;
     const rawSid = url.searchParams.get("sid");
     const upgradeSid = rawSid === null || rawSid === "" ? null : rawSid;
     if (upgradeSid !== null && !REALTIME_SID.test(upgradeSid)) {
@@ -889,7 +893,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       let attachment: RealtimeWebSocketAttachment;
       let initialFrame: string | null = null;
       if (upgradeSid === null) {
-        opened = this.realtime.createWebSocketHandshake();
+        opened = this.realtime.createWebSocketHandshake(engineProtocol);
         attachment = {
           version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
           objectId: this.ctx.id.toString(),
@@ -898,7 +902,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         };
         initialFrame = opened.frame;
       } else {
-        const deadline = this.realtime.beginWebSocketUpgrade(upgradeSid);
+        const deadline = this.realtime.beginWebSocketUpgrade(upgradeSid, engineProtocol);
         upgradeStarted = true;
         attachment = {
           version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,

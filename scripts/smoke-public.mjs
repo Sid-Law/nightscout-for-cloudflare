@@ -326,6 +326,7 @@ checked(eio3Packets.length === 1, "EIO3 initial open packet count");
 checked(eio3Packets[0]?.startsWith("0"), "EIO3 open packet");
 const eio3 = JSON.parse(eio3Packets[0].slice(1));
 checked(/^[A-Za-z0-9_-]{20}$/.test(eio3.sid), "EIO3 SID");
+equal(eio3.upgrades, ["websocket"], "EIO3 advertises the locked WebSocket upgrade");
 equal([eio3.pingInterval, eio3.pingTimeout], [25_000, 20_000], "EIO3 heartbeat");
 const eio3Root = await request(
   `/socket.io/?EIO=3&transport=polling&sid=${encodeURIComponent(eio3.sid)}`,
@@ -347,6 +348,42 @@ const eio3Pong = await request(
 );
 checked(eio3Pong.status === 200 && await eio3Pong.text() === "1:3", "EIO3 pong poll");
 
+const pendingEio3Poll = request(
+  `/socket.io/?EIO=3&transport=polling&sid=${encodeURIComponent(eio3.sid)}`,
+);
+await new Promise((resolve) => setTimeout(resolve, 100));
+const eio3UpgradeUrl = endpoint(
+  `/socket.io/?EIO=3&transport=websocket&sid=${encodeURIComponent(eio3.sid)}`,
+);
+eio3UpgradeUrl.protocol = eio3UpgradeUrl.protocol === "https:" ? "wss:" : "ws:";
+const eio3Upgraded = await openWebSocket(eio3UpgradeUrl);
+eio3Upgraded.socket.send("2probe");
+equal(await eio3Upgraded.inbox.next(), "3probe", "EIO3 WebSocket probe response");
+const releasedEio3Poll = await pendingEio3Poll;
+checked(releasedEio3Poll.status === 200, "EIO3 upgrade releases polling request");
+equal(await releasedEio3Poll.text(), "1:6", "EIO3 upgrade polling noop");
+eio3Upgraded.socket.send("5");
+await new Promise((resolve) => setTimeout(resolve, 100));
+eio3Upgraded.socket.send("2");
+equal(await eio3Upgraded.inbox.next(), "3", "EIO3 upgraded client heartbeat");
+eio3Upgraded.socket.close(1000, "smoke complete");
+
+const eio3DirectUrl = endpoint("/socket.io/?EIO=3&transport=websocket");
+eio3DirectUrl.protocol = eio3DirectUrl.protocol === "https:" ? "wss:" : "ws:";
+const eio3Direct = await openWebSocket(eio3DirectUrl);
+const eio3DirectOpen = await eio3Direct.inbox.next();
+checked(
+  typeof eio3DirectOpen === "string" && eio3DirectOpen.startsWith('0{"sid":"'),
+  "EIO3 direct WebSocket open",
+);
+const eio3DirectHandshake = JSON.parse(eio3DirectOpen.slice(1));
+equal(eio3DirectHandshake.upgrades, [], "EIO3 direct WebSocket has no further upgrade");
+equal(await eio3Direct.inbox.next(), "40", "EIO3 direct automatic root connect");
+equal(await eio3Direct.inbox.next(), '42["clients",1]', "EIO3 direct clients event");
+eio3Direct.socket.send("2");
+equal(await eio3Direct.inbox.next(), "3", "EIO3 direct client heartbeat");
+eio3Direct.socket.close(1000, "smoke complete");
+
 process.stdout.write(`${JSON.stringify({
   origin,
   tenant,
@@ -361,6 +398,7 @@ process.stdout.write(`${JSON.stringify({
   },
   eio3: {
     sidLength: eio3.sid.length,
+    upgrades: eio3.upgrades,
     pingInterval: eio3.pingInterval,
     pingTimeout: eio3.pingTimeout,
   },

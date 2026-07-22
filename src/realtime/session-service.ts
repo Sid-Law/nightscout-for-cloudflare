@@ -459,7 +459,7 @@ export class RealtimeSessionService {
         payload: encodeEngineIoV3PollingPayload([
           createEngineIoV3HandshakePacket({
             sid: session.sid,
-            upgrades: [],
+            upgrades: [REALTIME_WEBSOCKET_TRANSPORT],
             pingInterval: REALTIME_PING_INTERVAL_MS,
             pingTimeout: REALTIME_PING_TIMEOUT_MS,
             maxPayload: REALTIME_MAX_PAYLOAD_BYTES,
@@ -481,14 +481,52 @@ export class RealtimeSessionService {
     return { sid: session.sid, payload };
   }
 
-  createWebSocketHandshake(): { sid: string; frame: string } {
+  createWebSocketHandshake(
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): { sid: string; frame: string } {
     const now = this.now();
     this.cleanup(now);
     let session: RealtimeSession;
     try {
-      session = this.repository.createSession(now, REALTIME_WEBSOCKET_TRANSPORT, 4);
+      session = this.repository.createSession(
+        now,
+        REALTIME_WEBSOCKET_TRANSPORT,
+        engineProtocol,
+      );
     } catch (error) {
       throw this.translateRepositoryError(error);
+    }
+    if (engineProtocol === 3) {
+      // Socket.IO 2.x automatically connects root after the Engine.IO open.
+      // Queue it separately so the WebSocket sends the open frame first,
+      // matching the locked Socket.IO 4.5.4 allowEIO3 server.
+      const wakeTargets = this.storage.transactionSync(() => {
+        session.socketSid = session.sid;
+        session.socketConnected = true;
+        this.repository.updateSession(session);
+        this.repository.enqueueFrames(
+          session.sid,
+          engineFrames(session, [wrapSocketIoV5Packet({
+            type: "connect",
+            namespace: "/",
+          })]),
+          now,
+        );
+        return this.enqueueClientsForConnectedSessions(now);
+      });
+      for (const targetSid of wakeTargets) {
+        if (targetSid !== session.sid) this.wake(targetSid);
+      }
+      return {
+        sid: session.sid,
+        frame: encodeEngineIoV3Packet(createEngineIoV3HandshakePacket({
+          sid: session.sid,
+          upgrades: [],
+          pingInterval: REALTIME_PING_INTERVAL_MS,
+          pingTimeout: REALTIME_PING_TIMEOUT_MS,
+          maxPayload: REALTIME_MAX_PAYLOAD_BYTES,
+        })),
+      };
     }
     return {
       sid: session.sid,
@@ -503,12 +541,15 @@ export class RealtimeSessionService {
     };
   }
 
-  beginWebSocketUpgrade(sid: string): number {
+  beginWebSocketUpgrade(
+    sid: string,
+    engineProtocol: RealtimeEngineProtocol = 4,
+  ): number {
     const now = this.now();
     this.cleanup(now);
     const deadline = now + REALTIME_WEBSOCKET_UPGRADE_TIMEOUT_MS;
     this.storage.transactionSync(() => {
-      this.requireLiveSession(sid, now, REALTIME_TRANSPORT, 4);
+      this.requireLiveSession(sid, now, REALTIME_TRANSPORT, engineProtocol);
       this.repository.scheduleWebSocketClosure(
         sid,
         1008,
@@ -524,7 +565,7 @@ export class RealtimeSessionService {
     const now = this.now();
     this.cleanup(now);
     this.storage.transactionSync(() => {
-      this.requireLiveSession(sid, now, REALTIME_TRANSPORT, 4);
+      this.requireLiveSession(sid, now, REALTIME_TRANSPORT);
     });
     // engine.io 6.2.1 forces one polling cycle to finish after the probe. A
     // waiter with no queued application packet returns the ordinary noop.
@@ -535,7 +576,7 @@ export class RealtimeSessionService {
     const now = this.now();
     this.cleanup(now);
     this.storage.transactionSync(() => {
-      const session = this.requireLiveSession(sid, now, REALTIME_TRANSPORT, 4);
+      const session = this.requireLiveSession(sid, now, REALTIME_TRANSPORT);
       // The official client pauses polling and waits for its outstanding GET
       // and POST before sending Engine.IO `upgrade`. Refuse a transport race
       // instead of allowing both transports to own one durable SID.
@@ -756,17 +797,19 @@ export class RealtimeSessionService {
   }
 
   async submitWebSocketFrame(sid: string, frame: string): Promise<{ closed: boolean }> {
-    let packet: EngineIoV4Packet;
-    try {
-      packet = decodeEngineIoV4Packet(frame);
-    } catch (error) {
-      this.closeForBadPacket(sid);
-      throw this.badPacket(error);
-    }
-
     const initial = this.repository.getSession(sid);
     if (initial === null || initial.transport !== REALTIME_WEBSOCKET_TRANSPORT) {
       throw new RealtimeSessionError("unknown_sid", "session ID is unknown");
+    }
+
+    let packet: EngineIoV4Packet;
+    try {
+      packet = initial.engineProtocol === 3
+        ? decodeEngineIoV3Packet(frame)
+        : decodeEngineIoV4Packet(frame);
+    } catch (error) {
+      this.closeForBadPacket(sid);
+      throw this.badPacket(error);
     }
 
     if (packet.type === "close") {
@@ -780,13 +823,18 @@ export class RealtimeSessionService {
     const alarmAcknowledgements: RealtimeAlarmAcknowledgement[] = [];
     const rootMutation: RealtimeRootMutationState = { changed: false };
     try {
-      if (packet.type === "pong") {
+      if (packet.type === "pong" && session.engineProtocol === 4) {
         this.acceptPong(session, packet);
+      } else if (packet.type === "ping" && session.engineProtocol === 3) {
+        this.refreshInboundLiveness(session, this.now());
+        // The locked allowEIO3 server replies with a data-less pong even when
+        // the client ping carries optional data.
+        outbound.push({ type: "pong" });
       } else if (packet.type === "message") {
         this.refreshInboundLiveness(session, this.now());
         await this.processSocketPacket(
           session,
-          unwrapSocketIoV5Packet(packet),
+          socketPacketForSession(session, packet),
           outbound,
           broadcasts,
           alarmAcknowledgements,
@@ -795,7 +843,7 @@ export class RealtimeSessionService {
       } else {
         throw new RealtimeSessionError(
           "bad_packet",
-          `client packet type ${packet.type} is invalid for EIO4 websocket`,
+          `client packet type ${packet.type} is invalid for EIO${session.engineProtocol} websocket`,
         );
       }
     } catch (error) {
@@ -814,6 +862,7 @@ export class RealtimeSessionService {
       now,
       (current) =>
         current.transport === REALTIME_WEBSOCKET_TRANSPORT
+          && current.engineProtocol === initial.engineProtocol
           ? null
           : new RealtimeSessionError("unknown_sid", "session ID is unknown"),
     );
