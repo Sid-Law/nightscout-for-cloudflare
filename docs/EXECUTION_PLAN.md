@@ -62,7 +62,7 @@ Admin authorized across navigation; Food create/delete completed with `OK`,
 and Admin loaded seven built-in roles plus the cleanup tools.
 
 Private release acceptance 101 then pushed the canonical source to the private
-`Sid-Law/nscf` GitHub repository and deployed clean Git commit `0706d33` to a
+`Sid-Law/nightscout-for-cloudflare` GitHub repository and deployed clean Git commit `0706d33` to a
 new Cloudflare account with no existing `workers.dev` namespace. Wrangler
 registered `nscf-sid.workers.dev`, created only the declared Worker, Static
 Assets and SQLite Durable Object, and published Cloudflare version

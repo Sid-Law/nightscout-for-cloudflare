@@ -23,7 +23,7 @@ These are release facts for the named subset, not
 evidence of a complete port.
 
 Private release acceptance 101 did not change the runtime contract. It pushed
-the canonical source to the private `Sid-Law/nscf` GitHub repository and
+the canonical source to the private `Sid-Law/nightscout-for-cloudflare` GitHub repository and
 deployed Git commit `0706d33` to a new Cloudflare account with no pre-existing
 `workers.dev` namespace. Wrangler created the account namespace, the declared
 Worker, 250 Static Assets and one SQLite Durable Object, producing version

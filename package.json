@@ -6,11 +6,11 @@
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sid-Law/nscf.git"
+    "url": "git+https://github.com/Sid-Law/nightscout-for-cloudflare.git"
   },
-  "homepage": "https://github.com/Sid-Law/nscf#readme",
+  "homepage": "https://github.com/Sid-Law/nightscout-for-cloudflare#readme",
   "bugs": {
-    "url": "https://github.com/Sid-Law/nscf/issues"
+    "url": "https://github.com/Sid-Law/nightscout-for-cloudflare/issues"
   },
   "type": "module",
   "cloudflare": {

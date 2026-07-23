@@ -33,7 +33,7 @@
 Cloudflare 的 Deploy to Cloudflare 功能要求源仓库是公开仓库。仓库公开后，点击
 项目 README 顶部的按钮：
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nscf)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nightscout-for-cloudflare)
 
 部署页面会要求填写：
 
@@ -102,7 +102,7 @@ npx wrangler secret put API_SECRET
 建议使用 Node.js 22 LTS 或更新版本。
 
 ```sh
-git clone https://github.com/Sid-Law/nscf.git
+git clone https://github.com/Sid-Law/nightscout-for-cloudflare.git
 cd nscf
 npm ci
 npm run build

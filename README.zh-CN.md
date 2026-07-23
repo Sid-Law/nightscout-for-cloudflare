@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nscf)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nightscout-for-cloudflare)
 
 这个仓库提供一种快速、免费的方式，把
 [Nightscout](https://github.com/nightscout/cgm-remote-monitor) 部署到

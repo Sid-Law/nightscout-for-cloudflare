@@ -44,11 +44,11 @@ test("Deploy to Cloudflare template declares one required secret and a clean-sou
   assert.equal(packageJson.scripts?.deploy, "wrangler deploy");
   assert.equal(
     packageJson.repository?.url,
-    "git+https://github.com/Sid-Law/nscf.git",
+    "git+https://github.com/Sid-Law/nightscout-for-cloudflare.git",
   );
   assert.match(
     readme,
-    /\]\(https:\/\/deploy\.workers\.cloudflare\.com\/\?url=https:\/\/github\.com\/Sid-Law\/nscf\)/,
+    /\]\(https:\/\/deploy\.workers\.cloudflare\.com\/\?url=https:\/\/github\.com\/Sid-Law\/nightscout-for-cloudflare\)/,
   );
   assert.equal(nodeVersion, "22.16.0");
 
