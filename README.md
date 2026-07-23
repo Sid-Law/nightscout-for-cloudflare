@@ -17,11 +17,36 @@ Node/Mongo and complete Socket.IO/server-plugin behavior are not yet compatible.
 simulated glucose values only. It is not a medical device and must not be used
 for diagnosis, dosing, or medical decisions.
 
-The promotion gates for stable `v1.0.0` are a successful Deploy to Cloudflare
-run from a public repository on a fresh Cloudflare account and a final
-user-operated Loop/AAPS compatibility test. Extreme historical migration,
-multi-year bulk queries, optional Google Home/Alexa integrations and
-production hardening do not block this first beta.
+The private repository and fresh-account Wrangler deployment have now been
+accepted end to end. The remaining promotion gates for stable `v1.0.0` are a
+successful click-through Deploy to Cloudflare run after the repository is made
+public and a final user-operated Loop/AAPS compatibility test. Extreme
+historical migration, multi-year bulk queries, optional Google Home/Alexa
+integrations and production hardening do not block this first beta.
+
+## Private beta deployment acceptance
+
+The canonical source is currently the private
+[`Sid-Law/nscf`](https://github.com/Sid-Law/nscf) repository. Commit `0706d33`
+was deployed from a clean working tree to a newly registered Cloudflare
+account whose `workers.dev` namespace did not previously exist. Wrangler
+created only the Worker, Workers Static Assets and SQLite Durable Object
+declared by this repository. The accepted instance is:
+
+<https://nscf-phase1.nscf-sid.workers.dev/>
+
+The new account passed the 213-assertion remote API/Engine.IO smoke, protected
+Profile create/save/current checks, simulated-CGM seeding, Admin authorization
+and a real first-run browser workflow. The untouched official Profile Editor
+saved the default record with `Status: success`; the official homepage then
+rendered current simulated glucose, a trend arrow and two SVG charts. The
+deployment used an encrypted temporary acceptance secret whose value is not in
+Git or this document.
+
+Cloudflare requires a public GitHub/GitLab repository before another family
+can use the button above. While the repository remains private, the button is
+present and its build/secret metadata is contract-tested, but the public
+click-through flow is intentionally not claimed as accepted yet.
 
 ## What is implemented
 
@@ -1064,8 +1089,9 @@ the clean-source run installed 1,057 locked upstream build packages and
 generated all 250 Static Assets. Wrangler 4.113.0 and
 `@cloudflare/workers-types` 5.20260722.1 are locked, and the configuration
 audit verifies the exact build/deploy commands plus the sole `API_SECRET`
-onboarding binding. A public Git remote and fresh-account Deploy button
-acceptance are still required before calling setup one-click.
+onboarding binding. At that point a public Git remote and fresh-account
+acceptance were still missing; private release acceptance 101 later closes the
+fresh-account platform gate, while the public button path remains pending.
 
 The full local gate remained 70 Workers files / 782 tests, increased to 23/23
 audits, 42/42 unchanged client tests, 143/143 unchanged server/data-plugin
@@ -1203,6 +1229,27 @@ unchanged homepage rendered `118 mg/dL`, a trend arrow and two SVG charts with
 no dialog or console error; Admin Tools loaded zero subjects, seven default
 roles and `Admin authorized`. Engine.IO binary packets remain a non-ordinary
 gap. No real health data or closed-loop instruction was used.
+
+Private release acceptance 101 deployed Git commit `0706d33` to a genuinely
+new Cloudflare account after first registering the account-level
+`nscf-sid.workers.dev` namespace. Cloudflare version
+`c64a3ea4-d896-4c37-bad9-7803facd7581` started in 29 ms, uploaded the same 250
+Static Assets at 1319.52 KiB raw / 242.79 KiB gzip and exposed only
+`ENTRY_STORE`, `ASSETS` and encrypted `API_SECRET`. The new public acceptance
+URL is <https://nscf-phase1.nscf-sid.workers.dev/>.
+
+After initial TLS propagation, `/healthz` returned the locked Nightscout
+`v15.0.7`/SQLite status. The complete 213-assertion credential-free remote
+smoke passed with EIO3/EIO4 polling, JSONP and direct/upgrade WebSocket gates.
+An isolated authenticated run created, renamed and read back a Profile and
+seeded twelve simulated SGVs. In a separate real browser the official default
+Profile saved unchanged with `Status: success`; remembered device
+authentication survived reload and loaded seven Admin roles plus the cleanup
+tools. The default test tenant's simulator was then explicitly enabled and the
+unchanged homepage rendered `118 mg/dL`, `-3`, a downward trend and two SVG
+charts without console errors. This proves a fresh-account deployment from the
+private repository's source state; it does not claim the public Deploy-button
+flow or real Loop/AAPS compatibility.
 
 The APNs transport follows Apple's current provider-token and notification
 request specifications and Cloudflare's current Web Crypto/fetch APIs:

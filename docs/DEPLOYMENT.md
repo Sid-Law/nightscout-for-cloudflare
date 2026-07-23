@@ -1,6 +1,6 @@
 # Current deployment record
 
-Last synchronized: 2026-07-22 (Asia/Shanghai)
+Last synchronized: 2026-07-23 (Asia/Shanghai)
 
 ## Status
 
@@ -8,6 +8,49 @@ The public Worker is deployed and healthy, but it is **not a complete
 Nightscout port**. It serves the locked official v15.0.7 browser assets and the
 named compatibility subset in `UPSTREAM_COMPATIBILITY.md`. Page availability
 is not counted as API, plugin or real-time compatibility.
+
+## Private release acceptance 101: fresh Cloudflare account
+
+The private canonical GitHub source is
+[`Sid-Law/nscf`](https://github.com/Sid-Law/nscf). A clean
+`main...origin/main` worktree at Git commit `0706d33` was deployed to the
+newly registered Cloudflare account `56f2907f7541b06d8f0ad4f875e1e7d8`.
+Before this run the account had no `workers.dev` namespace; Wrangler registered
+`nscf-sid.workers.dev` interactively and then created the declared resources.
+
+- Fresh-account URL: <https://nscf-phase1.nscf-sid.workers.dev/>
+- Worker: `nscf-phase1`
+- Cloudflare Version ID: `c64a3ea4-d896-4c37-bad9-7803facd7581`
+- Version creation time: `2026-07-23T14:00:49.850Z`
+- Source: Wrangler upload from private Git commit `0706d33`
+- Worker startup: 29 ms
+- Static Assets: 250 entries, 1319.52 KiB raw / 242.79 KiB gzip
+- Product bindings: `ENTRY_STORE` SQLite Durable Object and `ASSETS` only
+- Secret binding: encrypted `API_SECRET` (`secret_text`); value not recorded
+- Excluded products confirmed: no D1, R2, KV, Queues, custom domain or zone
+  route
+
+The first TLS request failed while the newly registered namespace propagated;
+the next health probe succeeded with `status:ok`, upstream `v15.0.7` and
+`sqlite-durable-object`. The complete 213-assertion credential-free smoke then
+passed on isolated tenant `public-smoke-1784815353003`, including API v1/v2/v3,
+Pebble, EIO3/EIO4 polling and JSONP, and direct/upgrade WebSocket gates. A
+separate authenticated isolated tenant created, renamed and read back a
+Profile and seeded twelve simulated CGM rows.
+
+Real-browser acceptance authenticated with **Remember this device**, reloaded
+Admin Tools and observed zero subjects, seven built-in roles and the ordinary
+cleanup controls. The untouched official `Default` Profile then saved with
+`Status: success`. The default test tenant's simulator was explicitly enabled;
+the official homepage rendered `118 mg/dL`, `-3`, a downward trend and two SVG
+charts with no console error.
+
+This proves fresh-account deployment from the private repository's exact
+source state. It does not prove Cloudflare's public Deploy-button Git clone
+flow because Cloudflare requires the repository to be public for that flow.
+The repository intentionally remains private until the owner reviews it.
+
+## Legacy public lab deployment
 
 - Public URL: <https://nscf-phase1.nscf-lab-20260717.workers.dev/>
 - Account ID: `fad59c859cb78943d97441581dfcab78`
@@ -93,9 +136,10 @@ created and deleted with `OK`, and Admin loaded zero subjects, seven built-in
 roles and its ordinary cleanup controls as `Admin authorized`.
 
 This evidence is sufficient for a public `v1.0.0-beta.1` source release. It is
-not a stable `v1.0.0` claim and is not a fresh Cloudflare-account one-click
-deployment. Those gates require a public GitHub/GitLab remote and the later
-user-operated Loop/AAPS compatibility run.
+not a stable `v1.0.0` claim. At the time of this historical local run, a fresh
+Cloudflare-account deployment had not happened; release acceptance 101 above
+now supplies that evidence. A public GitHub/GitLab click-through run and the
+later user-operated Loop/AAPS compatibility test remain.
 
 ## Version 79 lab-feed increment
 
@@ -655,9 +699,11 @@ user-operated Loop/AAPS compatibility run.
   `retroUpdate` events. The original name was restored and reloaded. This
   closes the named protected page-mutation gate without real CGM or closed-loop
   traffic.
-- The repository now has the metadata required by Deploy to Cloudflare, but it
-  has no public GitHub/GitLab remote. A button and fresh-account deployment are
-  therefore still pending and no one-click setup claim is made yet.
+- The repository now has the metadata required by Deploy to Cloudflare and a
+  private canonical GitHub remote. Release acceptance 101 later proved the
+  same source state on a fresh Cloudflare account. The public button remains
+  pending only because the owner intentionally keeps the repository private;
+  no public click-through setup claim is made yet.
 
 ## Version 92 Loop remote APNs increment
 

@@ -1,6 +1,6 @@
 # NSCF architecture
 
-Last audited: 2026-07-22
+Last audited: 2026-07-23
 
 This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
@@ -21,6 +21,19 @@ observation remain release-93 evidence;
 the broader Food/Admin/Reports acceptance remains version-80 evidence.
 These are release facts for the named subset, not
 evidence of a complete port.
+
+Private release acceptance 101 did not change the runtime contract. It pushed
+the canonical source to the private `Sid-Law/nscf` GitHub repository and
+deployed Git commit `0706d33` to a new Cloudflare account with no pre-existing
+`workers.dev` namespace. Wrangler created the account namespace, the declared
+Worker, 250 Static Assets and one SQLite Durable Object, producing version
+`c64a3ea4-d896-4c37-bad9-7803facd7581` at
+<https://nscf-phase1.nscf-sid.workers.dev/>. Startup was 29 ms. The fresh
+instance passed the 213-assertion remote protocol smoke, protected Profile
+create/save/current, the official first-run Profile Save and remembered Admin
+workflow, then rendered current simulated glucose and two SVG charts. This is
+fresh-platform evidence, not a claim that Cloudflare's public repository
+button has run while the source remains private.
 
 The project package version is `1.0.0-beta.1`; the upstream application and all
 public Nightscout version responses remain `15.0.7`. The beta number describes
@@ -1295,8 +1308,9 @@ official pages/assets. A configuration audit fixes the exact Cloudflare build
 and deploy scripts and permits only the `API_SECRET` onboarding field; it also
 continues to reject D1, R2, KV, Queues and routes. Wrangler 4.113.0 and Workers
 types 5.20260722.1 are pinned. This makes the repository suitable for a Deploy
-to Cloudflare button, but a public GitHub/GitLab remote and fresh-account run
-remain external release prerequisites. The post-deploy browser loaded current
+to Cloudflare button. A fresh-account deployment from the private source state
+is now accepted; only making the GitHub repository public and exercising the
+public click-through clone path remain external release prerequisites. The post-deploy browser loaded current
 simulated glucose and the authorized Profile Editor; an authenticated Profile
 rename/save was observed as `dataUpdate`/`retroUpdate` in the already-open
 official homepage before being restored.

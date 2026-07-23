@@ -1,6 +1,6 @@
 # Complete Nightscout port execution plan
 
-Last synchronized: 2026-07-22
+Last synchronized: 2026-07-23
 
 ## Goal and fixed scope
 
@@ -61,11 +61,22 @@ charts. Enabling the official **Remember this device** option kept Food and
 Admin authorized across navigation; Food create/delete completed with `OK`,
 and Admin loaded seven built-in roles plus the cleanup tools.
 
+Private release acceptance 101 then pushed the canonical source to the private
+`Sid-Law/nscf` GitHub repository and deployed clean Git commit `0706d33` to a
+new Cloudflare account with no existing `workers.dev` namespace. Wrangler
+registered `nscf-sid.workers.dev`, created only the declared Worker, Static
+Assets and SQLite Durable Object, and published Cloudflare version
+`c64a3ea4-d896-4c37-bad9-7803facd7581`. The fresh URL passed the same
+213-assertion remote protocol smoke, authenticated Profile persistence,
+first-run official Profile Save, remembered Admin authorization and simulated
+homepage chart workflow.
+
 This supports publication as `v1.0.0-beta.1`, not stable `v1.0.0`. Stable
-promotion still requires a public source remote plus fresh-account Deploy to
-Cloudflare acceptance and the separately user-operated Loop/AAPS final test.
-The beta gate does not promote optional voice assistants, legacy-history
-imports or extreme bulk-query behavior into launch blockers.
+promotion now requires the public repository click-through Deploy to
+Cloudflare run and the separately user-operated Loop/AAPS final test. The
+fresh-account platform deployment itself is no longer an untested gate. The
+beta gate does not promote optional voice assistants, legacy-history imports
+or extreme bulk-query behavior into launch blockers.
 
 ## Workstreams and status
 
@@ -307,8 +318,9 @@ chain before generating the official UI; a clean-source execution installed
 1,057 upstream build packages and regenerated all 250 assets. The audited
 Deploy to Cloudflare metadata declares only `API_SECRET`, and the configuration
 still rejects D1, R2, KV, Queues and routes. The real one-click button remains
-pending because this repository has no public GitHub/GitLab remote and has not
-yet undergone a fresh-account acceptance run. The 139-assertion remote smoke
+pending because the canonical GitHub repository is intentionally private.
+Release acceptance 101 later proved this source state on a fresh Cloudflare
+account; only the public Git clone/button path remains. The 139-assertion remote smoke
 passed on `public-smoke-1784712181612`, reported 307,200 SQLite bytes and
 retained EIO4 upgrade plus EIO3 polling. Post-deploy browser reloads showed
 current simulated glucose/chart data and a loaded, authorized Profile Editor.

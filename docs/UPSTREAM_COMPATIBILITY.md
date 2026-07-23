@@ -1,6 +1,6 @@
 # Upstream compatibility matrix
 
-Last audited: 2026-07-22
+Last audited: 2026-07-23
 
 ## Baseline and completion rule
 
@@ -69,9 +69,13 @@ official assets byte-for-byte and passed the full local and dry-run gates. An
 empty local SQLite DO then passed the unchanged official first-run workflow:
 the no-Profile redirect, raw-secret authentication, untouched Default/UTC
 Profile save, homepage glucose/chart render, remembered authorization, Food
-create/delete and Admin load. Stable NSCF `v1.0.0` remains unclaimed until a
-public-repository fresh Cloudflare-account deployment and user-operated
-Loop/AAPS acceptance pass.
+create/delete and Admin load. Private release acceptance 101 subsequently
+deployed Git commit `0706d33` to a newly registered Cloudflare account and
+repeated the 213-assertion remote protocol smoke, protected Profile
+persistence, first-run Save, remembered Admin workflow and simulated homepage
+chart. Stable NSCF `v1.0.0` remains unclaimed until the now-private repository
+is made public, its Deploy-button clone path is accepted, and the user-operated
+Loop/AAPS pass is complete.
 
 The deployed increment connects Uploader Battery, AR2, Simple Alarms, Error Codes, Pump, OpenAPS,
 xDrip-js, Loop, BWP,
@@ -451,9 +455,9 @@ The clean-source build installs the locked Nightscout build dependencies before
 running webpack and UI generation. Its accepted run installed 1,057 upstream
 packages and regenerated all 250 assets. A new configuration audit fixes the
 exact `build`/`deploy` scripts and requires `.dev.vars.example` to contain only
-`API_SECRET`. A real Deploy to Cloudflare button is not yet claimed because the
-repository has no public GitHub/GitLab remote and no fresh-account acceptance
-has run.
+`API_SECRET`. Private release acceptance 101 proved the exact source state on a
+new Cloudflare account, but a real Deploy to Cloudflare button is not yet
+claimed because the canonical GitHub repository intentionally remains private.
 
 The reusable credential-free remote smoke passed 177 assertions for health,
 bounded v1 Entries/Treatments and Food helper reads, fresh Profile/current,
