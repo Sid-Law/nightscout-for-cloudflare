@@ -143,11 +143,10 @@ The deployment asks you to enter one user-chosen password in two fields:
 > Choose your own Nightscout access password, `API_SECRET`, with at least 12
 > characters.
 
-Enter the same plain-text password in both `API_SECRET` and
-`API_SECRET_CONFIRM`. Do not calculate a SHA-1 hash. If the two entries differ,
-the Worker returns a clear configuration error instead of starting Nightscout
-with an unknown password. After deployment, use only the `API_SECRET` password
-in the Nightscout web interface, AAPS or another uploader.
+Enter the same password in both `API_SECRET` and `API_SECRET_CONFIRM`. If the
+two entries differ, the Worker returns a clear configuration error. Cloudflare
+protects both values after deployment. Use the password you chose in the
+Nightscout web interface, AAPS or another uploader.
 
 Cloudflare creates:
 

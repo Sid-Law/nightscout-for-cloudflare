@@ -43,16 +43,15 @@ Cloudflare 的 Deploy to Cloudflare 功能要求源仓库是公开仓库。仓�
 这是每个家庭自己设置的 Nightscout 访问密码。
 
 - 至少 12 个字符
-- 直接填写明文密码
-- 不需要自己计算 SHA-1 或 SHA-512
 - 部署后在 Nightscout 网页、AAPS 或其他数据源中使用同一密码
 - 密码不会写入 Git 仓库
+- Cloudflare 会在部署后加密保存并隐藏密码
 
 ### `API_SECRET_CONFIRM`
 
 这是部署时的重复确认项：
 
-- 再次输入与 `API_SECRET` 完全相同的明文密码
+- 再次输入与 `API_SECRET` 完全相同的密码
 - Nightscout 客户端、AAPS 和其他上传端不需要填写这个名字
 - 如果两次输入不同，Worker 会返回明确的中英文配置错误
 - Cloudflare 会把两个值都隐藏，因此部署后不会在 Dashboard 中回显密码

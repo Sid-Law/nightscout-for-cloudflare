@@ -36,7 +36,7 @@ test("Deploy to Cloudflare template requires a confirmed secret and a clean-sour
 
   assert.equal(
     packageJson.cloudflare?.bindings?.API_SECRET?.description,
-    "家庭访问密码（至少 12 个字符）。部署完成后，在手机 Nightscout 数据源中填写同一个密码；不需要处理哈希。",
+    "家庭访问密码（至少 12 个字符）。部署完成后，在手机 Nightscout 数据源中填写同一个密码。",
   );
   assert.equal(
     packageJson.cloudflare?.bindings?.API_SECRET_CONFIRM?.description,

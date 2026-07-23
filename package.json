@@ -16,7 +16,7 @@
   "cloudflare": {
     "bindings": {
       "API_SECRET": {
-        "description": "家庭访问密码（至少 12 个字符）。部署完成后，在手机 Nightscout 数据源中填写同一个密码；不需要处理哈希。"
+        "description": "家庭访问密码（至少 12 个字符）。部署完成后，在手机 Nightscout 数据源中填写同一个密码。"
       },
       "API_SECRET_CONFIRM": {
         "description": "请再次输入完全相同的家庭访问密码。两次输入不一致时，Nightscout 会明确报错并拒绝启动。"

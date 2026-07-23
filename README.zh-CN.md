@@ -126,10 +126,9 @@ Cloudflare 的 Deploy 按钮只能读取公开的 GitHub/GitLab 仓库。因此�
 
 > 设置自己的 Nightscout 访问密码 `API_SECRET`，至少 12 个字符。
 
-把同一个明文密码分别填入 `API_SECRET` 和 `API_SECRET_CONFIRM`，不需要先计算
-SHA-1。如果两次输入不同，Worker 会明确提示配置错误，不会带着一个未知密码继续
-启动。部署完成后，Nightscout 网页、AAPS 或其他数据源只需要填写
-`API_SECRET` 对应的那个密码。
+把同一个密码分别填入 `API_SECRET` 和 `API_SECRET_CONFIRM`。如果两次输入
+不同，Worker 会明确提示配置错误。Cloudflare 会在部署后保护并隐藏这两个值。
+Nightscout 网页、AAPS 或其他数据源使用你设置的那个密码即可。
 
 Cloudflare 会创建：
 

@@ -1,5 +1,5 @@
 # Required by the Deploy to Cloudflare flow. Choose a family access password
 # with at least 12 characters, then enter the exact same value again.
-# Phone uploaders use the same plain-text API_SECRET value.
+# Phone uploaders use the same API_SECRET password.
 API_SECRET=
 API_SECRET_CONFIRM=
