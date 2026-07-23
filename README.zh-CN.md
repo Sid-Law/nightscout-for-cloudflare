@@ -24,19 +24,12 @@ MongoDB、Socket.IO 服务端和后台任务运行环境。
 
 ## 为什么做这个项目
 
-Nightscout 是一个很伟大的项目。作为多年的 Nightscout 用户，我经常帮助身边的
-糖友部署它。很久以前，我们可以在
-[Heroku](https://help.heroku.com/RSBRUH58/removal-of-heroku-free-product-plans-faq)
-上免费部署 Nightscout；Heroku 在 2022 年结束免费套餐以后，这条简单的路也就
-消失了。Cloudflare 堪称“赛博大善人”，于是我想：也许可以把 Nightscout
-移植过去。
+Nightscout 是一个很伟大的项目，我们曾经可以在 Heroku 免费部署，那已经是
+很久以前的事情了。而 Cloudflare 堪称赛博大善人，但它并不支持 MongoDB。
 
-如果把 Nightscout 比作泡面，那么上游社区已经提供了一碗非常好的泡面，只是
-今天很多人手边没有叉子，也找不到开水——曾经是有的。
-
-这个项目不重新做泡面，也不换包装。它提供一把叉子，并把开水——Cloudflare——
-递到你面前。只需要点击几下，等一个泡面的时间，你就可以拥有一个属于自己的
-Nightscout。
+Nightscout 已经提供了非常好的泡面，但是没有叉子和开水（曾经有）。这个项目
+提供了一把叉子，并且把开水（Cloudflare）递到你面前。只需要点击几下，一个
+泡面的时间，你就可以得到一个 Nightscout。
 
 ## 现在已经能做什么
 
