@@ -2,6 +2,8 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
+Nickname: **The Instant Noodle Edition**
+
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nightscout-for-cloudflare)
 
 This repository provides a fast and free way to deploy
