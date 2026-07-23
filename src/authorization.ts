@@ -175,7 +175,7 @@ async function digestHex(
   ).join("");
 }
 
-async function timingSafeTextEqual(left: string, right: string): Promise<boolean> {
+export async function timingSafeTextEqual(left: string, right: string): Promise<boolean> {
   const [leftDigest, rightDigest] = await Promise.all([
     crypto.subtle.digest("SHA-256", encoder.encode(left)),
     crypto.subtle.digest("SHA-256", encoder.encode(right)),

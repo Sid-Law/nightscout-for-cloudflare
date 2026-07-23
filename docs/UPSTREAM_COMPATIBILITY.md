@@ -454,10 +454,14 @@ without a dialog or console error; Admin loaded seven roles as authorized.
 The clean-source build installs the locked Nightscout build dependencies before
 running webpack and UI generation. Its accepted run installed 1,057 upstream
 packages and regenerated all 250 assets. A new configuration audit fixes the
-exact `build`/`deploy` scripts and requires `.dev.vars.example` to contain only
-`API_SECRET`. Private release acceptance 101 proved the exact source state on a
-new Cloudflare account, but a real Deploy to Cloudflare button is not yet
-claimed because the canonical GitHub repository intentionally remains private.
+exact `build`/`deploy` scripts and requires `.dev.vars.example` to contain
+`API_SECRET` plus the matching deployment confirmation
+`API_SECRET_CONFIRM`. A request-boundary check rejects mismatches and
+too-short new values before Nightscout starts; earlier deployments without the
+confirmation binding remain compatible. Private release acceptance 101 proved
+the exact source state on a new Cloudflare account, but a real Deploy to
+Cloudflare button is not yet claimed because the canonical GitHub repository
+intentionally remains private.
 
 The reusable credential-free remote smoke passed 177 assertions for health,
 bounded v1 Entries/Treatments and Food helper reads, fresh Profile/current,
@@ -629,8 +633,10 @@ persisted simulator then appended `115 mg/dL` at
 The deployed platform configuration preserves any dashboard-managed text
 variables on future Wrangler deploys. Cloudflare documents that encrypted
 Secrets survive ordinary deployments independently;
-the project continues to recommend an encrypted `API_SECRET` and never stores
-or prints its value.
+the project continues to recommend encrypted `API_SECRET` and
+`API_SECRET_CONFIRM` bindings and never stores or prints either value. The
+confirmation is used only to catch deployment typos; clients continue using
+the original `API_SECRET` password.
 
 The first deployment of this increment (`e24bfdec-233c-4dab-a462-142337b14118`)
 showed a Cloudflare rolling-release boundary: the new Worker reached an old

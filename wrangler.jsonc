@@ -8,7 +8,7 @@
   "preview_urls": false,
   "keep_vars": true,
   "secrets": {
-    "required": ["API_SECRET"]
+    "required": ["API_SECRET", "API_SECRET_CONFIRM"]
   },
   "assets": {
     "directory": "./public",

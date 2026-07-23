@@ -56,7 +56,7 @@ Nightscout 已经提供了非常好的泡面，但是没有叉子和开水（曾
 
 ### 登录和权限
 
-- 用户在部署时自行设置 `API_SECRET`
+- 用户自行设置 `API_SECRET`，部署时输入两次以防打错
 - 官方 Nightscout 网页认证
 - “Remember this device”
 - Subjects、Roles、访问令牌和 API v3 JWT
@@ -122,19 +122,21 @@ Worker 一直在线。
 Cloudflare 的 Deploy 按钮只能读取公开的 GitHub/GitLab 仓库。因此，本仓库
 公开后才能由普通用户使用页面顶部的一键部署按钮。
 
-部署时只需要用户决定一个设置：
+部署时只需要用户决定一个密码，但要在两个输入框中各填一次：
 
 > 设置自己的 Nightscout 访问密码 `API_SECRET`，至少 12 个字符。
 
-这是用户自己定义的明文密码，不需要先计算 SHA-1。部署完成后，在 Nightscout
-网页、AAPS 或其他数据源中填写同一个密码。
+把同一个明文密码分别填入 `API_SECRET` 和 `API_SECRET_CONFIRM`，不需要先计算
+SHA-1。如果两次输入不同，Worker 会明确提示配置错误，不会带着一个未知密码继续
+启动。部署完成后，Nightscout 网页、AAPS 或其他数据源只需要填写
+`API_SECRET` 对应的那个密码。
 
 Cloudflare 会创建：
 
 1. 一个 Worker；
 2. 一份 Workers Static Assets；
 3. 一个 SQLite Durable Object 命名空间；
-4. 一个加密的 `API_SECRET`。
+4. 两个保存相同密码的加密 Secret：`API_SECRET` 和仅用于部署核对的确认项。
 
 项目不会创建 D1、R2、KV、Queues、自定义域名或真实 CGM 连接。
 
@@ -170,6 +172,7 @@ cp .dev.vars.example .dev.vars
 
 ```dotenv
 API_SECRET=choose-your-own-password
+API_SECRET_CONFIRM=choose-your-own-password
 ```
 
 然后运行：

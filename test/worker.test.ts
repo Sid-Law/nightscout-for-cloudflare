@@ -157,6 +157,7 @@ describe("official Nightscout UI assets", () => {
     const forwardedValidators: Array<string | null> = [];
     const assetEnv = (status: 200 | 304): Env => ({
       API_SECRET: env.API_SECRET,
+      API_SECRET_CONFIRM: env.API_SECRET_CONFIRM,
       ENTRY_STORE: env.ENTRY_STORE,
       ASSETS: {
         fetch: async (request: Request) => {
@@ -1324,6 +1325,79 @@ describe("Nightscout compatibility API", () => {
     );
     expect(missingBinding.status).toBe(503);
     expect(await missingBinding.json()).toMatchObject({ error: { code: "api_secret_not_configured" } });
+  });
+
+  it("rejects a mistyped API_SECRET confirmation with an explicit bilingual error", async () => {
+    const firstSecret = "first-family-secret";
+    const secondSecret = "different-family-secret";
+    const mismatchEnv = {
+      ASSETS: env.ASSETS,
+      ENTRY_STORE: env.ENTRY_STORE,
+      API_SECRET: firstSecret,
+      API_SECRET_CONFIRM: secondSecret,
+    };
+
+    const pageResponse = await worker.fetch(
+      new Request("https://example.test/healthz"),
+      mismatchEnv,
+    );
+    expect(pageResponse.status).toBe(503);
+    expect(pageResponse.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    expect(pageResponse.headers.get("Cache-Control")).toBe("no-store");
+    const pageBody = await pageResponse.text();
+    expect(pageBody).toContain("API_SECRET and API_SECRET_CONFIRM do not match");
+    expect(pageBody).toContain("两次输入不一致");
+    expect(pageBody).not.toContain(firstSecret);
+    expect(pageBody).not.toContain(secondSecret);
+
+    const apiResponse = await worker.fetch(
+      new Request("https://example.test/api/v1/status.json"),
+      mismatchEnv,
+    );
+    expect(apiResponse.status).toBe(503);
+    expect(await apiResponse.json()).toMatchObject({
+      error: { code: "api_secret_confirmation_mismatch" },
+    });
+  });
+
+  it("accepts matching confirmation and preserves existing deployments without it", async () => {
+    const matchingEnv = {
+      ASSETS: env.ASSETS,
+      ENTRY_STORE: env.ENTRY_STORE,
+      API_SECRET: TEST_API_SECRET,
+      API_SECRET_CONFIRM: TEST_API_SECRET,
+    };
+    expect((await worker.fetch(
+      new Request("https://example.test/healthz"),
+      matchingEnv,
+    )).status).toBe(200);
+
+    const legacyEnv = {
+      ASSETS: env.ASSETS,
+      ENTRY_STORE: env.ENTRY_STORE,
+      API_SECRET: TEST_API_SECRET,
+    } as unknown as Parameters<typeof worker.fetch>[1];
+    expect((await worker.fetch(
+      new Request("https://example.test/healthz"),
+      legacyEnv,
+    )).status).toBe(200);
+  });
+
+  it("rejects a matching but too-short deployment password before Nightscout starts", async () => {
+    const shortSecret = "too-short";
+    const response = await worker.fetch(
+      new Request("https://example.test/healthz"),
+      {
+        ASSETS: env.ASSETS,
+        ENTRY_STORE: env.ENTRY_STORE,
+        API_SECRET: shortSecret,
+        API_SECRET_CONFIRM: shortSecret,
+      },
+    );
+    expect(response.status).toBe(503);
+    const body = await response.text();
+    expect(body).toContain("at least 12 characters");
+    expect(body).not.toContain(shortSecret);
   });
 });
 

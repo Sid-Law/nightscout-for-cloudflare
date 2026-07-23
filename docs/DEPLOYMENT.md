@@ -24,7 +24,8 @@
 1. 一个 Cloudflare Worker；
 2. 一份 Workers Static Assets；
 3. 一个 SQLite Durable Object 命名空间；
-4. 一个加密的 Worker Secret：`API_SECRET`。
+4. 两个保存相同密码的加密 Worker Secret：`API_SECRET` 和
+   `API_SECRET_CONFIRM`。
 
 不会创建 D1、R2、KV、Queues、自定义域名或 Cloudflare Zone 路由。
 
@@ -35,7 +36,7 @@ Cloudflare 的 Deploy to Cloudflare 功能要求源仓库是公开仓库。仓�
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nightscout-for-cloudflare)
 
-部署页面会要求填写：
+部署页面会要求把同一个密码填写两次：
 
 ### `API_SECRET`
 
@@ -46,6 +47,15 @@ Cloudflare 的 Deploy to Cloudflare 功能要求源仓库是公开仓库。仓�
 - 不需要自己计算 SHA-1 或 SHA-512
 - 部署后在 Nightscout 网页、AAPS 或其他数据源中使用同一密码
 - 密码不会写入 Git 仓库
+
+### `API_SECRET_CONFIRM`
+
+这是部署时的重复确认项：
+
+- 再次输入与 `API_SECRET` 完全相同的明文密码
+- Nightscout 客户端、AAPS 和其他上传端不需要填写这个名字
+- 如果两次输入不同，Worker 会返回明确的中英文配置错误
+- Cloudflare 会把两个值都隐藏，因此部署后不会在 Dashboard 中回显密码
 
 用户可以在部署页面调整 GitHub 仓库副本名称、Worker 名称和资源名称。完成授权
 后，Cloudflare 会构建源码、创建声明的资源并部署 Worker。
@@ -88,14 +98,18 @@ Durable Object 无法保存。
 3. 选择自己的 NSCF Worker。
 4. 打开 **Settings → Variables and Secrets**。
 5. 编辑 `API_SECRET`，类型保持为 **Secret**。
-6. 保存并等待新版本部署完成。
-7. 在 Nightscout 网页、AAPS 和其他上传端改成同一新密码。
+6. 把 `API_SECRET_CONFIRM` 改成完全相同的新密码，类型也保持为 **Secret**。
+7. 保存并等待新版本部署完成。
+8. 在 Nightscout 网页、AAPS 和其他上传端改成同一新密码。
 
 CLI 方式：
 
 ```sh
 npx wrangler secret put API_SECRET
+npx wrangler secret put API_SECRET_CONFIRM
 ```
+
+两条命令中输入完全相同的值。
 
 ## 本地或命令行部署
 
@@ -116,7 +130,10 @@ npm run deploy:dry
 ```sh
 npx wrangler login
 npx wrangler secret put API_SECRET
+npx wrangler secret put API_SECRET_CONFIRM
 ```
+
+两次输入同一个密码。
 
 确认本地测试全部通过后部署：
 
@@ -134,6 +151,7 @@ cp .dev.vars.example .dev.vars
 
 ```dotenv
 API_SECRET=choose-your-own-password
+API_SECRET_CONFIRM=choose-your-own-password
 ```
 
 启动：

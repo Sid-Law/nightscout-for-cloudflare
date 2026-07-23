@@ -13,7 +13,9 @@ test("deployment preserves dashboard variables without storing credentials or ad
 
   assert.equal(config.keep_vars, true);
   assert.equal(config.vars, undefined);
-  assert.deepEqual(config.secrets, { required: ["API_SECRET"] });
+  assert.deepEqual(config.secrets, {
+    required: ["API_SECRET", "API_SECRET_CONFIRM"],
+  });
   assert.equal(config.kv_namespaces, undefined);
   assert.equal(config.d1_databases, undefined);
   assert.equal(config.r2_buckets, undefined);
@@ -26,7 +28,7 @@ test("deployment preserves dashboard variables without storing credentials or ad
   ]);
 });
 
-test("Deploy to Cloudflare template declares one required secret and a clean-source build", async () => {
+test("Deploy to Cloudflare template requires a confirmed secret and a clean-source build", async () => {
   const packageJson = JSON.parse(await readFile(packageUrl, "utf8"));
   const readme = await readFile(readmeUrl, "utf8");
   const secretExample = await readFile(secretExampleUrl, "utf8");
@@ -35,6 +37,10 @@ test("Deploy to Cloudflare template declares one required secret and a clean-sou
   assert.equal(
     packageJson.cloudflare?.bindings?.API_SECRET?.description,
     "家庭访问密码（至少 12 个字符）。部署完成后，在手机 Nightscout 数据源中填写同一个密码；不需要处理哈希。",
+  );
+  assert.equal(
+    packageJson.cloudflare?.bindings?.API_SECRET_CONFIRM?.description,
+    "请再次输入完全相同的家庭访问密码。两次输入不一致时，Nightscout 会明确报错并拒绝启动。",
   );
   assert.equal(packageJson.scripts?.build, "npm run build:source");
   assert.equal(
@@ -56,5 +62,5 @@ test("Deploy to Cloudflare template declares one required secret and a clean-sou
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"));
-  assert.deepEqual(secretAssignments, ["API_SECRET="]);
+  assert.deepEqual(secretAssignments, ["API_SECRET=", "API_SECRET_CONFIRM="]);
 });

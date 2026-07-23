@@ -6,6 +6,7 @@ const TEST_API_SECRET = "nscf-test-secret-20260717";
 // Wrangler validates required secrets before Miniflare applies test bindings.
 // Seed only the disposable test value so local runs stay warning-free.
 process.env.API_SECRET ??= TEST_API_SECRET;
+process.env.API_SECRET_CONFIRM ??= TEST_API_SECRET;
 
 export default defineConfig({
   plugins: [
@@ -14,6 +15,7 @@ export default defineConfig({
       miniflare: {
         bindings: {
           API_SECRET: TEST_API_SECRET,
+          API_SECRET_CONFIRM: TEST_API_SECRET,
           AUTH_DEFAULT_ROLES: "readable",
           AUTH_FAIL_DELAY: "1",
         },

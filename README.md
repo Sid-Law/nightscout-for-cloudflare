@@ -61,7 +61,7 @@ in the time it takes to make instant noodles, you can get a Nightscout.
 
 ### Authentication and permissions
 
-- A user-defined `API_SECRET`
+- A user-defined `API_SECRET`, entered twice to catch typing mistakes
 - Official Nightscout web authentication
 - **Remember this device**
 - Subjects, Roles, access tokens and API v3 JWTs
@@ -138,21 +138,24 @@ production parity today.
 Cloudflare's Deploy button can clone only a public GitHub or GitLab repository.
 Once this repository is public, use the button at the top of this page.
 
-The deployment asks for one required user setting:
+The deployment asks you to enter one user-chosen password in two fields:
 
 > Choose your own Nightscout access password, `API_SECRET`, with at least 12
 > characters.
 
-Enter the password as plain text. Do not calculate a SHA-1 hash. After
-deployment, use the same password in the Nightscout web interface, AAPS or
-another uploader.
+Enter the same plain-text password in both `API_SECRET` and
+`API_SECRET_CONFIRM`. Do not calculate a SHA-1 hash. If the two entries differ,
+the Worker returns a clear configuration error instead of starting Nightscout
+with an unknown password. After deployment, use only the `API_SECRET` password
+in the Nightscout web interface, AAPS or another uploader.
 
 Cloudflare creates:
 
 1. one Worker;
 2. one Workers Static Assets deployment;
 3. one SQLite Durable Object namespace; and
-4. one encrypted `API_SECRET`.
+4. two encrypted Secret bindings containing the same password:
+   `API_SECRET` and its deployment-only confirmation.
 
 The deployment does not create D1, R2, KV, Queues, a custom domain or a real CGM
 connection.
@@ -189,6 +192,7 @@ Set a local test password in `.dev.vars`:
 
 ```dotenv
 API_SECRET=choose-your-own-password
+API_SECRET_CONFIRM=choose-your-own-password
 ```
 
 Then run:

@@ -316,9 +316,12 @@ Version 93 prepares clean-source deployment without changing the runtime
 contract. Root `npm run build` now runs the locked Nightscout install/bundle
 chain before generating the official UI; a clean-source execution installed
 1,057 upstream build packages and regenerated all 250 assets. The audited
-Deploy to Cloudflare metadata declares only `API_SECRET`, and the configuration
-still rejects D1, R2, KV, Queues and routes. The real one-click button remains
-pending because the canonical GitHub repository is intentionally private.
+Deploy to Cloudflare metadata now asks for the same user-chosen password twice:
+`API_SECRET` and `API_SECRET_CONFIRM`. The Worker rejects a mismatch with a
+clear bilingual configuration error, while older deployments without the
+confirmation binding remain compatible. The configuration still rejects D1,
+R2, KV, Queues and routes. The real one-click button remains pending because
+the canonical GitHub repository is intentionally private.
 Release acceptance 101 later proved this source state on a fresh Cloudflare
 account; only the public Git clone/button path remains. The 139-assertion remote smoke
 passed on `public-smoke-1784712181612`, reported 307,200 SQLite bytes and
