@@ -25,15 +25,21 @@ Node.js, Express, MongoDB, Socket.IO server and background-task runtime.
 
 ## Why this project exists
 
-Nightscout is a remarkable community project. One way to picture it is as an
-excellent cup of instant noodles: the essential product is already there, but
-many ordinary families no longer have the fork and hot water that once made it
-easy to serve.
+Nightscout is a remarkable project. I have used it for years, and I often help
+other people in the diabetes community deploy it. Long ago, Nightscout could
+be deployed for free on
+[Heroku](https://help.heroku.com/RSBRUH58/removal-of-heroku-free-product-plans-faq).
+After Heroku ended its free plans in 2022, that easy path disappeared.
+Cloudflare has since earned a reputation as something of a “cyber
+philanthropist”, so I wondered: could Nightscout be ported there?
+
+Nightscout has already provided excellent instant noodles. What many people
+are missing today is the fork and hot water they once had.
 
 This project does not remake the noodles or put a new label on them. It
-provides the fork—the Cloudflare adapter and one-click deployment—and shows
-people where to get the hot water through a short setup guide. The goal is
-simply to help more families reach and use Nightscout quickly, at no cost.
+provides the fork and places the hot water—Cloudflare—right in front of you.
+Click a few times, wait about as long as it takes to make instant noodles, and
+you can have a Nightscout of your own.
 
 ## What works today
 
