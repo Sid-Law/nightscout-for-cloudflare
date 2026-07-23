@@ -1,27 +1,39 @@
-# NSCF — Nightscout for Cloudflare
+# Nightscout for Cloudflare
 
 **English** | [简体中文](README.zh-CN.md)
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nscf)
 
-NSCF is an independent open-source port of
-[Nightscout](https://github.com/nightscout/cgm-remote-monitor) for Cloudflare
-Workers. Its goal is to let families use Nightscout without maintaining a
-Node.js server or MongoDB, while staying within Cloudflare's free plan for
-ordinary personal use.
+This repository provides a fast and free way to deploy
+[Nightscout](https://github.com/nightscout/cgm-remote-monitor) on Cloudflare.
+It is designed to run entirely within Cloudflare's free-plan limits for
+ordinary family use, without a paid server or MongoDB service. It is an
+independent and unofficial port, not an official Nightscout release.
 
-Current release: **NSCF v1.0.0-beta.1**
+Current release: **v1.0.0-beta.1**
 
 Upstream baseline: **Nightscout v15.0.7**
 
-NSCF builds and serves the official Nightscout pages, layout, charts, client
-plugins, translations and calculations. It does not replace them with a custom
-user interface. The NSCF code is the platform adapter that replaces the
+This project builds and serves the official Nightscout pages, layout, charts,
+client plugins, translations and calculations. It does not replace them with a
+custom user interface. Its code is the platform adapter that replaces the
 Node.js, Express, MongoDB, Socket.IO server and background-task runtime.
 
 > This release is suitable for new test deployments and simulated data. It is
 > not yet a claim of complete upstream parity or a medical device, and it must
 > not be used to make automatic insulin-dosing decisions.
+
+## Why this project exists
+
+Nightscout is a remarkable community project. One way to picture it is as an
+excellent cup of instant noodles: the essential product is already there, but
+many ordinary families no longer have the fork and hot water that once made it
+easy to serve.
+
+This project does not remake the noodles or put a new label on them. It
+provides the fork—the Cloudflare adapter and one-click deployment—and shows
+people where to get the hot water through a short setup guide. The goal is
+simply to help more families reach and use Nightscout quickly, at no cost.
 
 ## What works today
 
@@ -77,7 +89,7 @@ Durable Object alarms instead.
 
 ### Simulated glucose for testing
 
-NSCF includes a test-only simulated CGM switch. It creates a short five-minute
+This project includes a test-only simulated CGM switch. It creates a short five-minute
 glucose history and then adds one new reading every five minutes. It does not
 connect to a real CGM or calculate insulin doses.
 
@@ -143,7 +155,7 @@ Cloudflare creates:
 3. one SQLite Durable Object namespace; and
 4. one encrypted `API_SECRET`.
 
-NSCF does not create D1, R2, KV, Queues, a custom domain or a real CGM
+The deployment does not create D1, R2, KV, Queues, a custom domain or a real CGM
 connection.
 
 ## First launch
@@ -206,7 +218,7 @@ npm run deploy
 - `upstream/manifest.json` pins and verifies the upstream release
 - `vendor/nightscout` contains the unmodified Nightscout v15.0.7 snapshot
 - `src`, `platform` and `scripts` contain the Cloudflare adapter
-- NSCF adds no medical algorithm and provides no dosing recommendation
+- This project adds no medical algorithm and provides no dosing recommendation
 - The current public test uses simulated data only
 
 Developer documentation:
@@ -218,6 +230,6 @@ Developer documentation:
 
 ## License and attribution
 
-NSCF is licensed under `AGPL-3.0-only`. Nightscout contributors retain all
+This project is licensed under `AGPL-3.0-only`. Nightscout contributors retain all
 rights in upstream work. See `LICENSE`, `NOTICE.md`, and the preserved
 `vendor/nightscout/COPYRIGHT` and `vendor/nightscout/LICENSE`.

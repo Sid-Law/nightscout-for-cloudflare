@@ -1,25 +1,36 @@
-# NSCF — Nightscout for Cloudflare
+# Nightscout for Cloudflare
 
 [English](README.md) | **简体中文**
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nscf)
 
-NSCF 是把官方 [Nightscout](https://github.com/nightscout/cgm-remote-monitor)
-移植到 Cloudflare Workers 的独立开源项目。目标是让普通糖友家庭不必维护
-Node.js、MongoDB 和服务器，也能在 Cloudflare 免费套餐上使用尽可能接近官方
-Nightscout 的功能。
+这个仓库提供一种快速、免费的方式，把
+[Nightscout](https://github.com/nightscout/cgm-remote-monitor) 部署到
+Cloudflare。它面向普通糖友家庭设计，在 Cloudflare 免费套餐额度内运行，
+不需要付费服务器或 MongoDB 服务。它是独立的非官方移植版，不是 Nightscout
+官方发布。
 
-当前版本：**NSCF v1.0.0-beta.1**
+当前版本：**v1.0.0-beta.1**
 
 锁定上游：**Nightscout v15.0.7**
 
-NSCF 使用官方 Nightscout 页面、布局、图表、插件、翻译和计算逻辑，没有另外
+这个项目使用官方 Nightscout 页面、布局、图表、插件、翻译和计算逻辑，没有另外
 制作一套替代 UI。Cloudflare 相关代码只负责替换原来的 Node.js、Express、
 MongoDB、Socket.IO 服务端和后台任务运行环境。
 
 > 当前版本适合新建测试实例和模拟数据体验，还不是“官方 Nightscout 所有能力
 > 100% 等价”的稳定版本。它不是医疗设备，不能代替医生或用于自动决定胰岛素
 > 剂量。
+
+## 为什么做这个项目
+
+Nightscout 是一个很伟大的社区项目。可以把它比作一碗非常好的泡面：最重要的
+东西早已由上游社区做好了，但对普通家庭来说，以前较容易获得的“叉子和热水”——
+免费托管、数据库和简单部署——现在不再总是现成。
+
+这个项目不重新制作泡面，更不会换个包装说成自己的产品。它只是补上一把叉子——
+Cloudflare 适配层和一键部署——再用一份简短指南告诉大家去哪里取得热水。目标
+只是让更多家庭可以快速、免费地用上 Nightscout。
 
 ## 现在已经能做什么
 
@@ -72,7 +83,7 @@ Worker 一直在线。
 
 ### 测试用模拟血糖
 
-NSCF 提供一个仅用于测试的模拟 CGM 开关。启用后会先生成一小段五分钟间隔的
+这个项目提供一个仅用于测试的模拟 CGM 开关。启用后会先生成一小段五分钟间隔的
 血糖曲线，之后每五分钟继续增加一条。它不会连接真实 CGM，也不会计算剂量。
 
 ## 目前还没有做到什么
@@ -205,6 +216,6 @@ npm run deploy
 
 ## License and attribution
 
-NSCF 使用 `AGPL-3.0-only`。Nightscout 上游工作的权利归原贡献者所有。参见
+这个项目使用 `AGPL-3.0-only`。Nightscout 上游工作的权利归原贡献者所有。参见
 `LICENSE`、`NOTICE.md`，以及保留的
 `vendor/nightscout/COPYRIGHT` 和 `vendor/nightscout/LICENSE`。
