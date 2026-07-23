@@ -3,6 +3,10 @@ import { defineConfig } from "vitest/config";
 
 const TEST_API_SECRET = "nscf-test-secret-20260717";
 
+// Wrangler validates required secrets before Miniflare applies test bindings.
+// Seed only the disposable test value so local runs stay warning-free.
+process.env.API_SECRET ??= TEST_API_SECRET;
+
 export default defineConfig({
   plugins: [
     cloudflareTest({

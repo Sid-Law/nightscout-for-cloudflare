@@ -5,7 +5,7 @@ import {
   runDurableObjectAlarm,
   runInDurableObject,
 } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EntryStore } from "../src/entry-store";
 import {
   decodeEngineIoV4Handshake,
@@ -247,10 +247,11 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     });
 
     const pendingPoll = SELF.fetch(pollingEndpoint(name, `&sid=${opened.sid}`));
-    await new Promise<void>((resolve) => setTimeout(resolve, 20));
-    await expect(expectStoredSession(name, opened.sid)).resolves.toMatchObject({
-      transport: "polling",
-      pollToken: expect.any(String),
+    await vi.waitFor(async () => {
+      await expect(expectStoredSession(name, opened.sid)).resolves.toMatchObject({
+        transport: "polling",
+        pollToken: expect.any(String),
+      });
     });
 
     const inbox = await openUpgradeWebSocket(name, opened.sid);
@@ -261,11 +262,12 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     expect(await releasedPoll.text()).toBe("6");
 
     inbox.socket.send("5");
-    await new Promise<void>((resolve) => setTimeout(resolve, 20));
-    await expect(expectStoredSession(name, opened.sid)).resolves.toMatchObject({
-      transport: "websocket",
-      engineProtocol: 4,
-      pollToken: null,
+    await vi.waitFor(async () => {
+      await expect(expectStoredSession(name, opened.sid)).resolves.toMatchObject({
+        transport: "websocket",
+        engineProtocol: 4,
+        pollToken: null,
+      });
     });
 
     await evictDurableObject(store(name));

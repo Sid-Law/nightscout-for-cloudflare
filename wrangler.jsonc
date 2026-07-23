@@ -7,6 +7,9 @@
   "workers_dev": true,
   "preview_urls": false,
   "keep_vars": true,
+  "secrets": {
+    "required": ["API_SECRET"]
+  },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

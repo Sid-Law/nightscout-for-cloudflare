@@ -4,13 +4,16 @@ import test from "node:test";
 
 const configUrl = new URL("../wrangler.jsonc", import.meta.url);
 const packageUrl = new URL("../package.json", import.meta.url);
+const readmeUrl = new URL("../README.md", import.meta.url);
 const secretExampleUrl = new URL("../.dev.vars.example", import.meta.url);
+const nodeVersionUrl = new URL("../.node-version", import.meta.url);
 
 test("deployment preserves dashboard variables without storing credentials or adding products", async () => {
   const config = JSON.parse(await readFile(configUrl, "utf8"));
 
   assert.equal(config.keep_vars, true);
   assert.equal(config.vars, undefined);
+  assert.deepEqual(config.secrets, { required: ["API_SECRET"] });
   assert.equal(config.kv_namespaces, undefined);
   assert.equal(config.d1_databases, undefined);
   assert.equal(config.r2_buckets, undefined);
@@ -25,7 +28,9 @@ test("deployment preserves dashboard variables without storing credentials or ad
 
 test("Deploy to Cloudflare template declares one required secret and a clean-source build", async () => {
   const packageJson = JSON.parse(await readFile(packageUrl, "utf8"));
+  const readme = await readFile(readmeUrl, "utf8");
   const secretExample = await readFile(secretExampleUrl, "utf8");
+  const nodeVersion = (await readFile(nodeVersionUrl, "utf8")).trim();
 
   assert.equal(
     packageJson.cloudflare?.bindings?.API_SECRET?.description,
@@ -37,6 +42,15 @@ test("Deploy to Cloudflare template declares one required secret and a clean-sou
     "npm run upstream:install && npm run upstream:bundle && npm run build:ui",
   );
   assert.equal(packageJson.scripts?.deploy, "wrangler deploy");
+  assert.equal(
+    packageJson.repository?.url,
+    "git+https://github.com/Sid-Law/nscf.git",
+  );
+  assert.match(
+    readme,
+    /\]\(https:\/\/deploy\.workers\.cloudflare\.com\/\?url=https:\/\/github\.com\/Sid-Law\/nscf\)/,
+  );
+  assert.equal(nodeVersion, "22.16.0");
 
   const secretAssignments = secretExample
     .split(/\r?\n/)

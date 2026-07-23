@@ -156,6 +156,7 @@ describe("official Nightscout UI assets", () => {
   it("forces HTML metadata for secondary-page assets and conditional cache hits", async () => {
     const forwardedValidators: Array<string | null> = [];
     const assetEnv = (status: 200 | 304): Env => ({
+      API_SECRET: env.API_SECRET,
       ENTRY_STORE: env.ENTRY_STORE,
       ASSETS: {
         fetch: async (request: Request) => {

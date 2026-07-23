@@ -1,5 +1,7 @@
 # NSCF — Nightscout for Cloudflare
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nscf)
+
 NSCF is a public-interest, open-source, independent and unofficial downstream port of
 [Nightscout](https://github.com/nightscout/cgm-remote-monitor) for Cloudflare.
 It is not an official Nightscout release and is not endorsed by or affiliated
@@ -301,10 +303,14 @@ The Deploy to Cloudflare template obtains this value from the human-readable
 binding description in `package.json`, without asking a family to calculate a
 hash. A clean source checkout now installs the locked upstream build tools and
 rebuilds the official assets through `npm run build`; `.dev.vars.example`
-declares only `API_SECRET`. The actual one-click button still needs a public
-GitHub/GitLab repository and a fresh-account acceptance run, so current
-operators still use Wrangler or the Cloudflare dashboard as documented below.
-The internal binding remains `API_SECRET` for Nightscout compatibility.
+declares only `API_SECRET`, and `wrangler.jsonc` marks that encrypted Worker
+secret as required so a deploy cannot silently succeed without the family
+password. The button at the top targets the canonical GitHub repository. While
+that repository is private, its owner can run the private Workers Builds import
+acceptance after authorizing the Cloudflare GitHub integration, but Cloudflare
+requires the source repository to be public before other families can use the
+Deploy to Cloudflare button. The internal binding remains `API_SECRET` for
+Nightscout compatibility.
 
 ### First opening: authenticate and save the official Profile
 

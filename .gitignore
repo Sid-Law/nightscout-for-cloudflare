@@ -5,8 +5,10 @@ dist/
 public/
 coverage/
 worker-configuration.d.ts
-.dev.vars
-.env
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
 *.log
 .DS_Store
 outputs/*
