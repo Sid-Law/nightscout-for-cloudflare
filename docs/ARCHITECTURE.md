@@ -1295,12 +1295,9 @@ Project release 93 keeps the same Worker runtime contract and adds a
 clean-source build/deployment boundary. Root `npm run build` installs the
 locked Nightscout build tree, runs its webpack bundle, then generates the
 official pages/assets. A configuration audit fixes the exact Cloudflare build
-and deploy scripts and permits only the two password onboarding fields:
-`API_SECRET` and its exact duplicate `API_SECRET_CONFIRM`; it also continues
-to reject D1, R2, KV, Queues and routes. The Worker compares the two hidden
-bindings before serving Nightscout, reports a bilingual 503 on mismatch, and
-accepts a missing confirmation only for compatibility with earlier
-deployments. Wrangler 4.113.0 and Workers
+and deploy scripts and permits one plain-text onboarding field: `API_SECRET`;
+it also continues to reject D1, R2, KV, Queues and routes. The Worker rejects
+a too-short value before serving Nightscout. Wrangler 4.113.0 and Workers
 types 5.20260722.1 are pinned. This makes the repository suitable for a Deploy
 to Cloudflare button. A fresh-account deployment from the private source state
 is now accepted; only making the GitHub repository public and exercising the

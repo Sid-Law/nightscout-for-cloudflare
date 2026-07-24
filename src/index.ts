@@ -148,7 +148,6 @@ const SEEN_PERMISSIONS = [
 
 type AppEnv = Env & {
   API_SECRET?: string;
-  API_SECRET_CONFIRM?: string;
   API3_MAX_LIMIT?: string;
   AUTH_DEFAULT_ROLES?: string;
   AUTH_FAIL_DELAY?: string;
@@ -429,24 +428,17 @@ function configuredApiSecret(env: AppEnv): string | null {
   return secret !== undefined && secret.length >= MIN_API_SECRET_LENGTH ? secret : null;
 }
 
-const API_SECRET_MISMATCH_MESSAGE = [
-  "Nightscout configuration error: API_SECRET and API_SECRET_CONFIRM do not match.",
-  "Nightscout 配置错误：API_SECRET 与 API_SECRET_CONFIRM 两次输入不一致。",
-  "Open Cloudflare Worker Settings > Variables and Secrets, set both secrets to exactly the same value, then deploy again.",
-  "请在 Cloudflare Worker 的 Settings > Variables and Secrets 中把两个 Secret 改成完全相同的值，然后重新部署。",
-].join("\n");
-
 const API_SECRET_TOO_SHORT_MESSAGE = [
   `Nightscout configuration error: API_SECRET must contain at least ${MIN_API_SECRET_LENGTH} characters.`,
   `Nightscout 配置错误：API_SECRET 至少需要 ${MIN_API_SECRET_LENGTH} 个字符。`,
-  "Update both API_SECRET and API_SECRET_CONFIRM to the same longer value, then deploy again.",
-  "请把 API_SECRET 与 API_SECRET_CONFIRM 改成同一个更长的值，然后重新部署。",
+  "Update API_SECRET to a longer value, then deploy again.",
+  "请把 API_SECRET 改成更长的值，然后重新部署。",
 ].join("\n");
 
 function apiSecretConfigurationError(
   request: Request,
   url: URL,
-  code: "api_secret_confirmation_mismatch" | "api_secret_too_short",
+  code: "api_secret_too_short",
   message: string,
 ): Response {
   if (url.pathname.startsWith("/api/")) {
@@ -465,22 +457,13 @@ function apiSecretConfigurationError(
   return new Response(request.method === "HEAD" ? null : body, { status: 503, headers });
 }
 
-async function validateApiSecretConfirmation(
+function validateApiSecretConfiguration(
   request: Request,
   env: AppEnv,
   url: URL,
-): Promise<Response | null> {
-  const confirmation = env.API_SECRET_CONFIRM;
-  if (confirmation === undefined) return null;
+): Response | null {
   const secret = env.API_SECRET;
-  if (secret === undefined || !(await timingSafeTextEqual(secret, confirmation))) {
-    return apiSecretConfigurationError(
-      request,
-      url,
-      "api_secret_confirmation_mismatch",
-      API_SECRET_MISMATCH_MESSAGE,
-    );
-  }
+  if (secret === undefined) return null;
   if (secret.length < MIN_API_SECRET_LENGTH) {
     return apiSecretConfigurationError(
       request,
@@ -3546,7 +3529,7 @@ export default {
   async fetch(request: Request, env: AppEnv): Promise<Response> {
     const url = new URL(request.url);
     try {
-      const secretConfigurationError = await validateApiSecretConfirmation(request, env, url);
+      const secretConfigurationError = validateApiSecretConfiguration(request, env, url);
       if (secretConfigurationError !== null) return secretConfigurationError;
       if (url.pathname === "/healthz") {
         return json({ status: "ok", upstream: "v15.0.7", storage: "sqlite-durable-object" });

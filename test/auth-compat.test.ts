@@ -70,7 +70,6 @@ function configuredWorkerEnv(
     ASSETS: env.ASSETS,
     ENTRY_STORE: env.ENTRY_STORE,
     API_SECRET: TEST_API_SECRET,
-    API_SECRET_CONFIRM: TEST_API_SECRET,
     AUTH_DEFAULT_ROLES: authDefaultRoles,
     AUTH_FAIL_DELAY: authFailDelay,
   };
@@ -875,7 +874,6 @@ describe("locked Nightscout v15.0.7 authorization compatibility", () => {
     const shortSecretEnv = {
       ...configuredWorkerEnv("denied"),
       API_SECRET: "tooshort",
-      API_SECRET_CONFIRM: "tooshort",
     };
     const shortSecret = await worker.fetch(
       new Request(endpoint("/api/v1/experiments/test", tenantName), {
