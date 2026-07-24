@@ -15,6 +15,8 @@ export interface NightscoutStatusEnvironment {
   LANGUAGE?: string;
   ENABLE?: string;
   DISABLE?: string;
+  SHOW_PLUGINS?: string;
+  SHOW_FORECAST?: string;
   AUTH_FAIL_DELAY?: string;
   ADMIN_NOTIFIES_ENABLED?: string;
   BG_HIGH?: string;
@@ -436,6 +438,8 @@ export function tenantStatusSettings(
     ["DAY_END", environment.DAY_END],
     ["HEARTBEAT", environment.HEARTBEAT],
     ["LANGUAGE", environment.LANGUAGE],
+    ["SHOW_PLUGINS", environment.SHOW_PLUGINS],
+    ["SHOW_FORECAST", environment.SHOW_FORECAST],
     ["ADMIN_NOTIFIES_ENABLED", environment.ADMIN_NOTIFIES_ENABLED],
   ] as const) {
     if (value !== undefined) settingEnvironment[name] = value;

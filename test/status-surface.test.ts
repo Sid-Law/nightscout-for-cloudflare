@@ -263,6 +263,25 @@ describe("tenant status configuration sources", () => {
     )).language).toBe("zh_tw");
   });
 
+  it("passes the official plugin display defaults to browser and socket status", () => {
+    const overrides = tenantStatusSettings({
+      SHOW_PLUGINS: "openaps pump iob cob",
+      SHOW_FORECAST: "openaps",
+    });
+    const expected = {
+      showPlugins: "openaps pump iob cob delta direction upbat",
+      showForecast: "openaps",
+    };
+    expect(settingsOf(nightscoutStatus(new Date(0), "readable", overrides)))
+      .toMatchObject(expected);
+    expect(settingsOf(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      overrides,
+    ))).toMatchObject(expected);
+  });
+
   it("uses the current profile units when DISPLAY_UNITS is absent across v1 and v2", async () => {
     const name = tenant("status-profile-units");
     await saveProfile(name, {
