@@ -1206,7 +1206,7 @@ export class RealtimeSessionService {
    * failing the storage mutation.
    */
   recordApi3StorageMutationInTransaction(event: Api3RealtimeMutationEvent): void {
-    this.recordRootDataUpdateInTransaction();
+    if (event.recordRootUpdate !== false) this.recordRootDataUpdateInTransaction();
     let packet: EngineIoV4Packet;
     try {
       const payload = event.type === "delete"

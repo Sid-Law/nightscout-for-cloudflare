@@ -61,7 +61,7 @@ function endpoint(path: string, tenantName: string): string {
 function configuredWorkerEnv(
   authDefaultRoles = "readable",
   authFailDelay = "0",
-): Env & {
+): Omit<Env, "API_SECRET"> & {
   API_SECRET: string;
   AUTH_DEFAULT_ROLES: string;
   AUTH_FAIL_DELAY: string;

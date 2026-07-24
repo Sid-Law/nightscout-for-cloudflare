@@ -146,11 +146,18 @@ export type Api3RealtimeMutationEvent =
       type: "create" | "update";
       collection: Api3CollectionName;
       document: JsonDocument;
+      /**
+       * Legacy v1/v2 writes already publish one coalesced root update after
+       * their ordered batch. Their API3 `/storage` event must not enqueue a
+       * second root update for every item in that batch.
+       */
+      recordRootUpdate?: boolean;
     }
   | {
       type: "delete";
       collection: Api3CollectionName;
       identifier: string;
+      recordRootUpdate?: boolean;
     };
 
 export interface DocumentDeleteResult {
@@ -181,7 +188,7 @@ export interface Api3MutationOptions {
   ifUnmodifiedSince: number | null;
   /** HTTP API3 enables branch-sensitive validation; compatibility wrappers opt out. */
   validate?: boolean;
-  /** Only the HTTP API3 boundary emits the upstream `/storage` change event. */
+  /** The HTTP API3 boundary opts into its upstream `/storage` change event. */
   emitRealtime?: boolean;
 }
 
@@ -205,17 +212,6 @@ interface DbDocumentV4 {
 interface ClockRow {
   [key: string]: SqlStorageValue;
   last_srv_modified: number;
-}
-
-interface MaxModifiedRow {
-  [key: string]: SqlStorageValue;
-  srv_modified: number | null;
-  created_at_number: number | null;
-}
-
-interface TextModifiedRow {
-  [key: string]: SqlStorageValue;
-  created_at_text: string;
 }
 
 interface CountRow {
@@ -276,6 +272,29 @@ function timestamp(value: JsonValue | undefined): number | null {
   if (typeof value !== "string") return null;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+/**
+ * API3 resolves a virtual modification cursor for documents that were written
+ * through older APIs: entries use `date`, the other generic collections use
+ * `created_at`, and settings has no fallback. Keep this expression shared by
+ * lastModified and history so a client is never told that newer data exists
+ * only to receive an empty history page for the same cursor.
+ */
+function effectiveApi3ModifiedSql(collection: Api3CollectionName): string {
+  if (collection === SETTINGS) return "srv_modified";
+  const path = collection === ENTRIES ? "$.date" : "$.created_at";
+  return `CASE
+    WHEN srv_modified IS NOT NULL THEN srv_modified
+    WHEN json_type(body, '${path}') IN ('integer', 'real')
+      THEN CAST(json_extract(body, '${path}') AS INTEGER)
+    WHEN json_type(body, '${path}') = 'text'
+      AND julianday(json_extract(body, '${path}')) IS NOT NULL
+      THEN CAST(ROUND(
+        (julianday(json_extract(body, '${path}')) - 2440587.5) * 86400000
+      ) AS INTEGER)
+    ELSE NULL
+  END`;
 }
 
 function sortTime(document: JsonDocument, fallback: number): number {
@@ -643,8 +662,9 @@ function materializeApi3WithStorageProjection(
 
   // Locked API3 resolves fallback dates only after the storage query. Entries
   // use date; device status, food, profile and treatments use created_at;
-  // settings has no fallback date. This remains virtual, so legacy rows do not
-  // start matching raw srv* filters/history.
+  // settings has no fallback date. This remains virtual for ordinary raw
+  // srv* filters; lastModified and history deliberately use the same effective
+  // cursor so mixed v1/v2/v3 clients can resume without a synchronization gap.
   if (!document.srvModified) {
     const fallback = collection === SETTINGS
       ? null
@@ -2217,6 +2237,18 @@ export class SqliteDocumentRepository {
     if (existing !== undefined && oldIdentifier !== identifier && oldIdentifier !== null) {
       result.deduplicatedIdentifier = oldIdentifier;
     }
+    if (
+      policy === "legacy"
+      && collection !== "activity"
+      && this.onApi3RealtimeMutation !== undefined
+    ) {
+      this.onApi3RealtimeMutation({
+        type: result.created ? "create" : "update",
+        collection: api3Collection,
+        document: materializeApi3({ id, body }, api3Collection),
+        recordRootUpdate: false,
+      });
+    }
     this.onDataMutation?.(collection, result.document);
     return result;
   }
@@ -2599,8 +2631,8 @@ export class SqliteDocumentRepository {
         clauses.push("json_extract(body, '$.type') = ?");
         bindings.push(type);
       }
-      const rows = this.sql.exec<{ id: string }>(
-        `SELECT id FROM documents WHERE ${clauses.join(" AND ")} LIMIT ?`,
+      const rows = this.sql.exec<{ id: string; identifier: string | null }>(
+        `SELECT id, identifier FROM documents WHERE ${clauses.join(" AND ")} LIMIT ?`,
         ...bindings,
         MAX_SYNCHRONOUS_ENTRY_DELETES + 1,
       ).toArray();
@@ -2626,6 +2658,12 @@ export class SqliteDocumentRepository {
           row.id,
         );
         this.sql.exec("DELETE FROM entries WHERE id = ?", row.id);
+        this.onApi3RealtimeMutation?.({
+          type: "delete",
+          collection: ENTRIES,
+          identifier: row.identifier || row.id,
+          recordRootUpdate: false,
+        });
       }
       if (rows.length > 0) this.onDataMutation?.(ENTRIES);
       return rows.length;
@@ -3247,6 +3285,14 @@ export class SqliteDocumentRepository {
       this.sql.exec("DELETE FROM document_changes WHERE collection = ? AND id = ?", collection, id);
       this.sql.exec("DELETE FROM documents WHERE collection = ? AND id = ?", collection, id);
       if (collection === ENTRIES) this.sql.exec("DELETE FROM entries WHERE id = ?", id);
+      if (collection !== "activity") {
+        this.onApi3RealtimeMutation?.({
+          type: "delete",
+          collection,
+          identifier: existing.identifier || existing.id,
+          recordRootUpdate: false,
+        });
+      }
       this.onDataMutation?.(collection);
       return true;
     });
@@ -3276,63 +3322,32 @@ export class SqliteDocumentRepository {
         TREATMENTS,
         existing.id,
       );
+      this.onApi3RealtimeMutation?.({
+        type: "delete",
+        collection: TREATMENTS,
+        identifier: existing.identifier || existing.id,
+        recordRootUpdate: false,
+      });
       this.onDataMutation?.(TREATMENTS);
       return true;
     });
   }
 
   treatmentsLastModified(collection: Api3CollectionName = TREATMENTS): number | null {
-    if (collection === SETTINGS) {
-      return this.sql.exec<MaxModifiedRow>(
-        `SELECT MAX(CASE
-                      WHEN json_type(body, '$.srvModified') IN ('integer', 'real')
-                        THEN CAST(json_extract(body, '$.srvModified') AS INTEGER)
-                      ELSE NULL
-                    END) AS srv_modified,
-                NULL AS created_at_number
+    const effectiveModified = effectiveApi3ModifiedSql(collection);
+    const row = this.sql.exec<{ effective_modified: number }>(
+      `SELECT effective_modified
+       FROM (
+         SELECT *, ${effectiveModified} AS effective_modified
          FROM documents
-         WHERE collection = ?`,
-        collection,
-      ).one().srv_modified;
-    }
-    const fallbackPath = collection === ENTRIES ? "$.date" : "$.created_at";
-    const row = this.sql.exec<MaxModifiedRow>(
-      `SELECT MAX(CASE
-                    WHEN json_type(body, '$.srvModified') IN ('integer', 'real')
-                      THEN CAST(json_extract(body, '$.srvModified') AS INTEGER)
-                    ELSE NULL
-                  END) AS srv_modified,
-              MAX(CASE
-                    WHEN json_type(body, ?) IN ('integer', 'real')
-                      THEN CAST(json_extract(body, ?) AS INTEGER)
-                    ELSE NULL
-                  END) AS created_at_number
-       FROM documents
-       WHERE collection = ?`,
-      fallbackPath,
-      fallbackPath,
-      collection,
-    ).one();
-    const textCreatedAt = this.sql.exec<TextModifiedRow>(
-      `SELECT json_extract(body, ?) AS created_at_text
-       FROM documents
-       WHERE collection = ?
-         AND json_type(body, ?) = 'text'
-         AND julianday(json_extract(body, ?)) IS NOT NULL
-       ORDER BY julianday(json_extract(body, ?)) DESC
+         WHERE collection = ?
+       )
+       WHERE effective_modified IS NOT NULL
+       ORDER BY effective_modified DESC, id ASC
        LIMIT 1`,
-      fallbackPath,
       collection,
-      fallbackPath,
-      fallbackPath,
-      fallbackPath,
-    ).toArray()[0]?.created_at_text;
-    const candidates = [
-      row.srv_modified,
-      row.created_at_number,
-      textCreatedAt === undefined ? null : timestamp(textCreatedAt),
-    ].filter((value): value is number => value !== null);
-    return candidates.length === 0 ? null : Math.max(...candidates);
+    ).toArray()[0];
+    return row === undefined ? null : Math.trunc(row.effective_modified);
   }
 
   collectionLastModified(collection: Api3CollectionName): number | null {
@@ -3345,12 +3360,16 @@ export class SqliteDocumentRepository {
   ): JsonDocument[] {
     if (!Number.isFinite(query.since)) throw new Error("history timestamp must be finite");
     const comparison = query.inclusive === true ? ">=" : ">";
+    const effectiveModified = effectiveApi3ModifiedSql(collection);
     const rows = this.sql.exec<DbDocumentV4>(
       `SELECT *
-       FROM documents
-       WHERE collection = ?
-         AND srv_modified ${comparison} ?
-       ORDER BY srv_modified ASC, id ASC
+       FROM (
+         SELECT *, ${effectiveModified} AS effective_modified
+         FROM documents
+         WHERE collection = ?
+       )
+       WHERE effective_modified ${comparison} ?
+       ORDER BY effective_modified ASC, id ASC
        LIMIT ?`,
       collection,
       Math.trunc(query.since),

@@ -571,7 +571,12 @@ describe("API v3 Profile vertical slice", () => {
       name,
       jwt,
       "/api/v3/profile/history/946684800001",
-    ))).toEqual([]);
+    ))).toMatchObject([{
+      identifier: legacyId,
+      srvCreated: date,
+      srvModified: date,
+      defaultProfile: "Legacy",
+    }]);
     expect(await result<JsonObject>(await api3Fetch(
       name,
       jwt,

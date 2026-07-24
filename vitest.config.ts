@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 const TEST_API_SECRET = "nscf-test-secret-20260717";
 
 // Seed the disposable local authorization value for the test runtime.
-process.env.API_SECRET ??= TEST_API_SECRET;
+(process.env as Record<string, string | undefined>).API_SECRET ??= TEST_API_SECRET;
 
 export default defineConfig({
   plugins: [

@@ -14,7 +14,6 @@ import {
   boundedTokenCandidates,
   BUILTIN_AUTHORIZATION_ROLES,
   extractRequestCredentials,
-  timingSafeTextEqual,
   type PresentedToken,
   type RequestCredentials,
 } from "./authorization";
@@ -146,7 +145,7 @@ const SEEN_PERMISSIONS = [
   "notifications:loop:push",
 ] as const;
 
-type AppEnv = Env & {
+type AppEnv = Omit<Env, "API_SECRET"> & {
   API_SECRET?: string;
   API3_MAX_LIMIT?: string;
   AUTH_DEFAULT_ROLES?: string;

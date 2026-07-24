@@ -306,6 +306,74 @@ describe("API v3 Entries vertical slice", () => {
     });
   });
 
+  it("keeps AAPS NSClientV3 incremental history moving after legacy CGM uploads", async () => {
+    const name = tenant("api3-entry-aaps-history");
+    const jwt = await issueSubject(name, "AAPS history reader", ["api:entries:read"]);
+    const firstDate = Date.UTC(2026, 6, 25, 0, 4, 21, 123);
+    const secondDate = firstDate + 300_000;
+
+    expect((await v1Post(name, entry("legacy-cgm-first", firstDate, {
+      device: "xDrip-NSFollower",
+      sgv: 151,
+    }))).status).toBe(200);
+
+    const initial = await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries?sort=date&date%24gt=${firstDate - 1}&limit=500`,
+    ));
+    expect(initial).toMatchObject([{
+      identifier: "legacy-cgm-first",
+      date: firstDate,
+      sgv: 151,
+      srvCreated: firstDate,
+      srvModified: firstDate,
+    }]);
+
+    const firstHistoryResponse = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/history/${firstDate - 1}?limit=500`,
+    );
+    expect(firstHistoryResponse.headers.get("ETag")).toBe(`W/"${firstDate}"`);
+    expect(await result<JsonObject[]>(firstHistoryResponse)).toMatchObject([{
+      date: firstDate,
+      sgv: 151,
+      srvCreated: firstDate,
+      srvModified: firstDate,
+    }]);
+    expect(await result<JsonObject[]>(await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/history/${firstDate}?limit=500`,
+    ))).toEqual([]);
+
+    expect((await v1Post(name, entry("legacy-cgm-second", secondDate, {
+      device: "xDrip-NSFollower",
+      sgv: 156,
+    }))).status).toBe(200);
+
+    const lastModified = await result<JsonObject>(await api3Fetch(
+      name,
+      jwt,
+      "/api/v3/lastModified",
+    ));
+    expect(lastModified).toMatchObject({ collections: { entries: secondDate } });
+
+    const catchUpResponse = await api3Fetch(
+      name,
+      jwt,
+      `/api/v3/entries/history/${firstDate}?limit=500`,
+    );
+    expect(catchUpResponse.headers.get("ETag")).toBe(`W/"${secondDate}"`);
+    expect(await result<JsonObject[]>(catchUpResponse)).toMatchObject([{
+      date: secondDate,
+      sgv: 156,
+      srvCreated: secondDate,
+      srvModified: secondDate,
+    }]);
+  });
+
   it("runs search, create, read, PUT, PATCH, history, lastModified, formats, and deletes", async () => {
     const name = tenant("api3-entry-workflow");
     const permissions = [

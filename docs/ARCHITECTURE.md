@@ -465,11 +465,12 @@ semantics remain outside this slice.
 The same transports expose the API v3 `/storage` namespace independently of
 the root namespace. A `subscribe` event resolves only the subject access token,
 checks the locked collection read permission (Settings requires admin), and
-stores granted rooms in SQLite. Successful HTTP API3 creates/upserts/PUTs/
-PATCHes/deletes enqueue the official SIO5 `create`, `update` or `delete` frame
-for each current subscriber inside the document mutation transaction. A failed
-or saturated subscriber is removed without rolling back the document. V1 and
-direct repository mutations do not emit this channel, matching upstream.
+stores granted rooms in SQLite. Successful HTTP API3 and legacy v1/v2
+creates, updates and deletes enqueue the official SIO5 `create`, `update` or
+`delete` frame for each current subscriber. Legacy documents are materialized
+into the API3 shape before publication, allowing NSClientV3 to resume after
+ordinary chronological xDrip or other legacy-uploader writes. A failed or
+saturated subscriber is removed without rolling back the document.
 The transports also expose `/alarm` independently. A truthy native
 `accessToken` branch has priority and accepts a valid subject without requiring
 notification roles, matching the locked listener behavior. The web branch
@@ -927,18 +928,21 @@ DELETE, whose upstream `filterForOne()` still permits that ObjectId fallback.
 
 Legacy and API v3 policies are separate. API v1 mutations store and return the
 locked legacy body (including normalized `created_at`, `utcOffset`, and removed
-`eventTime`), accept UUID/identifier/fallback PUT identity, and do not
-synthesize `srvCreated`/`srvModified`; they also do not hide `isValid:false` or
-enforce API v3 read-only rules. API v3 repository methods
-materialize server metadata, hide tombstones in ordinary reads, enforce the 11
-locked immutable fields and preserve the identifier-only dedupe and tombstone
-resurrection exceptions. API v3 READ and unfiltered SEARCH virtually resolve a
-legacy document's missing `srvCreated`/`srvModified` from `created_at` only
-after SQL filtering, exactly as locked `resolveDates()` does. Such a document
-therefore does not match an srv-field SEARCH and is not in HISTORY. API v3
-materialization also maps a missing/falsy identifier to the server ID and
-removes Mongo `_id`. `/api/v2/ddata` consumes the same legacy treatment shape
-as v1.
+`eventTime`), accept UUID/identifier/fallback PUT identity, and do not persist
+synthetic `srvCreated`/`srvModified`; they also do not hide `isValid:false` or
+enforce API v3 read-only rules. API v3 repository methods materialize server
+metadata, hide tombstones in ordinary reads, enforce the 11 locked immutable
+fields and preserve the identifier-only dedupe and tombstone resurrection
+exceptions. API v3 READ and unfiltered SEARCH virtually resolve a legacy
+document's missing server timestamps after SQL filtering, exactly as locked
+`resolveDates()` does. Raw srv-field SEARCH still requires persisted metadata.
+For incremental HISTORY and `lastModified`, however, the same effective cursor
+is used consistently: Entries fall back to `date`; the other generic
+collections fall back to `created_at`; Settings has no fallback. This prevents
+an AAPS NSClientV3 client from seeing a newer `lastModified` value followed by
+an empty history page. API v3 materialization also maps a missing/falsy
+identifier to the server ID and removes Mongo `_id`. `/api/v2/ddata` consumes
+the same legacy treatment shape as v1.
 
 The locked v1 Treatments POST path now implements the complete two-document
 `preBolus` create behavior. `prepareData` normalizes the primary treatment and
@@ -959,11 +963,12 @@ add a dosing algorithm.
 
 Every create, replace, patch and soft delete writes its current document and a
 `document_changes` snapshot in one synchronous storage transaction. Generic
-API v3 history is a current-collection view: it reads current documents with a
-real persisted numeric `srvModified`, orders them ascending and includes soft
-delete tombstones. It does not use audit timestamps or virtual `created_at`
-fallbacks. Permanent deletion removes the document and its snapshots together,
-matching upstream history behavior for `permanent=true`.
+API v3 history is a current-collection view: it orders current documents by
+their effective modification cursor and includes soft-delete tombstones. API3
+documents use persisted numeric `srvModified`; legacy Entries use `date` and
+other legacy generic documents use `created_at`. It does not use audit
+timestamps. Permanent deletion removes the document and its snapshots
+together, matching upstream history behavior for `permanent=true`.
 This transaction guarantee is per document except for one official logical
 bundle: a Treatments `preBolus` POST commits its primary and carb child
 together. V1 Entries deliberately uses one transaction per ordered batch item,
@@ -1053,9 +1058,10 @@ Other deliberate or unresolved platform differences are explicit:
   `lastModified`, subject to each collection's read permission.
 
 The locked history projection quirk is retained: when `fields` excludes
-`srvModified`, the response body excludes it and Last-Modified/ETag are derived
-from the always-projected collection `created_at` fallback. Legacy documents
-can be read with virtual srv fields but do not match raw srv filters or HISTORY.
+`srvModified`, the response body excludes it while Last-Modified/ETag still
+come from the effective collection cursor. Legacy documents do not match raw
+srv filters, but they do participate in HISTORY through the same virtual cursor
+used by `lastModified`.
 All 16 locked upstream `api3.*` test files are adapted by named
 Workers-runtime contracts. Besides the prior basic, generic-workflow, read,
 renderer, search and security set, the suite now covers create, update, patch,
@@ -1166,9 +1172,10 @@ The current server boundary is explicit:
   required `_id` and bounded payloads in upstream order, then return the exact
   ACK shapes before any resulting root `dataUpdate`. Server-originated
   implemented v1/v2/API3 changes use the same persisted delta baseline;
-- HTTP API3 create/upsert/PUT/PATCH/soft-delete/permanent-delete emits the
-  locked `/storage` payload only after a successful mutation decision; v1 and
-  direct database changes do not broadcast. `document_changes` is not consumed.
+- HTTP API3 and legacy v1/v2 create/update/delete operations emit the locked
+  API3-shaped `/storage` payload only after a successful mutation decision.
+  This includes legacy CGM uploads needed by AAPS NSClientV3 incremental
+  recovery. `document_changes` is not consumed.
 
 Every realtime, authorization-delay or background-task state transition
 recomputes the single persisted alarm from SQL.

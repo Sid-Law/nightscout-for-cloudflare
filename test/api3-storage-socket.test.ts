@@ -328,7 +328,7 @@ describe("API3 /storage Socket.IO namespace", () => {
     });
   });
 
-  it("persists subscriptions across eviction and emits only API3 mutation events", async () => {
+  it("persists subscriptions across eviction and emits API3-shaped events for every API", async () => {
     const name = tenant("storage-events");
     const beta = tenant("storage-events-beta");
     const subject = await issueSubject(name, [], [
@@ -496,23 +496,105 @@ describe("API3 /storage Socket.IO namespace", () => {
         body: JSON.stringify({
           eventType: "Note",
           created_at: "2026-07-19T06:30:00.000Z",
-          notes: "v1 does not broadcast on API3 storage socket",
+          notes: "v1 broadcasts an API3-shaped storage event",
         }),
       },
     );
     expect(legacy.status).toBe(200);
-    expect(await runInDurableObject(store(name), async (_instance, state) =>
-      state.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM realtime_outbound_packets WHERE sid = ?",
-        socket.sid,
-      ).one().count
-    )).toBe(0);
+    const [legacyStored] = await legacy.json<JsonObject[]>();
+    const legacyIdentifier = String(legacyStored?._id);
+    const [legacyCreated] = await socket.poll();
+    expect(legacyCreated).toMatchObject({
+      type: "event",
+      namespace: "/storage",
+      data: ["create", {
+        colName: "treatments",
+        doc: {
+          identifier: legacyIdentifier,
+          notes: "v1 broadcasts an API3-shaped storage event",
+          srvCreated: Date.parse("2026-07-19T06:30:00.000Z"),
+          srvModified: Date.parse("2026-07-19T06:30:00.000Z"),
+        },
+      }],
+    });
+    const legacyDelete = await SELF.fetch(
+      `https://example.test/api/v1/treatments/${legacyIdentifier}?tenant=${name}`,
+      {
+        method: "DELETE",
+        headers: { "api-secret": await secretDigest() },
+      },
+    );
+    expect(legacyDelete.status).toBe(200);
+    expect((await socket.poll())[0]).toEqual({
+      type: "event",
+      namespace: "/storage",
+      data: ["delete", {
+        colName: "treatments",
+        identifier: legacyIdentifier,
+      }],
+    });
     expect(await runInDurableObject(store(beta), async (_instance, state) =>
       state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM realtime_outbound_packets WHERE sid = ?",
         betaSocket.sid,
       ).one().count
     )).toBe(0);
+  });
+
+  it("publishes an API3-shaped entries event for an xDrip-style v1 CGM upload", async () => {
+    const name = tenant("storage-legacy-entry");
+    const subject = await issueSubject(name, [], ["api:entries:read"]);
+    const socket = await openStoragePolling(name);
+    expect(await subscribe(socket, 9, {
+      accessToken: subject.accessToken,
+      collections: ["entries"],
+    })).toMatchObject({ type: "ack", data: [{ success: true }] });
+
+    const identifier = `xdrip-${crypto.randomUUID()}`;
+    const date = Date.UTC(2026, 6, 25, 4, 20, 0);
+    const uploaded = await SELF.fetch(
+      `https://example.test/api/v1/entries?tenant=${name}`,
+      {
+        method: "POST",
+        headers: {
+          "api-secret": await secretDigest(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          identifier,
+          date,
+          dateString: new Date(date).toISOString(),
+          device: "xDrip-NSFollower",
+          type: "sgv",
+          sgv: 157,
+          direction: "Flat",
+        }),
+      },
+    );
+    expect(uploaded.status).toBe(200);
+
+    const [created] = await socket.poll();
+    expect(created).toMatchObject({
+      type: "event",
+      namespace: "/storage",
+      data: ["create", {
+        colName: "entries",
+        doc: {
+          identifier,
+          date,
+          device: "xDrip-NSFollower",
+          type: "sgv",
+          sgv: 157,
+          direction: "Flat",
+          srvCreated: date,
+          srvModified: date,
+        },
+      }],
+    });
+    if (created?.type !== "event") throw new Error("expected a storage event");
+    expect(created.data[1]).toEqual(expect.objectContaining({
+      doc: expect.not.objectContaining({ _id: expect.anything() }),
+    }));
   });
 
   it("delivers a persisted API3 event to a hibernatable WebSocket after eviction", async () => {

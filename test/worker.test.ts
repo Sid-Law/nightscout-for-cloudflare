@@ -509,7 +509,7 @@ describe("Nightscout compatibility API", () => {
     ).json()).toEqual([]);
   });
 
-  it("keeps late v1 uploads virtual and only syncs persisted API3 srvModified values", async () => {
+  it("keeps late v1 uploads virtual while syncing their API3 fallback timestamps", async () => {
     const name = tenant("legacy-api3-time-boundary");
     const createdAt = "2001-02-03T04:05:06.000Z";
     const createdAtMillis = Date.parse(createdAt);
@@ -556,7 +556,13 @@ describe("Nightscout compatibility API", () => {
       }))) as unknown[];
       expect(recent, field).toEqual([]);
     }
-    expect(JSON.parse(await stub.treatmentHistory(JSON.stringify({ since: 0 })))).toEqual([]);
+    expect(JSON.parse(
+      await stub.treatmentHistory(JSON.stringify({ since: 0 })),
+    )).toMatchObject([{
+      identifier: legacyId,
+      srvCreated: createdAtMillis,
+      srvModified: createdAtMillis,
+    }]);
     expect(await stub.treatmentsLastModified()).toBe(createdAtMillis);
 
     await runInDurableObject(stub, async (_instance: EntryStore, state) => {
@@ -606,13 +612,16 @@ describe("Nightscout compatibility API", () => {
     const history = JSON.parse(
       await resumed.treatmentHistory(JSON.stringify({ since: 0 })),
     ) as Array<Record<string, unknown>>;
-    expect(history).toHaveLength(1);
+    expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
+      identifier: legacyId,
+      srvModified: createdAtMillis,
+    });
+    expect(history[1]).toMatchObject({
       identifier: "api3-syncable",
       srvModified: patched.srvModified,
     });
-    expect(history[0]).not.toHaveProperty("_id");
-    expect(history.some((document) => document.identifier === legacyId)).toBe(false);
+    expect(history[1]).not.toHaveProperty("_id");
 
     const legacyOverwrite = await writeApi(name, "POST", "/api/v1/treatments/", {
       identifier: "api3-syncable",
@@ -624,7 +633,18 @@ describe("Nightscout compatibility API", () => {
     const [overwritten] = await legacyOverwrite.json<Array<Record<string, unknown>>>();
     expect(overwritten).not.toHaveProperty("srvCreated");
     expect(overwritten).not.toHaveProperty("srvModified");
-    expect(JSON.parse(await resumed.treatmentHistory(JSON.stringify({ since: 0 })))).toEqual([]);
+    expect(JSON.parse(
+      await resumed.treatmentHistory(JSON.stringify({ since: 0 })),
+    )).toMatchObject([
+      {
+        identifier: legacyId,
+        srvModified: createdAtMillis,
+      },
+      {
+        identifier: "api3-syncable",
+        srvModified: Date.parse(api3CreatedAt),
+      },
+    ]);
   });
 
   it("supports v1 UUID retransmission plus identifier and fallback PUT identities", async () => {
