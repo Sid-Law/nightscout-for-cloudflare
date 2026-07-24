@@ -1672,7 +1672,7 @@ function canonicalEntriesDateStringIndexIsCompatible(sql: SqlStorage): boolean {
  * Install the fresh Entries shadow used by v1 writes and realtime reads.
  *
  * This project is still pre-1.0 and its only incompatible `entries` schemas
- * held simulated data. The public deployment was verified empty before this
+ * held test data. The public deployment was verified empty before this
  * contract was selected. Reset only that internal shadow when it is
  * incompatible; canonical documents and every other tenant collection stay
  * untouched. From this schema onward v1/API3 writes maintain canonical state

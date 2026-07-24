@@ -3481,58 +3481,6 @@ async function handleApi(request: Request, env: AppEnv, url: URL): Promise<Respo
   );
 }
 
-async function handleSimulatedCgm(
-  request: Request,
-  env: AppEnv,
-  url: URL,
-): Promise<Response> {
-  if (request.method === "OPTIONS") {
-    const headers = new Headers(corsHeaders());
-    headers.set("Cache-Control", "no-store");
-    headers.set("Content-Type", "text/plain; charset=utf-8");
-    return new Response("OK", { status: 200, headers });
-  }
-  if (env.ENTRY_STORE === undefined) {
-    throw new ApiError(
-      503,
-      "entry_store_not_configured",
-      "ENTRY_STORE must be configured before the simulated CGM can be used",
-    );
-  }
-  const store = env.ENTRY_STORE.getByName(resolveTenant(request, url));
-  if (request.method === "GET" || request.method === "HEAD") {
-    await requirePermission(request, env, url, "api:entries:read");
-    return withoutBodyForHead(
-      request,
-      json(JSON.parse(await store.simulatedCgmStatusJson()) as unknown),
-    );
-  }
-  if (request.method !== "POST") {
-    throw new ApiError(405, "method_not_allowed", "simulated CGM accepts GET and POST");
-  }
-
-  const body = await readBoundedBody(request);
-  if (
-    typeof body !== "object"
-    || body === null
-    || Array.isArray(body)
-    || typeof (body as { enabled?: unknown }).enabled !== "boolean"
-  ) {
-    throw new ApiError(400, "invalid_simulator_config", "enabled must be a boolean");
-  }
-  const enabled = (body as { enabled: boolean }).enabled;
-  await requirePermission(
-    request,
-    env,
-    url,
-    enabled ? "api:entries:create" : "api:entries:delete",
-    body,
-  );
-  return json(JSON.parse(
-    await store.configureSimulatedCgm(enabled, Date.now()),
-  ) as unknown);
-}
-
 async function handlePebble(
   request: Request,
   env: AppEnv,
@@ -3602,9 +3550,6 @@ export default {
       if (secretConfigurationError !== null) return secretConfigurationError;
       if (url.pathname === "/healthz") {
         return json({ status: "ok", upstream: "v15.0.7", storage: "sqlite-durable-object" });
-      }
-      if (url.pathname === "/_nscf/simulated-cgm") {
-        return await handleSimulatedCgm(request, env, url);
       }
       if (url.pathname === "/pebble" || url.pathname === "/pebble/") {
         return await handlePebble(request, env, url);

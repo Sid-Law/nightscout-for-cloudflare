@@ -15,9 +15,8 @@ Upstream project: https://github.com/nightscout/cgm-remote-monitor
 Upstream copyright notice:
 https://github.com/nightscout/cgm-remote-monitor/blob/master/COPYRIGHT
 
-This phase-one prototype uses simulated glucose values only. It is not a
-medical device and must not be used for diagnosis, dosing, insulin advice, or
-any other medical decision.
+NSCF is not a medical device and must not be used for diagnosis, dosing,
+insulin advice, or any other medical decision.
 
 The official Nightscout v15.0.7 source snapshot is vendored under
 `vendor/nightscout` and retains its upstream COPYRIGHT and LICENSE. Its UI,

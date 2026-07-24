@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "9a35a1a89d38491de451a3bec2b629691fc1f3aa71bed9e4cf9b5ae49c95fcf7",
+  "inputs_sha256": "32ca12ff8106dcdebd00f60aa726583460ad39a75689ae66f28f31b06f85dbe1",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -7885,7 +7885,7 @@
     {
       "file": "vendor/nightscout/tests/bridge.test.js",
       "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope permits only simulated data.",
+      "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope uses test fixtures only.",
       "workstream": "7-background-and-integrations",
       "depends_on": [
         "1-storage-foundation",

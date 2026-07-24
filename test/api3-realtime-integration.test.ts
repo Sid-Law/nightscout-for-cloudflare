@@ -169,17 +169,29 @@ describe("API3 and realtime integrated tenant contract", () => {
     ]);
   });
 
-  it("pushes the opt-in test CGM seed through the official root dataUpdate contract", async () => {
-    const tenantName = tenant("simulated-cgm-root-delta");
+  it("pushes a test-injected v1 SGV batch through the official root dataUpdate contract", async () => {
+    const tenantName = tenant("v1-batch-root-delta");
     const realtime = await openAuthorizedPollingSession(tenantName);
     expect(snapshotFrom(realtime.packets).sgvs).toEqual([]);
 
-    const configured = await adminWrite(
+    const newest = Date.now() - 1_000;
+    const batch = Array.from({ length: 12 }, (_value, index) => {
+      const date = newest - (11 - index) * 5 * 60_000;
+      return {
+        type: "sgv",
+        sgv: 110 + index,
+        date,
+        dateString: new Date(date).toISOString(),
+        direction: "Flat",
+        device: "test://v1-batch",
+      };
+    });
+    const created = await adminWrite(
       tenantName,
-      "/_nscf/simulated-cgm",
-      { enabled: true },
+      "/api/v1/entries",
+      batch,
     );
-    expect(configured.status).toBe(200);
+    expect(created.status).toBe(200);
 
     const packets = await realtime.poll();
     const update = packets.find((packet) =>
@@ -193,7 +205,7 @@ describe("API3 and realtime integrated tenant contract", () => {
     ).data[1] as JsonObject;
     expect(delta.delta).toBe(true);
     expect(delta.sgvs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ device: "simulator://nscf-test" }),
+      expect.objectContaining({ device: "test://v1-batch" }),
     ]));
     expect(delta.sgvs).toHaveLength(12);
   });

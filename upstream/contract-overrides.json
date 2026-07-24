@@ -760,7 +760,7 @@
     },
     "vendor/nightscout/tests/bridge.test.js": {
       "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope permits only simulated data."
+      "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope uses test fixtures only."
     },
     "vendor/nightscout/tests/mmconnect.test.js": {
       "status": "excluded-fixed-scope",

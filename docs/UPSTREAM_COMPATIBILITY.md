@@ -153,7 +153,7 @@ out-of-scope Cloudflare product binding.
 
 The manifest is 16 `pass`, 86 `adapted`, seven `unresolved` and two fixed-scope
 exclusions. Version 81 passed remote API/Engine.IO/Pebble, provider-callback
-and real-browser simulator gates; the prior version 78
+and real-browser test-data gates; the prior version 78
 passed the official Socket.IO-client/EIO4 and a
 clean-profile real-browser gate; earlier page/Settings/AR2 gates remain recorded
 as historical evidence in `DEPLOYMENT.md`.
@@ -485,25 +485,21 @@ and missing-token API3 Entries returned 401. Isolated tenant
 `indexSize:0`, a 953.67 MiB maximum and `0%`/`current` state. This run sent no
 API secret value and performed no protected mutation. A name-only encrypted-
 secret listing was empty and protected probes fail closed. A separate
-credentialed 25-entry simulator batch proved v1 write/read and was later
+credentialed 25-entry test batch proved v1 write/read and was later
 deleted by exact device/type matching. A second isolated remote contract
-created one simulated SGV, sent a genuinely bodyless DELETE through the public
+created one test SGV, sent a genuinely bodyless DELETE through the public
 edge, observed HTTP 200/`deletedCount:1` and confirmed zero remaining rows.
-The protected platform switch then enabled the durable lab feed
-only for public tenant `demo`; alarms appended the `01:40` and `01:45` readings
-and the already-open official page advanced without a manual reload.
-Ordinary/fresh tenants remain disabled.
 Version 80 then used the current deployment for authenticated official-page
 acceptance: Profile rename/save/reload/restore, Food create/read/delete, Admin
 role create/delete and Reports generation all passed; all temporary values were
-restored or removed. The continuing simulator homepage displayed `129 mg/dL`,
+restored or removed. The homepage with test data displayed `129 mg/dL`,
 `+3` and `FortyFiveUp`. No real health data or closed-loop client was used.
 Version 93 repeated Profile rename/save/reload/restore against the current
 candidate and observed the successful protected mutation in an already-open
 official homepage as `dataUpdate` and `retroUpdate`. The restored Profile then
 reloaded as `Profile11111111`, timezone `Asia/Shanghai`, with `Values loaded.`
 and `Admin authorized`. The post-deploy homepage also displayed current
-simulated glucose and its chart.
+test glucose and its chart.
 Release 95 then reloaded the unchanged official homepage against the Activity
 ddata deployment: it displayed `117 mg/dL`, the trend and two-SVG/eleven-path
 chart with no dialog or console error. Admin Tools loaded eight visible action
@@ -511,13 +507,13 @@ buttons and remained `Admin authorized`; its two known upstream secondary-page
 `#chartContainer` warnings were not runtime errors. No real health data or
 closed-loop instruction was used.
 Release 96 reloaded the unchanged official homepage after the full-ddata split:
-it displayed `129 mg/dL`, two-minute-old simulated data, two SVGs, 129 circles
+it displayed `129 mg/dL`, two-minute-old test data, two SVGs, 129 circles
 and a populated chart without console errors. Admin Tools loaded zero subjects,
 all seven system roles, eight action buttons, three tables and reported `Admin
 authorized`. No real health data or closed-loop instruction was used.
 Release 97 reloaded the unchanged official homepage after the legacy utility
 storage increment: it displayed `116 mg/dL`, a flat arrow, one-minute-old
-simulated data and two SVG charts without a dialog or console error. Admin
+test data and two SVG charts without a dialog or console error. Admin
 Tools again loaded zero subjects, all seven roles, eight buttons and three
 tables and reported `Admin authorized`; its two known upstream chartless-page
 warnings remained non-errors. No real health data or closed-loop instruction
@@ -529,16 +525,16 @@ and Treatments plugins still read the legacy `n` field. NSCF now adds `n`/`ok`
 only for same-origin `/admin/` requests; direct API callers retain the exact
 modern result. The real page rendered `0 records deleted` for both buttons and
 remained authorized. The homepage displayed `126 mg/dL`, `+4`, a rising arrow,
-one-minute-old simulated data and two SVG charts. After one non-repeating EIO3
+one-minute-old test data and two SVG charts. After one non-repeating EIO3
 POST failure at cutover, an isolated handshake/root/ping replay passed and the
 full 177-assertion smoke passed on `public-smoke-1784722092670`. No real health
 data or closed-loop instruction was used.
 Version 81 retained those assets and workflows, rejected unknown provider
-receipts on both v1 and v2 with the locked 500 body, and kept the public
-simulator current. The real homepage displayed `121 mg/dL`, `+4`, four minutes
+receipts on both v1 and v2 with the locked 500 body. The real homepage
+displayed `121 mg/dL`, `+4`, four minutes
 ago with no visible alarm dialog, console warning or console error.
 Version 82's credential-free smoke passed 77 assertions on isolated tenant
-`public-smoke-1784690470717`. The public simulator returned current five-minute
+`public-smoke-1784690470717`. The test dataset contained current five-minute
 rows and the unchanged homepage refreshed to `127 mg/dL`, four minutes old,
 without a dialog or console warning/error. The active-Profile write/push path
 is proven by the real SQLite DO eviction test, not claimed as a protected
@@ -547,8 +543,8 @@ Version 84's 99-assertion smoke passed on isolated tenant
 `public-smoke-1784694550269`. It confirmed EIO3's upstream-exact two-stage
 open/root-CONNECT order and client-ping/server-pong while retaining EIO4. The
 unchanged homepage displayed `127 mg/dL`, `-3`, one minute old with the chart
-present, a connected live client and no console warning/error. The persisted
-five-minute simulator remains enabled. Polling-to-WebSocket upgrade was still a
+present, a connected live client and no console warning/error.
+Polling-to-WebSocket upgrade was still a
 gap in that version.
 Version 85's 106-assertion smoke passed on isolated tenant
 `public-smoke-1784696258002`. It completed the standard EIO4 WSS upgrade and
@@ -564,7 +560,7 @@ and Treatments, verifies the official 95-mg/dL surrounding-SGV marker and
 profile-derived mmol field in the initial root event, evicts the DO, creates a
 second Treatment and observes the curved marker in its pushed delta. The remote
 smoke remained credential-free and therefore did not fabricate a protected
-write claim. A fresh official-page session displayed current simulated glucose,
+write claim. A fresh official-page session displayed current test glucose,
 two SVGs and no dialog; root and alarm events were received with zero console
 warning or error.
 Version 87's 120-assertion smoke passed on isolated tenant
@@ -574,8 +570,7 @@ quickpicks, prove exact hidden-string filtering, numeric/string position order,
 query ignoring and raw non-Treatment shapes across v1/v2. A fresh official
 Food Editor session reached `Database loaded`, rendered the full record and
 Quick-picks controls and logged no warning/error. The homepage displayed
-`118 mg/dL`, `-3`, four minutes old with no dialog or console issue; the
-five-minute simulator remained enabled.
+`118 mg/dL`, `-3`, four minutes old with no dialog or console issue.
 Version 88's 121-assertion smoke passed on isolated tenant
 `public-smoke-1784700236170` and added the official default-enable assertion for
 Error Codes while retaining EIO3 polling and real EIO4 WSS upgrade. Ten pure
@@ -584,7 +579,6 @@ mapping, exact metadata, information/urgent delivery, future activation and
 ten-minute clear without injecting an error reading into the public tenant. A
 fresh official page displayed `122 mg/dL`, `+4`, an upward trend and the chart,
 Settings/About reported 15.0.7, and the page logged no dialog, warning or error.
-The five-minute simulator remained enabled and current.
 Version 89's 125-assertion smoke passed on isolated tenant
 `public-smoke-1784702685161` and added explicit evidence that xDrip-js remains
 opt-in and does not fabricate `sensorState` on an empty/default tenant. Eleven
@@ -593,8 +587,6 @@ property fields, notification metadata, state/battery precedence, future and
 24-hour boundaries, minute-31 repeat, eviction persistence and All Clear. A
 fresh official page displayed `114 mg/dL`, `+2` and its chart; Settings/About
 reported 15.0.7 and the captured browser log contained zero warnings/errors.
-The simulator remained enabled and wrote the current row at
-`2026-07-22T06:45:00.168Z`.
 Version 90's 129-assertion smoke passed on isolated tenant
 `public-smoke-1784704705985` and added default Runtime State, default-disabled
 BAGE and Summary-omission evidence while retaining EIO3 polling and real EIO4
@@ -609,7 +601,7 @@ empty-property output and default opt-in alert evidence while retaining EIO3
 polling and real EIO4 WSS upgrade. Source/HTTP/property cases and one real
 SQLite DO scheduler case cover its recent-device minimum, multi-device/voltage
 message, future activation, heartbeat, exact expiry and All Clear. A fresh
-official page displayed `113 mg/dL`, `-1`, one-minute-old simulated data and
+official page displayed `113 mg/dL`, `-1`, one-minute-old test data and
 the chart; Settings/About reported 15.0.7 and the captured browser log contained
 zero warnings/errors.
 Version 92's 139-assertion smoke passed on isolated tenant
@@ -620,15 +612,13 @@ JWT, APNs request headers/body, bounded provider failures, form parsing and
 route authorization. The lab has no Apple credentials, so this is not a live
 APNs or remote-bolus claim. EIO3 polling and real EIO4 WSS upgrade remained
 green. A fresh official page displayed `117 mg/dL`, `+3`, one-minute-old
-simulated data and its chart; the official Admin page loaded seven built-in
+test data and its chart; the official Admin page loaded seven built-in
 roles, zero subjects, all cleanup groups and `Admin authorized`.
 Version 83's 77-assertion smoke passed on isolated tenant
 `public-smoke-1784692181407`. Public defaults correctly left BWP absent from
 Properties and Pebble and `null` in Summary; the opt-in path is covered by a
 real SQLite Durable Object alarm test. The unchanged homepage displayed fresh
-`113 mg/dL`, `-1`, `Flat` data without a dialog or console warning/error. The
-persisted simulator then appended `115 mg/dL` at
-`2026-07-22T03:55:00.124Z` and advanced its next five-minute deadline.
+`113 mg/dL`, `-1`, `Flat` test data without a dialog or console warning/error.
 
 The deployed platform configuration preserves any dashboard-managed text
 variables on future Wrangler deploys. Cloudflare documents that encrypted
@@ -760,7 +750,7 @@ missing-token API3 Entries returned its expected 401. The 77-assertion run used
 fresh tenant `public-smoke-1784686572692` and observed 270,336 SQLite bytes. It
 sent no API secret and performed no protected mutation. A name-only encrypted-
 secret listing was empty. With the construction credential configured,
-anonymous mutation now fails closed with 401; a separate 25-entry simulator
+anonymous mutation now fails closed with 401; a separate 25-entry test
 batch was authenticated and read back successfully.
 Four fresh-tenant Admin-notification probes exposed only the public count and
 no notification body.
@@ -795,17 +785,14 @@ to `/alarm` and reported zero console errors or warnings. Version 74 had
 rendered the connected official homepage and opened Settings with Admin
 authorized/About 15.0.7. The
 unchanged Save workflow completed; at the user's request, the two client
-stale-data alarm checkboxes were saved off so an intentionally idle simulator
-does not keep sounding. The only console rejections were browser autoplay-policy
+stale-data alarm checkboxes were saved off while the test dataset was
+intentionally idle. The only console rejections were browser autoplay-policy
 errors before user interaction, not application or API failures. The version-73
 pass retains exactly 26 AR2 forecast dots, and in version 72 the live database-size pill showed
-`0%`. After 25 simulated SGV
+`0%`. After 25 test SGV
 rows were written and read back, it displayed `101 mg/dL`, an upward arrow,
-`+3` and a populated two-hour chart. Those 25 exact simulator rows were later
-deleted so the intentionally idle test stream no longer triggers stale alarms;
-Profile state remains. Version 79 subsequently enabled the durable simulator
-only for `demo`; the official page rendered its one-hour seed through the same
-Entries and root-update code path. The official Admin-notification link
+`+3` and a populated two-hour chart. Those 25 exact test rows were later
+deleted; Profile state remains. The official Admin-notification link
 remained present. Settings exposed the official language selector and About
 reported 15.0.7; Admin Tools and `clock-color` loaded without console errors.
 Four fresh-tenant API

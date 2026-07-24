@@ -31,7 +31,7 @@ Worker, 250 Static Assets and one SQLite Durable Object, producing version
 <https://nscf-phase1.nscf-sid.workers.dev/>. Startup was 29 ms. The fresh
 instance passed the 213-assertion remote protocol smoke, protected Profile
 create/save/current, the official first-run Profile Save and remembered Admin
-workflow, then rendered current simulated glucose and two SVG charts. This is
+workflow, then rendered injected test glucose and two SVG charts. This is
 fresh-platform evidence, not a claim that Cloudflare's public repository
 button has run while the source remains private.
 
@@ -97,16 +97,6 @@ one persisted trailing deadline to one second after the last event, bounded by
 five seconds from burst start. DO request serialization prevents overlapping
 evaluation, and the existing alarm multiplexer survives isolate eviction.
 Root/API realtime publication remains immediate and is not coalesced.
-Schema v17 adds one optional `simulated_cgm_state` row per tenant. It is absent
-from official API contracts and disabled by default. The protected platform
-route can enable a lab tenant, seed twelve ordinary v1 Entries and persist its
-next five-minute deadline. That deadline participates in the same minimum-
-deadline alarm calculation as realtime, auth cleanup, background tasks and
-debounce. A committed turn advances the state before rescheduling; a late wake
-writes one current SGV instead of replaying an unbounded backlog. The small
-test-only crash gap between the Entry commit and schedule advance can produce
-one extra sample and remains an explicit non-critical boundary.
-The generated Entries still drive the normal root delta pipeline.
 Schema v18 replaces Pushnotify's process-local NodeCache maps with bounded
 `push_recent`, `push_receipts` and `push_maker_state` SQLite tables. The
 request-local Maker/Pushover/Pushnotify adapters preserve the locked message,
@@ -1226,7 +1216,7 @@ state, absence of property-only timeago and an EIO4 polling open packet;
 API3 Entries without a token returned the
 expected 401. Anonymous mutation and experiment probes fail closed with the
 configured construction credential. A separate credentialed 25-entry
-`simulator://nscf-demo` batch wrote and read back successfully, after which the
+test Entry batch wrote and read back successfully, after which the
 official homepage rendered `101 mg/dL`, its upward trend and a populated chart.
 The version-73 browser acceptance additionally rendered 26 AR2 forecast dots.
 Version 74 reloaded the connected official homepage, opened the complete
@@ -1315,7 +1305,7 @@ types 5.20260722.1 are pinned. This makes the repository suitable for a Deploy
 to Cloudflare button. A fresh-account deployment from the private source state
 is now accepted; only making the GitHub repository public and exercising the
 public click-through clone path remain external release prerequisites. The post-deploy browser loaded current
-simulated glucose and the authorized Profile Editor; an authenticated Profile
+test glucose and the authorized Profile Editor; an authenticated Profile
 rename/save was observed as `dataUpdate`/`retroUpdate` in the already-open
 official homepage before being restored.
 
@@ -1327,7 +1317,7 @@ metadata. Nine Workers tests cover ES256 signing, all event/error branches,
 bounded transport failures and HTTP permission/form behavior. The public lab
 keeps the credentials absent; its 139-assertion smoke proves route admission
 and v2-only mounting without sending a real instruction. The unchanged
-homepage displayed current `117 mg/dL` simulated data, and the official Admin
+homepage displayed current `117 mg/dL` test data, and the official Admin
 page remained authorized and populated against the same active version.
 
 Version 91 completes the official server `checkNotifications` registry.
@@ -1340,7 +1330,7 @@ All Clear and live `/alarm` publication without adding another Cloudflare
 alarm. Alerts remain opt-in while the request-time property remains enabled by
 the official default. Four new Workers tests raise the suite to 773; the
 134-assertion remote gate and browser confirmed default configuration, empty
-property output, current `113 mg/dL` simulated data, About 15.0.7 and zero
+property output, current `113 mg/dL` test data, About 15.0.7 and zero
 warnings/errors.
 
 Version 90 adds the final two request-time producers missing from the official
@@ -1371,7 +1361,7 @@ changes remain immediate. Battery warnings deliberately repeat at the normal
 heartbeat, matching upstream reevaluation. Eleven pure/HTTP/property tests and
 three real DO cases cover projection, persistence, future activation, exact
 24-hour expiry and clear. The 125-assertion remote and real-browser gate
-confirmed the default-disabled property, current `114 mg/dL` simulator, About
+confirmed the default-disabled property, current `114 mg/dL` test reading, About
 15.0.7 and zero console warnings/errors.
 
 Version 88 adds `src/plugins/errorcodes.ts` to that same request-local and
@@ -1380,8 +1370,7 @@ default enable flag without inserting an artificial CGM error into the public
 tenant. Ten pure contracts and three real SQLite DO scheduler contracts prove
 the complete mapping, information/urgent delivery, exact future activation and
 ten-minute clear. A fresh browser rendered `122 mg/dL`, `+4`, the official
-chart and About 15.0.7 with no dialog or console warning/error; the durable
-simulator remained enabled with its next five-minute deadline.
+chart and About 15.0.7 with no dialog or console warning/error.
 
 The current API3 `/storage` adapter persists each accepted subscriber frame in
 the same SQLite transaction as its mutation, then wakes polling waiters or

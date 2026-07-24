@@ -9,7 +9,7 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
 - Statuses: pass: 16, adapted: 86, excluded-fixed-scope: 2, unresolved: 7
-- Input fingerprint: `9a35a1a89d38491de451a3bec2b629691fc1f3aa71bed9e4cf9b5ae49c95fcf7`
+- Input fingerprint: `32ca12ff8106dcdebd00f60aa726583460ad39a75689ae66f28f31b06f85dbe1`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -170,7 +170,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | --- | --- | ---: | --- |
 | `vendor/nightscout/tests/00_production-safety.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/bootevent-debounce.test.js` | adapted | 0 | All nine locked leading-edge, tick, 20/50-event coalescing, no-overlap, pending-final, trailing, spaced-event and five-second maxWait cases are represented by test/bootevent-debounce-contract.test.ts. Schema v16 persists the one-second/five-second burst window in SQLite, promotes exactly one trailing plugin-notification task through the DO alarm, and relies on Durable Object input serialization instead of process-local running/pending flags. The integration case proves a real 20-Profile batch evaluates the leading and final states while root data publication remains immediate; existing scheduler, concurrent upload and realtime-root suites remain green. |
-| `vendor/nightscout/tests/bridge.test.js` | excluded-fixed-scope | 0 | Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope permits only simulated data. |
+| `vendor/nightscout/tests/bridge.test.js` | excluded-fixed-scope | 0 | Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope uses test fixtures only. |
 | `vendor/nightscout/tests/flakiness-control.test.js` | unresolved | 0 | No whole-file compatibility claim yet: this upstream test file has not run unchanged against NSCF and has not been fully represented by passing Workers-runtime adapter tests. |
 | `vendor/nightscout/tests/maker.test.js` | adapted | 0 | All six locked query, three-event dispatch, missing-name, missing-level, 30-minute All Clear dedupe and multi-announcement-key cases are represented by test/push-provider-contract.test.ts. src/plugins/maker.ts preserves the official value1/value2/value3 query encoding and ns-event/ns-<level>/ns-<level>-<name>/ns-allclear names with a request-local clock and injected transport. Maker All Clear state is persisted per tenant in SQLite and survives Durable Object eviction. External IFTTT delivery remains disabled until the destination is explicitly authorized and a persisted outbox is connected; no Node request/async/global state is used. |
 | `vendor/nightscout/tests/mmconnect.test.js` | excluded-fixed-scope | 0 | Fixed-scope exclusion: MiniMed CareLink ingestion is an external real-CGM bridge and is disabled in the simulated-data port. |
