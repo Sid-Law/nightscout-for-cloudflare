@@ -454,9 +454,9 @@ without a dialog or console error; Admin loaded seven roles as authorized.
 The clean-source build installs the locked Nightscout build dependencies before
 running webpack and UI generation. Its accepted run installed 1,057 upstream
 packages and regenerated all 250 assets. A new configuration audit fixes the
-exact `build`/`deploy` scripts and requires `.dev.vars.example` to contain
-one `API_SECRET` value. A request-boundary check rejects a too-short value
-before Nightscout starts. Private release acceptance 101 proved
+exact `build`/`deploy` scripts and exposes one plain-text `API_SECRET` value.
+A request-boundary check rejects a too-short value before Nightscout starts.
+Private release acceptance 101 proved
 the exact source state on a new Cloudflare account, but a real Deploy to
 Cloudflare button is not yet claimed because the canonical GitHub repository
 intentionally remains private.

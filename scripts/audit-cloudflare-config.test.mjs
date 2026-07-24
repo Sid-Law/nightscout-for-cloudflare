@@ -5,7 +5,6 @@ import test from "node:test";
 const configUrl = new URL("../wrangler.jsonc", import.meta.url);
 const packageUrl = new URL("../package.json", import.meta.url);
 const readmeUrl = new URL("../README.md", import.meta.url);
-const secretExampleUrl = new URL("../.dev.vars.example", import.meta.url);
 const nodeVersionUrl = new URL("../.node-version", import.meta.url);
 
 test("deployment uses one visible API_SECRET variable without adding products", async () => {
@@ -29,7 +28,6 @@ test("deployment uses one visible API_SECRET variable without adding products", 
 test("Deploy to Cloudflare template requests one plaintext value and a clean-source build", async () => {
   const packageJson = JSON.parse(await readFile(packageUrl, "utf8"));
   const readme = await readFile(readmeUrl, "utf8");
-  const secretExample = await readFile(secretExampleUrl, "utf8");
   const nodeVersion = (await readFile(nodeVersionUrl, "utf8")).trim();
 
   assert.equal(
@@ -52,10 +50,4 @@ test("Deploy to Cloudflare template requests one plaintext value and a clean-sou
     /\]\(https:\/\/deploy\.workers\.cloudflare\.com\/\?url=https:\/\/github\.com\/Sid-Law\/nightscout-for-cloudflare\)/,
   );
   assert.equal(nodeVersion, "22.16.0");
-
-  const secretAssignments = secretExample
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith("#"));
-  assert.deepEqual(secretAssignments, ["API_SECRET="]);
 });

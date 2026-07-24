@@ -115,13 +115,13 @@ npx wrangler login
 npm run deploy
 ```
 
-本地开发时复制示例文件：
+本地开发时新建 `.dev.vars`：
 
 ```sh
-cp .dev.vars.example .dev.vars
+touch .dev.vars
 ```
 
-然后在 `.dev.vars` 中填写本地测试密码：
+在 `.dev.vars` 中填写本地测试密码：
 
 ```dotenv
 API_SECRET=choose-your-own-password

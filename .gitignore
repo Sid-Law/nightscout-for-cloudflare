@@ -6,7 +6,6 @@ public/
 coverage/
 worker-configuration.d.ts
 .dev.vars*
-!.dev.vars.example
 .env*
 !.env.example
 *.log
