@@ -221,6 +221,8 @@ type EntryStoreEnv = Env & NightscoutStatusEnvironment & {
   UUID_HANDLING?: string;
 };
 
+export const ENTRY_STORE_ACTIVATION_SEAL = 23;
+
 const ENTRY_STORE_REQUIRED_MIGRATIONS = [
   1,
   2,
@@ -243,7 +245,10 @@ const ENTRY_STORE_REQUIRED_MIGRATIONS = [
   20,
   21,
   22,
+  ENTRY_STORE_ACTIVATION_SEAL,
 ] as const;
+
+const ENTRY_STORE_CORE_READ_MIGRATIONS = [2, 3, 4] as const;
 
 function sqliteTableHasColumns(
   sql: SqlStorage,
@@ -259,27 +264,85 @@ function sqliteTableHasColumns(
   return required.every((column) => columns.has(column));
 }
 
+function sqliteMigrationMarkersPresent(
+  sql: SqlStorage,
+  required: readonly number[],
+): boolean {
+  const markers = new Set(
+    sql.exec<{ id: number }>(
+      `SELECT id FROM _sql_schema_migrations
+       WHERE id IN (${required.join(",")})`,
+    ).toArray().map((row) => row.id),
+  );
+  return required.every((id) => markers.has(id));
+}
+
 /**
- * Proves that a tenant which can no longer write still has the complete core
- * schema needed for status, authorization, Entries and document reads.
+ * One-row activation preflight written only after the complete schema and
+ * realtime root snapshot have been prepared. A current tenant must not rerun
+ * idempotent DDL/DML on every Durable Object wake.
+ */
+export function entryStoreSchemaIsActivationReady(sql: SqlStorage): boolean {
+  try {
+    return sqliteMigrationMarkersPresent(sql, [ENTRY_STORE_ACTIVATION_SEAL]);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Minimum schema required to keep existing HTTP reads and authorization
+ * checks available after Cloudflare has temporarily rejected SQLite writes.
+ * Realtime and mutations remain disabled until the next daily quota reset.
+ */
+export function entryStoreSchemaSupportsCoreReadOnly(sql: SqlStorage): boolean {
+  try {
+    return sqliteMigrationMarkersPresent(sql, ENTRY_STORE_CORE_READ_MIGRATIONS)
+      && sqliteTableHasColumns(
+        sql,
+        "documents",
+        [
+          "collection",
+          "id",
+          "body",
+          "sort_time",
+          "created_at",
+          "updated_at",
+          "identifier",
+          "identifier_present",
+          "srv_created",
+          "srv_modified",
+          "is_valid",
+          "fallback_key",
+          "revision",
+          "srv_metadata_version",
+        ],
+      )
+      && sqliteTableHasColumns(sql, "tenant_secrets", ["name", "value", "created_at"])
+      && sqliteTableHasColumns(
+        sql,
+        "authorization_failures",
+        ["ip", "retry_at", "updated_at"],
+      )
+      && sqliteTableHasColumns(
+        sql,
+        "admin_notifies",
+        ["message", "body", "count", "last_recorded", "persistent"],
+      );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Full schema audit used by tests and migration diagnostics. The constructor
+ * uses the single-row activation marker above so ordinary wakes stay cheap.
  */
 export function entryStoreSchemaSupportsReadOnly(sql: SqlStorage): boolean {
   try {
-    const migrationTablePresent = sql.exec<{ present: number }>(
-      `SELECT EXISTS(
-         SELECT 1 FROM sqlite_master
-         WHERE type = 'table' AND name = '_sql_schema_migrations'
-       ) AS present`,
-    ).one().present !== 0;
-    if (!migrationTablePresent) return false;
-
-    const markers = new Set(
-      sql.exec<{ id: number }>(
-        `SELECT id FROM _sql_schema_migrations
-         WHERE id IN (${ENTRY_STORE_REQUIRED_MIGRATIONS.join(",")})`,
-      ).toArray().map((row) => row.id),
-    );
-    if (ENTRY_STORE_REQUIRED_MIGRATIONS.some((id) => !markers.has(id))) return false;
+    if (!sqliteMigrationMarkersPresent(sql, ENTRY_STORE_REQUIRED_MIGRATIONS)) {
+      return false;
+    }
     if (!documentReadSchemaIsCurrent(sql) || !entriesShadowSchemaIsCurrent(sql)) {
       return false;
     }
@@ -650,6 +713,14 @@ function realtimeRootWriteDocument(value: unknown): JsonDocument | null {
   }
 }
 
+function isEntryStoreWriteQuotaError(error: unknown): boolean {
+  return isDurableObjectWriteQuotaError(error)
+    || (
+      error instanceof RealtimeSessionError
+      && error.code === "storage_quota"
+    );
+}
+
 class RealtimeJsonBudget {
   private usedBytes: number;
   private usedNodes: number;
@@ -691,6 +762,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   private readonly realtime: RealtimeSessionService;
   private readonly activeWebSocketSessions = new Set<string>();
   private storageWriteQuotaBlockedUntil = 0;
+  private storageSchemaInitializationPending = false;
+  private realtimeAlarmRecoveryPending = false;
+  private realtimeAlarmRecoveryScheduled = false;
 
   constructor(ctx: DurableObjectState, env: EntryStoreEnv) {
     super(ctx, env);
@@ -711,27 +785,48 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       writeRoot: (request) => this.realtimeRootWrite(request),
     });
     ctx.blockConcurrencyWhile(async () => {
-      try {
-        this.migrate();
-      } catch (error) {
-        if (
-          !isDurableObjectWriteQuotaError(error)
-          || !entryStoreSchemaSupportsReadOnly(this.ctx.storage.sql)
-        ) {
-          throw error;
+      if (!entryStoreSchemaIsActivationReady(this.ctx.storage.sql)) {
+        this.storageSchemaInitializationPending = true;
+        try {
+          this.completeStorageInitialization();
+        } catch (error) {
+          if (
+            !isEntryStoreWriteQuotaError(error)
+            || !entryStoreSchemaSupportsCoreReadOnly(this.ctx.storage.sql)
+          ) {
+            throw error;
+          }
+          this.enterStorageWriteQuotaMode(error);
+          return;
         }
-        this.enterStorageWriteQuotaMode(error);
       }
       if (this.storageWritesBlocked()) return;
       try {
-        this.reconcileAdminNotifies(Date.now());
-        this.seedAutomaticNotificationTask(Date.now());
         await this.synchronizeRealtimeAlarm();
       } catch (error) {
-        if (!isDurableObjectWriteQuotaError(error)) throw error;
+        if (!isEntryStoreWriteQuotaError(error)) throw error;
+        this.realtimeAlarmRecoveryPending = true;
         this.enterStorageWriteQuotaMode(error);
       }
     });
+  }
+
+  private completeStorageInitialization(): void {
+    // This method is intentionally synchronous. A request cannot observe a
+    // half-repaired schema between quota reset and the activation seal.
+    this.storageSchemaInitializationPending = false;
+    try {
+      this.migrate();
+      this.reconcileAdminNotifies(Date.now());
+      this.seedAutomaticNotificationTask(Date.now());
+      this.ctx.storage.sql.exec(
+        "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (?)",
+        ENTRY_STORE_ACTIVATION_SEAL,
+      );
+    } catch (error) {
+      this.storageSchemaInitializationPending = true;
+      throw error;
+    }
   }
 
   private migrate(): void {
@@ -951,17 +1046,45 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private enterStorageWriteQuotaMode(error: unknown): boolean {
-    if (!isDurableObjectWriteQuotaError(error)) return false;
+    if (!isEntryStoreWriteQuotaError(error)) return false;
     this.storageWriteQuotaBlockedUntil = durableObjectWriteQuotaResetAt();
     return true;
   }
 
   private storageWritesBlocked(now = Date.now()): boolean {
-    if (this.storageWriteQuotaBlockedUntil <= now) {
-      this.storageWriteQuotaBlockedUntil = 0;
-      return false;
+    if (this.storageWriteQuotaBlockedUntil > now) return true;
+    this.storageWriteQuotaBlockedUntil = 0;
+    if (this.storageSchemaInitializationPending) {
+      try {
+        this.completeStorageInitialization();
+      } catch (error) {
+        if (!this.enterStorageWriteQuotaMode(error)) throw error;
+        return true;
+      }
     }
-    return true;
+    this.scheduleRealtimeAlarmRecovery();
+    return false;
+  }
+
+  private scheduleRealtimeAlarmRecovery(): void {
+    if (
+      !this.realtimeAlarmRecoveryPending
+      || this.realtimeAlarmRecoveryScheduled
+    ) {
+      return;
+    }
+    this.realtimeAlarmRecoveryScheduled = true;
+    this.ctx.waitUntil((async () => {
+      try {
+        if (this.storageWritesBlocked()) return;
+        await this.synchronizeRealtimeAlarm();
+        this.realtimeAlarmRecoveryPending = false;
+      } catch (error) {
+        if (!this.enterStorageWriteQuotaMode(error)) throw error;
+      } finally {
+        this.realtimeAlarmRecoveryScheduled = false;
+      }
+    })());
   }
 
   private requireStorageWrites(): void {
@@ -3583,48 +3706,60 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private async synchronizeRealtimeAlarm(): Promise<void> {
-    if (this.storageWritesBlocked()) return;
+    if (this.storageWritesBlocked()) {
+      this.realtimeAlarmRecoveryPending = true;
+      return;
+    }
     // Cloudflare persists one alarm per Durable Object. Derive that alarm from
     // SQL after every state transition so eviction never makes in-memory timer
     // state authoritative.
-    const realtimeDeadline = this.realtime.nextDeadline();
-    const authorizationDeadline = this.authorizationFailureCleanupDeadline();
-    const backgroundDeadline = this.backgroundTasks().nextDeadline();
-    const dataUpdateDeadline = this.dataUpdateDebounce().nextDeadline();
-    const deadlines = [
-      realtimeDeadline,
-      authorizationDeadline,
-      backgroundDeadline,
-      dataUpdateDeadline,
-    ]
-      .filter((deadline): deadline is number => deadline !== null);
-    const nextDeadline = deadlines.length === 0 ? null : Math.min(...deadlines);
-    const currentAlarm = await this.ctx.storage.getAlarm();
-    if (nextDeadline === null) {
-      if (currentAlarm !== null) await this.ctx.storage.deleteAlarm();
-      return;
-    }
+    try {
+      const realtimeDeadline = this.realtime.nextDeadline();
+      const authorizationDeadline = this.authorizationFailureCleanupDeadline();
+      const backgroundDeadline = this.backgroundTasks().nextDeadline();
+      const dataUpdateDeadline = this.dataUpdateDebounce().nextDeadline();
+      const deadlines = [
+        realtimeDeadline,
+        authorizationDeadline,
+        backgroundDeadline,
+        dataUpdateDeadline,
+      ]
+        .filter((deadline): deadline is number => deadline !== null);
+      const nextDeadline = deadlines.length === 0 ? null : Math.min(...deadlines);
+      const currentAlarm = await this.ctx.storage.getAlarm();
+      if (nextDeadline === null) {
+        if (currentAlarm !== null) await this.ctx.storage.deleteAlarm();
+        this.realtimeAlarmRecoveryPending = false;
+        return;
+      }
     // A durable outbound frame records its FIFO creation time, which is often
     // already in the past by the time this turn yields. Cloudflare treats a
     // newly written past alarm as immediately due; scheduling one short turn
     // ahead keeps it observable/persistent while still prompting the next
     // bounded flush turn without a polling timer.
-    const scheduleNow = Date.now();
-    const promptDeadline = scheduleNow + 100;
-    const isDue = nextDeadline <= promptDeadline;
-    const scheduledDeadline = isDue ? promptDeadline : nextDeadline;
+      const scheduleNow = Date.now();
+      const promptDeadline = scheduleNow + 100;
+      const isDue = nextDeadline <= promptDeadline;
+      const scheduledDeadline = isDue ? promptDeadline : nextDeadline;
     // Do not postpone a still-future prompt alarm on every busy WebSocket
     // turn; otherwise a steady input stream could starve durable pending
     // output. A past alarm is different: getAlarm() can briefly retain its
     // timestamp while delivery is being queued, then clear it after this RPC.
     // Replace that stale schedule so due SQL work cannot lose its only wakeup.
-    const shouldReplace = isDue
-      ? currentAlarm === null
-        || currentAlarm <= scheduleNow
-        || currentAlarm > scheduledDeadline
-      : currentAlarm !== scheduledDeadline;
-    if (shouldReplace) {
-      await this.ctx.storage.setAlarm(scheduledDeadline);
+      const shouldReplace = isDue
+        ? currentAlarm === null
+          || currentAlarm <= scheduleNow
+          || currentAlarm > scheduledDeadline
+        : currentAlarm !== scheduledDeadline;
+      if (shouldReplace) {
+        await this.ctx.storage.setAlarm(scheduledDeadline);
+      }
+      this.realtimeAlarmRecoveryPending = false;
+    } catch (error) {
+      if (isEntryStoreWriteQuotaError(error)) {
+        this.realtimeAlarmRecoveryPending = true;
+      }
+      throw error;
     }
   }
 
@@ -3672,15 +3807,27 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   override async alarm(_alarmInfo?: AlarmInvocationInfo): Promise<void> {
-    if (this.storageWritesBlocked()) return;
-    // Alarm delivery is at-least-once. processAlarm commits every durable
-    // transition transactionally before this derived schedule is replaced.
-    const now = Date.now();
-    this.cleanupAuthorizationFailures(now);
-    this.realtime.processAlarm();
-    this.processDueBackgroundTasks(now);
-    this.flushRealtimeWebSockets();
-    await this.synchronizeRealtimeAlarm();
+    if (this.storageWritesBlocked()) {
+      this.realtimeAlarmRecoveryPending = true;
+      return;
+    }
+    try {
+      // Alarm delivery is at-least-once. processAlarm commits every durable
+      // transition transactionally before this derived schedule is replaced.
+      const now = Date.now();
+      this.cleanupAuthorizationFailures(now);
+      this.realtime.processAlarm();
+      this.processDueBackgroundTasks(now);
+      if (this.storageWritesBlocked()) throw new DurableObjectWriteQuotaError();
+      this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+    } catch (error) {
+      if (this.enterStorageWriteQuotaMode(error)) {
+        this.realtimeAlarmRecoveryPending = true;
+        return;
+      }
+      throw error;
+    }
   }
 
   realtimeHandshake(

@@ -689,7 +689,9 @@ describe("API3 /storage Socket.IO namespace", () => {
         DROP TABLE realtime_storage_subscriptions;
         DROP TABLE realtime_storage_connections;
       `);
-      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 9");
+      state.storage.sql.exec(
+        "DELETE FROM _sql_schema_migrations WHERE id IN (9, 23)",
+      );
       state.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (99)",
       );

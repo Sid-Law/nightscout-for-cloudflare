@@ -1353,7 +1353,9 @@ describe("realtime transport schema migration", () => {
         now + 25_000,
         now + 45_000,
       );
-      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 7");
+      state.storage.sql.exec(
+        "DELETE FROM _sql_schema_migrations WHERE id IN (7, 23)",
+      );
       state.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (6)",
       );
@@ -1411,7 +1413,9 @@ describe("realtime transport schema migration", () => {
          VALUES ('abcdefghijklmnopqrst', 1008, 'legacy close', ?)`,
         createdAt,
       );
-      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 8");
+      state.storage.sql.exec(
+        "DELETE FROM _sql_schema_migrations WHERE id IN (8, 23)",
+      );
       state.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (7)",
       );

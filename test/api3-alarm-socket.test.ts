@@ -679,7 +679,9 @@ describe("API3 /alarm Socket.IO namespace", () => {
         DROP TABLE realtime_alarm_silences;
         DROP TABLE realtime_alarm_connections;
       `);
-      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 10");
+      state.storage.sql.exec(
+        "DELETE FROM _sql_schema_migrations WHERE id IN (10, 23)",
+      );
       state.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (99)",
       );

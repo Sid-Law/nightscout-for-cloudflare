@@ -370,6 +370,7 @@ describe("SQLite collection contract v4", () => {
           ALTER TABLE document_changes_old_v4 RENAME TO document_changes;
           DROP TABLE documents;
           ALTER TABLE documents_old_v4 RENAME TO documents;
+          DELETE FROM _sql_schema_migrations WHERE id = 23;
         `);
       });
       expect(state.storage.sql.exec<{ count: number }>(

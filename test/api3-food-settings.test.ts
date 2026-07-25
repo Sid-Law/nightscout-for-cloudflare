@@ -465,6 +465,9 @@ describe("API v3 Food and Settings verticals", () => {
         date,
         date,
       );
+      state.storage.sql.exec(
+        "DELETE FROM _sql_schema_migrations WHERE id = 23",
+      );
     });
 
     await evictDurableObject(stub);

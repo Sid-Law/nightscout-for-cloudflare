@@ -62,7 +62,7 @@ describe("production runtime boundaries", () => {
         INSERT INTO simulated_cgm_state
           (singleton, enabled, next_at, sequence, updated_at)
         VALUES (1, 1, ${now + 300_000}, 1, ${now});
-        DELETE FROM _sql_schema_migrations WHERE id = 22;
+        DELETE FROM _sql_schema_migrations WHERE id IN (22, 23);
       `);
     });
 
