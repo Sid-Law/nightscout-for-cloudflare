@@ -698,11 +698,37 @@ export class SqliteRealtimeSessionRepository {
       now,
       sid,
     );
+    this.deleteSessionStateInTransaction(sid);
+  }
+
+  deleteOrphanedWebSocketSessionInTransaction(sid: string): void {
+    this.storage.sql.exec(
+      "DELETE FROM realtime_websocket_closures WHERE sid = ?",
+      sid,
+    );
+    this.deleteSessionStateInTransaction(sid);
+  }
+
+  private deleteSessionStateInTransaction(sid: string): void {
     this.storage.sql.exec("DELETE FROM realtime_storage_subscriptions WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_storage_connections WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_alarm_connections WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_outbound_packets WHERE sid = ?", sid);
     this.storage.sql.exec("DELETE FROM realtime_sessions WHERE sid = ?", sid);
+  }
+
+  listWebSocketSessionIds(): string[] {
+    return this.storage.sql
+      .exec<SidRow>(
+        `SELECT sid
+         FROM realtime_sessions
+         WHERE transport = 'websocket'
+         ORDER BY created_at, sid
+         LIMIT ?`,
+        REALTIME_MAX_SESSIONS_PER_TENANT,
+      )
+      .toArray()
+      .map((row) => row.sid);
   }
 
   connectStorageNamespace(sid: string, now: number): string | null {
@@ -778,16 +804,12 @@ export class SqliteRealtimeSessionRepository {
              )
              OR (
                session.transport = 'websocket'
-               AND session.expires_at > ?
-               AND (session.pong_deadline IS NULL OR session.pong_deadline > ?)
              )
            )
          ORDER BY subscription.subscribed_at, session.created_at, session.sid
          LIMIT ?`,
         collection,
         now - REALTIME_POLL_STALE_SESSION_MS,
-        now,
-        now,
         REALTIME_MAX_SESSIONS_PER_TENANT,
       )
       .toArray()
@@ -877,15 +899,11 @@ export class SqliteRealtimeSessionRepository {
            )
            OR (
              session.transport = 'websocket'
-             AND session.expires_at > ?
-             AND (session.pong_deadline IS NULL OR session.pong_deadline > ?)
            )
          )
          ORDER BY connection.connected_at, session.created_at, session.sid
          LIMIT ?`,
         now - REALTIME_POLL_STALE_SESSION_MS,
-        now,
-        now,
         REALTIME_MAX_SESSIONS_PER_TENANT,
       )
       .toArray()
@@ -1022,17 +1040,10 @@ export class SqliteRealtimeSessionRepository {
                 next_sequence, outbound_packets, outbound_bytes,
                 poll_token, poll_deadline, post_token, post_deadline
          FROM realtime_sessions
-         WHERE (
-           transport = 'websocket'
-           AND (expires_at <= ? OR (pong_deadline IS NOT NULL AND pong_deadline <= ?))
-         ) OR (
-           transport = 'polling'
+         WHERE transport = 'polling'
            AND last_seen_at <= ?
-         )
          ORDER BY last_seen_at, expires_at, sid
          LIMIT ?`,
-        now,
-        now,
         now - REALTIME_POLL_STALE_SESSION_MS,
         boundedLimit,
       )
@@ -1044,19 +1055,12 @@ export class SqliteRealtimeSessionRepository {
   }
 
   nextDeadline(): number | null {
-    // Polling requests keep heartbeat and overlap state in the live DO. Only
-    // WebSockets need a durable alarm while the object may be hibernating.
+    // WebSocket heartbeat deadlines live in hibernatable attachments. SQLite
+    // retains only application frames and durable close retries.
     return this.storage.sql
       .exec<DeadlineRow>(
         `SELECT MIN(deadline) AS deadline
          FROM (
-           SELECT CASE
-                    WHEN pong_deadline IS NULL THEN MIN(next_ping_at, expires_at)
-                    ELSE MIN(pong_deadline, expires_at)
-                  END AS deadline
-           FROM realtime_sessions
-           WHERE transport = 'websocket'
-           UNION ALL
            SELECT MIN(packet.created_at) AS deadline
            FROM realtime_outbound_packets AS packet
            INNER JOIN realtime_sessions AS session ON session.sid = packet.sid
@@ -1067,26 +1071,6 @@ export class SqliteRealtimeSessionRepository {
          )`,
       )
       .one().deadline;
-  }
-
-  listDuePingSessionIds(now: number): string[] {
-    return this.storage.sql
-      .exec<SidRow>(
-        `SELECT sid
-         FROM realtime_sessions
-         WHERE transport = 'websocket'
-           AND engine_protocol = 4
-           AND pong_deadline IS NULL
-           AND next_ping_at <= ?
-           AND expires_at > ?
-         ORDER BY next_ping_at, sid
-         LIMIT ?`,
-        now,
-        now,
-        REALTIME_MAX_SESSIONS_PER_TENANT,
-      )
-      .toArray()
-      .map((row) => row.sid);
   }
 
   updateSession(session: RealtimeSession): void {
@@ -1166,6 +1150,18 @@ export class SqliteRealtimeSessionRepository {
     );
   }
 
+  webSocketClosureDeadline(sid: string): number | null {
+    return this.storage.sql
+      .exec<DeadlineRow>(
+        `SELECT next_attempt_at AS deadline
+         FROM realtime_websocket_closures
+         WHERE sid = ?
+         LIMIT 1`,
+        sid,
+      )
+      .toArray()[0]?.deadline ?? null;
+  }
+
   cancelWebSocketClosure(sid: string): void {
     this.storage.sql.exec(
       "DELETE FROM realtime_websocket_closures WHERE sid = ?",
@@ -1186,13 +1182,9 @@ export class SqliteRealtimeSessionRepository {
              )
              OR (
                transport = 'websocket'
-               AND expires_at > ?
-               AND (pong_deadline IS NULL OR pong_deadline > ?)
              )
            )`,
         now - REALTIME_POLL_STALE_SESSION_MS,
-        now,
-        now,
       )
       .one().count;
   }
@@ -1205,14 +1197,10 @@ export class SqliteRealtimeSessionRepository {
     const bindings: SqlStorageValue[] = transport === undefined
       ? [
         now - REALTIME_POLL_STALE_SESSION_MS,
-        now,
-        now,
         REALTIME_MAX_SESSIONS_PER_TENANT,
       ]
       : [
         now - REALTIME_POLL_STALE_SESSION_MS,
-        now,
-        now,
         transport,
         REALTIME_MAX_SESSIONS_PER_TENANT,
       ];
@@ -1233,8 +1221,6 @@ export class SqliteRealtimeSessionRepository {
              )
              OR (
                transport = 'websocket'
-               AND expires_at > ?
-               AND (pong_deadline IS NULL OR pong_deadline > ?)
              )
            )${transportClause}
          ORDER BY created_at, sid
@@ -1260,15 +1246,11 @@ export class SqliteRealtimeSessionRepository {
              )
              OR (
                transport = 'websocket'
-               AND expires_at > ?
-               AND (pong_deadline IS NULL OR pong_deadline > ?)
              )
            )
          ORDER BY created_at, sid
          LIMIT ?`,
         now - REALTIME_POLL_STALE_SESSION_MS,
-        now,
-        now,
         REALTIME_MAX_SESSIONS_PER_TENANT,
       )
       .toArray()

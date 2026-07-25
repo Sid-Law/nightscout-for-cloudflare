@@ -94,6 +94,8 @@ import {
   REALTIME_DEVICE_STATUS_WINDOW_MS,
   REALTIME_MAX_PAYLOAD_BYTES,
   REALTIME_MAX_SESSIONS_PER_TENANT,
+  REALTIME_PING_INTERVAL_MS,
+  REALTIME_PING_TIMEOUT_MS,
   REALTIME_SNAPSHOT_MAX_BYTES,
   REALTIME_SNAPSHOT_MAX_DOCUMENT_DEPTH,
   REALTIME_SNAPSHOT_MAX_DOCUMENTS,
@@ -378,7 +380,7 @@ export function entryStoreSchemaSupportsReadOnly(sql: SqlStorage): boolean {
 // deployment; they now identify both accepted Engine.IO protocol versions.
 const REALTIME_WEBSOCKET_TAG = "eio4-websocket";
 const REALTIME_WEBSOCKET_SID_TAG_PREFIX = "eio4-sid:";
-const REALTIME_WEBSOCKET_ATTACHMENT_VERSION = 1;
+const REALTIME_WEBSOCKET_ATTACHMENT_VERSION = 2;
 const REALTIME_WEBSOCKET_EVENT_TIMEOUT_MS = 15_000;
 const REALTIME_SID = /^[A-Za-z0-9_-]{20}$/;
 const REALTIME_ENTRY_WINDOW_MS = 2 * 24 * 60 * 60 * 1_000;
@@ -427,6 +429,10 @@ interface RealtimeWebSocketAttachment {
   objectId: string;
   sid: string;
   mode: "session" | "upgrade";
+  engineProtocol: RealtimeEngineProtocol;
+  lastSeenAt?: number;
+  nextPingAt?: number | null;
+  pongDeadline?: number | null;
   phase?: "opening" | "probed";
   deadline?: number;
 }
@@ -802,6 +808,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       }
       if (this.storageWritesBlocked()) return;
       try {
+        this.reconcileRealtimeWebSocketSessions();
         await this.synchronizeRealtimeAlarm();
       } catch (error) {
         if (!isEntryStoreWriteQuotaError(error)) throw error;
@@ -1077,6 +1084,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     this.ctx.waitUntil((async () => {
       try {
         if (this.storageWritesBlocked()) return;
+        this.reconcileRealtimeWebSocketSessions();
         await this.synchronizeRealtimeAlarm();
         this.realtimeAlarmRecoveryPending = false;
       } catch (error) {
@@ -1141,8 +1149,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         { status: 400, headers: { "Cache-Control": "no-store" } },
       );
     }
-    // Reap a bounded batch of durable closure tombstones before enforcing the
-    // attachment cap so stale hibernated sockets cannot wedge new handshakes.
+    // Reconcile the bounded SQL session set with Cloudflare's hibernatable
+    // socket attachments before enforcing either capacity limit.
+    this.reconcileRealtimeWebSocketSessions();
     this.flushRealtimeWebSockets();
     if (
       this.ctx.getWebSockets(REALTIME_WEBSOCKET_TAG).length >=
@@ -1174,11 +1183,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       let initialFrame: string | null = null;
       if (upgradeSid === null) {
         opened = this.realtime.createWebSocketHandshake(engineProtocol);
+        const now = Date.now();
         attachment = {
           version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
           objectId: this.ctx.id.toString(),
           sid: opened.sid,
           mode: "session",
+          engineProtocol,
+          lastSeenAt: now,
+          nextPingAt: engineProtocol === 4 ? now + REALTIME_PING_INTERVAL_MS : null,
+          pongDeadline: null,
         };
         initialFrame = opened.frame;
       } else {
@@ -1189,6 +1203,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           objectId: this.ctx.id.toString(),
           sid: upgradeSid,
           mode: "upgrade",
+          engineProtocol,
           phase: "opening",
           deadline,
         };
@@ -1241,11 +1256,32 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ws: WebSocket,
     message: string | ArrayBuffer,
   ): Promise<void> {
+    let attachment = this.realtimeWebSocketAttachment(ws);
+    if (
+      attachment !== null &&
+      typeof message === "string" &&
+      this.handleRealtimeWebSocketHeartbeat(ws, attachment, message)
+    ) {
+      // Heartbeats are attachment-only and must remain available while an
+      // application frame is awaiting authorization, or while SQLite writes
+      // are temporarily quota-blocked. Only the derived Alarm deadline needs
+      // persistence when storage is available again.
+      if (this.storageWritesBlocked()) {
+        this.realtimeAlarmRecoveryPending = true;
+        return;
+      }
+      try {
+        await this.synchronizeRealtimeAlarm();
+      } catch (error) {
+        if (!this.enterStorageWriteQuotaMode(error)) throw error;
+        this.realtimeAlarmRecoveryPending = true;
+      }
+      return;
+    }
     if (this.storageWritesBlocked()) {
       this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
       return;
     }
-    let attachment = this.realtimeWebSocketAttachment(ws);
     if (attachment === null) {
       try {
         this.closeInvalidRealtimeWebSocket(ws);
@@ -1303,15 +1339,32 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           throw new RealtimeSessionError("bad_packet", "expected websocket upgrade packet");
         }
         this.realtime.completeWebSocketUpgrade(attachment.sid);
+        const now = Date.now();
         attachment = {
           version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
           objectId: this.ctx.id.toString(),
           sid: attachment.sid,
           mode: "session",
+          engineProtocol: attachment.engineProtocol,
+          lastSeenAt: now,
+          nextPingAt: attachment.engineProtocol === 4
+            ? now + REALTIME_PING_INTERVAL_MS
+            : null,
+          pongDeadline: null,
         };
         ws.serializeAttachment(attachment);
         return;
       }
+      const now = Date.now();
+      const frameBytes = realtimeJsonEncoder.encode(message).byteLength;
+      if (frameBytes > REALTIME_MAX_PAYLOAD_BYTES) {
+        throw new RealtimeSessionError("bad_packet", "websocket packet too_large");
+      }
+      attachment = {
+        ...attachment,
+        lastSeenAt: now,
+      };
+      ws.serializeAttachment(attachment);
       const result = await this.realtime.submitWebSocketFrame(attachment.sid, message);
       if (result.closed) this.safeCloseWebSocket(ws, 1000, "transport close");
     } catch (error) {
@@ -1353,6 +1406,31 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         }
       }
     }
+  }
+
+  private handleRealtimeWebSocketHeartbeat(
+    ws: WebSocket,
+    attachment: RealtimeWebSocketAttachment,
+    message: string,
+  ): boolean {
+    if (
+      attachment.mode !== "session" ||
+      realtimeJsonEncoder.encode(message).byteLength > REALTIME_MAX_PAYLOAD_BYTES
+    ) {
+      return false;
+    }
+    const eio4Pong = attachment.engineProtocol === 4 && message.startsWith("3");
+    const eio3Ping = attachment.engineProtocol === 3 && message.startsWith("2");
+    if (!eio4Pong && !eio3Ping) return false;
+    const now = Date.now();
+    ws.serializeAttachment({
+      ...attachment,
+      lastSeenAt: now,
+      nextPingAt: eio4Pong ? now + REALTIME_PING_INTERVAL_MS : null,
+      pongDeadline: null,
+    } satisfies RealtimeWebSocketAttachment);
+    if (eio3Ping) ws.send("3");
+    return true;
   }
 
   override async webSocketClose(
@@ -1434,7 +1512,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     const value = attachment as Record<string, unknown>;
     const trustedSid = this.trustedRealtimeWebSocketSid(ws);
     if (
-      value.version !== REALTIME_WEBSOCKET_ATTACHMENT_VERSION ||
+      (value.version !== 1 && value.version !== REALTIME_WEBSOCKET_ATTACHMENT_VERSION) ||
       value.objectId !== this.ctx.id.toString() ||
       typeof value.sid !== "string" ||
       value.sid !== trustedSid ||
@@ -1442,6 +1520,12 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ) {
       return null;
     }
+    const engineProtocol = value.version === REALTIME_WEBSOCKET_ATTACHMENT_VERSION
+      ? value.engineProtocol === 3 || value.engineProtocol === 4
+        ? value.engineProtocol
+        : null
+      : this.realtime.sessionEngineProtocol(value.sid);
+    if (engineProtocol === null) return null;
     const mode = value.mode === undefined || value.mode === "session"
       ? "session"
       : value.mode === "upgrade"
@@ -1459,27 +1543,116 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ) {
       return null;
     }
-    return {
+    const now = Date.now();
+    const sessionTimesValid =
+      typeof value.lastSeenAt === "number" &&
+      Number.isSafeInteger(value.lastSeenAt) &&
+      value.lastSeenAt > 0 &&
+      (value.nextPingAt === null ||
+        (
+          typeof value.nextPingAt === "number" &&
+          Number.isSafeInteger(value.nextPingAt) &&
+          value.nextPingAt > 0
+        )) &&
+      (value.pongDeadline === null ||
+        (
+          typeof value.pongDeadline === "number" &&
+          Number.isSafeInteger(value.pongDeadline) &&
+          value.pongDeadline > 0
+        ));
+    if (
+      mode === "session" &&
+      value.version === REALTIME_WEBSOCKET_ATTACHMENT_VERSION &&
+      !sessionTimesValid
+    ) {
+      return null;
+    }
+    const normalized: RealtimeWebSocketAttachment = {
       version: REALTIME_WEBSOCKET_ATTACHMENT_VERSION,
       objectId: value.objectId,
       sid: value.sid,
       mode,
+      engineProtocol,
       ...(mode === "upgrade"
         ? {
             phase: value.phase as "opening" | "probed",
             deadline: value.deadline as number,
           }
-        : {}),
+        : {
+            lastSeenAt: sessionTimesValid ? value.lastSeenAt as number : now,
+            nextPingAt: sessionTimesValid
+              ? value.nextPingAt as number | null
+              : engineProtocol === 4
+                ? now + REALTIME_PING_INTERVAL_MS
+                : null,
+            pongDeadline: sessionTimesValid
+              ? value.pongDeadline as number | null
+              : null,
+          }),
     };
+    if (value.version !== REALTIME_WEBSOCKET_ATTACHMENT_VERSION) {
+      ws.serializeAttachment(normalized);
+    }
+    return normalized;
   }
 
   private closeInvalidRealtimeWebSocket(ws: WebSocket): void {
     const sid = this.trustedRealtimeWebSocketSid(ws);
     if (sid !== null) {
-      this.realtime.abortWebSocketUpgrade(sid);
       this.realtime.closeWebSocketSession(sid);
+      // A live WebSocket session deletion, or an already-persisted teardown
+      // from a previous deployment, owns physical close retry/backoff.
+      if (this.realtime.webSocketClosureDeadline(sid) !== null) return;
     }
-    this.safeCloseWebSocket(ws, 1008, "invalid session attachment");
+    const result = this.safeCloseWebSocket(ws, 1008, "invalid session attachment");
+    if (result === "failed" && sid !== null) {
+      this.realtime.deferWebSocketClosure(
+        sid,
+        1008,
+        "invalid session attachment",
+      );
+    }
+  }
+
+  private reconcileRealtimeWebSocketSessions(): void {
+    const socketsBySid = new Map<string, WebSocket[]>();
+    for (const ws of this.ctx.getWebSockets(REALTIME_WEBSOCKET_TAG)) {
+      if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
+        continue;
+      }
+      const sid = this.trustedRealtimeWebSocketSid(ws);
+      if (sid === null) {
+        this.safeCloseWebSocket(ws, 1008, "invalid session attachment");
+        continue;
+      }
+      const sockets = socketsBySid.get(sid) ?? [];
+      sockets.push(ws);
+      socketsBySid.set(sid, sockets);
+    }
+
+    const liveSids = new Set<string>();
+    for (const [sid, sockets] of socketsBySid) {
+      if (sockets.length !== 1) {
+        for (const ws of sockets) this.closeInvalidRealtimeWebSocket(ws);
+        continue;
+      }
+      const ws = sockets[0]!;
+      const attachment = this.realtimeWebSocketAttachment(ws);
+      if (attachment === null) {
+        this.closeInvalidRealtimeWebSocket(ws);
+        continue;
+      }
+      if (attachment.mode === "upgrade") continue;
+      if (
+        this.realtime.webSocketSessionEngineProtocol(sid) !==
+          attachment.engineProtocol
+      ) {
+        this.closeInvalidRealtimeWebSocket(ws);
+        continue;
+      }
+      liveSids.add(sid);
+    }
+    this.realtime.reconcileWebSocketSessions(liveSids);
   }
 
   private safeCloseWebSocket(
@@ -3705,21 +3878,124 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     }
   }
 
+  private nextRealtimeWebSocketHeartbeatDeadline(): number | null {
+    let nextDeadline: number | null = null;
+    const consider = (deadline: number): void => {
+      if (nextDeadline === null || deadline < nextDeadline) nextDeadline = deadline;
+    };
+    for (const ws of this.ctx.getWebSockets(REALTIME_WEBSOCKET_TAG)) {
+      if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
+        continue;
+      }
+      const attachment = this.realtimeWebSocketAttachment(ws);
+      if (attachment === null) {
+        const sid = this.trustedRealtimeWebSocketSid(ws);
+        if (
+          sid !== null &&
+          this.realtime.webSocketClosureDeadline(sid) !== null
+        ) {
+          continue;
+        }
+        consider(Date.now());
+        continue;
+      }
+      if (attachment.mode === "upgrade") {
+        consider(attachment.deadline!);
+        continue;
+      }
+      if (attachment.engineProtocol === 3) {
+        consider(
+          attachment.lastSeenAt! +
+            REALTIME_PING_INTERVAL_MS +
+            REALTIME_PING_TIMEOUT_MS,
+        );
+        continue;
+      }
+      const deadline = attachment.pongDeadline ?? attachment.nextPingAt;
+      if (deadline !== null && deadline !== undefined) consider(deadline);
+    }
+    return nextDeadline;
+  }
+
+  private processRealtimeWebSocketHeartbeats(now: number): void {
+    for (const ws of this.ctx.getWebSockets(REALTIME_WEBSOCKET_TAG)) {
+      if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
+        continue;
+      }
+      const attachment = this.realtimeWebSocketAttachment(ws);
+      if (attachment === null) {
+        const sid = this.trustedRealtimeWebSocketSid(ws);
+        if (
+          sid !== null &&
+          this.realtime.webSocketClosureDeadline(sid) !== null
+        ) {
+          continue;
+        }
+        this.closeInvalidRealtimeWebSocket(ws);
+        continue;
+      }
+      if (attachment.mode === "upgrade") {
+        if (attachment.deadline! <= now) {
+          this.realtime.abortWebSocketUpgrade(attachment.sid);
+          this.safeCloseWebSocket(ws, 1008, "websocket upgrade timed out");
+        }
+        continue;
+      }
+      const eio3ExpiresAt =
+        attachment.lastSeenAt! +
+        REALTIME_PING_INTERVAL_MS +
+        REALTIME_PING_TIMEOUT_MS;
+      const heartbeatExpired = attachment.engineProtocol === 3
+        ? eio3ExpiresAt <= now
+        : attachment.pongDeadline !== null &&
+          attachment.pongDeadline !== undefined &&
+          attachment.pongDeadline <= now;
+      if (heartbeatExpired) {
+        this.realtime.closeWebSocketSession(attachment.sid);
+        this.safeCloseWebSocket(ws, 1008, "ping timeout");
+        continue;
+      }
+      if (
+        attachment.engineProtocol !== 4 ||
+        attachment.pongDeadline !== null ||
+        attachment.nextPingAt === null ||
+        attachment.nextPingAt === undefined ||
+        attachment.nextPingAt > now
+      ) {
+        continue;
+      }
+      try {
+        ws.send("2");
+        ws.serializeAttachment({
+          ...attachment,
+          nextPingAt: null,
+          pongDeadline: now + REALTIME_PING_TIMEOUT_MS,
+        } satisfies RealtimeWebSocketAttachment);
+      } catch {
+        this.realtime.closeWebSocketSession(attachment.sid);
+        this.safeCloseWebSocket(ws, 1011, "heartbeat send failed");
+      }
+    }
+  }
+
   private async synchronizeRealtimeAlarm(): Promise<void> {
     if (this.storageWritesBlocked()) {
       this.realtimeAlarmRecoveryPending = true;
       return;
     }
-    // Cloudflare persists one alarm per Durable Object. Derive that alarm from
-    // SQL after every state transition so eviction never makes in-memory timer
-    // state authoritative.
+    // Cloudflare persists one alarm per Durable Object. Application work stays
+    // in SQLite while Engine.IO heartbeat deadlines live in hibernatable
+    // WebSocket attachments, avoiding a session/FIFO rewrite every 25 seconds.
     try {
       const realtimeDeadline = this.realtime.nextDeadline();
+      const websocketHeartbeatDeadline =
+        this.nextRealtimeWebSocketHeartbeatDeadline();
       const authorizationDeadline = this.authorizationFailureCleanupDeadline();
       const backgroundDeadline = this.backgroundTasks().nextDeadline();
       const dataUpdateDeadline = this.dataUpdateDebounce().nextDeadline();
       const deadlines = [
         realtimeDeadline,
+        websocketHeartbeatDeadline,
         authorizationDeadline,
         backgroundDeadline,
         dataUpdateDeadline,
@@ -3816,6 +4092,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       // transition transactionally before this derived schedule is replaced.
       const now = Date.now();
       this.cleanupAuthorizationFailures(now);
+      this.processRealtimeWebSocketHeartbeats(now);
       this.realtime.processAlarm();
       this.processDueBackgroundTasks(now);
       if (this.storageWritesBlocked()) throw new DurableObjectWriteQuotaError();

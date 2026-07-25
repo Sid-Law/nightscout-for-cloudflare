@@ -20,6 +20,7 @@ import {
   REALTIME_MAX_PAYLOAD_BYTES,
   REALTIME_MAX_QUEUE_PACKETS,
   REALTIME_MAX_SESSIONS_PER_TENANT,
+  REALTIME_PING_INTERVAL_MS,
   REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES,
 } from "../src/realtime/constants";
 import { SqliteRealtimeSessionRepository } from "../src/realtime/session-repository";
@@ -200,6 +201,36 @@ async function expectStoredSession(
   return runInDurableObject(store(tenantName), async (_instance, state) =>
     new SqliteRealtimeSessionRepository(state.storage).requireSession(sid)
   );
+}
+
+interface StoredWebSocketAttachment {
+  version: number;
+  objectId: string;
+  sid: string;
+  mode: "session" | "upgrade";
+  engineProtocol: 3 | 4;
+  lastSeenAt: number;
+  nextPingAt: number | null;
+  pongDeadline: number | null;
+}
+
+async function expectStoredWebSocketAttachment(
+  tenantName: string,
+  sid: string,
+): Promise<StoredWebSocketAttachment> {
+  return runInDurableObject(store(tenantName), async (_instance, state) => {
+    const socket = state.getWebSockets(`eio4-sid:${sid}`)[0];
+    if (socket === undefined) throw new Error("missing server WebSocket");
+    const attachment = socket.deserializeAttachment() as StoredWebSocketAttachment;
+    expect(attachment).toMatchObject({
+      version: 2,
+      objectId: state.id.toString(),
+      sid,
+      mode: "session",
+      engineProtocol: 4,
+    });
+    return attachment;
+  });
 }
 
 async function hasActivePoll(
@@ -540,7 +571,7 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     inbox.socket.close(1000, "done");
   });
 
-  it("resumes hibernated attachments across eviction and drives ping/pong from one SQL alarm", async () => {
+  it("resumes hibernated attachments and drives ping/pong without SQLite heartbeat writes", async () => {
     const name = tenant("ws-hibernate");
     const stub = store(name);
     const { sid, inbox } = await openWebSocket(name);
@@ -553,34 +584,54 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     ]);
 
     const due = Date.now() - 1;
+    let storedBeforeHeartbeat:
+      | ReturnType<SqliteRealtimeSessionRepository["requireSession"]>
+      | null = null;
     await runInDurableObject(stub, async (_instance, state) => {
-      state.storage.sql.exec(
-        `UPDATE realtime_sessions
-         SET next_ping_at = ?, expires_at = ?
-         WHERE sid = ?`,
-        due,
-        due + 20_000,
+      const socket = state.getWebSockets(`eio4-sid:${sid}`)[0];
+      if (socket === undefined) throw new Error("missing hibernated server WebSocket");
+      const attachment = socket.deserializeAttachment() as StoredWebSocketAttachment;
+      socket.serializeAttachment({
+        ...attachment,
+        nextPingAt: due,
+        pongDeadline: null,
+      } satisfies StoredWebSocketAttachment);
+      storedBeforeHeartbeat =
+        new SqliteRealtimeSessionRepository(state.storage).requireSession(sid);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_outbound_packets WHERE sid = ?",
         sid,
-      );
+      ).one().count).toBe(0);
       await state.storage.setAlarm(Date.now() + 60_000);
     });
     await evictDurableObject(stub);
     expect(await runDurableObjectAlarm(stub)).toBe(true);
     expect(await inbox.nextString()).toBe("2");
 
-    const pingState = await expectStoredSession(name, sid);
+    const pingState = await expectStoredWebSocketAttachment(name, sid);
+    expect(pingState.nextPingAt).toBeNull();
     expect(pingState.pongDeadline).not.toBeNull();
+    expect(await expectStoredSession(name, sid)).toEqual(storedBeforeHeartbeat);
     await runInDurableObject(stub, async (_instance, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_outbound_packets WHERE sid = ?",
+        sid,
+      ).one().count).toBe(0);
       expect(await state.storage.getAlarm()).toBe(pingState.pongDeadline);
     });
 
     const beforePong = Date.now();
     inbox.socket.send("3");
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
-    const pongState = await expectStoredSession(name, sid);
+    const pongState = await expectStoredWebSocketAttachment(name, sid);
     expect(pongState.pongDeadline).toBeNull();
     expect(pongState.nextPingAt).toBeGreaterThanOrEqual(beforePong + 25_000);
+    expect(await expectStoredSession(name, sid)).toEqual(storedBeforeHeartbeat);
     await runInDurableObject(stub, async (_instance, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_outbound_packets WHERE sid = ?",
+        sid,
+      ).one().count).toBe(0);
       expect(await state.storage.getAlarm()).toBe(pongState.nextPingAt);
     });
 
@@ -590,6 +641,129 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     const reconnected = await openWebSocket(name);
     expect(reconnected.sid).not.toBe(sid);
     reconnected.inbox.socket.close(1000, "done");
+  });
+
+  it("upgrades a live version-1 attachment without changing its SQL session", async () => {
+    const name = tenant("ws-v1-attachment-upgrade");
+    const stub = store(name);
+    const { sid, inbox } = await openWebSocket(name);
+    let storedBeforeUpgrade:
+      | ReturnType<SqliteRealtimeSessionRepository["requireSession"]>
+      | null = null;
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const socket = state.getWebSockets(`eio4-sid:${sid}`)[0];
+      if (socket === undefined) throw new Error("missing version-1 server WebSocket");
+      socket.serializeAttachment({
+        version: 1,
+        objectId: state.id.toString(),
+        sid,
+      });
+      storedBeforeUpgrade =
+        new SqliteRealtimeSessionRepository(state.storage).requireSession(sid);
+    });
+
+    await evictDurableObject(stub);
+    inbox.socket.send("3");
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    const upgraded = await expectStoredWebSocketAttachment(name, sid);
+    expect(upgraded.lastSeenAt).toBeGreaterThan(0);
+    expect(upgraded.nextPingAt).toBeGreaterThan(Date.now());
+    expect(upgraded.pongDeadline).toBeNull();
+    expect(await expectStoredSession(name, sid)).toEqual(storedBeforeUpgrade);
+    inbox.socket.close(1000, "done");
+  });
+
+  it("accepts a pong while an application frame owns the session mutex", async () => {
+    const name = tenant("ws-concurrent-pong");
+    const stub = store(name);
+    const { sid, inbox } = await openWebSocket(name);
+
+    await runInDurableObject(stub, async (instance) => {
+      const active = (instance as unknown as {
+        activeWebSocketSessions: Set<string>;
+      }).activeWebSocketSessions;
+      active.add(sid);
+    });
+    const beforePong = Date.now();
+    inbox.socket.send("3");
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    const attachment = await expectStoredWebSocketAttachment(name, sid);
+    expect(attachment.nextPingAt).toBeGreaterThanOrEqual(
+      beforePong + REALTIME_PING_INTERVAL_MS,
+    );
+    expect(attachment.pongDeadline).toBeNull();
+    expect(await expectStoredSession(name, sid)).toMatchObject({
+      sid,
+      transport: "websocket",
+    });
+    await runInDurableObject(stub, async (instance) => {
+      const active = (instance as unknown as {
+        activeWebSocketSessions: Set<string>;
+      }).activeWebSocketSessions;
+      active.delete(sid);
+    });
+    inbox.socket.close(1000, "done");
+  });
+
+  it("reaps orphaned SQL WebSocket rows before enforcing session capacity", async () => {
+    const name = tenant("ws-orphan-capacity");
+    const stub = store(name);
+    const live = await openWebSocket(name);
+    await runInDurableObject(stub, async (_instance, state) => {
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      for (let index = 1; index < REALTIME_MAX_SESSIONS_PER_TENANT; index += 1) {
+        repository.createSession(Date.now() + index, "websocket", 4);
+      }
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_sessions",
+      ).one().count).toBe(REALTIME_MAX_SESSIONS_PER_TENANT);
+    });
+
+    await evictDurableObject(stub);
+    const newcomer = await openWebSocket(name);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_sessions",
+      ).one().count).toBe(2);
+    });
+    live.inbox.socket.close(1000, "done");
+    newcomer.inbox.socket.close(1000, "done");
+  });
+
+  it("closes an EIO4 WebSocket that misses its pong after hibernation", async () => {
+    const name = tenant("ws-pong-timeout");
+    const stub = store(name);
+    const { sid, inbox } = await openWebSocket(name);
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const socket = state.getWebSockets(`eio4-sid:${sid}`)[0];
+      if (socket === undefined) throw new Error("missing timeout server WebSocket");
+      const attachment = socket.deserializeAttachment() as StoredWebSocketAttachment;
+      socket.serializeAttachment({
+        ...attachment,
+        nextPingAt: null,
+        pongDeadline: Date.now() - 1,
+      } satisfies StoredWebSocketAttachment);
+      await state.storage.setAlarm(Date.now() - 1);
+    });
+
+    await evictDurableObject(stub);
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    expect((await inbox.closed()).code).toBe(1008);
+    await expect(expectStoredSession(name, sid)).rejects.toThrow("unknown");
+  });
+
+  it("keeps one stable EIO4 socket below ten thousand alarm writes per day", () => {
+    const heartbeatCycles = Math.ceil(
+      (24 * 60 * 60 * 1_000) / REALTIME_PING_INTERVAL_MS,
+    );
+    const initialAlarmWrite = 1;
+    const pingAndPongAlarmWrites = heartbeatCycles * 2;
+
+    expect(heartbeatCycles).toBe(3_456);
+    expect(initialAlarmWrite + pingAndPongAlarmWrites).toBe(6_913);
+    expect(initialAlarmWrite + pingAndPongAlarmWrites).toBeLessThan(10_000);
   });
 
   it("closes binary, malformed, client-ping and oversized frames with bounded codes", async () => {
@@ -1029,10 +1203,16 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
         "eio4-websocket",
         `eio4-sid:${session.sid}`,
       ]);
+      const attachedAt = Date.now();
       server.serializeAttachment({
-        version: 1,
+        version: 2,
         objectId: state.id.toString(),
         sid: session.sid,
+        mode: "session",
+        engineProtocol: 4,
+        lastSeenAt: attachedAt,
+        nextPingAt: attachedAt + REALTIME_PING_INTERVAL_MS,
+        pongDeadline: null,
       });
       client.accept();
       repository.deleteSession(session.sid);

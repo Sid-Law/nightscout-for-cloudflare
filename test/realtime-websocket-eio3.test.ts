@@ -121,9 +121,38 @@ describe("locked Engine.IO 3 WebSocket transport", () => {
         });
     });
 
+    let sessionBeforePing:
+      | ReturnType<SqliteRealtimeSessionRepository["requireSession"]>
+      | null = null;
+    await runInDurableObject(stub, async (_instance, state) => {
+      sessionBeforePing =
+        new SqliteRealtimeSessionRepository(state.storage).requireSession(handshake.sid);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_outbound_packets WHERE sid = ?",
+        handshake.sid,
+      ).one().count).toBe(0);
+    });
     await evictDurableObject(stub);
     inbox.socket.send(encodeEngineIoV3Packet({ type: "ping", data: "client-data" }));
     expect(await inbox.nextString()).toBe("3");
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(handshake.sid))
+        .toEqual(sessionBeforePing);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM realtime_outbound_packets WHERE sid = ?",
+        handshake.sid,
+      ).one().count).toBe(0);
+      const socket = state.getWebSockets(`eio4-sid:${handshake.sid}`)[0];
+      if (socket === undefined) throw new Error("missing EIO3 server WebSocket");
+      expect(socket.deserializeAttachment()).toMatchObject({
+        version: 2,
+        sid: handshake.sid,
+        mode: "session",
+        engineProtocol: 3,
+        nextPingAt: null,
+        pongDeadline: null,
+      });
+    });
 
     inbox.socket.send(clientFrame({
       type: "event",

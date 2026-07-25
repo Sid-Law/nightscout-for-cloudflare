@@ -887,7 +887,6 @@ export class RealtimeSessionService {
     session.postDeadline = null;
     const commit = this.commitProcessedSession(
       sid,
-      initial,
       session,
       outbound,
       broadcasts,
@@ -982,7 +981,6 @@ export class RealtimeSessionService {
     const now = this.now();
     const commit = this.commitProcessedSession(
       sid,
-      initial,
       session,
       outbound,
       broadcasts,
@@ -1011,6 +1009,44 @@ export class RealtimeSessionService {
     });
   }
 
+  sessionEngineProtocol(sid: string): RealtimeEngineProtocol | null {
+    return this.repository.getSession(sid)?.engineProtocol ?? null;
+  }
+
+  webSocketSessionEngineProtocol(sid: string): RealtimeEngineProtocol | null {
+    const session = this.repository.getSession(sid);
+    return session?.transport === REALTIME_WEBSOCKET_TRANSPORT
+      ? session.engineProtocol
+      : null;
+  }
+
+  reconcileWebSocketSessions(liveSids: ReadonlySet<string>): string[] {
+    const now = this.now();
+    const result = this.storage.transactionSync(() => {
+      const orphanedSids = this.repository
+        .listWebSocketSessionIds()
+        .filter((sid) => !liveSids.has(sid));
+      let removedConnectedSession = false;
+      for (const sid of orphanedSids) {
+        const session = this.repository.getSession(sid);
+        if (session === null) continue;
+        removedConnectedSession ||= session.socketConnected;
+        // Reconciliation has already established that no valid physical
+        // hibernatable socket owns this row, so no close tombstone is needed.
+        this.repository.deleteOrphanedWebSocketSessionInTransaction(sid);
+      }
+      return {
+        orphanedSids,
+        wakeTargets: removedConnectedSession
+          ? this.enqueueClientsForConnectedSessions(now)
+          : [],
+      };
+    });
+    for (const sid of result.orphanedSids) this.wake(sid);
+    for (const sid of result.wakeTargets) this.wake(sid);
+    return result.orphanedSids;
+  }
+
   queuedWebSocketSessionIds(limit: number): string[] {
     return this.repository.listQueuedWebSocketSessionIds(limit);
   }
@@ -1028,6 +1064,22 @@ export class RealtimeSessionService {
   ): void {
     this.storage.transactionSync(() => {
       this.repository.requeueWebSocketClosure(closure, retry, now);
+    });
+  }
+
+  webSocketClosureDeadline(sid: string): number | null {
+    return this.repository.webSocketClosureDeadline(sid);
+  }
+
+  deferWebSocketClosure(
+    sid: string,
+    code: number,
+    reason: string,
+  ): void {
+    const now = this.now();
+    this.storage.transactionSync(() => {
+      if (this.repository.webSocketClosureDeadline(sid) !== null) return;
+      this.repository.scheduleWebSocketClosure(sid, code, reason, now, now);
     });
   }
 
@@ -1150,7 +1202,6 @@ export class RealtimeSessionService {
     const now = this.now();
     const result = this.storage.transactionSync(() => {
       const closed = new Set<string>();
-      const wakeTargets = new Set<string>();
       let connectedSessionRemoved = false;
 
       while (true) {
@@ -1162,27 +1213,7 @@ export class RealtimeSessionService {
         if (expired.length < REALTIME_CLEANUP_BATCH) break;
       }
 
-      for (const sid of this.repository.listDuePingSessionIds(now)) {
-        const session = this.repository.getSession(sid);
-        if (session === null) continue;
-        try {
-          this.enqueuePingIfDue(session, now);
-          this.repository.updateSession(session);
-          wakeTargets.add(sid);
-        } catch (error) {
-          if (
-            error instanceof RealtimeRepositoryError &&
-            error.code === "queue_overflow"
-          ) {
-            this.repository.deleteSessionInTransaction(sid);
-            closed.add(sid);
-            if (session.socketConnected) connectedSessionRemoved = true;
-            continue;
-          }
-          throw error;
-        }
-      }
-
+      const wakeTargets = new Set<string>();
       if (connectedSessionRemoved) {
         for (const targetSid of this.enqueueClientsForConnectedSessions(now, closed)) {
           wakeTargets.add(targetSid);
@@ -1492,7 +1523,6 @@ export class RealtimeSessionService {
 
   private commitProcessedSession(
     sid: string,
-    initial: RealtimeSession,
     session: RealtimeSession,
     outbound: readonly EngineIoV4Packet[],
     broadcasts: readonly EngineIoV4Packet[],
@@ -1524,8 +1554,11 @@ export class RealtimeSessionService {
         return { error, wakeTargets: [...wakeTargets] };
       };
       if (
-        current.expiresAt <= now ||
-        (current.pongDeadline !== null && current.pongDeadline <= now)
+        current.transport !== REALTIME_WEBSOCKET_TRANSPORT &&
+        (
+          current.expiresAt <= now ||
+          (current.pongDeadline !== null && current.pongDeadline <= now)
+        )
       ) {
         return closeCurrent(
           new RealtimeSessionError("unknown_sid", "session ID is unknown or expired"),
@@ -1544,14 +1577,10 @@ export class RealtimeSessionService {
         this.applyPollingHeartbeat(session, now);
       }
       session.lastSeenAt = Math.max(session.lastSeenAt, current.lastSeenAt, now);
-      const heartbeatChangedConcurrently =
-        current.nextPingAt !== initial.nextPingAt ||
-        current.pongDeadline !== initial.pongDeadline ||
-        current.expiresAt !== initial.expiresAt;
-      if (
-        current.transport === REALTIME_WEBSOCKET_TRANSPORT
-        && heartbeatChangedConcurrently
-      ) {
+      if (current.transport === REALTIME_WEBSOCKET_TRANSPORT) {
+        // Hibernatable WebSocket attachments own transport liveness. Preserve
+        // the legacy columns only as inert compatibility data when committing
+        // a genuine Socket.IO application message.
         session.nextPingAt = current.nextPingAt;
         session.pongDeadline = current.pongDeadline;
         session.expiresAt = current.expiresAt;
@@ -2026,18 +2055,6 @@ export class RealtimeSessionService {
     if (session.pongDeadline !== null) session.pongDeadline = session.expiresAt;
   }
 
-  private enqueuePingIfDue(session: RealtimeSession, now: number): void {
-    if (session.engineProtocol === 3) return;
-    if (session.pongDeadline !== null || now < session.nextPingAt) return;
-    this.repository.enqueueFrames(
-      sidOf(session),
-      [engineFrameForSession(session, { type: "ping" })],
-      now,
-    );
-    session.pongDeadline = now + REALTIME_PING_TIMEOUT_MS;
-    session.expiresAt = session.pongDeadline;
-  }
-
   private pollingPingPayloadIfDue(
     session: RealtimeSession,
     now: number,
@@ -2131,8 +2148,11 @@ export class RealtimeSessionService {
     }
     this.applyPollingHeartbeat(session, now);
     if (
-      session.expiresAt <= now ||
-      (session.pongDeadline !== null && session.pongDeadline <= now)
+      transport !== REALTIME_WEBSOCKET_TRANSPORT &&
+      (
+        session.expiresAt <= now ||
+        (session.pongDeadline !== null && session.pongDeadline <= now)
+      )
     ) {
       this.repository.deleteSessionInTransaction(sid);
       this.dropPollingRuntime(sid);
@@ -2250,8 +2270,4 @@ export class RealtimeSessionService {
     }
     throw error;
   }
-}
-
-function sidOf(session: RealtimeSession): string {
-  return session.sid;
 }

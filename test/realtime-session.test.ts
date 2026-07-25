@@ -81,7 +81,7 @@ async function rpcPost(
 }
 
 describe("tenant Durable Object EIO4 polling state machine", () => {
-  it("excludes stale polling and expired websocket sessions from live broadcasts", async () => {
+  it("excludes stale polling while websocket liveness remains attachment-owned", async () => {
     const stub = store("realtime-live-broadcast-targets");
     await runInDurableObject(stub, async (_instance, state) => {
       migrateRealtimeSessions(state.storage);
@@ -129,12 +129,13 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       const expectedLive = expect.arrayContaining([
         livePolling.sid,
         liveWebSocket.sid,
+        expiredWebSocket.sid,
       ]);
       const expectOnlyLive = (sessionIds: string[]) => {
-        expect(sessionIds).toHaveLength(2);
+        expect(sessionIds).toHaveLength(3);
         expect(sessionIds).toEqual(expectedLive);
         expect(sessionIds).not.toContain(stalePolling.sid);
-        expect(sessionIds).not.toContain(expiredWebSocket.sid);
+        expect(sessionIds).toContain(expiredWebSocket.sid);
       };
 
       expectOnlyLive(repository.listStorageSubscriberSessionIds("entries", now));
@@ -144,7 +145,7 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       expect(repository.listConnectedSessionIds(now, "polling")).toEqual([
         livePolling.sid,
       ]);
-      expect(repository.countConnectedSessions(now)).toBe(2);
+      expect(repository.countConnectedSessions(now)).toBe(3);
     });
   });
 
