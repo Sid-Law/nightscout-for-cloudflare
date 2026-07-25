@@ -34,6 +34,7 @@ import {
   REALTIME_MAX_PAYLOAD_BYTES,
   REALTIME_MAX_QUEUE_PACKETS,
   REALTIME_MAX_SESSIONS_PER_TENANT,
+  REALTIME_POLL_STALE_SESSION_MS,
   REALTIME_WEBSOCKET_TRANSPORT,
 } from "../src/realtime/constants";
 import { nightscoutWebsocketStatus } from "../src/status";
@@ -80,6 +81,73 @@ async function rpcPost(
 }
 
 describe("tenant Durable Object EIO4 polling state machine", () => {
+  it("excludes stale polling and expired websocket sessions from live broadcasts", async () => {
+    const stub = store("realtime-live-broadcast-targets");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const now = Date.parse("2026-07-25T05:00:00.000Z");
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+      const livePolling = repository.createSession(now);
+      const stalePolling = repository.createSession(now);
+      const liveWebSocket = repository.createSession(
+        now,
+        REALTIME_WEBSOCKET_TRANSPORT,
+      );
+      const expiredWebSocket = repository.createSession(
+        now,
+        REALTIME_WEBSOCKET_TRANSPORT,
+      );
+      const sessions = [
+        livePolling,
+        stalePolling,
+        liveWebSocket,
+        expiredWebSocket,
+      ];
+
+      for (const session of sessions) {
+        state.storage.sql.exec(
+          `UPDATE realtime_sessions
+           SET socket_connected = 1, authorized = 1, read_allowed = 1
+           WHERE sid = ?`,
+          session.sid,
+        );
+        repository.connectStorageNamespace(session.sid, now);
+        repository.addStorageSubscriptions(session.sid, ["entries"], now);
+        repository.connectAlarmNamespace(session.sid, now);
+      }
+      state.storage.sql.exec(
+        "UPDATE realtime_sessions SET last_seen_at = ? WHERE sid = ?",
+        now - REALTIME_POLL_STALE_SESSION_MS,
+        stalePolling.sid,
+      );
+      state.storage.sql.exec(
+        "UPDATE realtime_sessions SET expires_at = ? WHERE sid = ?",
+        now,
+        expiredWebSocket.sid,
+      );
+
+      const expectedLive = expect.arrayContaining([
+        livePolling.sid,
+        liveWebSocket.sid,
+      ]);
+      const expectOnlyLive = (sessionIds: string[]) => {
+        expect(sessionIds).toHaveLength(2);
+        expect(sessionIds).toEqual(expectedLive);
+        expect(sessionIds).not.toContain(stalePolling.sid);
+        expect(sessionIds).not.toContain(expiredWebSocket.sid);
+      };
+
+      expectOnlyLive(repository.listStorageSubscriberSessionIds("entries", now));
+      expectOnlyLive(repository.listAlarmConnectionSessionIds(now));
+      expectOnlyLive(repository.listDataReceiverSessionIds(now));
+      expectOnlyLive(repository.listConnectedSessionIds(now));
+      expect(repository.listConnectedSessionIds(now, "polling")).toEqual([
+        livePolling.sid,
+      ]);
+      expect(repository.countConnectedSessions(now)).toBe(2);
+    });
+  });
+
   it("matches dataWithRecentStatuses fields, device windows, and public profiles", () => {
     const now = Date.parse("2026-07-18T00:00:00.000Z");
     const statuses = Array.from({ length: 12 }, (_unused, index) => ({
@@ -139,6 +207,33 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         clientPayload({ type: "connect", namespace: "/" }),
       ),
     ).toEqual({ ok: true, value: null });
+    const polled = await resumed.realtimePoll(opened.value.sid);
+    expect(polled.ok).toBe(true);
+    if (!polled.ok) throw new Error(polled.error.message);
+    expect(unwrapSocketIoV5Packet(decodeEngineIoV4PollingPayload(polled.value)[0]!))
+      .toMatchObject({ type: "connect", namespace: "/" });
+  });
+
+  it("keeps an active polling POST lease valid across Durable Object eviction", async () => {
+    const stub = store("realtime-post-lease-eviction");
+    const opened = await stub.realtimeHandshake();
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) throw new Error(opened.error.message);
+
+    const lease = await stub.realtimeBeginPost(opened.value.sid);
+    expect(lease.ok).toBe(true);
+    if (!lease.ok) throw new Error(lease.error.message);
+
+    await evictDurableObject(stub);
+    const resumed = env.ENTRY_STORE.getByName(stub.name!);
+    expect(
+      await resumed.realtimeSubmitPost(
+        opened.value.sid,
+        lease.value,
+        clientPayload({ type: "connect", namespace: "/" }),
+      ),
+    ).toEqual({ ok: true, value: null });
+
     const polled = await resumed.realtimePoll(opened.value.sid);
     expect(polled.ok).toBe(true);
     if (!polled.ok) throw new Error(polled.error.message);
@@ -1071,7 +1166,7 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       const authorization = new Promise<RealtimeAuthorization>((resolve) => {
         resolveAuthorization = resolve;
       });
-      const now = 3_750_000;
+      let now = 3_750_000;
       const service = new RealtimeSessionService(state.storage, {
         now: () => now,
         authorize: () => authorization,
@@ -1081,6 +1176,7 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
       await service.poll(sid);
 
+      now += 15_000;
       const lease = service.beginPost(sid);
       const pendingAuthorization = service.submitPost(sid, lease, clientPayload({
         type: "event",
@@ -1089,11 +1185,7 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         data: ["authorize", { client: "web" }],
       }));
       await Promise.resolve();
-      state.storage.sql.exec(
-        "UPDATE realtime_sessions SET next_ping_at = ? WHERE sid = ?",
-        now,
-        sid,
-      );
+      now += 10_000;
       expect(await service.poll(sid)).toBe("2");
       resolveAuthorization?.({ read: true, write: false, write_treatment: false });
       await pendingAuthorization;
@@ -1152,19 +1244,25 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
       migrateRealtimeSessions(state.storage);
       const service = new RealtimeSessionService(state.storage, { now: () => now });
       const { sid } = service.createHandshake();
+      const writesBeforeHeartbeat = state.storage.sql
+        .exec<{ count: number }>("SELECT total_changes() AS count")
+        .one().count;
 
       now += 25_000;
       expect(await service.poll(sid)).toBe("2");
-      expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid))
-        .toMatchObject({ pongDeadline: now + 20_000, expiresAt: now + 20_000 });
 
       await post(service, sid, encodeEngineIoV4PollingPayload([{ type: "pong" }]));
+      const writesAfterHeartbeat = state.storage.sql
+        .exec<{ count: number }>("SELECT total_changes() AS count")
+        .one().count;
+      expect(writesAfterHeartbeat - writesBeforeHeartbeat).toBe(2);
       expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid))
         .toMatchObject({
-          pongDeadline: null,
-          nextPingAt: now + 25_000,
-          expiresAt: now + 45_000,
+          outboundPackets: 0,
+          pollToken: null,
+          postToken: null,
         });
+      expect(service.nextDeadline()).toBeNull();
 
       now += 45_000;
       expect(() => service.beginPost(sid)).toThrowError(RealtimeSessionError);
@@ -1172,19 +1270,65 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
     });
   });
 
+  it("keeps one hour of polling heartbeats within a small durable write budget", async () => {
+    const stub = store("realtime-heartbeat-write-budget");
+    let now = 4_100_000;
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const service = new RealtimeSessionService(state.storage, { now: () => now });
+      const { sid } = service.createHandshake();
+      const writesBefore = state.storage.sql
+        .exec<{ count: number }>("SELECT total_changes() AS count")
+        .one().count;
+
+      for (let cycle = 0; cycle < 144; cycle += 1) {
+        now += 25_000;
+        expect(await service.poll(sid)).toBe("2");
+        await post(service, sid, encodeEngineIoV4PollingPayload([{ type: "pong" }]));
+      }
+
+      const writesAfter = state.storage.sql
+        .exec<{ count: number }>("SELECT total_changes() AS count")
+        .one().count;
+      // 288 lease set/clear mutations plus bounded coarse heartbeat
+      // checkpoints. Ordinary cycles do not rewrite the expiry index.
+      expect(writesAfter - writesBefore).toBeLessThanOrEqual(310);
+      expect(service.nextDeadline()).toBeNull();
+    });
+  });
+
+  it("keeps an advanced polling heartbeat monotonic when an active POST is aborted", async () => {
+    const stub = store("realtime-abort-post-heartbeat");
+    let now = 4_150_000;
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      const service = new RealtimeSessionService(state.storage, {
+        now: () => now,
+        pollWaitMs: 0,
+      });
+      const { sid } = service.createHandshake();
+      const token = service.beginPost(sid);
+
+      now += 25_000;
+      expect(await service.poll(sid)).toBe("2");
+      service.abortPost(sid, token);
+
+      // The outstanding ping must remain outstanding. Replaying the older
+      // durable heartbeat here would incorrectly emit another immediate ping.
+      expect(await service.poll(sid)).toBe("6");
+    });
+  });
+
   it("wakes a poll for queued data, then waits only until the original ping deadline", async () => {
     const stub = store("realtime-poll-remaining");
     await runInDurableObject(stub, async (_instance, state) => {
       migrateRealtimeSessions(state.storage);
-      const service = new RealtimeSessionService(state.storage, { pollWaitMs: 500 });
+      let now = 4_200_000;
+      const service = new RealtimeSessionService(state.storage, {
+        now: () => now,
+        pollWaitMs: 500,
+      });
       const { sid } = service.createHandshake();
-      const pingAt = Date.now() + 150;
-      state.storage.sql.exec(
-        "UPDATE realtime_sessions SET next_ping_at = ?, expires_at = ? WHERE sid = ?",
-        pingAt,
-        pingAt + 300,
-        sid,
-      );
 
       const firstPoll = service.poll(sid);
       await new Promise<void>((resolve) => setTimeout(resolve, 10));
@@ -1193,21 +1337,17 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         .map((packet) => unwrapSocketIoV5Packet(packet));
       expect(firstPackets[0]).toMatchObject({ type: "connect", namespace: "/" });
 
-      // The POST refreshed the general liveness deadline. Put a nearer expiry
-      // back so a reopened GET that waits the full 500 ms would lose the SID.
-      state.storage.sql.exec(
-        "UPDATE realtime_sessions SET expires_at = ? WHERE sid = ?",
-        pingAt + 300,
-        sid,
-      );
+      now += 25_000;
       const secondStartedAt = Date.now();
       expect(await service.poll(sid)).toBe("2");
-      expect(Date.now() - secondStartedAt).toBeLessThan(350);
+      expect(Date.now() - secondStartedAt).toBeLessThan(100);
       expect(new SqliteRealtimeSessionRepository(state.storage).requireSession(sid))
         .toMatchObject({
-          pongDeadline: expect.any(Number),
           pollToken: null,
+          postToken: null,
+          outboundPackets: 0,
         });
+      expect(service.nextDeadline()).toBeNull();
     });
   });
 

@@ -202,6 +202,20 @@ async function expectStoredSession(
   );
 }
 
+async function hasActivePoll(
+  tenantName: string,
+  sid: string,
+): Promise<boolean> {
+  return runInDurableObject(store(tenantName), async (instance) => {
+    const realtime = (
+      instance as unknown as {
+        realtime: { waiters: Map<string, unknown> };
+      }
+    ).realtime;
+    return realtime.waiters.has(sid);
+  });
+}
+
 describe("direct Engine.IO 4 WebSocket transport", () => {
   it("validates direct-handshake HTTP boundaries and rejects an invalid upgrade SID", async () => {
     const name = tenant("ws-http");
@@ -248,10 +262,11 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
 
     const pendingPoll = SELF.fetch(pollingEndpoint(name, `&sid=${opened.sid}`));
     await vi.waitFor(async () => {
-      await expect(expectStoredSession(name, opened.sid)).resolves.toMatchObject({
-        transport: "polling",
-        pollToken: expect.any(String),
-      });
+      expect(await hasActivePoll(name, opened.sid)).toBe(true);
+    });
+    await expect(expectStoredSession(name, opened.sid)).resolves.toMatchObject({
+      transport: "polling",
+      pollToken: null,
     });
 
     const inbox = await openUpgradeWebSocket(name, opened.sid);

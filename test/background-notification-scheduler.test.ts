@@ -1054,13 +1054,7 @@ describe("SQLite Durable Object background notification scheduler", () => {
         `SELECT last_emit_at FROM realtime_alarm_silences
          WHERE level = 2 AND alarm_group = 'default'`,
       ).one().last_emit_at;
-      const realtimeDeadline = state.storage.sql.exec<{ next_ping_at: number }>(
-        "SELECT next_ping_at FROM realtime_sessions WHERE sid = ?",
-        socket.sid,
-      ).one().next_ping_at;
-      expect(await state.storage.getAlarm()).toBe(
-        Math.min(taskBefore.due_at, realtimeDeadline),
-      );
+      expect(await state.storage.getAlarm()).toBe(taskBefore.due_at);
       return { task: taskBefore, emitted };
     });
 

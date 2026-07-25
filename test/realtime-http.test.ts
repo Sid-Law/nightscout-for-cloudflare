@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
-import { SELF, runInDurableObject } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { evictDurableObject, SELF, runInDurableObject } from "cloudflare:test";
+import { describe, expect, it, vi } from "vitest";
 import type { EntryStore } from "../src/entry-store";
 import { parseEntryPayload } from "../src/model";
 import {
@@ -90,6 +90,20 @@ async function sendLegacy(
 
 async function pollLegacy(tenantName: string, sid: string): Promise<Response> {
   return SELF.fetch(legacyEndpoint(tenantName, `&sid=${sid}`));
+}
+
+async function hasActivePoll(
+  stub: DurableObjectStub<EntryStore>,
+  sid: string,
+): Promise<boolean> {
+  return runInDurableObject(stub, async (instance) => {
+    const realtime = (
+      instance as unknown as {
+        realtime: { waiters: Map<string, unknown> };
+      }
+    ).realtime;
+    return realtime.waiters.has(sid);
+  });
 }
 
 function socketPackets(payload: string): SocketIoV5Packet[] {
@@ -1162,16 +1176,17 @@ describe("Engine.IO 3/4 polling HTTP adapter", () => {
     const pollTenant = tenant("eio-get-overlap");
     const pollSid = (await open(pollTenant)).sid;
     const pollStub = env.ENTRY_STORE.getByName(pollTenant) as DurableObjectStub<EntryStore>;
-    await runInDurableObject(pollStub, async (_instance, state) => {
-      state.storage.sql.exec(
-        "UPDATE realtime_sessions SET poll_token = 'active', poll_deadline = ? WHERE sid = ?",
-        Date.now() + 30_000,
-        pollSid,
-      );
+    const activePoll = pollStub.realtimePoll(pollSid);
+    await vi.waitFor(async () => {
+      expect(await hasActivePoll(pollStub, pollSid)).toBe(true);
     });
     const getOverlap = await poll(pollTenant, pollSid);
     expect(getOverlap.status).toBe(500);
     expect(await getOverlap.text()).toBe("");
+    await expect(activePoll).resolves.toMatchObject({
+      ok: false,
+      error: { code: "unknown_sid" },
+    });
 
     const postTenant = tenant("eio-post-overlap");
     const postSid = (await open(postTenant)).sid;
@@ -1183,20 +1198,10 @@ describe("Engine.IO 3/4 polling HTTP adapter", () => {
     expect(await postOverlap.text()).toBe("");
   });
 
-  it("emits a due server ping, accepts pong data, and rejects expired SIDs", async () => {
+  it("accepts pong data and rejects durably stale SIDs after eviction", async () => {
     const name = tenant("eio-heartbeat");
     const { sid } = await open(name);
     const stub = env.ENTRY_STORE.getByName(name) as DurableObjectStub<EntryStore>;
-    await runInDurableObject(stub, async (_instance, state) => {
-      state.storage.sql.exec(
-        "UPDATE realtime_sessions SET next_ping_at = ? WHERE sid = ?",
-        Date.now() - 1,
-        sid,
-      );
-    });
-    const ping = await poll(name, sid);
-    expect(ping.status).toBe(200);
-    expect(await ping.text()).toBe("2");
 
     const pong = await send(
       name,
@@ -1207,10 +1212,12 @@ describe("Engine.IO 3/4 polling HTTP adapter", () => {
 
     await runInDurableObject(stub, async (_instance, state) => {
       state.storage.sql.exec(
-        "UPDATE realtime_sessions SET expires_at = 0 WHERE sid = ?",
+        "UPDATE realtime_sessions SET last_seen_at = ? WHERE sid = ?",
+        Date.now() - 10 * 60_000,
         sid,
       );
     });
+    await evictDurableObject(stub);
     const expired = await poll(name, sid);
     expect(expired.status).toBe(400);
     expect(await expired.json()).toEqual({ code: 1, message: "Session ID unknown" });

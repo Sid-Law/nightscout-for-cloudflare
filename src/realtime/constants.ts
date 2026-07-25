@@ -41,8 +41,10 @@ export const REALTIME_SNAPSHOT_MAX_DOCUMENT_DEPTH = 24;
 export const REALTIME_SNAPSHOT_MAX_STRING_CHARACTERS = 262_144;
 export const REALTIME_DEVICE_STATUS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
-// A poll normally completes when the next server ping is due. The extra
-// allowance prevents a scheduler delay from looking like a concurrent poll.
-export const REALTIME_POLL_LEASE_MS =
-  REALTIME_PING_INTERVAL_MS + 5_000;
 export const REALTIME_POST_LEASE_MS = 15_000;
+// Polling transport liveness is held in the active Durable Object instead of
+// being rewritten to SQLite on every Engine.IO heartbeat. A coarse durable
+// touch bounds abandoned rows without turning a 25-second heartbeat into a
+// write-amplification loop.
+export const REALTIME_POLL_DURABLE_TOUCH_MS = 3 * 60_000;
+export const REALTIME_POLL_STALE_SESSION_MS = 5 * 60_000;
