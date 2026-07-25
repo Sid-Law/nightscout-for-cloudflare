@@ -6,6 +6,7 @@ import {
   REALTIME_MAX_PAYLOAD_BYTES,
   type RealtimeEngineProtocol,
 } from "./constants";
+import { durableObjectWriteQuotaRetryAfterSeconds } from "../platform-errors";
 
 const ENGINE_ERROR_MESSAGES = {
   0: "Transport unknown",
@@ -29,11 +30,27 @@ function pollingHeaders(contentType?: string): Headers {
   return headers;
 }
 
-function engineError(code: EngineErrorCode, status = 400): Response {
+function engineError(
+  code: EngineErrorCode,
+  status = 400,
+  retryAfterSeconds?: number,
+): Response {
+  const headers = pollingHeaders("application/json");
+  if (retryAfterSeconds !== undefined) {
+    headers.set("Retry-After", String(retryAfterSeconds));
+  }
   return new Response(JSON.stringify({ code, message: ENGINE_ERROR_MESSAGES[code] }), {
     status,
-    headers: pollingHeaders("application/json"),
+    headers,
   });
+}
+
+export function storageQuotaEngineError(now = Date.now()): Response {
+  return engineError(
+    3,
+    503,
+    durableObjectWriteQuotaRetryAfterSeconds(now),
+  );
 }
 
 function empty(status: number): Response {
@@ -92,6 +109,7 @@ function rpcFailure(error: RealtimeRpcError): Response {
   if (error.code === "unknown_sid" || error.code === "invalid_post_lease") {
     return engineError(1);
   }
+  if (error.code === "storage_quota") return storageQuotaEngineError();
   if (error.code === "capacity") return engineError(3, 503);
   return engineError(3);
 }

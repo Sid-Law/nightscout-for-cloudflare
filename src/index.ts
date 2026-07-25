@@ -38,7 +38,14 @@ import {
 } from "./model";
 import type { PublicEntry } from "./model";
 import { permissionGroupsAllow } from "./permissions";
-import { handleSocketIo } from "./realtime/http-adapter";
+import {
+  handleSocketIo,
+  storageQuotaEngineError,
+} from "./realtime/http-adapter";
+import {
+  durableObjectWriteQuotaRetryAfterSeconds,
+  isDurableObjectWriteQuotaError,
+} from "./platform-errors";
 import { normalizePlatformAuthFailDelay } from "./status";
 import {
   handleApi3DeviceStatus,
@@ -3559,6 +3566,30 @@ export default {
           );
         }
         return json({ error: { code: error.code, message: error.message } }, { status: error.status });
+      }
+      if (isDurableObjectWriteQuotaError(error)) {
+        if (url.pathname === "/socket.io" || url.pathname === "/socket.io/") {
+          return storageQuotaEngineError();
+        }
+        return withoutBodyForHead(
+          request,
+          json(
+            {
+              error: {
+                code: "storage_write_quota_exceeded",
+                message: "Storage writes are temporarily unavailable until the next daily reset",
+              },
+            },
+            {
+              status: 503,
+              headers: {
+                "Retry-After": String(
+                  durableObjectWriteQuotaRetryAfterSeconds(),
+                ),
+              },
+            },
+          ),
+        );
       }
       console.error(
         JSON.stringify({

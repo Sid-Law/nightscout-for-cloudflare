@@ -56,6 +56,7 @@ import {
   type RealtimeWebSocketClosure,
   type RealtimeWebSocketClosureRetry,
 } from "./session-repository";
+import { isDurableObjectWriteQuotaError } from "../platform-errors";
 
 export interface RealtimeAuthorization {
   read: boolean;
@@ -158,6 +159,7 @@ export class RealtimeSessionError extends Error {
       | "overlap"
       | "bad_packet"
       | "capacity"
+      | "storage_quota"
       | "queue_overflow"
       | "invalid_post_lease",
     message: string,
@@ -2237,6 +2239,12 @@ export class RealtimeSessionService {
 
   private translateRepositoryError(error: unknown): RealtimeSessionError {
     if (error instanceof RealtimeSessionError) return error;
+    if (isDurableObjectWriteQuotaError(error)) {
+      return new RealtimeSessionError(
+        "storage_quota",
+        "Temporary storage quota exceeded",
+      );
+    }
     if (error instanceof RealtimeRepositoryError) {
       return new RealtimeSessionError(error.code, error.message);
     }

@@ -163,9 +163,9 @@ export class SqliteAdminNotifyRepository {
     );
   }
 
-  listForApi(now = Date.now()): AdminNotify[] {
+  listForApi(now = Date.now(), cleanExpired = true): AdminNotify[] {
     const current = timestamp(now);
-    this.clean(current);
+    if (cleanExpired) this.clean(current);
     return this.storage.sql.exec<AdminNotifyRow>(
       `SELECT message, body, count, last_recorded, persistent
        FROM admin_notifies

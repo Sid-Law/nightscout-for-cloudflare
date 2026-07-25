@@ -29,6 +29,8 @@ import {
 } from "./jwt";
 import { permissionGroupsAllow } from "./permissions";
 import {
+  documentReadSchemaIsCurrent,
+  entriesShadowSchemaIsCurrent,
   migrateEntriesV6,
   migrateDocumentsV4,
   DocumentQueryError,
@@ -39,6 +41,12 @@ import {
   type DocumentHistoryQuery,
   type DocumentQuery,
 } from "./document-repository";
+import {
+  DurableObjectWriteQuotaError,
+  durableObjectWriteQuotaResetAt,
+  durableObjectWriteQuotaRetryAfterSeconds,
+  isDurableObjectWriteQuotaError,
+} from "./platform-errors";
 import {
   type HistoryQuery,
   type PublicEntry,
@@ -212,6 +220,96 @@ type EntryStoreEnv = Env & NightscoutStatusEnvironment & {
   PREDICTIONS_MAX_SIZE?: string;
   UUID_HANDLING?: string;
 };
+
+const ENTRY_STORE_REQUIRED_MIGRATIONS = [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  18,
+  19,
+  20,
+  21,
+  22,
+] as const;
+
+function sqliteTableHasColumns(
+  sql: SqlStorage,
+  table: string,
+  required: readonly string[],
+): boolean {
+  if (!/^[a-z_]+$/.test(table)) return false;
+  const columns = new Set(
+    sql.exec<{ name: string }>(`PRAGMA table_info(${table})`)
+      .toArray()
+      .map((column) => column.name),
+  );
+  return required.every((column) => columns.has(column));
+}
+
+/**
+ * Proves that a tenant which can no longer write still has the complete core
+ * schema needed for status, authorization, Entries and document reads.
+ */
+export function entryStoreSchemaSupportsReadOnly(sql: SqlStorage): boolean {
+  try {
+    const migrationTablePresent = sql.exec<{ present: number }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM sqlite_master
+         WHERE type = 'table' AND name = '_sql_schema_migrations'
+       ) AS present`,
+    ).one().present !== 0;
+    if (!migrationTablePresent) return false;
+
+    const markers = new Set(
+      sql.exec<{ id: number }>(
+        `SELECT id FROM _sql_schema_migrations
+         WHERE id IN (${ENTRY_STORE_REQUIRED_MIGRATIONS.join(",")})`,
+      ).toArray().map((row) => row.id),
+    );
+    if (ENTRY_STORE_REQUIRED_MIGRATIONS.some((id) => !markers.has(id))) return false;
+    if (!documentReadSchemaIsCurrent(sql) || !entriesShadowSchemaIsCurrent(sql)) {
+      return false;
+    }
+    if (
+      !sqliteTableHasColumns(sql, "tenant_secrets", ["name", "value", "created_at"])
+      || !sqliteTableHasColumns(
+        sql,
+        "authorization_failures",
+        ["ip", "retry_at", "updated_at"],
+      )
+      || !sqliteTableHasColumns(
+        sql,
+        "admin_notifies",
+        ["message", "body", "count", "last_recorded", "persistent"],
+      )
+      || !sqliteTableHasColumns(
+        sql,
+        "realtime_root_state",
+        ["singleton", "snapshot", "updated_at"],
+      )
+    ) {
+      return false;
+    }
+    return sql.exec<{ present: number }>(
+      "SELECT EXISTS(SELECT 1 FROM realtime_root_state WHERE singleton = 1) AS present",
+    ).one().present !== 0;
+  } catch {
+    return false;
+  }
+}
 
 // Keep the original tag strings so already-hibernated EIO4 sockets survive a
 // deployment; they now identify both accepted Engine.IO protocol versions.
@@ -592,6 +690,7 @@ class RealtimeJsonBudget {
 export class EntryStore extends DurableObject<EntryStoreEnv> {
   private readonly realtime: RealtimeSessionService;
   private readonly activeWebSocketSessions = new Set<string>();
+  private storageWriteQuotaBlockedUntil = 0;
 
   constructor(ctx: DurableObjectState, env: EntryStoreEnv) {
     super(ctx, env);
@@ -612,10 +711,26 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       writeRoot: (request) => this.realtimeRootWrite(request),
     });
     ctx.blockConcurrencyWhile(async () => {
-      this.migrate();
-      this.reconcileAdminNotifies(Date.now());
-      this.seedAutomaticNotificationTask(Date.now());
-      await this.synchronizeRealtimeAlarm();
+      try {
+        this.migrate();
+      } catch (error) {
+        if (
+          !isDurableObjectWriteQuotaError(error)
+          || !entryStoreSchemaSupportsReadOnly(this.ctx.storage.sql)
+        ) {
+          throw error;
+        }
+        this.enterStorageWriteQuotaMode(error);
+      }
+      if (this.storageWritesBlocked()) return;
+      try {
+        this.reconcileAdminNotifies(Date.now());
+        this.seedAutomaticNotificationTask(Date.now());
+        await this.synchronizeRealtimeAlarm();
+      } catch (error) {
+        if (!isDurableObjectWriteQuotaError(error)) throw error;
+        this.enterStorageWriteQuotaMode(error);
+      }
     });
   }
 
@@ -835,6 +950,49 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     this.realtime.synchronizeRootDataSnapshot();
   }
 
+  private enterStorageWriteQuotaMode(error: unknown): boolean {
+    if (!isDurableObjectWriteQuotaError(error)) return false;
+    this.storageWriteQuotaBlockedUntil = durableObjectWriteQuotaResetAt();
+    return true;
+  }
+
+  private storageWritesBlocked(now = Date.now()): boolean {
+    if (this.storageWriteQuotaBlockedUntil <= now) {
+      this.storageWriteQuotaBlockedUntil = 0;
+      return false;
+    }
+    return true;
+  }
+
+  private requireStorageWrites(): void {
+    if (this.storageWritesBlocked()) throw new DurableObjectWriteQuotaError();
+  }
+
+  private async withStorageWrites<T>(
+    operation: () => T | Promise<T>,
+  ): Promise<T> {
+    this.requireStorageWrites();
+    try {
+      return await operation();
+    } catch (error) {
+      this.enterStorageWriteQuotaMode(error);
+      throw error;
+    }
+  }
+
+  private storageWriteQuotaResponse(): Response {
+    return Response.json(
+      { code: 3, message: "Bad request" },
+      {
+        status: 503,
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After": String(durableObjectWriteQuotaRetryAfterSeconds()),
+        },
+      },
+    );
+  }
+
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const rawEngineProtocol = url.searchParams.get("EIO");
@@ -850,6 +1008,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         { status: 400, headers: { "Cache-Control": "no-store" } },
       );
     }
+    if (this.storageWritesBlocked()) return this.storageWriteQuotaResponse();
     const engineProtocol: RealtimeEngineProtocol = rawEngineProtocol === "3" ? 3 : 4;
     const rawSid = url.searchParams.get("sid");
     const upgradeSid = rawSid === null || rawSid === "" ? null : rawSid;
@@ -921,13 +1080,24 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       await this.synchronizeRealtimeAlarm();
       return new Response(null, { status: 101, webSocket: client });
     } catch (error) {
+      if (this.enterStorageWriteQuotaMode(error)) {
+        this.safeCloseWebSocket(server, 1013, "storage temporarily unavailable");
+        return this.storageWriteQuotaResponse();
+      }
       if (opened !== null) this.realtime.closeWebSocketSession(opened.sid);
       if (upgradeStarted && upgradeSid !== null) {
         this.realtime.abortWebSocketUpgrade(upgradeSid);
       }
       this.safeCloseWebSocket(server, 1011, "handshake failed");
-      this.flushRealtimeWebSockets();
-      await this.synchronizeRealtimeAlarm();
+      try {
+        this.flushRealtimeWebSockets();
+        await this.synchronizeRealtimeAlarm();
+      } catch (cleanupError) {
+        if (this.enterStorageWriteQuotaMode(cleanupError)) {
+          return this.storageWriteQuotaResponse();
+        }
+        throw cleanupError;
+      }
       if (error instanceof RealtimeSessionError && error.code === "unknown_sid") {
         return Response.json(
           { code: 1, message: "Session ID unknown" },
@@ -948,22 +1118,36 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ws: WebSocket,
     message: string | ArrayBuffer,
   ): Promise<void> {
+    if (this.storageWritesBlocked()) {
+      this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
+      return;
+    }
     let attachment = this.realtimeWebSocketAttachment(ws);
     if (attachment === null) {
-      this.closeInvalidRealtimeWebSocket(ws);
-      this.flushRealtimeWebSockets();
-      await this.synchronizeRealtimeAlarm();
+      try {
+        this.closeInvalidRealtimeWebSocket(ws);
+        this.flushRealtimeWebSockets();
+        await this.synchronizeRealtimeAlarm();
+      } catch (error) {
+        if (!this.enterStorageWriteQuotaMode(error)) throw error;
+        this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
+      }
       return;
     }
     if (this.activeWebSocketSessions.has(attachment.sid)) {
-      if (attachment.mode === "upgrade") {
-        this.realtime.abortWebSocketUpgrade(attachment.sid);
-      } else {
-        this.realtime.closeWebSocketSession(attachment.sid);
+      try {
+        if (attachment.mode === "upgrade") {
+          this.realtime.abortWebSocketUpgrade(attachment.sid);
+        } else {
+          this.realtime.closeWebSocketSession(attachment.sid);
+        }
+        this.safeCloseWebSocket(ws, 1008, "concurrent frame");
+        this.flushRealtimeWebSockets();
+        await this.synchronizeRealtimeAlarm();
+      } catch (error) {
+        if (!this.enterStorageWriteQuotaMode(error)) throw error;
+        this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
       }
-      this.safeCloseWebSocket(ws, 1008, "concurrent frame");
-      this.flushRealtimeWebSockets();
-      await this.synchronizeRealtimeAlarm();
       return;
     }
 
@@ -1008,10 +1192,20 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       const result = await this.realtime.submitWebSocketFrame(attachment.sid, message);
       if (result.closed) this.safeCloseWebSocket(ws, 1000, "transport close");
     } catch (error) {
-      if (attachment.mode === "upgrade") {
-        this.realtime.abortWebSocketUpgrade(attachment.sid);
-      } else {
-        this.realtime.closeWebSocketSession(attachment.sid);
+      if (this.enterStorageWriteQuotaMode(error)) {
+        this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
+        return;
+      }
+      try {
+        if (attachment.mode === "upgrade") {
+          this.realtime.abortWebSocketUpgrade(attachment.sid);
+        } else {
+          this.realtime.closeWebSocketSession(attachment.sid);
+        }
+      } catch (cleanupError) {
+        if (!this.enterStorageWriteQuotaMode(cleanupError)) throw cleanupError;
+        this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
+        return;
       }
       const oversized =
         error instanceof RealtimeSessionError &&
@@ -1026,8 +1220,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       );
     } finally {
       this.activeWebSocketSessions.delete(attachment.sid);
-      this.flushRealtimeWebSockets();
-      await this.synchronizeRealtimeAlarm();
+      if (!this.storageWritesBlocked()) {
+        try {
+          this.flushRealtimeWebSockets();
+          await this.synchronizeRealtimeAlarm();
+        } catch (error) {
+          if (!this.enterStorageWriteQuotaMode(error)) throw error;
+          this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
+        }
+      }
     }
   }
 
@@ -1037,31 +1238,49 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     _reason: string,
     _wasClean: boolean,
   ): Promise<void> {
-    const attachment = this.realtimeWebSocketAttachment(ws);
-    if (attachment?.mode === "upgrade") {
-      this.realtime.abortWebSocketUpgrade(attachment.sid);
-    } else if (attachment !== null) {
-      this.realtime.closeWebSocketSession(attachment.sid);
-    } else {
-      this.closeInvalidRealtimeWebSocket(ws);
+    if (this.storageWritesBlocked()) {
+      this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
+      return;
     }
-    this.flushRealtimeWebSockets();
-    await this.synchronizeRealtimeAlarm();
+    const attachment = this.realtimeWebSocketAttachment(ws);
+    try {
+      if (attachment?.mode === "upgrade") {
+        this.realtime.abortWebSocketUpgrade(attachment.sid);
+      } else if (attachment !== null) {
+        this.realtime.closeWebSocketSession(attachment.sid);
+      } else {
+        this.closeInvalidRealtimeWebSocket(ws);
+      }
+      this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+    } catch (error) {
+      if (!this.enterStorageWriteQuotaMode(error)) throw error;
+      this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
+    }
   }
 
   override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
-    const attachment = this.realtimeWebSocketAttachment(ws);
-    if (attachment?.mode === "upgrade") {
-      this.realtime.abortWebSocketUpgrade(attachment.sid);
-    } else if (attachment !== null) {
-      this.realtime.closeWebSocketSession(attachment.sid);
-    } else {
-      this.closeInvalidRealtimeWebSocket(ws);
+    if (this.storageWritesBlocked()) {
+      this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
+      return;
     }
-    console.error(JSON.stringify({ message: "realtime websocket transport error" }));
-    this.safeCloseWebSocket(ws, 1011, "transport error");
-    this.flushRealtimeWebSockets();
-    await this.synchronizeRealtimeAlarm();
+    const attachment = this.realtimeWebSocketAttachment(ws);
+    try {
+      if (attachment?.mode === "upgrade") {
+        this.realtime.abortWebSocketUpgrade(attachment.sid);
+      } else if (attachment !== null) {
+        this.realtime.closeWebSocketSession(attachment.sid);
+      } else {
+        this.closeInvalidRealtimeWebSocket(ws);
+      }
+      console.error(JSON.stringify({ message: "realtime websocket transport error" }));
+      this.safeCloseWebSocket(ws, 1011, "transport error");
+      this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+    } catch (error) {
+      if (!this.enterStorageWriteQuotaMode(error)) throw error;
+      this.safeCloseWebSocket(ws, 1013, "storage temporarily unavailable");
+    }
   }
 
   private trustedRealtimeWebSocketSid(ws: WebSocket): string | null {
@@ -1158,6 +1377,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private flushRealtimeWebSockets(): void {
+    if (this.storageWritesBlocked()) return;
     const now = Date.now();
     let remainingSockets = REALTIME_WEBSOCKET_FLUSH_MAX_SOCKETS;
     let remainingFrames = REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES;
@@ -1300,6 +1520,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private reconcileAdminNotifies(now: number): void {
+    if (this.storageWritesBlocked()) return;
     this.adminNotifies().reconcileReadableSite(
       (this.env.AUTH_DEFAULT_ROLES ?? "readable") === "readable",
       this.adminNotifiesEnabled(now),
@@ -1310,7 +1531,9 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   listAdminNotifications(now = Date.now()): string {
     const timestamp = Number.isFinite(now) ? Math.trunc(now) : Date.now();
     this.reconcileAdminNotifies(timestamp);
-    return JSON.stringify(this.adminNotifies().listForApi(timestamp));
+    return JSON.stringify(
+      this.adminNotifies().listForApi(timestamp, !this.storageWritesBlocked()),
+    );
   }
 
   private xdripStateNotification(): XdripJsStateNotification | null {
@@ -1936,6 +2159,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private seedAutomaticNotificationTask(now: number): void {
+    if (this.storageWritesBlocked()) return;
     const tasks = this.backgroundTasks();
     const runtime = this.resolvedAutomaticNotificationRuntime(now);
     const anyEnabled = runtime.upbat || runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
@@ -2877,16 +3101,31 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private cleanupAuthorizationFailures(now: number): void {
-    this.ctx.storage.sql.exec(
-      "DELETE FROM authorization_failures WHERE retry_at + ? < ?",
+    if (this.storageWritesBlocked()) return;
+    const expired = this.ctx.storage.sql.exec<{ present: number }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM authorization_failures
+         WHERE retry_at + ? < ?
+       ) AS present`,
       AUTHORIZATION_FAILURE_AGE_MS,
       now,
-    );
+    ).one().present !== 0;
+    if (!expired) return;
+    try {
+      this.ctx.storage.sql.exec(
+        "DELETE FROM authorization_failures WHERE retry_at + ? < ?",
+        AUTHORIZATION_FAILURE_AGE_MS,
+        now,
+      );
+    } catch (error) {
+      if (!this.enterStorageWriteQuotaMode(error)) throw error;
+    }
   }
 
   private authorizationFailureCleanupDeadline(): number | null {
     const retryAt = this.ctx.storage.sql.exec<{ retry_at: number | null }>(
-      "SELECT MIN(retry_at) AS retry_at FROM authorization_failures",
+      `SELECT MIN(retry_at) AS retry_at
+       FROM authorization_failures`,
     ).one().retry_at;
     return retryAt === null
       ? null
@@ -2918,60 +3157,78 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ) {
       return;
     }
+    if (this.storageWritesBlocked()) return;
     const timestamp = Math.trunc(now);
     const delay = Math.max(
       0,
       Math.min(AUTHORIZATION_FAILURE_MAX_DELAY_MS, Math.trunc(delayMs)),
     );
-    this.ctx.storage.transactionSync(() => {
-      this.cleanupAuthorizationFailures(timestamp);
-      const existing = this.ctx.storage.sql.exec<{ retry_at: number }>(
-        "SELECT retry_at FROM authorization_failures WHERE ip = ? LIMIT 1",
-        normalizedIp,
-      ).toArray()[0]?.retry_at;
-      const retryAt = Math.min((existing === undefined || timestamp >= existing
-        ? timestamp
-        : existing) + delay, timestamp + AUTHORIZATION_FAILURE_MAX_DELAY_MS);
-      this.ctx.storage.sql.exec(
-        `INSERT INTO authorization_failures (ip, retry_at, updated_at)
-         VALUES (?, ?, ?)
-         ON CONFLICT(ip) DO UPDATE SET
-           retry_at = excluded.retry_at,
-           updated_at = excluded.updated_at`,
-        normalizedIp,
-        retryAt,
-        timestamp,
-      );
-      const count = this.ctx.storage.sql.exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM authorization_failures",
-      ).one().count;
-      const excess = count - AUTHORIZATION_FAILURE_LIMIT;
-      if (excess > 0) {
+    try {
+      this.ctx.storage.transactionSync(() => {
+        this.cleanupAuthorizationFailures(timestamp);
+        const existing = this.ctx.storage.sql.exec<{ retry_at: number }>(
+          "SELECT retry_at FROM authorization_failures WHERE ip = ? LIMIT 1",
+          normalizedIp,
+        ).toArray()[0]?.retry_at;
+        const retryAt = Math.min((existing === undefined || timestamp >= existing
+          ? timestamp
+          : existing) + delay, timestamp + AUTHORIZATION_FAILURE_MAX_DELAY_MS);
         this.ctx.storage.sql.exec(
-          `DELETE FROM authorization_failures
-           WHERE ip IN (
-             SELECT ip FROM authorization_failures
-             ORDER BY updated_at ASC, ip ASC
-             LIMIT ?
-           )`,
-          excess,
+          `INSERT INTO authorization_failures (ip, retry_at, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(ip) DO UPDATE SET
+             retry_at = excluded.retry_at,
+             updated_at = excluded.updated_at`,
+          normalizedIp,
+          retryAt,
+          timestamp,
         );
-      }
-      this.adminNotifies().add({
-        title: "Failed authentication",
-        message: `A device at IP address ${normalizedIp} attempted authenticating with Nightscout with wrong credentials. Check if you have an uploader setup with wrong API_SECRET or token?`,
-      }, this.adminNotifiesEnabled(timestamp), timestamp);
-    });
+        const count = this.ctx.storage.sql.exec<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM authorization_failures",
+        ).one().count;
+        const excess = count - AUTHORIZATION_FAILURE_LIMIT;
+        if (excess > 0) {
+          this.ctx.storage.sql.exec(
+            `DELETE FROM authorization_failures
+             WHERE ip IN (
+               SELECT ip FROM authorization_failures
+               ORDER BY updated_at ASC, ip ASC
+               LIMIT ?
+             )`,
+            excess,
+          );
+        }
+        this.adminNotifies().add({
+          title: "Failed authentication",
+          message: `A device at IP address ${normalizedIp} attempted authenticating with Nightscout with wrong credentials. Check if you have an uploader setup with wrong API_SECRET or token?`,
+        }, this.adminNotifiesEnabled(timestamp), timestamp);
+      });
+    } catch (error) {
+      if (!this.enterStorageWriteQuotaMode(error)) throw error;
+      return;
+    }
     await this.synchronizeRealtimeAlarm();
   }
 
   async authorizationSucceeded(ip: string): Promise<void> {
     const normalizedIp = this.authorizationFailureIp(ip);
-    if (normalizedIp === null) return;
-    this.ctx.storage.sql.exec(
-      "DELETE FROM authorization_failures WHERE ip = ?",
+    if (normalizedIp === null || this.storageWritesBlocked()) return;
+    const present = this.ctx.storage.sql.exec<{ present: number }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM authorization_failures WHERE ip = ?
+       ) AS present`,
       normalizedIp,
-    );
+    ).one().present !== 0;
+    if (!present) return;
+    try {
+      this.ctx.storage.sql.exec(
+        "DELETE FROM authorization_failures WHERE ip = ?",
+        normalizedIp,
+      );
+    } catch (error) {
+      if (!this.enterStorageWriteQuotaMode(error)) throw error;
+      return;
+    }
     await this.synchronizeRealtimeAlarm();
   }
 
@@ -3298,22 +3555,35 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private async flushRealtimeMutation(): Promise<void> {
-    // Upstream's data-received listener evaluates plugins on the leading edge.
-    // Do the same in the originating request so ordinary in-range uploads do
-    // not consume a second Worker invocation merely to remove a due task.
-    this.processDueBackgroundTasks(Date.now());
-    if (this.realtime.flushApplicationWakes() > 0) this.flushRealtimeWebSockets();
-    await this.synchronizeRealtimeAlarm();
+    this.requireStorageWrites();
+    try {
+      // Upstream's data-received listener evaluates plugins on the leading edge.
+      // Do the same in the originating request so ordinary in-range uploads do
+      // not consume a second Worker invocation merely to remove a due task.
+      this.processDueBackgroundTasks(Date.now());
+      if (this.realtime.flushApplicationWakes() > 0) this.flushRealtimeWebSockets();
+      await this.synchronizeRealtimeAlarm();
+    } catch (error) {
+      this.enterStorageWriteQuotaMode(error);
+      throw error;
+    }
   }
 
   private async publishRootDataUpdate(): Promise<void> {
-    this.ctx.storage.transactionSync(() => {
-      this.realtime.recordRootDataUpdateInTransaction();
-    });
-    await this.flushRealtimeMutation();
+    this.requireStorageWrites();
+    try {
+      this.ctx.storage.transactionSync(() => {
+        this.realtime.recordRootDataUpdateInTransaction();
+      });
+      await this.flushRealtimeMutation();
+    } catch (error) {
+      this.enterStorageWriteQuotaMode(error);
+      throw error;
+    }
   }
 
   private async synchronizeRealtimeAlarm(): Promise<void> {
+    if (this.storageWritesBlocked()) return;
     // Cloudflare persists one alarm per Durable Object. Derive that alarm from
     // SQL after every state transition so eviction never makes in-memory timer
     // state authoritative.
@@ -3361,9 +3631,27 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   private async realtimeScheduledResult<T>(
     operation: () => T | Promise<T>,
   ): Promise<RealtimeRpcResult<T>> {
+    if (this.storageWritesBlocked()) {
+      return {
+        ok: false,
+        error: {
+          code: "storage_quota",
+          message: "Temporary storage quota exceeded",
+        },
+      };
+    }
     try {
       return { ok: true, value: await operation() };
     } catch (error) {
+      if (this.enterStorageWriteQuotaMode(error)) {
+        return {
+          ok: false,
+          error: {
+            code: "storage_quota",
+            message: "Temporary storage quota exceeded",
+          },
+        };
+      }
       if (error instanceof RealtimeSessionError) {
         return {
           ok: false,
@@ -3372,12 +3660,19 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       }
       throw error;
     } finally {
-      this.flushRealtimeWebSockets();
-      await this.synchronizeRealtimeAlarm();
+      if (!this.storageWritesBlocked()) {
+        try {
+          this.flushRealtimeWebSockets();
+          await this.synchronizeRealtimeAlarm();
+        } catch (error) {
+          if (!this.enterStorageWriteQuotaMode(error)) throw error;
+        }
+      }
     }
   }
 
   override async alarm(_alarmInfo?: AlarmInvocationInfo): Promise<void> {
+    if (this.storageWritesBlocked()) return;
     // Alarm delivery is at-least-once. processAlarm commits every durable
     // transition transactionally before this derived schedule is replaced.
     const now = Date.now();
@@ -3527,9 +3822,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async putEntriesJson(entries: ValidatedEntry[]): Promise<string> {
+    this.requireStorageWrites();
     try {
       return JSON.stringify({ ok: true, result: await this.putEntries(entries) });
     } catch (error) {
+      if (this.enterStorageWriteQuotaMode(error)) throw error;
       // Keep an expected Mongo-compatible ordered-batch failure inside the DO
       // RPC boundary. The HTTP adapter emits the locked public envelope while
       // the successful SQLite prefix remains committed.
@@ -3696,6 +3993,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     dateStringLte: string | null = null,
     dateStringGte: string | null = null,
   ): Promise<number> {
+    this.requireStorageWrites();
     const deleted = this.documentRepository().deleteLegacyEntries(
       ids,
       lte,
@@ -3735,6 +4033,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async createDocuments(
+    collection: DocumentCollection,
+    documentsJson: string,
+  ): Promise<string> {
+    return this.withStorageWrites(() =>
+      this.createDocumentsWritable(collection, documentsJson)
+    );
+  }
+
+  private async createDocumentsWritable(
     collection: DocumentCollection,
     documentsJson: string,
   ): Promise<string> {
@@ -3860,6 +4167,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     documentsJson: string,
     uuidHandling: boolean,
   ): Promise<LegacyTreatmentCreateResult> {
+    this.requireStorageWrites();
     let result: LegacyTreatmentCreateResult;
     try {
       const documents = JSON.parse(documentsJson) as JsonDocument[];
@@ -3872,7 +4180,8 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
               .map((mutation) => mutation.document)),
         ),
       };
-    } catch {
+    } catch (error) {
+      if (this.enterStorageWriteQuotaMode(error)) throw error;
       // Keep expected storage/normalization failures inside the RPC boundary;
       // the HTTP adapter emits the public legacy error without an unhandled DO
       // rejection or leaking internal SQLite details.
@@ -3883,6 +4192,15 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   async saveDocuments(
+    collection: DocumentCollection,
+    documentsJson: string,
+  ): Promise<string> {
+    return this.withStorageWrites(() =>
+      this.saveDocumentsWritable(collection, documentsJson)
+    );
+  }
+
+  private async saveDocumentsWritable(
     collection: DocumentCollection,
     documentsJson: string,
   ): Promise<string> {
@@ -4004,16 +4322,27 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     documentsJson: string,
     uuidHandling: boolean,
   ): Promise<string> {
-    const documents = JSON.parse(documentsJson) as JsonDocument[];
-    const result = JSON.stringify(
-      documents.map((document) =>
-        this.documentRepository().upsertTreatment(document, uuidHandling).document),
-    );
-    await this.publishRootDataUpdate();
-    return result;
+    return this.withStorageWrites(async () => {
+      const documents = JSON.parse(documentsJson) as JsonDocument[];
+      const result = JSON.stringify(
+        documents.map((document) =>
+          this.documentRepository().upsertTreatment(document, uuidHandling).document),
+      );
+      await this.publishRootDataUpdate();
+      return result;
+    });
   }
 
   async deleteDocuments(collection: DocumentCollection, ids: string[]): Promise<number> {
+    return this.withStorageWrites(() =>
+      this.deleteDocumentsWritable(collection, ids)
+    );
+  }
+
+  private async deleteDocumentsWritable(
+    collection: DocumentCollection,
+    ids: string[],
+  ): Promise<number> {
     if (
       collection === "treatments"
       || collection === "devicestatus"
@@ -4149,6 +4478,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     documentJson: string,
     optionsJson: string,
   ): Promise<string> {
+    this.requireStorageWrites();
     const document = JSON.parse(documentJson) as JsonDocument;
     const options = JSON.parse(optionsJson) as Api3MutationOptions;
     let result: string;
@@ -4157,6 +4487,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         this.documentRepository().createDocumentForApi3(collection, document, options),
       );
     } catch (error) {
+      if (this.enterStorageWriteQuotaMode(error)) throw error;
       result = JSON.stringify({
         ok: false,
         reason: "operation-error",
@@ -4173,6 +4504,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     documentJson: string,
     optionsJson: string,
   ): Promise<string> {
+    this.requireStorageWrites();
     const document = JSON.parse(documentJson) as JsonDocument;
     const options = JSON.parse(optionsJson) as Api3MutationOptions;
     let result: string;
@@ -4186,6 +4518,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         ),
       );
     } catch (error) {
+      if (this.enterStorageWriteQuotaMode(error)) throw error;
       result = JSON.stringify({
         ok: false,
         reason: "operation-error",
@@ -4202,6 +4535,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     patchJson: string,
     optionsJson: string,
   ): Promise<string> {
+    this.requireStorageWrites();
     const patch = JSON.parse(patchJson) as JsonDocument;
     const options = JSON.parse(optionsJson) as Api3MutationOptions;
     let result: string;
@@ -4215,6 +4549,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         ),
       );
     } catch (error) {
+      if (this.enterStorageWriteQuotaMode(error)) throw error;
       result = JSON.stringify({
         ok: false,
         reason: "operation-error",
@@ -4231,6 +4566,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     permanent: boolean,
     actor: string | null,
   ): Promise<DocumentDeleteResult> {
+    this.requireStorageWrites();
     let result: DocumentDeleteResult;
     try {
       result = this.documentRepository().deleteDocumentForApi3(
@@ -4240,6 +4576,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
         actor,
       );
     } catch (error) {
+      if (this.enterStorageWriteQuotaMode(error)) throw error;
       // Keep application-level validation failures inside the typed DO RPC
       // contract. Letting a known read-only rejection escape the Durable
       // Object produces an uncaught RPC exception even when the outer Worker

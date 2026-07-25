@@ -1635,6 +1635,76 @@ function entriesShadowNeedsRebuild(sql: SqlStorage): boolean {
     || requiredNullable.some((column) => byName.get(column)?.notnull !== 0);
 }
 
+/**
+ * Pure read-only compatibility check used when Cloudflare has temporarily
+ * disabled SQLite writes after the Free-plan daily quota is exhausted.
+ */
+export function entriesShadowSchemaIsCurrent(sql: SqlStorage): boolean {
+  try {
+    return !hasObsoleteEntriesArtifacts(sql)
+      && sqliteObjectExists(sql, "table", "entries")
+      && !entriesShadowNeedsRebuild(sql)
+      && entriesHasDateIndex(sql)
+      && canonicalEntriesIndexIsCompatible(sql)
+      && canonicalEntriesTypeSortIndexIsCompatible(sql)
+      && canonicalEntriesDateStringIndexIsCompatible(sql);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The columns required by every canonical document read path. This does not
+ * replace migration: it only proves that an already-migrated tenant can keep
+ * serving reads while writes are temporarily unavailable.
+ */
+export function documentReadSchemaIsCurrent(sql: SqlStorage): boolean {
+  try {
+    const documentColumns = tableColumnNames(sql, "documents");
+    const changeColumns = tableColumnNames(sql, "document_changes");
+    const clockColumns = new Set(
+      sql.exec<{ name: string }>("PRAGMA table_info(collection_clocks)")
+        .toArray()
+        .map((column) => column.name),
+    );
+    return [
+      "collection",
+      "id",
+      "body",
+      "sort_time",
+      "created_at",
+      "updated_at",
+      "identifier",
+      "identifier_present",
+      "srv_created",
+      "srv_modified",
+      "is_valid",
+      "fallback_key",
+      "revision",
+      "srv_metadata_version",
+    ].every((column) => documentColumns.has(column))
+      && [
+        "change_id",
+        "collection",
+        "id",
+        "identifier",
+        "identifier_present",
+        "body",
+        "srv_created",
+        "srv_modified",
+        "is_valid",
+        "revision",
+        "operation",
+        "srv_metadata_version",
+      ].every((column) => changeColumns.has(column))
+      && ["collection", "last_srv_modified"].every((column) =>
+        clockColumns.has(column)
+      );
+  } catch {
+    return false;
+  }
+}
+
 function canonicalEntriesIndexIsCompatible(sql: SqlStorage): boolean {
   const row = sql.exec<{ sql: string | null }>(
     "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'documents_entries_sys_time_type'",

@@ -2,7 +2,9 @@ import { env } from "cloudflare:workers";
 import { evictDurableObject, SELF, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 import type { EntryStore } from "../src/entry-store";
+import worker from "../src/index";
 import { parseEntryPayload } from "../src/model";
+import { handleSocketIoPolling } from "../src/realtime/http-adapter";
 import {
   decodeEngineIoV3Handshake,
   decodeEngineIoV3PollingPayload,
@@ -138,6 +140,57 @@ function jsonNodeCount(value: unknown): number {
 }
 
 describe("Engine.IO 3/4 polling HTTP adapter", () => {
+  it("returns a retryable Engine.IO 503 when SQLite writes are exhausted", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-07-25T23:59:30.000Z");
+    try {
+      const url = new URL(endpoint("typed-storage-quota"));
+      const typed = await handleSocketIoPolling(
+        new Request(url),
+        url,
+        {
+          realtimeHandshake: async () => ({
+            ok: false,
+            error: {
+              code: "storage_quota",
+              message: "Temporary storage quota exceeded",
+            },
+          }),
+        } as unknown as DurableObjectStub<EntryStore>,
+      );
+      expect(typed.status).toBe(503);
+      expect(typed.headers.get("Retry-After")).toBe("30");
+      expect(typed.headers.get("Access-Control-Allow-Origin")).toBe("*");
+      expect(typed.headers.get("Cache-Control")).toBe("no-store");
+      expect(await typed.json()).toEqual({ code: 3, message: "Bad request" });
+
+      const raw = await worker.fetch(
+        new Request(endpoint("raw-storage-quota")),
+        {
+          ASSETS: env.ASSETS,
+          ENTRY_STORE: {
+            getByName: () => ({
+              realtimeHandshake: async () => {
+                throw new Error(
+                  "Exceeded allowed rows written in Durable Objects free tier.",
+                );
+              },
+            }),
+          },
+          API_SECRET: "nscf-test-secret-20260717",
+          AUTH_DEFAULT_ROLES: "readable",
+          AUTH_FAIL_DELAY: "0",
+        } as unknown as Parameters<typeof worker.fetch>[1],
+      );
+      expect(raw.status).toBe(503);
+      expect(raw.headers.get("Retry-After")).toBe("30");
+      expect(raw.headers.get("Access-Control-Allow-Origin")).toBe("*");
+      expect(await raw.json()).toEqual({ code: 3, message: "Bad request" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("leaves the versioned official Socket.IO client on the static asset path", async () => {
     const response = await SELF.fetch(
       "https://example.test/socket.io/socket.io.js?cachebuster-test",

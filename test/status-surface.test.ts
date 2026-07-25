@@ -482,6 +482,98 @@ describe("v1/v2 status representations", () => {
     }
   });
 
+  it("reports an exhausted SQLite DO write quota as a retryable 503", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-07-25T23:59:30.000Z");
+    const fakeStub = {
+      authorizationDelay: async () => 0,
+      listDocuments: async () => "[]",
+      nightscoutHttpStatus: async () => {
+        throw new Error(
+          "Exceeded allowed rows written in Durable Objects free tier.",
+        );
+      },
+    };
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const response = await worker.fetch(
+        new Request("https://example.test/api/v1/status.json?tenant=status-quota"),
+        {
+          ASSETS: env.ASSETS,
+          ENTRY_STORE: { getByName: () => fakeStub },
+          API_SECRET: TEST_API_SECRET,
+          AUTH_DEFAULT_ROLES: "readable",
+          AUTH_FAIL_DELAY: "0",
+        } as unknown as Parameters<typeof worker.fetch>[1],
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("30");
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      const body = await response.text();
+      expect(body).toBe(JSON.stringify({
+        error: {
+          code: "storage_write_quota_exceeded",
+          message: "Storage writes are temporarily unavailable until the next daily reset",
+        },
+      }));
+      expect(body).not.toContain("Durable Objects free tier");
+      expect(errorLog).not.toHaveBeenCalled();
+    } finally {
+      errorLog.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not turn an exhausted Entries upload into a legacy Mongo 500", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-07-25T23:59:30.000Z");
+    const fakeStub = {
+      authorizationDelay: async () => 0,
+      authorizationSucceeded: async () => undefined,
+      putEntriesJson: async () => {
+        throw new Error(
+          "Exceeded allowed rows written in Durable Objects free tier.",
+        );
+      },
+    };
+    try {
+      const response = await worker.fetch(
+        new Request("https://example.test/api/v1/entries.json?tenant=entries-quota", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "api-secret": await secretDigest(),
+          },
+          body: JSON.stringify({
+            type: "sgv",
+            sgv: 123,
+            date: Date.now(),
+            dateString: new Date().toISOString(),
+            direction: "Flat",
+            device: "quota-contract",
+          }),
+        }),
+        {
+          ASSETS: env.ASSETS,
+          ENTRY_STORE: { getByName: () => fakeStub },
+          API_SECRET: TEST_API_SECRET,
+          AUTH_DEFAULT_ROLES: "readable",
+          AUTH_FAIL_DELAY: "0",
+        } as unknown as Parameters<typeof worker.fetch>[1],
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("30");
+      expect(await response.json()).toEqual({
+        error: {
+          code: "storage_write_quota_exceeded",
+          message: "Storage writes are temporarily unavailable until the next daily reset",
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("derives authorized only from query token, then query secret", async () => {
     const tenantName = tenant("status-query-auth");
     const bearerSubject = await createStatusSubject(tenantName, "Bearer Viewer");
