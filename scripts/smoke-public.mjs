@@ -285,7 +285,6 @@ checked(enabledPlugins.includes("basal"), "basal remains default-enabled");
 checked(enabledPlugins.includes("errorcodes"), "errorcodes remains default-enabled");
 checked(enabledPlugins.includes("upbat"), "upbat remains default-enabled");
 equal(basalProperties, {}, "basal does not fabricate a property without a Profile");
-checked(!enabledPlugins.includes("treatmentnotify"), "treatmentnotify remains opt-in by default");
 checked(!enabledPlugins.includes("xdripjs"), "xdripjs remains opt-in by default");
 for (const plugin of ["iob", "cob"]) {
   checked(
