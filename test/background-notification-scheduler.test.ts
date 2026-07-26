@@ -23,6 +23,7 @@ interface MutableEntryStoreSurface {
   env: NightscoutStatusEnvironment;
   processDueBackgroundTasks: (now: number) => void;
   processPluginNotificationTask: (task: BackgroundTaskRow, now: number) => void;
+  seedAutomaticNotificationTask: (now: number) => void;
 }
 
 function tenant(prefix: string): string {
@@ -745,6 +746,34 @@ describe("SQLite Durable Object background notification scheduler", () => {
         plugin: expect.objectContaining({ name: "bwp" }),
       })],
     }]);
+  });
+
+  it("does not retain a BWP heartbeat task without any BWP input data", async () => {
+    const stub = store(tenant("background-bwp-empty"));
+    await runInDurableObject(stub, async (instance, state) => {
+      enableBwp(instance);
+      const surface = instance as unknown as MutableEntryStoreSurface;
+      const now = Date.now();
+
+      surface.seedAutomaticNotificationTask(now);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_tasks",
+      ).one().count).toBe(0);
+
+      // A task left by an older deployment must disappear on its next wake.
+      state.storage.sql.exec(
+        `INSERT INTO background_tasks
+           (kind, due_at, attempt_count, updated_at)
+         VALUES (?, ?, 0, ?)`,
+        PLUGIN_NOTIFICATIONS_TASK,
+        now,
+        now,
+      );
+      surface.processDueBackgroundTasks(now);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_tasks",
+      ).one().count).toBe(0);
+    });
   });
 
   it("automatically evaluates and emits the locked AR2 forecast alarm", async () => {

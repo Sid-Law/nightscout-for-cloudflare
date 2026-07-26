@@ -1426,11 +1426,37 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     ws.serializeAttachment({
       ...attachment,
       lastSeenAt: now,
-      nextPingAt: eio4Pong ? now + REALTIME_PING_INTERVAL_MS : null,
+      nextPingAt: eio4Pong
+        ? this.nextRealtimeWebSocketPingAfterPong(attachment, now)
+        : null,
       pongDeadline: null,
     } satisfies RealtimeWebSocketAttachment);
     if (eio3Ping) ws.send("3");
     return true;
+  }
+
+  /**
+   * Preserve the server-ping phase rather than scheduling from the arrival
+   * time of each pong. All sockets pinged in one alarm share one exact
+   * pongDeadline, so this also gives them one exact nextPingAt.
+   */
+  private nextRealtimeWebSocketPingAfterPong(
+    attachment: RealtimeWebSocketAttachment,
+    now: number,
+  ): number {
+    if (
+      attachment.pongDeadline !== null &&
+      attachment.pongDeadline !== undefined
+    ) {
+      const phase = attachment.pongDeadline +
+        REALTIME_PING_INTERVAL_MS -
+        REALTIME_PING_TIMEOUT_MS;
+      if (phase > now) return phase;
+      return phase +
+        (Math.floor((now - phase) / REALTIME_PING_INTERVAL_MS) + 1) *
+          REALTIME_PING_INTERVAL_MS;
+    }
+    return now + REALTIME_PING_INTERVAL_MS;
   }
 
   override async webSocketClose(
@@ -2377,8 +2403,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       snoozes.push(...bwp.snoozes);
       // Node evaluates enabled server plugins on every heartbeat. Preserve
       // that time-varying IOB/BWP behavior only for this explicitly opt-in
-      // plugin, using the existing persisted Durable Object task.
-      schedule(now + heartbeatMs);
+      // plugin, using the existing persisted Durable Object task. A completely
+      // empty tenant has no time-varying BWP state, so it must not leave a
+      // permanent one-alarm-per-minute task behind after a smoke test.
+      const hasBwpInput = bwpContext.sgvs.length > 0 ||
+        bwpContext.mbgs.length > 0 ||
+        bwpContext.cals.length > 0 ||
+        bwpContext.devicestatus.length > 0 ||
+        bwpContext.treatments.length > 0 ||
+        bwpContext.profiles.length > 0;
+      if (hasBwpInput) schedule(now + heartbeatMs);
     }
 
     if (runtime.cage || runtime.sage || runtime.iage || runtime.bage) {
@@ -3918,6 +3952,11 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
   }
 
   private processRealtimeWebSocketHeartbeats(now: number): void {
+    const readyEio4Sockets: Array<{
+      ws: WebSocket;
+      attachment: RealtimeWebSocketAttachment;
+    }> = [];
+    let eio4PingDue = false;
     for (const ws of this.ctx.getWebSockets(REALTIME_WEBSOCKET_TAG)) {
       if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
         continue;
@@ -3957,19 +3996,32 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       }
       if (
         attachment.engineProtocol !== 4 ||
-        attachment.pongDeadline !== null ||
-        attachment.nextPingAt === null ||
-        attachment.nextPingAt === undefined ||
-        attachment.nextPingAt > now
+        attachment.pongDeadline !== null
       ) {
         continue;
       }
+      readyEio4Sockets.push({ ws, attachment });
+      if (
+        attachment.nextPingAt !== null &&
+        attachment.nextPingAt !== undefined &&
+        attachment.nextPingAt <= now
+      ) {
+        eio4PingDue = true;
+      }
+    }
+    if (!eio4PingDue) return;
+
+    // One tenant owns one Cloudflare alarm. When any EIO4 socket reaches its
+    // ping phase, ping every ready EIO4 socket in this same wake so independently
+    // opened browser/AAPS connections converge to one 25-second phase.
+    const pongDeadline = now + REALTIME_PING_TIMEOUT_MS;
+    for (const { ws, attachment } of readyEio4Sockets) {
       try {
         ws.send("2");
         ws.serializeAttachment({
           ...attachment,
           nextPingAt: null,
-          pongDeadline: now + REALTIME_PING_TIMEOUT_MS,
+          pongDeadline,
         } satisfies RealtimeWebSocketAttachment);
       } catch {
         this.realtime.closeWebSocketSession(attachment.sid);

@@ -19,7 +19,7 @@
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "903cf440d1fff28b888921803e78492b671157dbb322988b801c5b94c25f875c",
+  "inputs_sha256": "61e2e29da6b2930759a0d4ccdb94a09a289a0f8bd7d9dc258252596702b6d630",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {

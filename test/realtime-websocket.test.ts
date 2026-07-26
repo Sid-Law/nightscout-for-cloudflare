@@ -21,6 +21,7 @@ import {
   REALTIME_MAX_QUEUE_PACKETS,
   REALTIME_MAX_SESSIONS_PER_TENANT,
   REALTIME_PING_INTERVAL_MS,
+  REALTIME_PING_TIMEOUT_MS,
   REALTIME_WEBSOCKET_FLUSH_MAX_FRAMES,
 } from "../src/realtime/constants";
 import { SqliteRealtimeSessionRepository } from "../src/realtime/session-repository";
@@ -625,7 +626,12 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
     const pongState = await expectStoredWebSocketAttachment(name, sid);
     expect(pongState.pongDeadline).toBeNull();
-    expect(pongState.nextPingAt).toBeGreaterThanOrEqual(beforePong + 25_000);
+    expect(pongState.nextPingAt).toBe(
+      pingState.pongDeadline! +
+        REALTIME_PING_INTERVAL_MS -
+        REALTIME_PING_TIMEOUT_MS,
+    );
+    expect(pongState.nextPingAt).toBeGreaterThan(beforePong);
     expect(await expectStoredSession(name, sid)).toEqual(storedBeforeHeartbeat);
     await runInDurableObject(stub, async (_instance, state) => {
       expect(state.storage.sql.exec<{ count: number }>(
@@ -641,6 +647,94 @@ describe("direct Engine.IO 4 WebSocket transport", () => {
     const reconnected = await openWebSocket(name);
     expect(reconnected.sid).not.toBe(sid);
     reconnected.inbox.socket.close(1000, "done");
+  });
+
+  it("coalesces staggered EIO4 sockets into one tenant heartbeat alarm phase", async () => {
+    const name = tenant("ws-heartbeat-coalesce");
+    const stub = store(name);
+    const sockets: OpenWebSocket[] = [];
+    for (let index = 0; index < 8; index += 1) {
+      sockets.push(await openWebSocket(name));
+    }
+    const due = Date.now() - 1;
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      for (const [index, socket] of sockets.entries()) {
+        const server = state.getWebSockets(`eio4-sid:${socket.sid}`)[0];
+        if (server === undefined) throw new Error("missing coalesced server WebSocket");
+        const attachment =
+          server.deserializeAttachment() as StoredWebSocketAttachment;
+        server.serializeAttachment({
+          ...attachment,
+          nextPingAt: index === 0 ? due : due + (index + 1) * 3_000,
+          pongDeadline: null,
+        } satisfies StoredWebSocketAttachment);
+      }
+      await state.storage.setAlarm(due);
+    });
+
+    await evictDurableObject(stub);
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    for (const socket of sockets) {
+      expect(await socket.inbox.nextString()).toBe("2");
+    }
+
+    const pingStates = await Promise.all(
+      sockets.map((socket) => expectStoredWebSocketAttachment(name, socket.sid)),
+    );
+    expect(new Set(pingStates.map((state) => state.pongDeadline)).size).toBe(1);
+    expect(pingStates.every((state) => state.nextPingAt === null)).toBe(true);
+
+    for (const socket of sockets) socket.inbox.socket.send("3");
+    const nextPingAt = pingStates[0]!.pongDeadline! +
+      REALTIME_PING_INTERVAL_MS -
+      REALTIME_PING_TIMEOUT_MS;
+    await vi.waitFor(async () => {
+      const pongStates = await Promise.all(
+        sockets.map((socket) =>
+          expectStoredWebSocketAttachment(name, socket.sid)
+        ),
+      );
+      expect(new Set(pongStates.map((state) => state.nextPingAt))).toEqual(
+        new Set([nextPingAt]),
+      );
+      expect(pongStates.every((state) => state.pongDeadline === null)).toBe(true);
+    });
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.getAlarm()).toBe(nextPingAt);
+    });
+
+    for (const socket of sockets) socket.inbox.socket.close(1000, "done");
+  });
+
+  it("keeps a late EIO4 pong on a future shared heartbeat phase", async () => {
+    const name = tenant("ws-late-pong-phase");
+    const stub = store(name);
+    const { sid, inbox } = await openWebSocket(name);
+    const beforePong = Date.now();
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const server = state.getWebSockets(`eio4-sid:${sid}`)[0];
+      if (server === undefined) throw new Error("missing late-pong server WebSocket");
+      const attachment =
+        server.deserializeAttachment() as StoredWebSocketAttachment;
+      server.serializeAttachment({
+        ...attachment,
+        nextPingAt: null,
+        pongDeadline: beforePong - 6_000,
+      } satisfies StoredWebSocketAttachment);
+    });
+
+    inbox.socket.send("3");
+    await vi.waitFor(async () => {
+      const attachment = await expectStoredWebSocketAttachment(name, sid);
+      expect(attachment.pongDeadline).toBeNull();
+      expect(attachment.nextPingAt).toBeGreaterThan(beforePong);
+    });
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.getAlarm()).toBeGreaterThan(beforePong);
+    });
+    inbox.socket.close(1000, "done");
   });
 
   it("upgrades a live version-1 attachment without changing its SQL session", async () => {
