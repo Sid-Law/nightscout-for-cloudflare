@@ -23,7 +23,8 @@
 
 1. 一个 Cloudflare Worker；
 2. 一份 Workers Static Assets；
-3. 一个 SQLite Durable Object 命名空间；
+3. 两个 SQLite Durable Object 命名空间：主数据与实时协议使用的
+   `EntryStore`，以及默认关闭的独立 Dexcom Share Connector；
 4. 一个明文 Worker 变量：`API_SECRET`。
 
 不会创建 D1、R2、KV、Queues、自定义域名或 Cloudflare Zone 路由。
@@ -85,6 +86,23 @@ Durable Object 无法保存。
 5. 编辑 `API_SECRET`，类型保持为 **Text**。
 6. 保存并等待新版本部署完成。
 7. 在 Nightscout 网页、AAPS 和其他上传端改成同一个值。
+
+## Dexcom Share（Beta，高级用户）
+
+此功能默认关闭，不影响普通部署。需要使用时，在 Cloudflare Dashboard 的
+**Settings → Variables and Secrets** 中手动添加：
+
+- `ENABLE`：保留现有值并加入 `connect`
+- `CONNECT_SOURCE`：`dexcomshare`
+- `CONNECT_SHARE_ACCOUNT_NAME`：Dexcom Share 账号
+- `CONNECT_SHARE_PASSWORD`：Dexcom Share 密码
+- `CONNECT_SHARE_REGION`：`us`
+
+美国以外的 Dexcom Share 账号把 `CONNECT_SHARE_REGION` 改为 `ous`。协议和模拟
+服务测试已经完成，真实账号社区验收尚未完成。
+
+保存变量并等待部署完成后，打开 Nightscout 首页（或 `/admin/`）一次以启动
+Connector。此后它通过独立 Durable Object alarm 定时拉取数据。
 
 ## 本地或命令行部署
 

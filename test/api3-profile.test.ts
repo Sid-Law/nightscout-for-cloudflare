@@ -806,7 +806,7 @@ describe("API v3 Profile vertical slice", () => {
         date,
       );
       state.storage.sql.exec(
-        "DELETE FROM _sql_schema_migrations WHERE id = 23",
+        "DELETE FROM _sql_schema_migrations WHERE id = 28",
       );
     });
 

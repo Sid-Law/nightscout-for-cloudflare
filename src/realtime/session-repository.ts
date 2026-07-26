@@ -1257,6 +1257,30 @@ export class SqliteRealtimeSessionRepository {
       .map((row) => row.sid);
   }
 
+  hasDataReceiverSession(now: number): boolean {
+    return this.storage.sql
+      .exec<CountRow>(
+        `SELECT EXISTS(
+           SELECT 1
+           FROM realtime_sessions
+           WHERE socket_connected = 1
+             AND authorized = 1
+             AND read_allowed = 1
+             AND (
+               (
+                 transport = 'polling'
+                 AND last_seen_at > ?
+               )
+               OR (
+                 transport = 'websocket'
+               )
+             )
+         ) AS count`,
+        now - REALTIME_POLL_STALE_SESSION_MS,
+      )
+      .one().count !== 0;
+  }
+
   rootDataStateJson(): string | null {
     return this.storage.sql
       .exec<RootDataStateRow>(

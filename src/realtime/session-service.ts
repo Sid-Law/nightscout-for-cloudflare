@@ -1248,6 +1248,7 @@ export class RealtimeSessionService {
    */
   recordRootDataUpdateInTransaction(): void {
     const now = this.now();
+    if (!this.repository.hasDataReceiverSession(now)) return;
     const snapshot = this.snapshot(now);
     if (snapshot === null) return;
     const current = deltaState(snapshot, now, this.activeProfile(now));
@@ -1899,6 +1900,7 @@ export class RealtimeSessionService {
       session.treatmentWriteAllowed = authorization.write_treatment;
       if (authorization.read) {
         const now = this.now();
+        const firstDataReceiver = !this.repository.hasDataReceiverSession(now);
         const snapshot = this.snapshot(now);
         if (snapshot !== null) {
           const data: RealtimeSnapshot = { ...snapshot };
@@ -1910,6 +1912,12 @@ export class RealtimeSessionService {
             namespace: "/",
             data: ["dataUpdate", data],
           }));
+          if (firstDataReceiver) {
+            this.repository.replaceRootDataState(
+              JSON.stringify(deltaState(snapshot, now, this.activeProfile(now))),
+              now,
+            );
+          }
         }
       }
       if (packet.id !== undefined) {

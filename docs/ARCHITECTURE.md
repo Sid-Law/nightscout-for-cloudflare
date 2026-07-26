@@ -6,12 +6,12 @@ This document distinguishes the adapter that exists today from the target
 architecture required for a complete Nightscout v15.0.7 port. The current
 system is a compatible subset, not a full server.
 
-“Current” below describes deployed evidence candidate `56353da` and
+The historical acceptance evidence below describes candidate `56353da` and
 Cloudflare version `339263b5-c3d5-400a-b3b3-0c6299722d32`. The
 candidate's 73-file Workers-runtime suite passes 799/799 plus 23/23 audit tests,
 42/42 unchanged direct upstream client tests across eleven files and 143/143 unchanged tests across twenty-one
 locked upstream server/data-plugin files.
-Wrangler processed 250 Static Assets entries; its dry run reported 1319.52 KiB
+Wrangler processed 250 Static Assets entries; that historical dry run reported 1319.52 KiB
 raw / 242.79 KiB gzip and only the `ENTRY_STORE` Durable Object and `ASSETS`
 product bindings. Project release 100 reported a 36 ms startup and passed the
 213-assertion credential-free API, EIO3/EIO4 JSONP polling,
@@ -22,7 +22,8 @@ the broader Food/Admin/Reports acceptance remains version-80 evidence.
 These are release facts for the named subset, not
 evidence of a complete port.
 
-Private release acceptance 101 did not change the runtime contract. It pushed
+Historical private release acceptance 101, before the connector split, did not
+change the runtime contract. It pushed
 the canonical source to the private `Sid-Law/nightscout-for-cloudflare` GitHub repository and
 deployed Git commit `0706d33` to a new Cloudflare account with no pre-existing
 `workers.dev` namespace. Wrangler created the account namespace, the declared
@@ -45,6 +46,12 @@ visit the official client redirects an instance with no Profile from `/` to
 editor, but only an authenticated client can save. Selecting the upstream
 **Remember this device** option carries that authorization to Food/Admin pages;
 NSCF adds no onboarding UI or custom Profile defaults.
+
+The current Wrangler configuration declares `ASSETS`, `ENTRY_STORE` and
+`DEXCOM_SHARE_CONNECTOR`. The two SQLite Durable Object classes use independent
+alarms: `EntryStore` owns realtime, authorization and local task deadlines;
+`DexcomShareConnector` owns the optional Dexcom Share schedule and is off by
+default.
 
 The deployed platform configuration sets Wrangler `keep_vars: true` so a
 dashboard-managed lab variable survives later code deployments. A Node audit locks that behavior while
@@ -125,7 +132,9 @@ eleven complete official client files run 42/42 unchanged only after a byte-equa
 gate proves that the NSCF public bundle is the upstream-built bundle. Local
 evidence is 71 Workers files / 785 tests, 23/23 audits, eleven direct upstream
 client files / 42 tests and twenty-one direct upstream server/data-plugin files / 143 tests; the
-dry run is 1289.67 KiB raw / 237.03 KiB gzip with 250 assets and two bindings.
+pre-connector dry run was 1289.67 KiB raw / 237.03 KiB gzip with 250 assets and
+two bindings. The current Wrangler configuration adds the
+`DEXCOM_SHARE_CONNECTOR` binding.
 Remote API/EIO3-and-EIO4-WebSocket and real-browser gates passed against the same active version.
 
 ## Current request and data flow
@@ -176,6 +185,17 @@ Embedded SQLite
   - persisted authorization-failure delays
   - one SQL-derived Durable Object alarm for realtime/auth/task deadlines
   - local schema migration table
+```
+
+Optional Dexcom Share path (off by default):
+
+```text
+Worker bootstrap on / or /admin/
+        |
+        v
+DexcomShareConnector Durable Object
+  - independent alarm and bounded Dexcom HTTPS requests
+  - validated Entries committed through typed ENTRY_STORE RPC
 ```
 
 Workers Static Assets serves EJS-rendered upstream index, Admin Tools, Profile
@@ -673,10 +693,14 @@ Tenant Durable Object
         +--> official server data/plugin modules through a platform context
 ```
 
-The Worker remains stateless. Every request that reads or changes tenant state
+The Worker remains stateless. Every Nightscout data request that reads or changes tenant state
 is routed with `ENTRY_STORE.getByName(tenant)`. The DO is the coordination atom
 for that tenant: it serializes mutations, owns SQLite, accepts hibernatable
 WebSockets and multiplexes scheduled tasks through its one alarm.
+
+Optional external connectors use separate Durable Objects and alarms so vendor
+I/O cannot block `EntryStore` Engine.IO heartbeats. `DexcomShareConnector`
+commits only validated Entries through typed RPC.
 
 This shape follows Cloudflare's current platform model:
 
@@ -1239,7 +1263,8 @@ Version 79 explicitly enabled the schema-v17 feed only for the public `demo`
 tenant. The official homepage rendered its one-hour seed through the existing
 Entries/root-delta path; the `01:40` and `01:45` alarm turns appended new rows
 and the open page advanced without reload. All other tenants remain disabled
-by default.
+by default. This test feed was retired by schema v22 and is not present in the
+current runtime.
 Version 80 added `src/pebble.ts`, a request-local adapter for the locked
 `lib/server/pebble.js` contract. It preserves count/order, units, trend/delta,
 uploader battery, raw/calibration and IOB/COB display shapes while capping a
@@ -1408,6 +1433,9 @@ leading-edge cooldown row and consumes no platform alarm; a second event marks
 one durable trailing run. Due rows are claimed and deleted synchronously before
 the corresponding background task is promoted, so repeated alarms cannot run
 the same trailing evaluation twice.
+Schema v22 removes the retired simulated CGM rows and table. Schema v24 removes
+the old embedded `connect-dexcomshare` task and plugin state. Activation seal 28
+locks the current `EntryStore` migration set.
 The task projection is bounded to 64 SGVs, ten MBGs, up to 1,000 matching
 current DeviceStatus rows plus the earliest future matching DeviceStatus, the
 latest Profile and the newest 1,000 Treatments in the existing window and
@@ -1430,8 +1458,9 @@ The deployed schema-v14 adapter replaces that lifecycle assumption with a
 generic SQLite task table containing `kind`, `due_at`, `attempt_count` and
 `updated_at`. The DO loads a bounded batch of due jobs, completes or reschedules
 them transactionally and derives the next wake from storage. This follows
-Cloudflare's one-alarm model: multiple logical events are stored and
-multiplexed through the one Durable Object alarm. The generic substrate is
+Cloudflare's one-alarm-per-object model: `EntryStore` stores multiple logical
+events and multiplexes them through its alarm, while `DexcomShareConnector`
+owns a second, independent alarm. The generic substrate is
 deployed; one unified notification task connects Uploader Battery, AR2, Simple Alarms, Error
 Codes, Pump, OpenAPS, xDrip-js, Loop, BWP, CAGE, SAGE, IAGE, BAGE, Treatment Notify,
 Timeago and DBSize with
@@ -1440,9 +1469,9 @@ their official enable gates today.
 Official plugin formulas and medical calculations are not rewritten. The
 build-time registry lists the locked server plugins so bundling is deterministic;
 platform code supplies storage, time, settings, notifications and logging.
-Live external bridge/push delivery remains disabled in the simulated-data
-scope; mocked internal mapping, validation, deduplication, cancellation and
-multi-key contracts remain required.
+External push-provider delivery remains disconnected. The inbound Dexcom Share
+Beta connector is implemented in its separate Durable Object, defaults off and
+has simulated-service contract coverage pending real-account acceptance.
 
 The deployed summary basal processor and pure
 `bgnow`/`direction`/`rawbg`/`upbat`/`basal`/`ar2`/`simplealarms`/`errorcodes`/`xdripjs`/`loop`/`openaps`/`pump`/`iob`/`cob`/`bwp`/`cage`/`sage`/`iage`/`bage`/`runtimestate`

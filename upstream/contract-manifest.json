@@ -14,12 +14,12 @@
     "default_anonymous_permissions": [
       "*:*:read"
     ],
-    "fixed_scope": "Only bridge.test.js and mmconnect.test.js are excluded-fixed-scope because they inherently require live real-CGM bridge credentials and traffic. Mocked push transport, message mapping, validation, deduplication, cancellation, persistence, API, auth, realtime, calculations, and UI contracts remain required implementation work.",
+    "fixed_scope": "Only mmconnect.test.js is excluded-fixed-scope because the MiniMed CareLink integration is outside this port's fixed platform scope. Fully mocked integration contracts, including the legacy bridge.test.js contract, remain required implementation work unless completely adapted.",
     "route_method_scope": "The manifest records explicit Express registrations. Express-derived HEAD/OPTIONS behavior and extension middleware variants are not expanded into duplicate rows.",
     "provenance_scope": "mount_chain is a deterministic, locked-source syntactic assembly chain whose exact line anchors are re-derived during validation. registration/source fields are exact local source anchors. These fields do not prove runtime reachability, middleware order, handler execution, or test coverage; dynamic API3 chains stop at the genericSetup call.",
     "related_test_association": "Route-to-test links are boundary-aware heuristic candidates. Literal HTTP calls are filtered by their path-local method when statically visible; dynamic paths, plain-text references, prefix ambiguity, and API3 operation filename hints remain heuristic. Links are not pass, adapted, or coverage evidence and require human confirmation."
   },
-  "inputs_sha256": "61e2e29da6b2930759a0d4ccdb94a09a289a0f8bd7d9dc258252596702b6d630",
+  "inputs_sha256": "f24dd35f056733f3163062a691be0ed35cf8650dced08c0ce5e1e469ed9baf26",
   "statistics": {
     "route_count": 161,
     "routes_by_version": {
@@ -40,8 +40,8 @@
     "tests_by_status": {
       "pass": 16,
       "adapted": 86,
-      "excluded-fixed-scope": 2,
-      "unresolved": 7
+      "excluded-fixed-scope": 1,
+      "unresolved": 8
     },
     "tests_by_workstream": {
       "1-storage-foundation": 15,
@@ -7884,8 +7884,8 @@
     },
     {
       "file": "vendor/nightscout/tests/bridge.test.js",
-      "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope uses test fixtures only.",
+      "status": "unresolved",
+      "reason": "The locked file is a fully mocked unit contract for the legacy BRIDGE_* plugin built on share2nightscout-bridge: construction, environment option mapping, callback storage and interval fallback. NSCF's modern nightscout-connect Dexcom Share Beta uses a separate bounded Worker/DO adapter, so it does not claim coverage of this legacy plugin contract.",
       "workstream": "7-background-and-integrations",
       "depends_on": [
         "1-storage-foundation",

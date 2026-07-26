@@ -36,6 +36,9 @@ in the time it takes to make instant noodles, you can get a Nightscout.
 - The home page, glucose chart, trend arrow, status information and settings
   pages work
 - The common read and write APIs used through v1, v2 and v3 are implemented
+- Dexcom Share (Beta) protocol and simulated-service tests are complete; real
+  account community acceptance is still pending, and the connector is off by
+  default
 
 ## What is not finished
 

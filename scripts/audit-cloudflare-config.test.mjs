@@ -22,6 +22,11 @@ test("deployment uses one visible API_SECRET variable without adding products", 
   assert.equal(config.assets?.binding, "ASSETS");
   assert.deepEqual(config.durable_objects?.bindings, [
     { name: "ENTRY_STORE", class_name: "EntryStore" },
+    { name: "DEXCOM_SHARE_CONNECTOR", class_name: "DexcomShareConnector" },
+  ]);
+  assert.deepEqual(config.migrations, [
+    { tag: "v1", new_sqlite_classes: ["EntryStore"] },
+    { tag: "v2", new_sqlite_classes: ["DexcomShareConnector"] },
   ]);
 });
 

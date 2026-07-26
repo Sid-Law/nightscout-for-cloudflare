@@ -158,6 +158,7 @@ describe("official Nightscout UI assets", () => {
     const assetEnv = (status: 200 | 304): Env => ({
       API_SECRET: env.API_SECRET,
       ENTRY_STORE: env.ENTRY_STORE,
+      DEXCOM_SHARE_CONNECTOR: env.DEXCOM_SHARE_CONNECTOR,
       ASSETS: {
         fetch: async (request: Request) => {
           const validator = request.headers.get("If-None-Match");
@@ -1350,6 +1351,7 @@ describe("Nightscout compatibility API", () => {
     const configuredEnv = {
       ASSETS: env.ASSETS,
       ENTRY_STORE: env.ENTRY_STORE,
+      DEXCOM_SHARE_CONNECTOR: env.DEXCOM_SHARE_CONNECTOR,
       API_SECRET: TEST_API_SECRET,
     };
     expect((await worker.fetch(
@@ -1365,6 +1367,7 @@ describe("Nightscout compatibility API", () => {
       {
         ASSETS: env.ASSETS,
         ENTRY_STORE: env.ENTRY_STORE,
+        DEXCOM_SHARE_CONNECTOR: env.DEXCOM_SHARE_CONNECTOR,
         API_SECRET: shortSecret,
       },
     );

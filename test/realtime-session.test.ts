@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { evictDurableObject, runInDurableObject } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EntryStore } from "../src/entry-store";
 import { parseEntryPayload } from "../src/model";
 import {
@@ -817,6 +817,68 @@ describe("tenant Durable Object EIO4 polling state machine", () => {
         writeAllowed: false,
         treatmentWriteAllowed: false,
         outboundPackets: 0,
+      });
+    });
+  });
+
+  it("defers root snapshots until the first reader and then resumes delta updates", async () => {
+    const stub = store("realtime-root-lazy-baseline");
+    await runInDurableObject(stub, async (_instance, state) => {
+      migrateRealtimeSessions(state.storage);
+      state.storage.sql.exec("DELETE FROM realtime_root_state");
+      let now = 2_250_000;
+      let current = snapshot(now);
+      const loadSnapshot = vi.fn(() => current);
+      const service = new RealtimeSessionService(state.storage, {
+        now: () => now,
+        snapshot: loadSnapshot,
+      });
+      const repository = new SqliteRealtimeSessionRepository(state.storage);
+
+      state.storage.transactionSync(() => service.recordRootDataUpdateInTransaction());
+      expect(loadSnapshot).not.toHaveBeenCalled();
+      expect(repository.rootDataStateJson()).toBeNull();
+
+      const sid = service.createHandshake().sid;
+      await post(service, sid, clientPayload({ type: "connect", namespace: "/" }));
+      await service.poll(sid);
+      await post(service, sid, clientPayload({
+        type: "event",
+        namespace: "/",
+        data: ["authorize", { client: "web" }],
+      }));
+      const initial = decodeEngineIoV4PollingPayload(await service.poll(sid))
+        .map((packet) => unwrapSocketIoV5Packet(packet));
+      expect(initial).toContainEqual({
+        type: "event",
+        namespace: "/",
+        data: ["dataUpdate", current],
+      });
+      expect(loadSnapshot).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(repository.rootDataStateJson()!)).toMatchObject({
+        sgvs: current.sgvs,
+        treatments: [],
+        lastUpdated: now,
+        activeProfile: null,
+      });
+
+      loadSnapshot.mockClear();
+      now += 1_000;
+      current = {
+        ...current,
+        treatments: [{ _id: "after-reader", mills: now, notes: "created" }],
+      };
+      state.storage.transactionSync(() => service.recordRootDataUpdateInTransaction());
+      expect(loadSnapshot).toHaveBeenCalledTimes(1);
+      const [deltaFrame] = decodeEngineIoV4PollingPayload(await service.poll(sid));
+      expect(unwrapSocketIoV5Packet(deltaFrame!)).toEqual({
+        type: "event",
+        namespace: "/",
+        data: ["dataUpdate", {
+          delta: true,
+          lastUpdated: now,
+          treatments: [{ _id: "after-reader", mills: now, notes: "created" }],
+        }],
       });
     });
   });
