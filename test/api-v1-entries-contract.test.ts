@@ -443,24 +443,35 @@ describe("API v1/v2 Entries uploader and read contract", () => {
     }]);
   });
 
-  it("preserves 100-item order and per-position IDs while bounding the Free-plan batch", async () => {
-    const name = tenant("v1-batch-bound");
-    const base = Math.floor((Date.now() - 3 * 60 * 60_000) / 1_000) * 1_000;
-    const payload = Array.from({ length: 100 }, (_, index) => entry(
+  it("accepts xDrip's 300-item recovery batch while preserving order and per-position IDs", async () => {
+    const name = tenant("v1-xdrip-recovery");
+    const base = Math.floor((Date.now() - 25 * 60 * 60_000) / 1_000) * 1_000;
+    const payload = Array.from({ length: 300 }, (_, index) => entry(
       `batch-${index}`,
-      base + index * 60_000,
+      base + index * 5 * 60_000,
       { sgv: 100 + index },
     ));
     const saved = await post(name, payload);
     expect(saved.status).toBe(200);
     const savedRows = await saved.json<JsonObject[]>();
-    expect(savedRows).toHaveLength(100);
+    expect(savedRows).toHaveLength(300);
     expect(savedRows.map((row) => row.identifier)).toEqual(payload.map((row) => row.identifier));
     expect(savedRows.every((row) => /^[0-9a-f]{24}$/.test(String(row._id)))).toBe(true);
 
-    const tooLarge = await post(name, [...payload, entry("batch-100", base + 100 * 60_000)]);
-    expect(tooLarge.status).toBe(400);
-    expect(await tooLarge.json()).toMatchObject({ error: { code: "invalid_batch" } });
+    const tooLarge = await post(
+      tenant("v1-batch-too-large"),
+      Array.from({ length: 1_001 }, (_, index) => entry(
+        `too-large-${index}`,
+        base + index * 5 * 60_000,
+      )),
+    );
+    expect(tooLarge.status).toBe(413);
+    expect(await tooLarge.json()).toEqual({
+      error: {
+        code: "batch_too_large",
+        message: "batch must contain at most 1000 entries",
+      },
+    });
 
     const replayName = tenant("v1-batch-replay");
     const replayDate = Math.floor((Date.now() - 60_000) / 1_000) * 1_000;

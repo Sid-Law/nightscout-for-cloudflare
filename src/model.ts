@@ -5,7 +5,7 @@ import {
   normalizeLegacyIdValue,
 } from "./server-query";
 
-const MAX_BATCH_SIZE = 100;
+const MAX_ENTRY_BATCH_SIZE = 1_000;
 export const LEGACY_ENTRY_DEFAULT_WINDOW_MS = LEGACY_QUERY_DEFAULT_WINDOW_MS;
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 
@@ -241,8 +241,12 @@ function validateEntry(value: unknown): ValidatedEntry {
 
 export function parseEntryPayload(value: unknown): ValidatedEntry[] {
   const values = Array.isArray(value) ? value : [value];
-  if (values.length > MAX_BATCH_SIZE) {
-    throw new ApiError(400, "invalid_batch", `batch must contain 0-${MAX_BATCH_SIZE} entries`);
+  if (values.length > MAX_ENTRY_BATCH_SIZE) {
+    throw new ApiError(
+      413,
+      "batch_too_large",
+      `batch must contain at most ${MAX_ENTRY_BATCH_SIZE} entries`,
+    );
   }
   return values.map(validateEntry);
 }
@@ -291,7 +295,10 @@ export function legacyEntryPreview(value: unknown): unknown[] {
 export function parseLegacyEntryPayload(value: unknown): ValidatedEntry[] {
   // Locked insert_entries accepts a single object only when it owns `date`;
   // an array is passed through by length. Preserve that uploader quirk before
-  // the adapter's explicit storage validation and 100-item Free-plan bound.
+  // the adapter's explicit storage validation. The HTTP adapter already
+  // bounds the complete request body to 512 KiB. The 1,000-item ceiling is
+  // deliberately above xDrip's 300-item upload queue while preventing an
+  // extreme array of tiny documents from monopolizing one Free-plan request.
   return parseEntryPayload(legacyEntryPreview(value));
 }
 

@@ -620,7 +620,7 @@
     },
     "vendor/nightscout/tests/api.v1-batch-operations.test.js": {
       "status": "adapted",
-      "reason": "Represented by the named Workers-runtime Loop/Trio contract in test/api-v1-core-contract.test.ts plus the 100-item boundary in test/api-v1-entries-contract.test.ts: treatment and glucose arrays create separate ordered documents, single/empty/100-item batches, per-position ObjectIds, Loop carb/dose fields, Trio id/enteredBy/device preservation, and mixed isValid data behavior."
+      "reason": "Represented by the named Workers-runtime Loop/Trio contract in test/api-v1-core-contract.test.ts plus the xDrip recovery contract in test/api-v1-entries-contract.test.ts: treatment and glucose arrays create separate ordered documents, single/empty/300-item batches, per-position ObjectIds, a 1,000-item Workers guard, Loop carb/dose fields, Trio id/enteredBy/device preservation, and mixed isValid data behavior."
     },
     "vendor/nightscout/tests/api3.aaps-patterns.test.js": {
       "status": "adapted",

@@ -9,7 +9,7 @@ Locked upstream: `nightscout/cgm-remote-monitor` v15.0.7 at `7e0e77f88fc113a76fe
 - Routes: 161 (root: 1, v1: 45, v2: 62, v3: 53)
 - Upstream test files: 111
 - Statuses: pass: 16, adapted: 86, excluded-fixed-scope: 2, unresolved: 7
-- Input fingerprint: `32ca12ff8106dcdebd00f60aa726583460ad39a75689ae66f28f31b06f85dbe1`
+- Input fingerprint: `903cf440d1fff28b888921803e78492b671157dbb322988b801c5b94c25f875c`
 
 `pass` is intentionally strict: the whole upstream file must run unchanged. `adapted` requires every contract in that file to be represented by named passing Workers-runtime tests. A partial local implementation therefore remains `unresolved`.
 
@@ -90,7 +90,7 @@ Route/test associations are boundary-aware heuristics. Static literal HTTP calls
 | `vendor/nightscout/tests/api.status.test.js` | adapted | 2 | Represented by the named Workers-runtime status contract in test/api-v1-core-contract.test.ts and the exhaustive representation boundary in test/status-surface.test.ts: locked custom careportal/rawbg enable state, JSON fields, HTML, text, JavaScript, PNG/SVG redirects, MIME types and inherited v1/v2 mounts. |
 | `vendor/nightscout/tests/api.treatments.test.js` | adapted | 10 | Represented by the complete named Workers-runtime v1 Treatments contracts in test/api-v1-treatments-contract.test.ts and the Loop batch contract in test/api-v1-core-contract.test.ts: preBolus fan-out and dedupe, locked XSS fixture sanitization, zoned-time/utcOffset and numeric normalization, object/array upload, query/delete, UUID-as-identifier POST/PUT/delete, explicit AAPS identifier upsert and ordered identifier batches. The Cloudflare sanitizer is deliberately stricter than DOMPurify for safe HTML attributes outside this locked file. |
 | `vendor/nightscout/tests/api.unauthorized.test.js` | adapted | 8 | Represented by the named Workers-runtime authenticated Entries contract in test/api-v1-core-contract.test.ts plus uploader coverage in test/api-v1-entries-contract.test.ts: exact anonymous POST error, authorized preview with all 30 rows, authorized create, literal dateString slice read, anonymous exact/ranged delete rejection without data loss, and authorized exact/ranged deletion. The locked test ignores its stale preview 201 Supertest error; the exercised upstream res.json path and NSCF both return 200. |
-| `vendor/nightscout/tests/api.v1-batch-operations.test.js` | adapted | 4 | Represented by the named Workers-runtime Loop/Trio contract in test/api-v1-core-contract.test.ts plus the 100-item boundary in test/api-v1-entries-contract.test.ts: treatment and glucose arrays create separate ordered documents, single/empty/100-item batches, per-position ObjectIds, Loop carb/dose fields, Trio id/enteredBy/device preservation, and mixed isValid data behavior. |
+| `vendor/nightscout/tests/api.v1-batch-operations.test.js` | adapted | 4 | Represented by the named Workers-runtime Loop/Trio contract in test/api-v1-core-contract.test.ts plus the xDrip recovery contract in test/api-v1-entries-contract.test.ts: treatment and glucose arrays create separate ordered documents, single/empty/300-item batches, per-position ObjectIds, a 1,000-item Workers guard, Loop carb/dose fields, Trio id/enteredBy/device preservation, and mixed isValid data behavior. |
 
 ### 4-plugins-and-calculations
 
