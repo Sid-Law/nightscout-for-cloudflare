@@ -759,8 +759,8 @@
       "reason": "Represented by the complete named Workers-runtime main-namespace mutation contract in test/realtime-root-writes.test.ts plus direct hibernatable transport coverage in test/realtime-websocket.test.ts: treatment, devicestatus and entries single/array dbAdd shapes; generated and custom-id treatment update/remove; custom-id unset and two-second fuzzy dedupe; all three AAPS profile insert/replace/distinct-startDate workflows; generic Food custom-id add/update/remove; exact checkConditions error ordering; ACK-before-dataUpdate; and persisted write authority across Durable Object eviction. Activity is additionally covered even though the locked file does not exercise it."
     },
     "vendor/nightscout/tests/bridge.test.js": {
-      "status": "excluded-fixed-scope",
-      "reason": "Fixed-scope exclusion: the Dexcom Share bridge fetcher requires external CGM credentials and live bridge traffic; NSCF's lab scope uses test fixtures only."
+      "status": "unresolved",
+      "reason": "The locked file is a fully mocked unit contract for the legacy BRIDGE_* plugin built on share2nightscout-bridge: construction, environment option mapping, callback storage and interval fallback. NSCF's modern nightscout-connect Dexcom Share Beta uses a separate bounded Worker/DO adapter, so it does not claim coverage of this legacy plugin contract."
     },
     "vendor/nightscout/tests/mmconnect.test.js": {
       "status": "excluded-fixed-scope",

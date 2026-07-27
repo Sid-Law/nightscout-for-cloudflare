@@ -62,7 +62,7 @@ describe("production runtime boundaries", () => {
         INSERT INTO simulated_cgm_state
           (singleton, enabled, next_at, sequence, updated_at)
         VALUES (1, 1, ${now + 300_000}, 1, ${now});
-        DELETE FROM _sql_schema_migrations WHERE id IN (22, 23);
+        DELETE FROM _sql_schema_migrations WHERE id IN (22, 28);
       `);
     });
 
@@ -90,6 +90,62 @@ describe("production runtime boundaries", () => {
       ).one().count).toBe(0);
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id = 22",
+      ).one().count).toBe(1);
+    });
+  });
+
+  it("removes the retired in-EntryStore Dexcom task during migration", async () => {
+    const stub = store(tenant("retired-dexcom-task"));
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(`
+        INSERT OR REPLACE INTO background_tasks
+          (kind, due_at, attempt_count, updated_at)
+        VALUES ('connect-dexcomshare', 1, 0, 1);
+        INSERT OR REPLACE INTO plugin_runtime_state
+          (plugin, body, updated_at)
+        VALUES ('connect-dexcomshare', '{}', 1);
+        DELETE FROM _sql_schema_migrations WHERE id IN (24, 28);
+      `);
+    });
+
+    await evictDurableObject(stub);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_tasks WHERE kind = 'connect-dexcomshare'",
+      ).one().count).toBe(0);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM plugin_runtime_state WHERE plugin = 'connect-dexcomshare'",
+      ).one().count).toBe(0);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id = 24",
+      ).one().count).toBe(1);
+    });
+  });
+
+  it("removes legacy per-minute notification work during migration", async () => {
+    const stub = store(tenant("retired-notification-heartbeat"));
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(`
+        INSERT OR REPLACE INTO background_tasks
+          (kind, due_at, attempt_count, updated_at)
+        VALUES ('plugin-notifications', 1, 0, 1);
+        INSERT OR REPLACE INTO data_update_debounce
+          (kind, burst_started_at, last_event_at, due_at, pending)
+        VALUES ('plugin-notifications', 1, 1, 1, 1);
+        DELETE FROM _sql_schema_migrations WHERE id IN (27, 28);
+      `);
+    });
+
+    await evictDurableObject(stub);
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_tasks WHERE kind = 'plugin-notifications'",
+      ).one().count).toBe(0);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM data_update_debounce WHERE kind = 'plugin-notifications'",
+      ).one().count).toBe(0);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM _sql_schema_migrations WHERE id = 27",
       ).one().count).toBe(1);
     });
   });

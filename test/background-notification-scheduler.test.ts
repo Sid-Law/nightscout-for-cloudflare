@@ -21,9 +21,8 @@ import { INFO, URGENT, WARN } from "../src/runtime/levels";
 
 interface MutableEntryStoreSurface {
   env: NightscoutStatusEnvironment;
-  processDueBackgroundTasks: (now: number) => void;
+  processDueBackgroundTasks: (now: number) => Promise<void>;
   processPluginNotificationTask: (task: BackgroundTaskRow, now: number) => void;
-  seedAutomaticNotificationTask: (now: number) => void;
 }
 
 function tenant(prefix: string): string {
@@ -183,16 +182,18 @@ function enableBwp(instance: EntryStore): void {
   });
 }
 
-function flushDataUpdateTrailing(
+async function flushDataUpdateTrailing(
   instance: EntryStore,
   state: DurableObjectState,
-): number | null {
+): Promise<number | null> {
   const row = state.storage.sql.exec<{ due_at: number }>(
     `SELECT due_at FROM data_update_debounce
      WHERE pending = 1 ORDER BY due_at ASC LIMIT 1`,
   ).toArray()[0];
   if (row === undefined) return null;
-  (instance as unknown as MutableEntryStoreSurface).processDueBackgroundTasks(row.due_at);
+  await (instance as unknown as MutableEntryStoreSurface).processDueBackgroundTasks(
+    row.due_at,
+  );
   return row.due_at;
 }
 
@@ -727,11 +728,9 @@ describe("SQLite Durable Object background notification scheduler", () => {
           type: "sgv",
         },
       ]));
-      const task = state.storage.sql.exec<BackgroundTaskRow>(
-        "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
-      ).one();
-      expect(task).toMatchObject({ kind: PLUGIN_NOTIFICATIONS_TASK, attempt_count: 0 });
-      expect(task.due_at).toBeGreaterThan(currentAt);
+      expect(state.storage.sql.exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_tasks",
+      ).one().count).toBe(0);
     });
 
     expect(await socket.poll()).toEqual([{
@@ -748,14 +747,13 @@ describe("SQLite Durable Object background notification scheduler", () => {
     }]);
   });
 
-  it("does not retain a BWP heartbeat task without any BWP input data", async () => {
+  it("clears a legacy BWP heartbeat task without any BWP input data", async () => {
     const stub = store(tenant("background-bwp-empty"));
     await runInDurableObject(stub, async (instance, state) => {
       enableBwp(instance);
       const surface = instance as unknown as MutableEntryStoreSurface;
       const now = Date.now();
 
-      surface.seedAutomaticNotificationTask(now);
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM background_tasks",
       ).one().count).toBe(0);
@@ -769,7 +767,7 @@ describe("SQLite Durable Object background notification scheduler", () => {
         now,
         now,
       );
-      surface.processDueBackgroundTasks(now);
+      await surface.processDueBackgroundTasks(now);
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM background_tasks",
       ).one().count).toBe(0);
@@ -1131,7 +1129,7 @@ describe("SQLite Durable Object background notification scheduler", () => {
         device: "simulator://scheduler",
         type: "sgv",
       }]));
-      expect(flushDataUpdateTrailing(instance, state)).not.toBeNull();
+      expect(await flushDataUpdateTrailing(instance, state)).not.toBeNull();
       expect(state.storage.sql.exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM background_tasks",
       ).one().count).toBe(0);
@@ -1354,7 +1352,7 @@ describe("SQLite Durable Object background notification scheduler", () => {
         device: "simulator://scheduler",
         type: "sgv",
       }]));
-      expect(flushDataUpdateTrailing(instance, state)).not.toBeNull();
+      expect(await flushDataUpdateTrailing(instance, state)).not.toBeNull();
       expect(state.storage.sql.exec<BackgroundTaskRow>(
         "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
       ).one().due_at).toBe(freshAt + 60_001);
@@ -1451,7 +1449,7 @@ describe("SQLite Durable Object background notification scheduler", () => {
         created_at: new Date(offlineAt).toISOString(),
         duration: 1,
       }]));
-      expect(flushDataUpdateTrailing(instance, state)).not.toBeNull();
+      expect(await flushDataUpdateTrailing(instance, state)).not.toBeNull();
       expect(state.storage.sql.exec<BackgroundTaskRow>(
         "SELECT kind, due_at, attempt_count, updated_at FROM background_tasks",
       ).one().due_at).toBe(offlineAt);

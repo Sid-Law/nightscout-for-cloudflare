@@ -33,6 +33,7 @@ import {
   entriesShadowSchemaIsCurrent,
   migrateEntriesV6,
   migrateDocumentsV4,
+  migrateEffectiveModifiedV26,
   DocumentQueryError,
   SqliteDocumentRepository,
   type Api3CollectionName,
@@ -216,14 +217,16 @@ export type LegacyTreatmentCreateResult =
   | { ok: true; value: string }
   | { ok: false; error: string };
 
-type EntryStoreEnv = Env & NightscoutStatusEnvironment & {
+type EntryStoreEnv = Env
+  & NightscoutStatusEnvironment
+  & {
   API_SECRET?: string;
   AUTH_DEFAULT_ROLES?: string;
   PREDICTIONS_MAX_SIZE?: string;
   UUID_HANDLING?: string;
 };
 
-export const ENTRY_STORE_ACTIVATION_SEAL = 23;
+export const ENTRY_STORE_ACTIVATION_SEAL = 28;
 
 const ENTRY_STORE_REQUIRED_MIGRATIONS = [
   1,
@@ -247,6 +250,9 @@ const ENTRY_STORE_REQUIRED_MIGRATIONS = [
   20,
   21,
   22,
+  24,
+  26,
+  27,
   ENTRY_STORE_ACTIVATION_SEAL,
 ] as const;
 
@@ -314,6 +320,7 @@ export function entryStoreSchemaSupportsCoreReadOnly(sql: SqlStorage): boolean {
           "identifier_present",
           "srv_created",
           "srv_modified",
+          "effective_modified",
           "is_valid",
           "fallback_key",
           "revision",
@@ -802,6 +809,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           ) {
             throw error;
           }
+          this.realtimeAlarmRecoveryPending = true;
           this.enterStorageWriteQuotaMode(error);
           return;
         }
@@ -825,7 +833,6 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     try {
       this.migrate();
       this.reconcileAdminNotifies(Date.now());
-      this.seedAutomaticNotificationTask(Date.now());
       this.ctx.storage.sql.exec(
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (?)",
         ENTRY_STORE_ACTIVATION_SEAL,
@@ -1034,6 +1041,49 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
           DROP TABLE IF EXISTS simulated_cgm_state;
           INSERT INTO _sql_schema_migrations (id) VALUES (22);
         `);
+      }
+
+      const embeddedDexcomTaskRemoved = this.ctx.storage.sql.exec<{ present: number }>(
+        "SELECT EXISTS(SELECT 1 FROM _sql_schema_migrations WHERE id = 24) AS present",
+      ).one().present !== 0;
+      if (!embeddedDexcomTaskRemoved) {
+        // Dexcom Share now runs in its own Durable Object so a slow vendor
+        // request can never delay this object's Engine.IO heartbeat alarm.
+        this.ctx.storage.sql.exec(`
+          DELETE FROM background_tasks WHERE kind = 'connect-dexcomshare';
+          DELETE FROM plugin_runtime_state WHERE plugin = 'connect-dexcomshare';
+          INSERT INTO _sql_schema_migrations (id) VALUES (24);
+        `);
+      }
+
+      const effectiveModifiedBackfilled = this.ctx.storage.sql.exec<{ present: number }>(
+        "SELECT EXISTS(SELECT 1 FROM _sql_schema_migrations WHERE id = 26) AS present",
+      ).one().present !== 0;
+      if (!effectiveModifiedBackfilled) {
+        migrateEffectiveModifiedV26(this.ctx.storage.sql);
+        this.ctx.storage.sql.exec(
+          "INSERT INTO _sql_schema_migrations (id) VALUES (26)",
+        );
+      }
+
+      const legacyNotificationScheduleRemoved = this.ctx.storage.sql.exec<{ present: number }>(
+        "SELECT EXISTS(SELECT 1 FROM _sql_schema_migrations WHERE id = 27) AS present",
+      ).one().present !== 0;
+      if (!legacyNotificationScheduleRemoved) {
+        // Earlier builds seeded a per-minute plugin evaluation on activation.
+        // Clear that legacy task once; ordinary data mutations will schedule
+        // the next bounded evaluation when there is actually new input.
+        this.ctx.storage.sql.exec(
+          "DELETE FROM background_tasks WHERE kind = ?",
+          PLUGIN_NOTIFICATIONS_TASK,
+        );
+        this.ctx.storage.sql.exec(
+          "DELETE FROM data_update_debounce WHERE kind = ?",
+          PLUGIN_NOTIFICATIONS_TASK,
+        );
+        this.ctx.storage.sql.exec(
+          "INSERT INTO _sql_schema_migrations (id) VALUES (27)",
+        );
       }
 
       // This named, idempotent auth state is intentionally independent of the
@@ -2401,18 +2451,10 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       );
       notifications.push(...bwp.notifications);
       snoozes.push(...bwp.snoozes);
-      // Node evaluates enabled server plugins on every heartbeat. Preserve
-      // that time-varying IOB/BWP behavior only for this explicitly opt-in
-      // plugin, using the existing persisted Durable Object task. A completely
-      // empty tenant has no time-varying BWP state, so it must not leave a
-      // permanent one-alarm-per-minute task behind after a smoke test.
-      const hasBwpInput = bwpContext.sgvs.length > 0 ||
-        bwpContext.mbgs.length > 0 ||
-        bwpContext.cals.length > 0 ||
-        bwpContext.devicestatus.length > 0 ||
-        bwpContext.treatments.length > 0 ||
-        bwpContext.profiles.length > 0;
-      if (hasBwpInput) schedule(now + heartbeatMs);
+      // Workers Free does not keep the Node process heartbeat alive solely to
+      // age BWP state. Every new SGV, treatment, profile or device-status
+      // mutation still evaluates it immediately, which matches the data
+      // cadence without a permanent one-alarm-per-minute SQLite scan.
     }
 
     if (runtime.cage || runtime.sage || runtime.iage || runtime.bage) {
@@ -2488,26 +2530,6 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     };
   }
 
-  private seedAutomaticNotificationTask(now: number): void {
-    if (this.storageWritesBlocked()) return;
-    const tasks = this.backgroundTasks();
-    const runtime = this.resolvedAutomaticNotificationRuntime(now);
-    const anyEnabled = runtime.upbat || runtime.ar2 || runtime.simpleAlarms || runtime.errorCodes
-      || runtime.pump || runtime.openAps || runtime.xdripJs
-      || runtime.loop || runtime.bwp || runtime.cage || runtime.sage || runtime.iage
-      || runtime.bage
-      || runtime.treatmentNotify || runtime.timeAgo || runtime.dbSize;
-    if (tasks.has(PLUGIN_NOTIFICATIONS_TASK)) {
-      if (!anyEnabled) tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, now, now);
-      return;
-    }
-    if (!anyEnabled) return;
-    const evaluation = this.automaticPluginNotificationEvaluation(now, runtime);
-    const hasRequests = evaluation.notifications.length > 0 || evaluation.snoozes.length > 0;
-    const deadline = hasRequests ? now : evaluation.nextDueAt;
-    if (deadline !== null) tasks.schedule(PLUGIN_NOTIFICATIONS_TASK, deadline, now);
-  }
-
   private processPluginNotificationTask(task: BackgroundTaskRow, now: number): void {
     const evaluation = this.automaticPluginNotificationEvaluation(now);
     this.realtime.processAlarmNotificationRequests(
@@ -2530,7 +2552,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
     );
   }
 
-  private processDueBackgroundTasks(now: number): void {
+  private async processDueBackgroundTasks(now: number): Promise<void> {
     const tasks = this.backgroundTasks();
     for (const kind of this.dataUpdateDebounce().consumeDue(
       now,
@@ -2540,14 +2562,16 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       // leaves an unknown row instead of fabricating a new task behavior.
       if (kind === PLUGIN_NOTIFICATIONS_TASK) tasks.schedule(kind, now, now);
     }
-    for (const task of tasks.due(now, BACKGROUND_TASK_BATCH_LIMIT)) {
+    const dueTasks = tasks.due(now, BACKGROUND_TASK_BATCH_LIMIT);
+    for (const task of dueTasks) {
       try {
         if (task.kind === PLUGIN_NOTIFICATIONS_TASK) {
           this.processPluginNotificationTask(task, now);
         } else {
           this.ctx.storage.transactionSync(() => tasks.complete(task.kind, null, now));
         }
-      } catch {
+      } catch (error) {
+        if (isEntryStoreWriteQuotaError(error)) throw error;
         this.ctx.storage.transactionSync(() => tasks.fail(task.kind, now));
       }
     }
@@ -3890,7 +3914,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       // Upstream's data-received listener evaluates plugins on the leading edge.
       // Do the same in the originating request so ordinary in-range uploads do
       // not consume a second Worker invocation merely to remove a due task.
-      this.processDueBackgroundTasks(Date.now());
+      await this.processDueBackgroundTasks(Date.now());
       if (this.realtime.flushApplicationWakes() > 0) this.flushRealtimeWebSockets();
       await this.synchronizeRealtimeAlarm();
     } catch (error) {
@@ -4146,7 +4170,7 @@ export class EntryStore extends DurableObject<EntryStoreEnv> {
       this.cleanupAuthorizationFailures(now);
       this.processRealtimeWebSocketHeartbeats(now);
       this.realtime.processAlarm();
-      this.processDueBackgroundTasks(now);
+      await this.processDueBackgroundTasks(now);
       if (this.storageWritesBlocked()) throw new DurableObjectWriteQuotaError();
       this.flushRealtimeWebSockets();
       await this.synchronizeRealtimeAlarm();

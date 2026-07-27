@@ -181,8 +181,8 @@ test("the locked repository manifest is stable and validates all 111 test files"
   assert.deepEqual(first.statistics.tests_by_status, {
     pass: 16,
     adapted: 86,
-    "excluded-fixed-scope": 2,
-    unresolved: 7,
+    "excluded-fixed-scope": 1,
+    unresolved: 8,
   });
   for (const file of [
     "vendor/nightscout/tests/api.aaps-client.test.js",
@@ -290,10 +290,11 @@ test("the locked repository manifest is stable and validates all 111 test files"
     first.tests
       .filter((item) => item.status === "excluded-fixed-scope")
       .map((item) => item.file),
-    [
-      "vendor/nightscout/tests/bridge.test.js",
-      "vendor/nightscout/tests/mmconnect.test.js",
-    ],
+    ["vendor/nightscout/tests/mmconnect.test.js"],
+  );
+  assert.equal(
+    first.tests.find((item) => item.file === "vendor/nightscout/tests/bridge.test.js")?.status,
+    "unresolved",
   );
 });
 

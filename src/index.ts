@@ -1,4 +1,5 @@
 import { EntryStore } from "./entry-store";
+import { DexcomShareConnector } from "./dexcom-share-connector";
 import mime from "mime";
 import qs from "qs";
 import type {
@@ -96,10 +97,15 @@ import type {
   DocumentQuery,
   DocumentSort,
 } from "./document-repository";
+import {
+  resolveDexcomShareConfig,
+  type DexcomShareEnvironment,
+} from "./dexcom-share";
 
-export { EntryStore };
+export { DexcomShareConnector, EntryStore };
 
 const MAX_BODY_BYTES = 512 * 1024;
+const DEFAULT_TENANT = "demo";
 const TENANT = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const OBJECT_ID = /^[0-9a-f]{24}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -152,7 +158,8 @@ const SEEN_PERMISSIONS = [
   "notifications:loop:push",
 ] as const;
 
-type AppEnv = Omit<Env, "API_SECRET"> & {
+type AppEnv = Omit<Env, "API_SECRET"> & DexcomShareEnvironment & {
+  DEXCOM_SHARE_CONNECTOR: DurableObjectNamespace<DexcomShareConnector>;
   API_SECRET?: string;
   API3_MAX_LIMIT?: string;
   AUTH_DEFAULT_ROLES?: string;
@@ -411,7 +418,7 @@ async function servePlatformPage(
 }
 
 function resolveTenantFromUrl(url: URL): string {
-  const tenant = url.searchParams.get("tenant") ?? "demo";
+  const tenant = url.searchParams.get("tenant") ?? DEFAULT_TENANT;
   if (!TENANT.test(tenant)) {
     throw new ApiError(400, "invalid_tenant", "tenant must match [a-z0-9][a-z0-9_-]{0,63}");
   }
@@ -3531,17 +3538,105 @@ async function handlePebble(
   return withoutBodyForHead(request, json(response));
 }
 
+async function handleNscfConnectStatus(
+  request: Request,
+  env: AppEnv,
+  url: URL,
+): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return json(
+      { error: { code: "method_not_allowed", message: "Method not allowed" } },
+      { status: 405, headers: { "Allow": "GET, HEAD" } },
+    );
+  }
+  if (env.DEXCOM_SHARE_CONNECTOR === undefined) {
+    throw new ApiError(
+      503,
+      "dexcom_share_connector_not_configured",
+      "DEXCOM_SHARE_CONNECTOR must be configured before connector status can be served",
+    );
+  }
+  await requirePermission(
+    request,
+    env,
+    url,
+    "admin:api:permissions:read",
+  );
+  const tenant = resolveTenant(request, url);
+  if (tenant !== DEFAULT_TENANT) {
+    throw new ApiError(
+      404,
+      "dexcom_share_connector_not_available",
+      "Dexcom Share connector is available only for the default tenant",
+    );
+  }
+  const body = await env.DEXCOM_SHARE_CONNECTOR
+    .getByName(tenant)
+    .statusJson(tenant);
+  return withoutBodyForHead(
+    request,
+    new Response(body, {
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8",
+      },
+    }),
+  );
+}
+
+function bootstrapDexcomShareConnector(
+  request: Request,
+  env: AppEnv,
+  url: URL,
+  ctx: ExecutionContext | undefined,
+): void {
+  if (request.method !== "GET" && request.method !== "HEAD") return;
+  if (
+    url.pathname !== "/"
+    && url.pathname !== "/admin"
+    && url.pathname !== "/admin/"
+  ) {
+    return;
+  }
+  if (!resolveDexcomShareConfig(env).enabled) return;
+  if (ctx === undefined) return;
+  const tenant = resolveTenant(request, url);
+  if (tenant !== DEFAULT_TENANT) return;
+  ctx.waitUntil(
+    env.DEXCOM_SHARE_CONNECTOR
+      .getByName(tenant)
+      .reconcile(tenant)
+      .catch((error: unknown) => {
+        console.error(
+          JSON.stringify({
+            message: "Dexcom Share connector bootstrap failed",
+            tenant,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }),
+  );
+}
+
 export default {
-  async fetch(request: Request, env: AppEnv): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: AppEnv,
+    ctx?: ExecutionContext,
+  ): Promise<Response> {
     const url = new URL(request.url);
     try {
       const secretConfigurationError = validateApiSecretConfiguration(request, env, url);
       if (secretConfigurationError !== null) return secretConfigurationError;
+      bootstrapDexcomShareConnector(request, env, url, ctx);
       if (url.pathname === "/healthz") {
         return json({ status: "ok", upstream: "v15.0.7", storage: "sqlite-durable-object" });
       }
       if (url.pathname === "/pebble" || url.pathname === "/pebble/") {
         return await handlePebble(request, env, url);
+      }
+      if (url.pathname === "/_nscf/connect/status") {
+        return await handleNscfConnectStatus(request, env, url);
       }
       if (url.pathname === "/socket.io" || url.pathname === "/socket.io/") {
         const tenant = resolveTenant(request, url);

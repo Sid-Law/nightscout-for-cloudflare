@@ -66,7 +66,7 @@ describe("SQLite write-quota read-only fallback", () => {
     );
     await runInDurableObject(stub, async (instance: EntryStore, state) => {
       state.storage.sql.exec(
-        "DELETE FROM _sql_schema_migrations WHERE id IN (22, 23)",
+        "DELETE FROM _sql_schema_migrations WHERE id IN (22, 28)",
       );
       state.storage.sql.exec(
         "DELETE FROM realtime_root_state WHERE singleton = 1",
@@ -141,7 +141,7 @@ describe("SQLite write-quota read-only fallback", () => {
       );
       await runInDurableObject(stub, async (instance: EntryStore, state) => {
         state.storage.sql.exec(
-          "DELETE FROM _sql_schema_migrations WHERE id = 23",
+          "DELETE FROM _sql_schema_migrations WHERE id = 28",
         );
         const internal = instance as unknown as {
           storageWriteQuotaBlockedUntil: number;

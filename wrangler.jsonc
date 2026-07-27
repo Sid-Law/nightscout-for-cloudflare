@@ -47,6 +47,10 @@
       {
         "name": "ENTRY_STORE",
         "class_name": "EntryStore"
+      },
+      {
+        "name": "DEXCOM_SHARE_CONNECTOR",
+        "class_name": "DexcomShareConnector"
       }
     ]
   },
@@ -54,6 +58,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["EntryStore"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["DexcomShareConnector"]
     }
   ],
   "observability": {

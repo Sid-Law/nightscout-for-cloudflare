@@ -12,7 +12,7 @@ import type { NightscoutStatusEnvironment } from "../src/status";
 
 interface MutableEntryStoreSurface {
   env: NightscoutStatusEnvironment;
-  processDueBackgroundTasks: (now: number) => void;
+  processDueBackgroundTasks: (now: number) => Promise<void>;
   processPluginNotificationTask: (task: BackgroundTaskRow, now: number) => void;
 }
 
@@ -197,7 +197,7 @@ describe("locked bootevent leading/trailing debounce contract", () => {
         expect(row.pending).toBe(1);
         expect(await state.storage.getAlarm()).not.toBeNull();
 
-        mutable.processDueBackgroundTasks(row.due_at);
+        await mutable.processDueBackgroundTasks(row.due_at);
         expect(runs).toBe(2);
         expect(state.storage.sql.exec<{ count: number }>(
           "SELECT COUNT(*) AS count FROM data_update_debounce",

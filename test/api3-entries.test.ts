@@ -1851,7 +1851,7 @@ describe("API v3 Entries vertical slice", () => {
         "INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (99)",
       );
       state.storage.sql.exec(
-        "DELETE FROM _sql_schema_migrations WHERE id = 23",
+        "DELETE FROM _sql_schema_migrations WHERE id = 28",
       );
     });
 
@@ -1939,7 +1939,7 @@ describe("API v3 Entries vertical slice", () => {
         CREATE UNIQUE INDEX documents_entries_date_string_sort
           ON documents(json_extract(body, '$.dateString'))
           WHERE collection = 'entries';
-        DELETE FROM _sql_schema_migrations WHERE id = 23;
+        DELETE FROM _sql_schema_migrations WHERE id = 28;
       `);
     });
 
@@ -1993,7 +1993,7 @@ describe("API v3 Entries vertical slice", () => {
       state.storage.sql.exec("DROP INDEX entries_date_desc");
       state.storage.sql.exec("CREATE INDEX entries_date_desc ON entries(type)");
       state.storage.sql.exec(
-        "DELETE FROM _sql_schema_migrations WHERE id = 23",
+        "DELETE FROM _sql_schema_migrations WHERE id = 28",
       );
     });
 
@@ -2050,7 +2050,7 @@ describe("API v3 Entries vertical slice", () => {
           ON entries(json_extract(device, '$.x'));
         CREATE UNIQUE INDEX unexpected_nocase_dedupe
           ON entries(dedupe_key COLLATE NOCASE);
-        DELETE FROM _sql_schema_migrations WHERE id = 23;
+        DELETE FROM _sql_schema_migrations WHERE id = 28;
       `);
     });
 

@@ -203,6 +203,7 @@ interface DbDocumentV4 {
   identifier_present: number | null;
   srv_created: number | null;
   srv_modified: number | null;
+  effective_modified: number | null;
   is_valid: number | null;
   fallback_key: string | null;
   revision: number | null;
@@ -275,26 +276,19 @@ function timestamp(value: JsonValue | undefined): number | null {
 }
 
 /**
- * API3 resolves a virtual modification cursor for documents that were written
- * through older APIs: entries use `date`, the other generic collections use
- * `created_at`, and settings has no fallback. Keep this expression shared by
- * lastModified and history so a client is never told that newer data exists
- * only to receive an empty history page for the same cursor.
+ * API3 resolves a modification cursor for documents written through older
+ * APIs: entries use `date`, the other generic collections use `created_at`,
+ * and settings has no fallback. Persisting that cursor avoids re-parsing every
+ * JSON document on each NSClientV3 incremental poll.
  */
-function effectiveApi3ModifiedSql(collection: Api3CollectionName): string {
-  if (collection === SETTINGS) return "srv_modified";
-  const path = collection === ENTRIES ? "$.date" : "$.created_at";
-  return `CASE
-    WHEN srv_modified IS NOT NULL THEN srv_modified
-    WHEN json_type(body, '${path}') IN ('integer', 'real')
-      THEN CAST(json_extract(body, '${path}') AS INTEGER)
-    WHEN json_type(body, '${path}') = 'text'
-      AND julianday(json_extract(body, '${path}')) IS NOT NULL
-      THEN CAST(ROUND(
-        (julianday(json_extract(body, '${path}')) - 2440587.5) * 86400000
-      ) AS INTEGER)
-    ELSE NULL
-  END`;
+function effectiveApi3Modified(
+  document: JsonDocument,
+  srvModified: number | null,
+  collection: StoredDocumentCollectionName,
+): number | null {
+  if (srvModified !== null) return srvModified;
+  if (collection === SETTINGS || collection === "activity") return null;
+  return timestamp(document[collection === ENTRIES ? "date" : "created_at"]);
 }
 
 function sortTime(document: JsonDocument, fallback: number): number {
@@ -1278,6 +1272,7 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
   addColumn(sql, columns, "identifier_present", "INTEGER");
   addColumn(sql, columns, "srv_created", "INTEGER");
   addColumn(sql, columns, "srv_modified", "INTEGER");
+  addColumn(sql, columns, "effective_modified", "INTEGER");
   addColumn(sql, columns, "is_valid", "INTEGER");
   addColumn(sql, columns, "fallback_key", "TEXT");
   addColumn(sql, columns, "revision", "INTEGER");
@@ -1329,6 +1324,8 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       ON documents(collection, is_valid, sort_time DESC, srv_modified DESC);
     CREATE INDEX IF NOT EXISTS documents_collection_modified
       ON documents(collection, srv_modified DESC);
+    CREATE INDEX IF NOT EXISTS documents_collection_effective_modified
+      ON documents(collection, effective_modified DESC, id ASC);
     CREATE INDEX IF NOT EXISTS document_changes_collection_history
       ON document_changes(collection, srv_modified ASC, change_id ASC);
     CREATE INDEX IF NOT EXISTS document_changes_document
@@ -1337,8 +1334,8 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
 
   const rows = sql.exec<DbDocumentV4>(`
     SELECT collection, id, body, sort_time, created_at, updated_at,
-           identifier, identifier_present, srv_created, srv_modified, is_valid, fallback_key,
-           revision, srv_metadata_version
+           identifier, identifier_present, srv_created, srv_modified, effective_modified,
+           is_valid, fallback_key, revision, srv_metadata_version
     FROM documents
     WHERE identifier_present IS NULL OR srv_metadata_version IS NULL
        OR is_valid IS NULL OR revision IS NULL
@@ -1384,11 +1381,17 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       ? fallbackKey(document, collection as Api3CollectionName)
       : row.fallback_key;
     const revision = row.revision ?? 1;
+    const effectiveModified = effectiveApi3Modified(
+      document,
+      srvModified,
+      collection as StoredDocumentCollectionName,
+    );
 
     sql.exec(
       `UPDATE documents
        SET identifier = ?, srv_created = ?, srv_modified = ?, is_valid = ?,
-           identifier_present = ?, fallback_key = ?, revision = ?, srv_metadata_version = 1
+           identifier_present = ?, fallback_key = ?, revision = ?, srv_metadata_version = 1,
+           effective_modified = ?
        WHERE collection = ? AND id = ?`,
       identifier,
       srvCreated,
@@ -1397,6 +1400,7 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
       identifierPresent,
       documentFallback,
       revision,
+      effectiveModified,
       collection,
       row.id,
     );
@@ -1454,6 +1458,51 @@ export function migrateDocumentsV4(sql: SqlStorage): void {
     ON CONFLICT(collection) DO UPDATE SET
       last_srv_modified = excluded.last_srv_modified
     WHERE excluded.last_srv_modified > collection_clocks.last_srv_modified
+  `);
+}
+
+/**
+ * One-time bounded API3 cursor backfill. New writes always maintain the
+ * indexed value. Upgrades only repair the most recent documents so an old
+ * long-running instance cannot consume the entire Workers Free write budget
+ * during one Durable Object activation.
+ */
+export function migrateEffectiveModifiedV26(sql: SqlStorage): void {
+  sql.exec(`
+    UPDATE documents
+    SET effective_modified = CASE
+      WHEN srv_modified IS NOT NULL THEN srv_modified
+      WHEN collection = 'entries'
+        AND json_type(body, '$.date') IN ('integer', 'real')
+        THEN CAST(json_extract(body, '$.date') AS INTEGER)
+      WHEN collection = 'entries'
+        AND json_type(body, '$.date') = 'text'
+        AND julianday(json_extract(body, '$.date')) IS NOT NULL
+        THEN CAST(ROUND(
+          (julianday(json_extract(body, '$.date')) - 2440587.5) * 86400000
+        ) AS INTEGER)
+      WHEN collection NOT IN ('settings', 'activity')
+        AND json_type(body, '$.created_at') IN ('integer', 'real')
+        THEN CAST(json_extract(body, '$.created_at') AS INTEGER)
+      WHEN collection NOT IN ('settings', 'activity')
+        AND json_type(body, '$.created_at') = 'text'
+        AND julianday(json_extract(body, '$.created_at')) IS NOT NULL
+        THEN CAST(ROUND(
+          (julianday(json_extract(body, '$.created_at')) - 2440587.5) * 86400000
+        ) AS INTEGER)
+      ELSE NULL
+    END
+    WHERE rowid IN (
+      SELECT rowid
+      FROM documents
+      WHERE effective_modified IS NULL
+        AND (
+          srv_modified IS NOT NULL
+          OR collection NOT IN ('settings', 'activity')
+        )
+      ORDER BY sort_time DESC, id ASC
+      LIMIT 10000
+    )
   `);
 }
 
@@ -1678,6 +1727,7 @@ export function documentReadSchemaIsCurrent(sql: SqlStorage): boolean {
       "identifier_present",
       "srv_created",
       "srv_modified",
+      "effective_modified",
       "is_valid",
       "fallback_key",
       "revision",
@@ -2229,6 +2279,7 @@ export class SqliteDocumentRepository {
     if (isValid === 0) stored.isValid = false;
     const srvCreated = finiteInteger(stored.srvCreated);
     const srvModified = finiteInteger(stored.srvModified);
+    const effectiveModified = effectiveApi3Modified(stored, srvModified, collection);
     const body = JSON.stringify(stored);
     const now = Date.now();
 
@@ -2236,8 +2287,8 @@ export class SqliteDocumentRepository {
       `INSERT INTO documents
         (collection, id, body, sort_time, created_at, updated_at, identifier,
          identifier_present, srv_created, srv_modified, is_valid, fallback_key, revision,
-         srv_metadata_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+         srv_metadata_version, effective_modified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
        ${existing === undefined
     ? ""
     : `ON CONFLICT(collection, id) DO UPDATE SET
@@ -2248,6 +2299,7 @@ export class SqliteDocumentRepository {
          identifier_present = excluded.identifier_present,
          srv_created = excluded.srv_created,
          srv_modified = excluded.srv_modified,
+         effective_modified = excluded.effective_modified,
          is_valid = excluded.is_valid,
          fallback_key = excluded.fallback_key,
          revision = excluded.revision,
@@ -2265,6 +2317,7 @@ export class SqliteDocumentRepository {
       isValid,
       fallbackKey(stored, collection),
       revision,
+      effectiveModified,
     );
     this.sql.exec(
       `INSERT INTO document_changes
@@ -3404,15 +3457,11 @@ export class SqliteDocumentRepository {
   }
 
   treatmentsLastModified(collection: Api3CollectionName = TREATMENTS): number | null {
-    const effectiveModified = effectiveApi3ModifiedSql(collection);
     const row = this.sql.exec<{ effective_modified: number }>(
       `SELECT effective_modified
-       FROM (
-         SELECT *, ${effectiveModified} AS effective_modified
-         FROM documents
-         WHERE collection = ?
-       )
-       WHERE effective_modified IS NOT NULL
+       FROM documents
+       WHERE collection = ?
+         AND effective_modified IS NOT NULL
        ORDER BY effective_modified DESC, id ASC
        LIMIT 1`,
       collection,
@@ -3430,15 +3479,11 @@ export class SqliteDocumentRepository {
   ): JsonDocument[] {
     if (!Number.isFinite(query.since)) throw new Error("history timestamp must be finite");
     const comparison = query.inclusive === true ? ">=" : ">";
-    const effectiveModified = effectiveApi3ModifiedSql(collection);
     const rows = this.sql.exec<DbDocumentV4>(
       `SELECT *
-       FROM (
-         SELECT *, ${effectiveModified} AS effective_modified
-         FROM documents
-         WHERE collection = ?
-       )
-       WHERE effective_modified ${comparison} ?
+       FROM documents
+       WHERE collection = ?
+         AND effective_modified ${comparison} ?
        ORDER BY effective_modified ASC, id ASC
        LIMIT ?`,
       collection,

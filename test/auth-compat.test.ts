@@ -69,6 +69,7 @@ function configuredWorkerEnv(
   return {
     ASSETS: env.ASSETS,
     ENTRY_STORE: env.ENTRY_STORE,
+    DEXCOM_SHARE_CONNECTOR: env.DEXCOM_SHARE_CONNECTOR,
     API_SECRET: TEST_API_SECRET,
     AUTH_DEFAULT_ROLES: authDefaultRoles,
     AUTH_FAIL_DELAY: authFailDelay,

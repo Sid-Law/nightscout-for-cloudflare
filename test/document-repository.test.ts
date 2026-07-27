@@ -370,7 +370,7 @@ describe("SQLite collection contract v4", () => {
           ALTER TABLE document_changes_old_v4 RENAME TO document_changes;
           DROP TABLE documents;
           ALTER TABLE documents_old_v4 RENAME TO documents;
-          DELETE FROM _sql_schema_migrations WHERE id = 23;
+          DELETE FROM _sql_schema_migrations WHERE id = 28;
         `);
       });
       expect(state.storage.sql.exec<{ count: number }>(
@@ -473,6 +473,21 @@ describe("SQLite collection contract v4", () => {
         indexes.find((index) => index.name === "documents_collection_identifier_presence")?.unique,
       ).toBe(0);
       expect(indexes.find((index) => index.name === "documents_collection_fallback")?.unique).toBe(0);
+      expect(
+        indexes.find((index) => index.name === "documents_collection_effective_modified")?.unique,
+      ).toBe(0);
+      const plan = state.storage.sql.exec<{ detail: string }>(
+        `EXPLAIN QUERY PLAN
+         SELECT effective_modified
+         FROM documents
+         WHERE collection = 'treatments'
+           AND effective_modified IS NOT NULL
+         ORDER BY effective_modified DESC, id ASC
+         LIMIT 1`,
+      ).toArray();
+      expect(plan.some((row) =>
+        row.detail.includes("documents_collection_effective_modified")
+      )).toBe(true);
     });
   });
 
