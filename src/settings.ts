@@ -167,6 +167,8 @@ function isSimple(value: unknown): boolean {
 function environmentName(key: string): string {
   return key
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/([A-Za-z])(\d)/g, "$1_$2")
+    .replace(/(\d)([A-Za-z])/g, "$1_$2")
     .replace(/[\s-]+/g, "_")
     .toUpperCase();
 }

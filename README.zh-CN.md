@@ -77,6 +77,7 @@ Git 提交，构建会尊重用户修改，不再自动替换源码。只有明�
 
 ## 技术文档
 
+- [配置与高级功能](docs/CONFIGURATION.zh-CN.md)
 - [部署与首次使用](docs/DEPLOYMENT.zh-CN.md)
 - [Cloudflare 架构](docs/ARCHITECTURE.md)
 - [上游兼容性矩阵](docs/UPSTREAM_COMPATIBILITY.md)

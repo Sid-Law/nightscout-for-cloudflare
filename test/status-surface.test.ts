@@ -292,6 +292,134 @@ describe("tenant status configuration sources", () => {
     ))).toMatchObject(expected);
   });
 
+  it("maps the official alarm controls and snooze choices without changing defaults", () => {
+    const overrides = tenantStatusSettings({
+      ALARM_URGENT_HIGH: "off",
+      ALARM_URGENT_HIGH_MINS: "10 20",
+      ALARM_HIGH: "on",
+      ALARM_HIGH_MINS: "25 50",
+      ALARM_LOW: "false",
+      ALARM_LOW_MINS: "5 15",
+      ALARM_URGENT_LOW: "true",
+      ALARM_URGENT_LOW_MINS: "7 14",
+      ALARM_URGENT_MINS: "12 24",
+      ALARM_WARN_MINS: "18 36",
+    });
+    const expected = {
+      alarmUrgentHigh: false,
+      alarmUrgentHighMins: [10, 20],
+      alarmHigh: true,
+      alarmHighMins: [25, 50],
+      alarmLow: false,
+      alarmLowMins: [5, 15],
+      alarmUrgentLow: true,
+      alarmUrgentLowMins: [7, 14],
+      alarmUrgentMins: [12, 24],
+      alarmWarnMins: [18, 36],
+    };
+    expect(settingsOf(nightscoutStatus(new Date(0), "readable", overrides)))
+      .toMatchObject(expected);
+    expect(settingsOf(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      overrides,
+    ))).toMatchObject(expected);
+  });
+
+  it("maps focus, Clock and all eight Split View defaults to HTTP and socket status", () => {
+    const overrides = tenantStatusSettings({
+      FOCUS_HOURS: "6",
+      SHOW_CLOCK_DELTA: "true",
+      SHOW_CLOCK_LAST_TIME: "off",
+      FRAME_URL_1: "https://one.example",
+      FRAME_URL_2: "https://two.example",
+      FRAME_URL_3: "https://three.example",
+      FRAME_URL_4: "https://four.example",
+      FRAME_URL_5: "https://five.example",
+      FRAME_URL_6: "https://six.example",
+      FRAME_URL_7: "https://seven.example",
+      FRAME_URL_8: "https://eight.example",
+      FRAME_NAME_1: "One",
+      FRAME_NAME_2: "Two",
+      FRAME_NAME_3: "Three",
+      FRAME_NAME_4: "Four",
+      FRAME_NAME_5: "Five",
+      FRAME_NAME_6: "Six",
+      FRAME_NAME_7: "Seven",
+      FRAME_NAME_8: "Eight",
+    });
+    const expected = {
+      // Locked v15.0.7 does not number-map FOCUS_HOURS.
+      focusHours: "6",
+      showClockDelta: true,
+      showClockLastTime: false,
+      frameUrl1: "https://one.example",
+      frameUrl2: "https://two.example",
+      frameUrl3: "https://three.example",
+      frameUrl4: "https://four.example",
+      frameUrl5: "https://five.example",
+      frameUrl6: "https://six.example",
+      frameUrl7: "https://seven.example",
+      frameUrl8: "https://eight.example",
+      frameName1: "One",
+      frameName2: "Two",
+      frameName3: "Three",
+      frameName4: "Four",
+      frameName5: "Five",
+      frameName6: "Six",
+      frameName7: "Seven",
+      frameName8: "Eight",
+    };
+    expect(settingsOf(nightscoutStatus(new Date(0), "readable", overrides)))
+      .toMatchObject(expected);
+    expect(settingsOf(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      overrides,
+    ))).toMatchObject(expected);
+  });
+
+  it("maps display-only Basal, Bolus and Profile plugin preferences", () => {
+    const configured = tenantStatusSettings({
+      BASAL_RENDER: "icicle",
+      BOLUS_RENDER_OVER: "0.5",
+      BOLUS_RENDER_FORMAT: "concise",
+      BOLUS_RENDER_FORMAT_SMALL: "minimal",
+      PROFILE_HISTORY: "on",
+      PROFILE_MULTIPLE: "false",
+    });
+    expect(configured.extendedSettings).toMatchObject({
+      basal: { render: "icicle" },
+      bolus: {
+        renderOver: 0.5,
+        renderFormat: "concise",
+        renderFormatSmall: "minimal",
+      },
+      profile: {
+        history: true,
+        multiple: false,
+      },
+    });
+    expect(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      configured,
+    ).extendedSettings).toEqual(configured.extendedSettings);
+
+    const disabled = tenantStatusSettings({
+      DISABLE: "basal bolus profile",
+      BASAL_RENDER: "icicle",
+      BOLUS_RENDER_OVER: "0.5",
+      PROFILE_HISTORY: "on",
+    });
+    expect(disabled.extendedSettings).not.toHaveProperty("basal");
+    expect(disabled.extendedSettings).not.toHaveProperty("bolus");
+    expect(disabled.extendedSettings).not.toHaveProperty("profile");
+  });
+
   it("defaults and maps DEVICESTATUS_ADVANCED without changing its data window", () => {
     const defaults = tenantStatusSettings({});
     expect(defaults.extendedSettings).toMatchObject({

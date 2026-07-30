@@ -152,6 +152,9 @@ You can change the value later:
 7. Update the Nightscout website, AAPS, and every other uploader to use the
    same value.
 
+For display, authentication, API, and plugin variables, see
+[Configuration and advanced features](CONFIGURATION.md).
+
 ## Dexcom Share (Beta, advanced users)
 
 This feature is disabled by default and does not affect an ordinary
@@ -171,6 +174,9 @@ complete; community acceptance with real accounts is not yet complete.
 After saving the variables and waiting for deployment to finish, open the
 Nightscout home page or `/admin/` once to start the Connector. It then uses a
 separate Durable Object alarm to fetch data periodically.
+
+See [Configuration and advanced features](CONFIGURATION.md) for the complete
+variable list, Secret types, and status checks.
 
 ## Local or command-line deployment
 

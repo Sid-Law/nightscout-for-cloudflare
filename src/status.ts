@@ -24,6 +24,25 @@ export interface NightscoutStatusEnvironment {
   DISABLE?: string;
   SHOW_PLUGINS?: string;
   SHOW_FORECAST?: string;
+  FOCUS_HOURS?: string;
+  SHOW_CLOCK_DELTA?: string;
+  SHOW_CLOCK_LAST_TIME?: string;
+  FRAME_URL_1?: string;
+  FRAME_URL_2?: string;
+  FRAME_URL_3?: string;
+  FRAME_URL_4?: string;
+  FRAME_URL_5?: string;
+  FRAME_URL_6?: string;
+  FRAME_URL_7?: string;
+  FRAME_URL_8?: string;
+  FRAME_NAME_1?: string;
+  FRAME_NAME_2?: string;
+  FRAME_NAME_3?: string;
+  FRAME_NAME_4?: string;
+  FRAME_NAME_5?: string;
+  FRAME_NAME_6?: string;
+  FRAME_NAME_7?: string;
+  FRAME_NAME_8?: string;
   AUTH_FAIL_DELAY?: string;
   ADMIN_NOTIFIES_ENABLED?: string;
   BG_HIGH?: string;
@@ -31,7 +50,23 @@ export interface NightscoutStatusEnvironment {
   BG_TARGET_BOTTOM?: string;
   BG_LOW?: string;
   ALARM_TYPES?: string;
+  ALARM_URGENT_HIGH?: string;
+  ALARM_URGENT_HIGH_MINS?: string;
+  ALARM_HIGH?: string;
+  ALARM_HIGH_MINS?: string;
+  ALARM_LOW?: string;
+  ALARM_LOW_MINS?: string;
+  ALARM_URGENT_LOW?: string;
+  ALARM_URGENT_LOW_MINS?: string;
+  ALARM_URGENT_MINS?: string;
+  ALARM_WARN_MINS?: string;
   AR2_CONE_FACTOR?: string;
+  BASAL_RENDER?: string;
+  BOLUS_RENDER_OVER?: string;
+  BOLUS_RENDER_FORMAT?: string;
+  BOLUS_RENDER_FORMAT_SMALL?: string;
+  PROFILE_HISTORY?: string;
+  PROFILE_MULTIPLE?: string;
   BWP_SNOOZE?: string;
   BWP_WARN?: string;
   BWP_URGENT?: string;
@@ -212,6 +247,16 @@ function platformExtendedSettings(
     if (Object.keys(settings).length > 0) extended[name] = settings;
   }
   addPlugin("ar2", [["coneFactor", environment.AR2_CONE_FACTOR]]);
+  addPlugin("basal", [["render", environment.BASAL_RENDER]]);
+  addPlugin("bolus", [
+    ["renderOver", environment.BOLUS_RENDER_OVER],
+    ["renderFormat", environment.BOLUS_RENDER_FORMAT],
+    ["renderFormatSmall", environment.BOLUS_RENDER_FORMAT_SMALL],
+  ]);
+  addPlugin("profile", [
+    ["history", environment.PROFILE_HISTORY],
+    ["multiple", environment.PROFILE_MULTIPLE],
+  ]);
   addPlugin("bwp", [
     ["snooze", environment.BWP_SNOOZE],
     ["warn", environment.BWP_WARN],
@@ -464,6 +509,35 @@ export function tenantStatusSettings(
     ["LANGUAGE", environment.LANGUAGE],
     ["SHOW_PLUGINS", environment.SHOW_PLUGINS],
     ["SHOW_FORECAST", environment.SHOW_FORECAST],
+    ["FOCUS_HOURS", environment.FOCUS_HOURS],
+    ["SHOW_CLOCK_DELTA", environment.SHOW_CLOCK_DELTA],
+    ["SHOW_CLOCK_LAST_TIME", environment.SHOW_CLOCK_LAST_TIME],
+    ["FRAME_URL_1", environment.FRAME_URL_1],
+    ["FRAME_URL_2", environment.FRAME_URL_2],
+    ["FRAME_URL_3", environment.FRAME_URL_3],
+    ["FRAME_URL_4", environment.FRAME_URL_4],
+    ["FRAME_URL_5", environment.FRAME_URL_5],
+    ["FRAME_URL_6", environment.FRAME_URL_6],
+    ["FRAME_URL_7", environment.FRAME_URL_7],
+    ["FRAME_URL_8", environment.FRAME_URL_8],
+    ["FRAME_NAME_1", environment.FRAME_NAME_1],
+    ["FRAME_NAME_2", environment.FRAME_NAME_2],
+    ["FRAME_NAME_3", environment.FRAME_NAME_3],
+    ["FRAME_NAME_4", environment.FRAME_NAME_4],
+    ["FRAME_NAME_5", environment.FRAME_NAME_5],
+    ["FRAME_NAME_6", environment.FRAME_NAME_6],
+    ["FRAME_NAME_7", environment.FRAME_NAME_7],
+    ["FRAME_NAME_8", environment.FRAME_NAME_8],
+    ["ALARM_URGENT_HIGH", environment.ALARM_URGENT_HIGH],
+    ["ALARM_URGENT_HIGH_MINS", environment.ALARM_URGENT_HIGH_MINS],
+    ["ALARM_HIGH", environment.ALARM_HIGH],
+    ["ALARM_HIGH_MINS", environment.ALARM_HIGH_MINS],
+    ["ALARM_LOW", environment.ALARM_LOW],
+    ["ALARM_LOW_MINS", environment.ALARM_LOW_MINS],
+    ["ALARM_URGENT_LOW", environment.ALARM_URGENT_LOW],
+    ["ALARM_URGENT_LOW_MINS", environment.ALARM_URGENT_LOW_MINS],
+    ["ALARM_URGENT_MINS", environment.ALARM_URGENT_MINS],
+    ["ALARM_WARN_MINS", environment.ALARM_WARN_MINS],
     ["ADMIN_NOTIFIES_ENABLED", environment.ADMIN_NOTIFIES_ENABLED],
   ] as const) {
     if (value !== undefined) settingEnvironment[name] = value;

@@ -133,6 +133,9 @@ Durable Object 无法保存。
 6. 保存并等待新版本部署完成。
 7. 在 Nightscout 网页、AAPS 和其他上传端改成同一个值。
 
+其他显示、认证、API 与插件变量见
+[配置与高级功能](CONFIGURATION.zh-CN.md)。
+
 ## Dexcom Share（Beta，高级用户）
 
 此功能默认关闭，不影响普通部署。需要使用时，在 Cloudflare Dashboard 的
@@ -149,6 +152,9 @@ Durable Object 无法保存。
 
 保存变量并等待部署完成后，打开 Nightscout 首页（或 `/admin/`）一次以启动
 Connector。此后它通过独立 Durable Object alarm 定时拉取数据。
+
+完整变量、Secret 类型和状态检查方法见
+[配置与高级功能](CONFIGURATION.zh-CN.md)。
 
 ## 本地或命令行部署
 
