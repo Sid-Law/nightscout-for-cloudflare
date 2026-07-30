@@ -6,7 +6,7 @@ Nickname: **The Instant Noodle Edition**
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sid-luo/nightscout-for-cloudflare)
 
-[First-time deployment and setup guide](docs/getting-started/README.md)
+[First-time deployment and setup guide](https://github.com/sid-luo/nightscout-for-cloudflare/tree/main/docs/getting-started)
 
 This repository provides a fast and free way to deploy
 [Nightscout](https://github.com/nightscout/cgm-remote-monitor) on Cloudflare.
@@ -59,35 +59,6 @@ present.
 | Clean Mongo treatments database | Treatment records maintenance |
 | Clean Mongo entries (glucose entries) database | Glucose entries maintenance |
 | Remove future items from mongo database | Future-dated records maintenance |
-
-## One-click deployment and easy updates
-
-Use the **Deploy to Cloudflare** button at the top of this README for the first
-installation. Cloudflare creates a Git repository in your account, connects it
-to the new Worker and deploys the application.
-
-For later updates, use the existing Worker's Cloudflare build:
-
-1. Open the Worker in the Cloudflare dashboard.
-2. Open **Deployments**, then **View build history**.
-3. Open the latest successful build and select **Retry build**.
-
-The build refreshes the official Nightscout for Cloudflare source inside
-Cloudflare's temporary build workspace, preserves the deployed Worker's name
-and plain-text `API_SECRET` variable, and deploys to the same Worker. It does
-not change the user's GitHub repository or replace Durable Object storage. If
-download, install, build or deployment fails, Cloudflare keeps the previous
-active deployment.
-
-Automatic source refresh is limited to the one-commit repository produced by
-Deploy to Cloudflare. If the user adds their own Git commits, the build respects
-that customized source instead. Set the optional build variable
-`NSCF_AUTO_UPDATE=1` only when those custom commits should be ignored during
-Cloudflare builds.
-
-Copies deployed before this build updater was added require one final
-redeployment or a manual bootstrap. After that, **Retry build** is the normal
-update path.
 
 ## Technical documentation
 
