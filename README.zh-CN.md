@@ -18,25 +18,6 @@ Nightscout 上游版本：**15.0.7**
 本项目保留官方 Nightscout 的页面、布局、图表、插件、翻译和计算逻辑，只增加
 Cloudflare 平台适配层。
 
-## Nightscout 与 Nightscout for Cloudflare
-
-Nightscout for Cloudflare 是 Nightscout 的独立、非官方 Cloudflare
-移植版本。Nightscout 上游版本和移植版本使用各自独立的版本号：
-
-- Nightscout 上游版本：**15.0.7**
-- Nightscout for Cloudflare 版本：**1.0 Beta**
-
-原版 Admin Tools 的对应功能仍然保留，但本项目使用 SQLite Durable Objects
-存储数据，而不是 MongoDB。因此，页面中的部分名称会调整为与实际存储方式无关
-的名称，避免用户误以为部署中仍然存在 MongoDB。
-
-| 原版 Nightscout 名称 | Nightscout for Cloudflare 名称 |
-| --- | --- |
-| Clean Mongo status database | Device status maintenance（设备状态维护） |
-| Clean Mongo treatments database | Treatment records maintenance（治疗记录维护） |
-| Clean Mongo entries (glucose entries) database | Glucose entries maintenance（血糖记录维护） |
-| Remove future items from mongo database | Future-dated records maintenance（未来时间记录维护） |
-
 ## 为什么做这个项目
 
 Nightscout 是一个很伟大的项目，我们曾经可以在 Heroku 免费部署，那已经是
@@ -63,6 +44,25 @@ Nightscout 已经提供了非常好的泡面，但是没有叉子和开水（曾
 - 还有少量比较冷门的接口、MongoDB 边缘查询和第三方功能暂未适配。
 
 即便如此，当前版本已经可以满足大部分 Nightscout 日常使用需求。
+
+## Nightscout 与 Nightscout for Cloudflare
+
+Nightscout for Cloudflare 是 Nightscout 的独立、非官方 Cloudflare
+移植版本。Nightscout 上游版本和移植版本使用各自独立的版本号：
+
+- Nightscout 上游版本：**15.0.7**
+- Nightscout for Cloudflare 版本：**1.0 Beta**
+
+原版 Admin Tools 的对应功能仍然保留，但本项目使用 SQLite Durable Objects
+存储数据，而不是 MongoDB。因此，页面中的部分名称会调整为与实际存储方式无关
+的名称，避免用户误以为部署中仍然存在 MongoDB。
+
+| 原版 Nightscout 名称 | Nightscout for Cloudflare 名称 |
+| --- | --- |
+| Clean Mongo status database | Device status maintenance（设备状态维护） |
+| Clean Mongo treatments database | Treatment records maintenance（治疗记录维护） |
+| Clean Mongo entries (glucose entries) database | Glucose entries maintenance（血糖记录维护） |
+| Remove future items from mongo database | Future-dated records maintenance（未来时间记录维护） |
 
 ## 一键部署与第一次打开
 

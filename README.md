@@ -19,27 +19,6 @@ Upstream Nightscout version: **15.0.7**
 This project preserves the official Nightscout pages, layout, charts, plugins,
 translations and calculations, adding only the Cloudflare platform adapter.
 
-## Nightscout and Nightscout for Cloudflare
-
-Nightscout for Cloudflare is an independent, unofficial Cloudflare port of
-Nightscout. It keeps the upstream Nightscout version and the port version
-separate:
-
-- Nightscout upstream version: **15.0.7**
-- Nightscout for Cloudflare version: **1.0 Beta**
-
-The upstream Admin Tools still provide their corresponding functions, but this
-port stores records in SQLite Durable Objects instead of MongoDB. Some visible
-names are therefore adjusted to avoid implying that a MongoDB database is
-present.
-
-| Original Nightscout name | Nightscout for Cloudflare name |
-| --- | --- |
-| Clean Mongo status database | Device status maintenance |
-| Clean Mongo treatments database | Treatment records maintenance |
-| Clean Mongo entries (glucose entries) database | Glucose entries maintenance |
-| Remove future items from mongo database | Future-dated records maintenance |
-
 ## Why this project exists
 
 Nightscout is a great project. We used to be able to deploy it on Heroku for
@@ -72,6 +51,27 @@ in the time it takes to make instant noodles, you can get a Nightscout.
 
 Even with these limitations, the current release should cover most everyday
 Nightscout use.
+
+## Nightscout and Nightscout for Cloudflare
+
+Nightscout for Cloudflare is an independent, unofficial Cloudflare port of
+Nightscout. It keeps the upstream Nightscout version and the port version
+separate:
+
+- Nightscout upstream version: **15.0.7**
+- Nightscout for Cloudflare version: **1.0 Beta**
+
+The upstream Admin Tools still provide their corresponding functions, but this
+port stores records in SQLite Durable Objects instead of MongoDB. Some visible
+names are therefore adjusted to avoid implying that a MongoDB database is
+present.
+
+| Original Nightscout name | Nightscout for Cloudflare name |
+| --- | --- |
+| Clean Mongo status database | Device status maintenance |
+| Clean Mongo treatments database | Treatment records maintenance |
+| Clean Mongo entries (glucose entries) database | Glucose entries maintenance |
+| Remove future items from mongo database | Future-dated records maintenance |
 
 ## One-click deployment and first launch
 
