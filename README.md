@@ -12,7 +12,7 @@ It runs within Cloudflare's free-plan limits without a paid server or MongoDB
 service. It is an independent, unofficial port—not an official Nightscout
 release.
 
-Current Nightscout for Cloudflare release: **1.1.1**
+Current Nightscout for Cloudflare release: **1.1.1-beta**
 
 Upstream Nightscout version: **15.0.7**
 
@@ -44,7 +44,7 @@ Nightscout. It keeps the upstream Nightscout version and the port version
 separate:
 
 - Nightscout upstream version: **15.0.7**
-- Nightscout for Cloudflare version: **1.1.1**
+- Nightscout for Cloudflare version: **1.1.1-beta**
 
 The upstream Admin Tools still provide their corresponding functions, but this
 port stores records in SQLite Durable Objects instead of MongoDB. Some visible
