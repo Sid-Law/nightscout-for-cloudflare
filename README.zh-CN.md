@@ -11,7 +11,7 @@
 Cloudflare。它在 Cloudflare 免费套餐额度内运行，不需要付费服务器或
 MongoDB 服务。它是独立的非官方移植版，不是 Nightscout 官方发布。
 
-当前 Nightscout for Cloudflare 版本：**1.0 Beta**
+当前 Nightscout for Cloudflare 版本：**1.1 Beta**
 
 Nightscout 上游版本：**15.0.7**
 
@@ -51,7 +51,7 @@ Nightscout for Cloudflare 是 Nightscout 的独立、非官方 Cloudflare
 移植版本。Nightscout 上游版本和移植版本使用各自独立的版本号：
 
 - Nightscout 上游版本：**15.0.7**
-- Nightscout for Cloudflare 版本：**1.0 Beta**
+- Nightscout for Cloudflare 版本：**1.1 Beta**
 
 原版 Admin Tools 的对应功能仍然保留，但本项目使用 SQLite Durable Objects
 存储数据，而不是 MongoDB。因此，页面中的部分名称会调整为与实际存储方式无关

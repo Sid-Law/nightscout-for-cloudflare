@@ -5,7 +5,7 @@
 
 ## 当前发布状态
 
-- Nightscout for Cloudflare 版本：`1.0 Beta`
+- Nightscout for Cloudflare 版本：`1.1 Beta`
 - Nightscout 上游版本：`15.0.7`
 - 部署平台：Cloudflare Workers Free
 - 存储：SQLite Durable Object
@@ -250,7 +250,7 @@ NSCF 不新增剂量算法，也不修改客户端的治疗逻辑。
 - Engine.IO 二进制包尚未适配
 - 少量 Node.js 动态服务端插件和第三方集成仍待适配
 - 公开 Deploy 按钮和真实闭环设备仍待最终用户验收
-- 当前 `1.0 Beta` 不应承载正式医疗数据
+- 当前 `1.1 Beta` 不应承载正式医疗数据
 
 完整差距见 [UPSTREAM_COMPATIBILITY.md](UPSTREAM_COMPATIBILITY.md)。
 
