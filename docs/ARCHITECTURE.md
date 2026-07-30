@@ -36,8 +36,8 @@ workflow, then rendered injected test glucose and two SVG charts. This is
 fresh-platform evidence, not a claim that Cloudflare's public repository
 button has run while the source remains private.
 
-The project package version is `1.1.0-beta`, displayed to users as
-`Nightscout for Cloudflare 1.1 Beta`; the upstream application and all public
+The project package version is `1.1.1`, displayed to users as
+`Nightscout for Cloudflare 1.1.1`; the upstream application and all public
 Nightscout version responses remain `15.0.7`. The Settings/About panel preserves
 the upstream Nightscout attribution and links, then identifies Nightscout for
 Cloudflare separately with its downstream version, project-home link and issue

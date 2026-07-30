@@ -39,6 +39,7 @@ describe("locked Nightscout settings module", () => {
       "UNITS",
       "TIME_FORMAT",
       "NIGHT_MODE",
+      "EDIT_MODE",
       "SHOW_RAWBG",
       "CUSTOM_TITLE",
       "THEME",
@@ -59,7 +60,7 @@ describe("locked Nightscout settings module", () => {
       "BG_LOW",
       "SCALE_Y",
     ];
-    expect(expected).toHaveLength(24);
+    expect(expected).toHaveLength(25);
     const seen = new Set<string>();
     createNightscoutSettings().eachSettingAsEnv((name) => {
       seen.add(name);
@@ -75,6 +76,7 @@ describe("locked Nightscout settings module", () => {
       "units",
       "timeFormat",
       "nightMode",
+      "editMode",
       "showRawbg",
       "customTitle",
       "theme",
@@ -90,7 +92,7 @@ describe("locked Nightscout settings module", () => {
       "language",
       "showPlugins",
     ];
-    expect(expected).toHaveLength(19);
+    expect(expected).toHaveLength(20);
     const seen = new Set<string>();
     createNightscoutSettings().eachSetting((name) => {
       seen.add(name);

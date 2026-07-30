@@ -263,6 +263,53 @@ describe("tenant status configuration sources", () => {
     )).language).toBe("zh_tw");
   });
 
+  it("passes the official browser defaults to HTTP and socket status", () => {
+    const overrides = tenantStatusSettings({
+      TIME_FORMAT: "24",
+      NIGHT_MODE: "on",
+      SHOW_RAWBG: "noise",
+      CUSTOM_TITLE: "My Nightscout",
+      THEME: "colorblindfriendly",
+      SCALE_Y: "linear",
+      EDIT_MODE: "off",
+    });
+    const expected = {
+      timeFormat: 24,
+      nightMode: true,
+      showRawbg: "noise",
+      customTitle: "My Nightscout",
+      theme: "colorblindfriendly",
+      scaleY: "linear",
+      editMode: false,
+    };
+    expect(settingsOf(nightscoutStatus(new Date(0), "readable", overrides)))
+      .toMatchObject(expected);
+    expect(settingsOf(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      overrides,
+    ))).toMatchObject(expected);
+  });
+
+  it("defaults and maps DEVICESTATUS_ADVANCED without changing its data window", () => {
+    const defaults = tenantStatusSettings({});
+    expect(defaults.extendedSettings).toMatchObject({
+      devicestatus: { advanced: true, days: 1 },
+    });
+
+    const configured = tenantStatusSettings({ DEVICESTATUS_ADVANCED: "off" });
+    expect(configured.extendedSettings).toMatchObject({
+      devicestatus: { advanced: false, days: 1 },
+    });
+    expect(nightscoutWebsocketStatus(
+      new Date(0),
+      undefined,
+      "readable",
+      configured,
+    ).extendedSettings).toEqual(configured.extendedSettings);
+  });
+
   it("passes the official plugin display defaults to browser and socket status", () => {
     const overrides = tenantStatusSettings({
       SHOW_PLUGINS: "openaps pump iob cob",
@@ -398,6 +445,7 @@ describe("tenant status configuration sources", () => {
     const defaults = tenantStatusSettings({});
     expect(defaults.extendedSettings).toEqual({
       dbsize: { max: CLOUDFLARE_FREE_SQLITE_DO_MAX_MIB },
+      devicestatus: { advanced: true, days: 1 },
     });
 
     const configured = tenantStatusSettings({
@@ -415,6 +463,7 @@ describe("tenant status configuration sources", () => {
         enableAlerts: true,
         inMib: false,
       },
+      devicestatus: { advanced: true, days: 1 },
     });
     expect(nightscoutWebsocketStatus(
       new Date(0),

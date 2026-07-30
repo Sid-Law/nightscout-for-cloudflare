@@ -251,6 +251,7 @@ export function createNightscoutSettings(): NightscoutSettings {
   const wasSet: string[] = [];
   const valueMappers: Readonly<Record<string, (value: unknown) => unknown>> = {
     nightMode: mapTruthy,
+    editMode: mapTruthy,
     alarmUrgentHigh: mapTruthy,
     alarmUrgentHighMins: mapNumberArray,
     alarmHigh: mapTruthy,

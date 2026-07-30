@@ -12,6 +12,13 @@ export type NightscoutDisplayUnits = "mg/dl" | "mmol";
 
 export interface NightscoutStatusEnvironment {
   DISPLAY_UNITS?: string;
+  TIME_FORMAT?: string;
+  NIGHT_MODE?: string;
+  SHOW_RAWBG?: string;
+  CUSTOM_TITLE?: string;
+  THEME?: string;
+  SCALE_Y?: string;
+  EDIT_MODE?: string;
   LANGUAGE?: string;
   ENABLE?: string;
   DISABLE?: string;
@@ -97,6 +104,7 @@ export interface NightscoutStatusEnvironment {
   LOOP_URGENT?: string;
   TREATMENTNOTIFY_SNOOZE_MINS?: string;
   TREATMENTNOTIFY_INCLUDE_BOLUSES_OVER?: string;
+  DEVICESTATUS_ADVANCED?: string;
   HEARTBEAT?: string;
 }
 
@@ -181,7 +189,16 @@ function platformExtendedSettings(
     const value = normalizeExtendedSetting(raw);
     if (value !== undefined) dbsize[key] = value;
   }
-  const extended: Record<string, unknown> = { dbsize };
+  const extended: Record<string, unknown> = {
+    dbsize,
+    // Locked Nightscout exposes this default even when no environment variable
+    // is configured. It only controls how the browser merges received device
+    // status records; the Worker upload and retention paths are unchanged.
+    devicestatus: {
+      advanced: normalizeExtendedSetting(environment.DEVICESTATUS_ADVANCED) ?? true,
+      days: 1,
+    },
+  };
   function addPlugin(
     name: string,
     configured: readonly (readonly [string, string | undefined])[],
@@ -434,8 +451,15 @@ export function tenantStatusSettings(
     ["ALARM_TIMEAGO_WARN_MINS", environment.ALARM_TIMEAGO_WARN_MINS],
     ["ALARM_TIMEAGO_URGENT", environment.ALARM_TIMEAGO_URGENT],
     ["ALARM_TIMEAGO_URGENT_MINS", environment.ALARM_TIMEAGO_URGENT_MINS],
+    ["TIME_FORMAT", environment.TIME_FORMAT],
     ["DAY_START", environment.DAY_START],
     ["DAY_END", environment.DAY_END],
+    ["NIGHT_MODE", environment.NIGHT_MODE],
+    ["SHOW_RAWBG", environment.SHOW_RAWBG],
+    ["CUSTOM_TITLE", environment.CUSTOM_TITLE],
+    ["THEME", environment.THEME],
+    ["SCALE_Y", environment.SCALE_Y],
+    ["EDIT_MODE", environment.EDIT_MODE],
     ["HEARTBEAT", environment.HEARTBEAT],
     ["LANGUAGE", environment.LANGUAGE],
     ["SHOW_PLUGINS", environment.SHOW_PLUGINS],

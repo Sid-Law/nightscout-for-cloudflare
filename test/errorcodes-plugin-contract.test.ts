@@ -105,6 +105,7 @@ describe("locked Dexcom errorcodes plugin contract", () => {
       ERRORCODES_URGENT: "off",
     }).extendedSettings).toEqual({
       dbsize: { max: CLOUDFLARE_FREE_SQLITE_DO_MAX_MIB },
+      devicestatus: { advanced: true, days: 1 },
       errorcodes: { info: "off", warn: "9 10", urgent: "off" },
     });
     expect(tenantStatusSettings({
@@ -112,6 +113,7 @@ describe("locked Dexcom errorcodes plugin contract", () => {
       ERRORCODES_WARN: "9 10",
     }).extendedSettings).toEqual({
       dbsize: { max: CLOUDFLARE_FREE_SQLITE_DO_MAX_MIB },
+      devicestatus: { advanced: true, days: 1 },
     });
   });
 });
