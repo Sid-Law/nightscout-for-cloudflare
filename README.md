@@ -37,21 +37,6 @@ in the time it takes to make instant noodles, you can get a Nightscout.
   pages work
 - The common read and write APIs used through v1, v2 and v3 are implemented
 
-## What is not finished
-
-- There is no ready-made importer for existing Nightscout/MongoDB history;
-  this release is better suited to a new instance.
-- [SQLite Durable Objects Free](https://developers.cloudflare.com/durable-objects/platform/pricing/)
-  currently includes 5 GB of total storage, plus daily limits of 100,000
-  Durable Object requests, 5,000,000 rows read and 100,000 rows written. At a
-  very rough 1 KB per glucose record, 5 GB is about 17,000 days—nearly 48 years
-  of readings—so it cannot store more than 48 years of glucose records.
-- A small number of less common endpoints, MongoDB edge queries and third-party
-  features are not yet adapted.
-
-Even with these limitations, the current release should cover most everyday
-Nightscout use.
-
 ## Nightscout and Nightscout for Cloudflare
 
 Nightscout for Cloudflare is an independent, unofficial Cloudflare port of

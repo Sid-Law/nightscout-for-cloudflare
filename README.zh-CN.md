@@ -33,18 +33,6 @@ Nightscout 已经提供了非常好的泡面，但是没有叉子和开水（曾
 - 首页、血糖曲线、趋势箭头、状态信息和设置页面可以正常使用
 - v1、v2、v3 的常用读写 API 已经实现
 
-## 目前还没有做到什么
-
-- 暂不支持把现有 Nightscout/MongoDB 历史数据直接迁移进来；当前更适合新建
-  实例。
-- [SQLite Durable Objects Free](https://developers.cloudflare.com/durable-objects/platform/pricing/)
-  目前包含 5 GB 总存储，并有每天 100,000 次 Durable Object 请求、5,000,000
-  行读取和 100,000 行写入额度。若只按每条血糖约 1 KB 粗略计算，5 GB 约等于
-  17,000 天、接近 48 年的血糖记录，所以没办法保存超过 48 年的血糖记录。
-- 还有少量比较冷门的接口、MongoDB 边缘查询和第三方功能暂未适配。
-
-即便如此，当前版本已经可以满足大部分 Nightscout 日常使用需求。
-
 ## Nightscout 与 Nightscout for Cloudflare
 
 Nightscout for Cloudflare 是 Nightscout 的独立、非官方 Cloudflare
