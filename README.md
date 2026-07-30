@@ -73,9 +73,28 @@ present.
 | Clean Mongo entries (glucose entries) database | Glucose entries maintenance |
 | Remove future items from mongo database | Future-dated records maintenance |
 
-## One-click deployment and first launch
+## One-click deployment and updates
 
-Tutorial placeholder. A step-by-step guide will be added later.
+Use the **Deploy to Cloudflare** button at the top of this README for the first
+installation. Cloudflare creates a private Git repository in your account,
+connects it to the new Worker and deploys the application.
+
+New deployed copies include a manual update workflow:
+
+1. Open the private GitHub repository created during deployment.
+2. Select **Actions**.
+3. Select **Update Nightscout for Cloudflare**.
+4. Select **Run workflow**, then **Run workflow** again.
+
+The workflow checks the official repository, prepares the merge without write
+access, builds and validates it, and only then updates the deployed copy's
+default branch. Cloudflare can build that new commit for the existing Worker.
+It does not create a second Worker or replace Durable Object storage. If the
+merge conflicts or validation fails, the deployed copy's current `main` branch
+is left unchanged.
+
+Copies deployed before this workflow was added require a one-time manual
+update before the Actions button becomes available.
 
 ## Technical documentation
 

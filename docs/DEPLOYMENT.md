@@ -67,6 +67,31 @@ Cloudflare 官方说明：
 - [Deploy to Cloudflare buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/)
 - [Deploy 按钮支持环境变量和 Secrets](https://developers.cloudflare.com/changelog/post/2025-07-01-workers-deploy-button-supports-environment-variables-and-secrets/)
 
+## 更新已有部署
+
+Cloudflare Deploy 按钮创建的是用户自己的独立 Git 仓库，不是 GitHub Fork，
+因此不会自动出现 `Sync fork`。新部署的仓库包含
+`Update Nightscout for Cloudflare` 手动工作流：
+
+1. 打开部署时创建的 GitHub 私有仓库；
+2. 进入 `Actions`；
+3. 选择 `Update Nightscout for Cloudflare`；
+4. 点击 `Run workflow`。
+
+更新分成两个权限隔离的阶段。第一个阶段只读拉取
+`sid-luo/nightscout-for-cloudflare` 的 `main`，在临时环境合并并执行构建和
+部署配置测试；第二个阶段只在验证通过后取得当前仓库的内容写权限，重新生成同一
+文件树并推送默认分支。两个阶段之间如果用户分支或官方分支发生变化，更新会停止
+并要求重试。
+
+更新使用 Git 合并，不会 `reset --hard` 或整库覆盖。发生冲突、构建失败或校验
+失败时，用户仓库的 `main` 不变，Cloudflare 当前活动部署也不会被替换。成功
+推送后，现有 Cloudflare Git 集成会针对同一 Worker 构建新提交；Worker 名称、
+变量、绑定及 Durable Object 存储不会因为这次源码合并而重新创建。
+
+在此工作流发布前已经创建的旧副本不包含工作流文件，需要先手动同步一次；之后
+才可使用 Actions 更新。
+
 ## 第一次打开
 
 全新实例没有 Profile。第一次打开首页时自动跳转到 `/profile/` 是官方

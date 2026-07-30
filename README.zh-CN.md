@@ -64,9 +64,25 @@ Nightscout for Cloudflare 是 Nightscout 的独立、非官方 Cloudflare
 | Clean Mongo entries (glucose entries) database | Glucose entries maintenance（血糖记录维护） |
 | Remove future items from mongo database | Future-dated records maintenance（未来时间记录维护） |
 
-## 一键部署与第一次打开
+## 一键部署与更新
 
-教程占位，稍后补充。
+第一次安装仍然使用本页顶部的 **Deploy to Cloudflare** 按钮。Cloudflare 会在
+用户账号中创建一个私有 Git 仓库，将它连接到新 Worker，然后完成部署。
+
+新部署的副本会包含一个手动更新工作流：
+
+1. 打开部署时创建的 GitHub 私有仓库。
+2. 点击 **Actions**。
+3. 点击 **Update Nightscout for Cloudflare**。
+4. 点击 **Run workflow**，然后再次确认 **Run workflow**。
+
+工作流会先以只读权限检查官方仓库，在临时环境中合并、构建和验证；全部通过后
+才更新用户仓库的默认分支。随后 Cloudflare 可以为原来的 Worker 构建新提交。
+它不会创建第二个 Worker，也不会替换 Durable Object 存储。如果合并冲突或
+验证失败，用户仓库当前的 `main` 分支保持不变。
+
+在这个更新工作流加入之前创建的旧副本，需要先完成一次手动更新，之后
+Actions 中才会出现该按钮。
 
 ## 技术文档
 
