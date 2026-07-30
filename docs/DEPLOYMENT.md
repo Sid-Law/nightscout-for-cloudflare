@@ -1,160 +1,184 @@
-# Nightscout for Cloudflare 部署与首次使用
+# Nightscout for Cloudflare: Deployment and First Use
 
-本文只说明当前版本如何部署、如何验证以及已知限制。开发过程和每一轮版本记录
-由 Git 历史保存，不再堆放在用户文档中。
+**English** | [简体中文](DEPLOYMENT.zh-CN.md)
 
-## 当前发布状态
+This guide covers how to deploy and verify the current release, along with its
+known limitations. Development history and individual release changes belong
+in Git history rather than the user guide.
 
-- Nightscout for Cloudflare 版本：`1.1.1-beta`
-- Nightscout 上游版本：`15.0.7`
-- 部署平台：Cloudflare Workers Free
-- 存储：SQLite Durable Object
-- 页面：官方 Nightscout 页面
-- 数据：全新实例为空，需要连接用户自己的数据源
-- 发布状态：适合新建实例测试，尚未宣称完整上游等价或正式生产可用
+## Current release status
 
-已经在全新的 Cloudflare 账号上验证过源码部署、Profile 保存、Admin 登录、
-测试数据写入、官方首页图表以及远程 API/实时协议测试。还需要在仓库公开后完成
-一次普通用户点击 Deploy 按钮的完整验收，并由用户完成真实 AAPS/Loop 测试。
+- Nightscout for Cloudflare version: `1.1.1-beta`
+- Upstream Nightscout version: `15.0.7`
+- Platform: Cloudflare Workers Free
+- Storage: SQLite Durable Objects
+- Interface: official Nightscout pages
+- Data: a new instance starts empty and must be connected to your own data source
+- Release status: suitable for testing new instances; full upstream equivalence
+  and production readiness are not yet claimed
 
-## Nightscout 管理工具名称对照
+Source deployment, Profile saving, Admin authentication, test-data writes, the
+official home-page chart, and remote API/realtime protocol checks have been
+verified on a fresh Cloudflare account. A complete ordinary-user test of the
+public Deploy button is still required, as are real AAPS and Loop tests by
+users.
 
-Nightscout for Cloudflare 使用 SQLite Durable Objects 替代 MongoDB。原版
-Admin Tools 的对应功能仍然保留，但实际操作的是 SQLite 数据。管理页面只调整
-以下四个标题文字；这份文档保留原版名称对照，方便配合原版 Nightscout 教程
-使用：
+## Nightscout Admin Tools name mapping
 
-| 原版 Nightscout 名称 | Nightscout for Cloudflare 名称 |
+Nightscout for Cloudflare uses SQLite Durable Objects instead of MongoDB. The
+corresponding upstream Admin Tools remain available, but they operate on SQLite
+data. Only the following four visible labels are changed. The original names
+are retained here so that upstream Nightscout guides remain easy to follow:
+
+| Original Nightscout name | Nightscout for Cloudflare name |
 | --- | --- |
-| Clean Mongo status database | Device status maintenance（设备状态维护） |
-| Clean Mongo treatments database | Treatment records maintenance（治疗记录维护） |
-| Clean Mongo entries (glucose entries) database | Glucose entries maintenance（血糖记录维护） |
-| Remove future items from mongo database | Future-dated records maintenance（未来时间记录维护） |
+| Clean Mongo status database | Device status maintenance |
+| Clean Mongo treatments database | Treatment records maintenance |
+| Clean Mongo entries (glucose entries) database | Glucose entries maintenance |
+| Remove future items from mongo database | Future-dated records maintenance |
 
-这些工具会真实删除对应记录。删除前应确认数据类型和时间范围，并保留所需备份。
+These tools delete real records. Confirm the data type and time range, and keep
+any required backup, before using them.
 
-## Cloudflare 会创建什么
+## What Cloudflare creates
 
-一次 NSCF 部署只使用：
+One NSCF deployment uses only:
 
-1. 一个 Cloudflare Worker；
-2. 一份 Workers Static Assets；
-3. 两个 SQLite Durable Object 命名空间：主数据与实时协议使用的
-   `EntryStore`，以及默认关闭的独立 Dexcom Share Connector；
-4. 一个明文 Worker 变量：`API_SECRET`。
+1. one Cloudflare Worker;
+2. one Workers Static Assets bundle;
+3. two SQLite Durable Object namespaces: `EntryStore` for primary data and
+   realtime protocols, plus a separate Dexcom Share Connector that is disabled
+   by default;
+4. one plain-text Worker variable: `API_SECRET`.
 
-不会创建 D1、R2、KV、Queues、自定义域名或 Cloudflare Zone 路由。
+It does not create D1, R2, KV, Queues, a custom domain, or a Cloudflare Zone
+route.
 
-## 一键部署
+## One-click deployment
 
-Cloudflare 的 Deploy to Cloudflare 功能要求源仓库是公开仓库。仓库公开后，点击
-项目 README 顶部的按钮：
+Cloudflare's Deploy to Cloudflare feature requires a public source repository.
+Click the button at the top of the project README:
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sid-luo/nightscout-for-cloudflare)
 
-部署页面只需要填写一项：
+The deployment page asks for one value:
 
 ### `API_SECRET`
 
-这串字符后续会用于授权，请记住它。部署后在 Nightscout 网页、AAPS 或其他
-数据源中使用同一个值。
+Choose a value you will remember. It is used for authorization after
+deployment. Enter the same value in the Nightscout website, AAPS, or any other
+data source that connects to this instance.
 
-用户可以在部署页面调整 GitHub 仓库副本名称、Worker 名称和资源名称。完成授权
-后，Cloudflare 会构建源码、创建声明的资源并部署 Worker。
+You may adjust the copied GitHub repository name, Worker name, and resource
+names on the deployment page. After authorization, Cloudflare builds the
+source, creates the declared resources, and deploys the Worker.
 
-Cloudflare 官方说明：
+Cloudflare documentation:
 
 - [Deploy to Cloudflare buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/)
-- [Deploy 按钮支持环境变量和 Secrets](https://developers.cloudflare.com/changelog/post/2025-07-01-workers-deploy-button-supports-environment-variables-and-secrets/)
+- [Deploy buttons support environment variables and secrets](https://developers.cloudflare.com/changelog/post/2025-07-01-workers-deploy-button-supports-environment-variables-and-secrets/)
 
-## 更新已有部署
+## Updating an existing deployment
 
-Cloudflare Deploy 按钮创建的是用户自己的独立 Git 仓库，不是 GitHub Fork，
-因此不会自动出现 `Sync fork`，导入过程也不会保留项目提供的 GitHub Actions
-更新工作流。新部署改用 Cloudflare 自己的构建记录更新：
+The Deploy to Cloudflare button creates an independent Git repository in your
+account, not a GitHub fork. It therefore has no `Sync fork` button, and GitHub
+Actions update workflows from this project are not retained during import.
+New deployments use Cloudflare's own build history for updates:
 
-1. 在 Cloudflare Dashboard 中打开现有 Worker；
-2. 进入 `Deployments`，点击 `View build history`；
-3. 打开最近一次成功构建；
-4. 点击 `Retry build`。
+1. Open the existing Worker in the Cloudflare dashboard.
+2. Open **Deployments**, then select **View build history**.
+3. Open the latest successful build.
+4. Select **Retry build**.
 
-`npm run build` 会识别 Workers Builds 提供的 `WORKERS_CI` 环境以及 Cloudflare
-创建的单提交源码副本，然后把官方 `main` 拉取到临时目录。构建使用官方最新版
-源码，同时保留生成仓库中的 Worker 名称、明文 `API_SECRET` 和 Cloudflare
-自动生成的资源标识。更新只发生在一次性的 Cloudflare 构建目录中，不会向用户
-GitHub 仓库写入内容。
+`npm run build` detects the `WORKERS_CI` environment provided by Workers Builds
+and the single-commit source copy created by Cloudflare. It then refreshes the
+official `main` branch inside the temporary build directory. The build uses the
+latest official source while preserving the copied repository's Worker name,
+plain-text `API_SECRET`, and Cloudflare-generated resource identifiers. The
+update occurs only inside Cloudflare's disposable build workspace; it does not
+write to your GitHub repository.
 
-下载、依赖安装、源码构建或 Wrangler 部署任何一步失败时，新版本不会成为活动
-部署，当前 Worker 和 Durable Object 数据继续运行原版本。
+If downloading, dependency installation, building, or Wrangler deployment
+fails, the new version does not become active. The current Worker and Durable
+Object data continue running on the previous version.
 
-为了避免覆盖用户开发工作，自动更新默认只对只有一个 `source repo import`
-提交的部署副本启用。用户仓库增加自定义 Git 提交后，构建使用用户自己的源码。
-只有确定允许 Cloudflare 构建忽略这些自定义提交时，才添加构建变量
-`NSCF_AUTO_UPDATE=1`。
+To avoid overwriting a user's development work, automatic source refresh is
+enabled by default only for deployment copies containing a single
+`source repo import` commit. If you add custom Git commits, the build uses your
+own source. Add the build variable `NSCF_AUTO_UPDATE=1` only if Cloudflare
+builds may ignore those custom commits.
 
-在此构建更新器发布前创建的旧副本，需要最后重新部署一次或手动初始化。包含
-更新器后，以后只需 `Retry build`。
+Copies created before this build updater was introduced require one final
+redeployment or a manual bootstrap. Once the updater is present,
+**Retry build** is the normal update path.
 
-## 第一次打开
+## First launch
 
-全新实例没有 Profile。第一次打开首页时自动跳转到 `/profile/` 是官方
-Nightscout 的正常流程。
+A new instance has no Profile. Redirecting to `/profile/` on the first visit is
+normal Nightscout behavior.
 
-1. 滚动到 Profile Editor 底部。
-2. 点击 **(Authenticate)**。
-3. 输入部署时设置的 `API_SECRET`。
-4. 在自己的设备上勾选 **Remember this device**。
-5. 点击 **Authenticate**。
-6. 根据需要修改名称、时区和单位。默认 `Default` 与 `UTC` 也可以直接保存。
-7. 点击 **Save**。
-8. 确认页面显示 `Status: success`，然后返回首页。
+1. Scroll to the bottom of the Profile Editor.
+2. Select **(Authenticate)**.
+3. Enter the `API_SECRET` chosen during deployment.
+4. On your own device, select **Remember this device**.
+5. Select **Authenticate**.
+6. Change the profile name, time zone, and units if needed. You may also save
+   the default `Default` profile and `UTC` time zone.
+7. Select **Save**.
+8. Confirm that the page shows `Status: success`, then return to the home page.
 
-如果关闭 Profile Editor 后又回到同一页面：
+If closing the Profile Editor immediately returns you to the same page:
 
-- 检查底部是否仍显示 `Unauthorized`
-- 确认输入的是部署时设置的原始密码
-- 确认密码没有多余的前后空格
-- 重新点击 **Authenticate**，成功后再点 **Save**
+- check whether the bottom of the page still shows `Unauthorized`;
+- confirm that you entered the original deployment password;
+- confirm that the value has no leading or trailing spaces;
+- select **Authenticate** again, then select **Save** after authentication
+  succeeds.
 
-这通常是认证未完成，不是 Profile 必填字段缺失，也不是 Cloudflare
-Durable Object 无法保存。
+This usually means that authentication was not completed. It does not normally
+mean that a required Profile field is missing or that the Cloudflare Durable
+Object cannot save data.
 
-## 修改 API_SECRET
+## Changing `API_SECRET`
 
-用户以后可以自行修改：
+You can change the value later:
 
-1. 打开 Cloudflare Dashboard。
-2. 进入 **Workers & Pages**。
-3. 选择自己的 NSCF Worker。
-4. 打开 **Settings → Variables and Secrets**。
-5. 编辑 `API_SECRET`，类型保持为 **Text**。
-6. 保存并等待新版本部署完成。
-7. 在 Nightscout 网页、AAPS 和其他上传端改成同一个值。
+1. Open the Cloudflare dashboard.
+2. Open **Workers & Pages**.
+3. Select your NSCF Worker.
+4. Open **Settings → Variables and Secrets**.
+5. Edit `API_SECRET` and keep its type set to **Text**.
+6. Save it and wait for the new version to finish deploying.
+7. Update the Nightscout website, AAPS, and every other uploader to use the
+   same value.
 
-## Dexcom Share（Beta，高级用户）
+## Dexcom Share (Beta, advanced users)
 
-此功能默认关闭，不影响普通部署。需要使用时，在 Cloudflare Dashboard 的
-**Settings → Variables and Secrets** 中手动添加：
+This feature is disabled by default and does not affect an ordinary
+deployment. To enable it, manually add the following values under
+**Settings → Variables and Secrets** in the Cloudflare dashboard:
 
-- `ENABLE`：保留现有值并加入 `connect`
-- `CONNECT_SOURCE`：`dexcomshare`
-- `CONNECT_SHARE_ACCOUNT_NAME`：Dexcom Share 账号
-- `CONNECT_SHARE_PASSWORD`：Dexcom Share 密码
-- `CONNECT_SHARE_REGION`：`us`
+- `ENABLE`: retain the existing value and add `connect`
+- `CONNECT_SOURCE`: `dexcomshare`
+- `CONNECT_SHARE_ACCOUNT_NAME`: your Dexcom Share account
+- `CONNECT_SHARE_PASSWORD`: your Dexcom Share password
+- `CONNECT_SHARE_REGION`: `us`
 
-美国以外的 Dexcom Share 账号把 `CONNECT_SHARE_REGION` 改为 `ous`。协议和模拟
-服务测试已经完成，真实账号社区验收尚未完成。
+For Dexcom Share accounts outside the United States, set
+`CONNECT_SHARE_REGION` to `ous`. Protocol and simulated-service tests are
+complete; community acceptance with real accounts is not yet complete.
 
-保存变量并等待部署完成后，打开 Nightscout 首页（或 `/admin/`）一次以启动
-Connector。此后它通过独立 Durable Object alarm 定时拉取数据。
+After saving the variables and waiting for deployment to finish, open the
+Nightscout home page or `/admin/` once to start the Connector. It then uses a
+separate Durable Object alarm to fetch data periodically.
 
-## 本地或命令行部署
+## Local or command-line deployment
 
-建议使用 Node.js 22 LTS 或更新版本。
+Node.js 22 LTS or newer is recommended.
 
 ```sh
 git clone https://github.com/sid-luo/nightscout-for-cloudflare.git
-cd nscf
+cd nightscout-for-cloudflare
 npm ci
 npm run build
 npm run check
@@ -162,113 +186,126 @@ npm test
 npm run deploy:dry
 ```
 
-登录 Cloudflare：
+Log in to Cloudflare:
 
 ```sh
 npx wrangler login
 ```
 
-部署后在 Cloudflare Dashboard 的 **Settings → Variables and Secrets** 中填写
-明文 `API_SECRET`。
+After deployment, add a plain-text `API_SECRET` under
+**Settings → Variables and Secrets** in the Cloudflare dashboard.
 
-确认本地测试全部通过后部署：
+Deploy after all local checks pass:
 
 ```sh
 npm run deploy
 ```
 
-本地开发时新建 `.dev.vars`：
+For local development, create `.dev.vars`:
 
 ```sh
 touch .dev.vars
 ```
 
-在 `.dev.vars` 中填写本地测试密码：
+Add a local test password:
 
 ```dotenv
 API_SECRET=choose-your-own-password
 ```
 
-启动：
+Start the development server:
 
 ```sh
 npm run dev
 ```
 
-打开 <http://localhost:8787/>。
+Open <http://localhost:8787/>.
 
-## 部署后检查
+## Post-deployment checks
 
-### 普通页面
+### Pages
 
-- `/healthz` 返回正常状态和 Nightscout `v15.0.7`
-- `/profile/` 能认证并保存 Profile
-- `/admin/` 在记住认证后能加载 Subjects、Roles 和数据维护工具
-- `/admin/` 的四个数据维护标题不再使用 MongoDB 名称
-- 数据维护工具实际操作 SQLite Durable Objects，不依赖 MongoDB
-- `/food/` 能打开并完成一条测试记录的创建和删除
-- `/report/` 能打开报告页面
-- 连接自己的数据源后，首页能显示当前血糖、趋势箭头和曲线
+- `/healthz` reports a healthy status and Nightscout `v15.0.7`
+- `/profile/` can authenticate and save a Profile
+- `/admin/` loads Subjects, Roles, and data-maintenance tools after
+  authentication is remembered
+- the four data-maintenance labels in `/admin/` no longer refer to MongoDB
+- the data-maintenance tools operate on SQLite Durable Objects without MongoDB
+- `/food/` opens and can create and delete a test record
+- `/report/` opens the Reports page
+- after connecting your own data source, the home page shows current glucose,
+  the trend arrow, and the chart
 
-### API
+### APIs and realtime connections
 
-- v1 Status 和 Entries 读取正常
-- v2 Status、Properties 和 Summary 读取正常
-- v3 能取得 JWT，并对所需集合完成授权读写
-- EIO3/EIO4 polling、WebSocket 和实时 `dataUpdate` 正常
+- v1 Status and Entries reads work
+- v2 Status, Properties, and Summary reads work
+- v3 can obtain a JWT and perform authorized reads and writes for the required
+  collections
+- EIO3/EIO4 polling, WebSocket, and realtime `dataUpdate` work
 
-项目自带的远程检查命令：
+The repository includes a remote check command:
 
 ```sh
 npm run smoke:public -- https://your-worker.workers.dev
 ```
 
-不要只以“页面能打开”作为兼容完成的证据。API、授权、实时连接和持久化必须分别
-检查。
+Do not treat “the page opens” as complete compatibility evidence. APIs,
+authorization, realtime connections, and persistence must be checked
+separately.
 
-## AAPS 或 Loop 验收
+## AAPS or Loop acceptance
 
-当前代码已经覆盖常见 AAPS、AndroidAPS 和 Loop 数据形状与协议契约，但正式
-发布前仍需要用户在自己的测试环境完成真实客户端验收。
+The current code covers common AAPS, AndroidAPS, and Loop data shapes and
+protocol contracts. Before a formal release, users still need to complete
+real-client acceptance tests in their own test environments.
 
-建议先做最小测试：
+Start with a minimal test:
 
-1. 在客户端填写新的 NSCF 地址和自己设置的 `API_SECRET`。
-2. 只启用数据上传，不立即改变现有治疗或闭环设置。
-3. 确认最新血糖、Device Status 和 Treatments 出现在 NSCF。
-4. 确认时间、时区、单位、Profile 和趋势一致。
-5. 确认断网后恢复上传不会丢失或错误重复普通记录。
-6. 完成观察后再决定是否进入更完整的闭环兼容测试。
+1. Enter the new NSCF address and your `API_SECRET` in the client.
+2. Enable data upload only; do not immediately change existing treatment or
+   closed-loop settings.
+3. Confirm that current glucose, Device Status, and Treatments appear in NSCF.
+4. Confirm that time, time zone, units, Profile, and trend values are correct.
+5. Confirm that uploads resume after a network interruption without losing or
+   incorrectly duplicating ordinary records.
+6. After observation, decide whether to continue with more complete
+   closed-loop compatibility testing.
 
-NSCF 不新增剂量算法，也不修改客户端的治疗逻辑。
+NSCF does not add a dosing algorithm or modify client-side treatment logic.
 
-## 当前限制
+## Current limitations
 
-- 不提供旧 MongoDB 多年历史数据的一键迁移
-- 任意 Mongo 查询和无限量读取不保证兼容
-- API 和批量写入有适合 Workers Free 的明确上限
-- Engine.IO 二进制包尚未适配
-- 少量 Node.js 动态服务端插件和第三方集成仍待适配
-- 公开 Deploy 按钮和真实闭环设备仍待最终用户验收
-- 当前 `1.1.1-beta` 不应承载正式医疗数据
+- no one-click migration for years of historical MongoDB data
+- arbitrary Mongo queries and unlimited reads are not guaranteed compatible
+- APIs and batch writes have explicit limits appropriate for Workers Free
+- Engine.IO binary packets are not yet adapted
+- a small number of dynamic Node.js server plugins and third-party
+  integrations remain to be adapted
+- the public Deploy button and real closed-loop devices still require final
+  user acceptance
+- `1.1.1-beta` must not be used for live medical data
 
-完整差距见 [UPSTREAM_COMPATIBILITY.md](UPSTREAM_COMPATIBILITY.md)。
+See [UPSTREAM_COMPATIBILITY.md](UPSTREAM_COMPATIBILITY.md) for the complete
+compatibility gap.
 
-## 删除和重新测试
+## Deleting and starting over
 
-删除 Worker 不一定等于已经明确删除对应 Durable Object 命名空间中的全部存储
-数据。若要验证完全干净的新用户流程，最简单可靠的方法是：
+Deleting a Worker does not necessarily mean that all data in its associated
+Durable Object namespaces has been explicitly deleted. The simplest reliable
+ways to verify a completely clean new-user flow are:
 
-- 使用新的 Cloudflare 测试账号；或
-- 使用新的 Worker 和 Durable Object 命名空间名称。
+- use a new Cloudflare test account; or
+- use new Worker and Durable Object namespace names.
 
-通过 Durable Object migration 删除类命名空间会永久删除其中的数据，只有在
-确认不再需要任何内容时才应执行。参见 Cloudflare 的
-[Durable Object migrations](https://developers.cloudflare.com/durable-objects/reference/durable-objects-migrations/)。
+Deleting a class namespace through a Durable Object migration permanently
+deletes its data. Do this only after confirming that none of the data is still
+needed. See
+[Durable Object migrations](https://developers.cloudflare.com/durable-objects/reference/durable-objects-migrations/).
 
-## 更新
+## Updating a local clone
 
-更新代码前先备份或保留现有实例，然后：
+Back up or preserve the existing instance before updating the code:
 
 ```sh
 git pull
@@ -280,4 +317,4 @@ npm run deploy:dry
 npm run deploy
 ```
 
-部署后仍应重新执行页面和 API 检查。
+Repeat the page and API checks after deployment.

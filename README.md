@@ -89,6 +89,7 @@ update path.
 
 ## Technical documentation
 
+- [Deployment and first use](docs/DEPLOYMENT.md)
 - [Cloudflare architecture](docs/ARCHITECTURE.md)
 - [Upstream compatibility matrix](docs/UPSTREAM_COMPATIBILITY.md)
 
