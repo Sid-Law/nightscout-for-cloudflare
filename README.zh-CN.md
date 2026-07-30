@@ -64,25 +64,28 @@ Nightscout for Cloudflare 是 Nightscout 的独立、非官方 Cloudflare
 | Clean Mongo entries (glucose entries) database | Glucose entries maintenance（血糖记录维护） |
 | Remove future items from mongo database | Future-dated records maintenance（未来时间记录维护） |
 
-## 一键部署与更新
+## 一键部署与便捷更新
 
 第一次安装仍然使用本页顶部的 **Deploy to Cloudflare** 按钮。Cloudflare 会在
 用户账号中创建一个私有 Git 仓库，将它连接到新 Worker，然后完成部署。
 
-新部署的副本会包含一个手动更新工作流：
+以后更新时，直接使用现有 Worker 的 Cloudflare 构建：
 
-1. 打开部署时创建的 GitHub 私有仓库。
-2. 点击 **Actions**。
-3. 点击 **Update Nightscout for Cloudflare**。
-4. 点击 **Run workflow**，然后再次确认 **Run workflow**。
+1. 在 Cloudflare Dashboard 中打开自己的 Worker。
+2. 进入 **Deployments（部署）**，点击 **View build history（查看构建记录）**。
+3. 打开最近一次成功构建，点击 **Retry build（重新构建）**。
 
-工作流会先以只读权限检查官方仓库，在临时环境中合并、构建和验证；全部通过后
-才更新用户仓库的默认分支。随后 Cloudflare 可以为原来的 Worker 构建新提交。
-它不会创建第二个 Worker，也不会替换 Durable Object 存储。如果合并冲突或
-验证失败，用户仓库当前的 `main` 分支保持不变。
+构建程序会在 Cloudflare 的临时构建环境中拉取官方最新版，保留原 Worker 名称
+和明文 `API_SECRET`，然后部署到同一个 Worker。它不会修改用户的 GitHub 仓库，
+也不会替换 Durable Object 存储。如果下载、安装、构建或部署失败，Cloudflare
+会继续保留之前正在运行的版本。
 
-在这个更新工作流加入之前创建的旧副本，需要先完成一次手动更新，之后
-Actions 中才会出现该按钮。
+自动拉取只对 Deploy to Cloudflare 创建的单提交仓库启用。如果用户自己增加了
+Git 提交，构建会尊重用户修改，不再自动替换源码。只有明确希望忽略自定义提交时，
+才在构建变量中设置 `NSCF_AUTO_UPDATE=1`。
+
+在这个构建更新器加入前创建的旧副本，需要最后重新部署一次或手动初始化；
+之后更新都使用 **Retry build（重新构建）**。
 
 ## 技术文档
 

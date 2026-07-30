@@ -70,27 +70,30 @@ Cloudflare 官方说明：
 ## 更新已有部署
 
 Cloudflare Deploy 按钮创建的是用户自己的独立 Git 仓库，不是 GitHub Fork，
-因此不会自动出现 `Sync fork`。新部署的仓库包含
-`Update Nightscout for Cloudflare` 手动工作流：
+因此不会自动出现 `Sync fork`，导入过程也不会保留项目提供的 GitHub Actions
+更新工作流。新部署改用 Cloudflare 自己的构建记录更新：
 
-1. 打开部署时创建的 GitHub 私有仓库；
-2. 进入 `Actions`；
-3. 选择 `Update Nightscout for Cloudflare`；
-4. 点击 `Run workflow`。
+1. 在 Cloudflare Dashboard 中打开现有 Worker；
+2. 进入 `Deployments`，点击 `View build history`；
+3. 打开最近一次成功构建；
+4. 点击 `Retry build`。
 
-更新分成两个权限隔离的阶段。第一个阶段只读拉取
-`sid-luo/nightscout-for-cloudflare` 的 `main`，在临时环境合并并执行构建和
-部署配置测试；第二个阶段只在验证通过后取得当前仓库的内容写权限，重新生成同一
-文件树并推送默认分支。两个阶段之间如果用户分支或官方分支发生变化，更新会停止
-并要求重试。
+`npm run build` 会识别 Workers Builds 提供的 `WORKERS_CI` 环境以及 Cloudflare
+创建的单提交源码副本，然后把官方 `main` 拉取到临时目录。构建使用官方最新版
+源码，同时保留生成仓库中的 Worker 名称、明文 `API_SECRET` 和 Cloudflare
+自动生成的资源标识。更新只发生在一次性的 Cloudflare 构建目录中，不会向用户
+GitHub 仓库写入内容。
 
-更新使用 Git 合并，不会 `reset --hard` 或整库覆盖。发生冲突、构建失败或校验
-失败时，用户仓库的 `main` 不变，Cloudflare 当前活动部署也不会被替换。成功
-推送后，现有 Cloudflare Git 集成会针对同一 Worker 构建新提交；Worker 名称、
-变量、绑定及 Durable Object 存储不会因为这次源码合并而重新创建。
+下载、依赖安装、源码构建或 Wrangler 部署任何一步失败时，新版本不会成为活动
+部署，当前 Worker 和 Durable Object 数据继续运行原版本。
 
-在此工作流发布前已经创建的旧副本不包含工作流文件，需要先手动同步一次；之后
-才可使用 Actions 更新。
+为了避免覆盖用户开发工作，自动更新默认只对只有一个 `source repo import`
+提交的部署副本启用。用户仓库增加自定义 Git 提交后，构建使用用户自己的源码。
+只有确定允许 Cloudflare 构建忽略这些自定义提交时，才添加构建变量
+`NSCF_AUTO_UPDATE=1`。
+
+在此构建更新器发布前创建的旧副本，需要最后重新部署一次或手动初始化。包含
+更新器后，以后只需 `Retry build`。
 
 ## 第一次打开
 

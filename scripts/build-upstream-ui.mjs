@@ -22,6 +22,8 @@ const manifest = JSON.parse(
 const projectPackage = JSON.parse(
   await readFile(path.join(projectRoot, "package.json"), "utf8"),
 );
+const projectUpdateGuide =
+  "https://github.com/sid-luo/nightscout-for-cloudflare/blob/main/docs/DEPLOYMENT.md#更新已有部署";
 const socketClientPath = path.join(
   vendorRoot,
   "node_modules",
@@ -103,7 +105,8 @@ function applyPageAdapters(html, type) {
           <div>Independent, unofficial Cloudflare port</div>
           <p class="links">
             <a href="${projectHomepage}" target="_blank" rel="noopener">Project Home</a><br>
-            <a href="${projectIssues}" target="_blank" rel="noopener">Report an Issue</a>
+            <a href="${projectIssues}" target="_blank" rel="noopener">Report an Issue</a><br>
+            <a href="${projectUpdateGuide}" target="_blank" rel="noopener">Update Guide</a>
           </p>
         </div>`;
     return html

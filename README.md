@@ -73,28 +73,34 @@ present.
 | Clean Mongo entries (glucose entries) database | Glucose entries maintenance |
 | Remove future items from mongo database | Future-dated records maintenance |
 
-## One-click deployment and updates
+## One-click deployment and easy updates
 
 Use the **Deploy to Cloudflare** button at the top of this README for the first
-installation. Cloudflare creates a private Git repository in your account,
-connects it to the new Worker and deploys the application.
+installation. Cloudflare creates a Git repository in your account, connects it
+to the new Worker and deploys the application.
 
-New deployed copies include a manual update workflow:
+For later updates, use the existing Worker's Cloudflare build:
 
-1. Open the private GitHub repository created during deployment.
-2. Select **Actions**.
-3. Select **Update Nightscout for Cloudflare**.
-4. Select **Run workflow**, then **Run workflow** again.
+1. Open the Worker in the Cloudflare dashboard.
+2. Open **Deployments**, then **View build history**.
+3. Open the latest successful build and select **Retry build**.
 
-The workflow checks the official repository, prepares the merge without write
-access, builds and validates it, and only then updates the deployed copy's
-default branch. Cloudflare can build that new commit for the existing Worker.
-It does not create a second Worker or replace Durable Object storage. If the
-merge conflicts or validation fails, the deployed copy's current `main` branch
-is left unchanged.
+The build refreshes the official Nightscout for Cloudflare source inside
+Cloudflare's temporary build workspace, preserves the deployed Worker's name
+and plain-text `API_SECRET` variable, and deploys to the same Worker. It does
+not change the user's GitHub repository or replace Durable Object storage. If
+download, install, build or deployment fails, Cloudflare keeps the previous
+active deployment.
 
-Copies deployed before this workflow was added require a one-time manual
-update before the Actions button becomes available.
+Automatic source refresh is limited to the one-commit repository produced by
+Deploy to Cloudflare. If the user adds their own Git commits, the build respects
+that customized source instead. Set the optional build variable
+`NSCF_AUTO_UPDATE=1` only when those custom commits should be ignored during
+Cloudflare builds.
+
+Copies deployed before this build updater was added require one final
+redeployment or a manual bootstrap. After that, **Retry build** is the normal
+update path.
 
 ## Technical documentation
 

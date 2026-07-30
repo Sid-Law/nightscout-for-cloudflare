@@ -466,9 +466,12 @@ gates. The unchanged homepage rendered `118 mg/dL`, a trend arrow and two SVGs
 without a dialog or console error; Admin loaded seven roles as authorized.
 The clean-source build installs the locked Nightscout build dependencies before
 running webpack and UI generation. Its accepted run installed 1,057 upstream
-packages and regenerated all 250 assets. A new configuration audit fixes the
-exact `build`/`deploy` scripts and exposes one plain-text `API_SECRET` value.
-A request-boundary check rejects a too-short value before Nightscout starts.
+packages and regenerated all 250 assets. The root build command now also acts
+as the Cloudflare source-import update bootstrap: a `Retry build` refreshes the
+official source in the temporary Workers Builds workspace, preserves the Worker
+name and plain-text `API_SECRET`, then runs the same locked clean-source build.
+The deploy command remains fixed, and a request-boundary check rejects a
+too-short value before Nightscout starts.
 Private release acceptance 101 proved
 the exact source state on a new Cloudflare account, but a real Deploy to
 Cloudflare button is not yet claimed because the canonical GitHub repository

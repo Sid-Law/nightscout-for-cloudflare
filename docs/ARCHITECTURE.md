@@ -1334,13 +1334,15 @@ polling for both protocol generations. Binary packets remain unsupported.
 Project release 93 keeps the same Worker runtime contract and adds a
 clean-source build/deployment boundary. Root `npm run build` installs the
 locked Nightscout build tree, runs its webpack bundle, then generates the
-official pages/assets. A configuration audit fixes the exact Cloudflare build
-and deploy scripts and permits one plain-text onboarding field: `API_SECRET`;
-it also continues to reject D1, R2, KV, Queues and routes. The Worker rejects
-a too-short value before serving Nightscout. Wrangler 4.113.0 and Workers
-types 5.20260722.1 are pinned. This makes the repository suitable for a Deploy
-to Cloudflare button. A fresh-account deployment from the private source state
-is now accepted; only making the GitHub repository public and exercising the
+official pages/assets. In a Cloudflare-created `source repo import` copy, that
+same command first refreshes official source inside the temporary build
+workspace while preserving the Worker name, resource bindings and plain-text
+`API_SECRET`. A configuration audit fixes the build/deploy boundary and
+continues to reject D1, R2, KV, Queues and routes. The Worker rejects a
+too-short value before serving Nightscout. Wrangler 4.113.0 and Workers types
+5.20260722.1 are pinned. This makes the repository suitable for a Deploy to
+Cloudflare button. A fresh-account deployment from the private source state is
+now accepted; only making the GitHub repository public and exercising the
 public click-through clone path remain external release prerequisites. The post-deploy browser loaded current
 test glucose and the authorized Profile Editor; an authenticated Profile
 rename/save was observed as `dataUpdate`/`retroUpdate` in the already-open

@@ -40,10 +40,14 @@ test("Deploy to Cloudflare template requests one plaintext value and a clean-sou
     "This string will be used for authorization later. Please remember it.",
   );
   assert.deepEqual(Object.keys(packageJson.cloudflare?.bindings ?? {}), ["API_SECRET"]);
-  assert.equal(packageJson.scripts?.build, "npm run build:source");
+  assert.equal(packageJson.scripts?.build, "node scripts/build-cloudflare.mjs");
   assert.equal(
     packageJson.scripts?.["build:source"],
     "npm run upstream:install && npm run upstream:bundle && npm run build:ui",
+  );
+  assert.equal(
+    packageJson.scripts?.["test:auto-update"],
+    "node --test scripts/cloudflare-auto-update.test.mjs",
   );
   assert.equal(packageJson.scripts?.deploy, "wrangler deploy");
   assert.equal(packageJson.version, "1.0.0-beta");
