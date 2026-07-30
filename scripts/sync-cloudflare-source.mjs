@@ -223,7 +223,7 @@ export function shouldAutoUpdate({
   if (
     env.WORKERS_CI !== "1" ||
     !env.WORKERS_CI_BUILD_UUID ||
-    !/^[0-9a-f]{40}$/i.test(env.WORKERS_CI_COMMIT_SHA ?? "")
+    !env.WORKERS_CI_COMMIT_SHA
   ) {
     return false;
   }

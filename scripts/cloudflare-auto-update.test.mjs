@@ -226,6 +226,17 @@ test("source-import retry refreshes code without changing the repository or loca
       }),
       true,
     );
+    assert.equal(
+      shouldAutoUpdate({
+        projectRoot: deployment,
+        env: {
+          ...workersEnvironment,
+          WORKERS_CI_COMMIT_SHA: "null",
+        },
+      }),
+      true,
+      "manual Retry build may expose a non-SHA placeholder",
+    );
 
     const upstreamSha = syncOfficialSource({
       projectRoot: deployment,
