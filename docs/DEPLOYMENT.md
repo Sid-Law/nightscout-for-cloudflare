@@ -1,12 +1,12 @@
-# NSCF 部署与首次使用
+# Nightscout for Cloudflare 部署与首次使用
 
 本文只说明当前版本如何部署、如何验证以及已知限制。开发过程和每一轮版本记录
 由 Git 历史保存，不再堆放在用户文档中。
 
 ## 当前发布状态
 
-- NSCF 版本：`1.0.0-beta.1`
-- Nightscout 上游：`v15.0.7`
+- Nightscout for Cloudflare 版本：`1.0 Beta`
+- Nightscout 上游版本：`15.0.7`
 - 部署平台：Cloudflare Workers Free
 - 存储：SQLite Durable Object
 - 页面：官方 Nightscout 页面
@@ -16,6 +16,22 @@
 已经在全新的 Cloudflare 账号上验证过源码部署、Profile 保存、Admin 登录、
 测试数据写入、官方首页图表以及远程 API/实时协议测试。还需要在仓库公开后完成
 一次普通用户点击 Deploy 按钮的完整验收，并由用户完成真实 AAPS/Loop 测试。
+
+## Nightscout 管理工具名称对照
+
+Nightscout for Cloudflare 使用 SQLite Durable Objects 替代 MongoDB。原版
+Admin Tools 的对应功能仍然保留，但实际操作的是 SQLite 数据。管理页面只调整
+以下四个标题文字；这份文档保留原版名称对照，方便配合原版 Nightscout 教程
+使用：
+
+| 原版 Nightscout 名称 | Nightscout for Cloudflare 名称 |
+| --- | --- |
+| Clean Mongo status database | Device status maintenance（设备状态维护） |
+| Clean Mongo treatments database | Treatment records maintenance（治疗记录维护） |
+| Clean Mongo entries (glucose entries) database | Glucose entries maintenance（血糖记录维护） |
+| Remove future items from mongo database | Future-dated records maintenance（未来时间记录维护） |
+
+这些工具会真实删除对应记录。删除前应确认数据类型和时间范围，并保留所需备份。
 
 ## Cloudflare 会创建什么
 
@@ -34,7 +50,7 @@
 Cloudflare 的 Deploy to Cloudflare 功能要求源仓库是公开仓库。仓库公开后，点击
 项目 README 顶部的按钮：
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nightscout-for-cloudflare)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sid-luo/nightscout-for-cloudflare)
 
 部署页面只需要填写一项：
 
@@ -109,7 +125,7 @@ Connector。此后它通过独立 Durable Object alarm 定时拉取数据。
 建议使用 Node.js 22 LTS 或更新版本。
 
 ```sh
-git clone https://github.com/Sid-Law/nightscout-for-cloudflare.git
+git clone https://github.com/sid-luo/nightscout-for-cloudflare.git
 cd nscf
 npm ci
 npm run build
@@ -159,7 +175,9 @@ npm run dev
 
 - `/healthz` 返回正常状态和 Nightscout `v15.0.7`
 - `/profile/` 能认证并保存 Profile
-- `/admin/` 在记住认证后能加载角色和管理工具
+- `/admin/` 在记住认证后能加载 Subjects、Roles 和数据维护工具
+- `/admin/` 的四个数据维护标题不再使用 MongoDB 名称
+- 数据维护工具实际操作 SQLite Durable Objects，不依赖 MongoDB
 - `/food/` 能打开并完成一条测试记录的创建和删除
 - `/report/` 能打开报告页面
 - 连接自己的数据源后，首页能显示当前血糖、趋势箭头和曲线
@@ -204,7 +222,7 @@ NSCF 不新增剂量算法，也不修改客户端的治疗逻辑。
 - Engine.IO 二进制包尚未适配
 - 少量 Node.js 动态服务端插件和第三方集成仍待适配
 - 公开 Deploy 按钮和真实闭环设备仍待最终用户验收
-- 当前 beta 不应承载正式医疗数据
+- 当前 `1.0 Beta` 不应承载正式医疗数据
 
 完整差距见 [UPSTREAM_COMPATIBILITY.md](UPSTREAM_COMPATIBILITY.md)。
 

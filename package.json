@@ -1,16 +1,16 @@
 {
   "name": "nscf",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta",
   "private": true,
   "description": "NSCF — an independent, unofficial Nightscout v15.0.7 port candidate for Cloudflare Workers",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sid-Law/nightscout-for-cloudflare.git"
+    "url": "git+https://github.com/sid-luo/nightscout-for-cloudflare.git"
   },
-  "homepage": "https://github.com/Sid-Law/nightscout-for-cloudflare#readme",
+  "homepage": "https://github.com/sid-luo/nightscout-for-cloudflare#readme",
   "bugs": {
-    "url": "https://github.com/Sid-Law/nightscout-for-cloudflare/issues"
+    "url": "https://github.com/sid-luo/nightscout-for-cloudflare/issues"
   },
   "type": "module",
   "cloudflare": {

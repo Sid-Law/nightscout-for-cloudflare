@@ -46,13 +46,22 @@ test("Deploy to Cloudflare template requests one plaintext value and a clean-sou
     "npm run upstream:install && npm run upstream:bundle && npm run build:ui",
   );
   assert.equal(packageJson.scripts?.deploy, "wrangler deploy");
+  assert.equal(packageJson.version, "1.0.0-beta");
   assert.equal(
     packageJson.repository?.url,
-    "git+https://github.com/Sid-Law/nightscout-for-cloudflare.git",
+    "git+https://github.com/sid-luo/nightscout-for-cloudflare.git",
+  );
+  assert.equal(
+    packageJson.homepage,
+    "https://github.com/sid-luo/nightscout-for-cloudflare#readme",
+  );
+  assert.equal(
+    packageJson.bugs?.url,
+    "https://github.com/sid-luo/nightscout-for-cloudflare/issues",
   );
   assert.match(
     readme,
-    /\]\(https:\/\/deploy\.workers\.cloudflare\.com\/\?url=https:\/\/github\.com\/Sid-Law\/nightscout-for-cloudflare\)/,
+    /\]\(https:\/\/deploy\.workers\.cloudflare\.com\/\?url=https:\/\/github\.com\/sid-luo\/nightscout-for-cloudflare\)/,
   );
   assert.equal(nodeVersion, "22.16.0");
 });

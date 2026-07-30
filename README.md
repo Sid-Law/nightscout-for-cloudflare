@@ -4,7 +4,7 @@
 
 Nickname: **The Instant Noodle Edition**
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nightscout-for-cloudflare)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sid-luo/nightscout-for-cloudflare)
 
 This repository provides a fast and free way to deploy
 [Nightscout](https://github.com/nightscout/cgm-remote-monitor) on Cloudflare.
@@ -12,12 +12,33 @@ It runs within Cloudflare's free-plan limits without a paid server or MongoDB
 service. It is an independent, unofficial port—not an official Nightscout
 release.
 
-Current release: **v1.0.0-beta.1**
+Current Nightscout for Cloudflare release: **1.0 Beta**
 
-Upstream baseline: **Nightscout v15.0.7**
+Upstream Nightscout version: **15.0.7**
 
 This project preserves the official Nightscout pages, layout, charts, plugins,
 translations and calculations, adding only the Cloudflare platform adapter.
+
+## Nightscout and Nightscout for Cloudflare
+
+Nightscout for Cloudflare is an independent, unofficial Cloudflare port of
+Nightscout. It keeps the upstream Nightscout version and the port version
+separate:
+
+- Nightscout upstream version: **15.0.7**
+- Nightscout for Cloudflare version: **1.0 Beta**
+
+The upstream Admin Tools still provide their corresponding functions, but this
+port stores records in SQLite Durable Objects instead of MongoDB. Some visible
+names are therefore adjusted to avoid implying that a MongoDB database is
+present.
+
+| Original Nightscout name | Nightscout for Cloudflare name |
+| --- | --- |
+| Clean Mongo status database | Device status maintenance |
+| Clean Mongo treatments database | Treatment records maintenance |
+| Clean Mongo entries (glucose entries) database | Glucose entries maintenance |
+| Remove future items from mongo database | Future-dated records maintenance |
 
 ## Why this project exists
 

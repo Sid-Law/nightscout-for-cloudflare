@@ -1,17 +1,26 @@
 # Engine.IO / Socket.IO protocol core
 
-Status: versioned protocol codecs plus a routed, persisted, read-only EIO4
-polling/root-namespace slice. The server endpoint is connected to `src/index.ts`
-and the existing tenant `EntryStore`, but it deliberately does not replace the
-homepage REST polling shim, upgrade to WebSocket, accept EIO3 over HTTP, expose
-write events, or broadcast database changes.
+Last audited: 2026-07-30
+
+Status: tenant-routed, SQLite-backed Engine.IO 3/4 and Socket.IO 4/5
+compatibility layer for Nightscout v15.0.7. It supports XHR and JSONP polling,
+direct hibernatable WebSockets, polling-to-WebSocket upgrades, persisted
+sessions and outbound queues, root authorization and database mutation events,
+`dataUpdate` / `retroUpdate`, and the API v3 `/storage` and `/alarm`
+namespaces.
+
+Binary Engine.IO packets and Socket.IO binary attachments are not implemented.
+
+For the complete current architecture, see
+[Architecture — Real-time transport](ARCHITECTURE.md#real-time-transport).
+This document focuses on protocol framing, persistence and resource limits.
 
 ## Supported stacks
 
-| Role | Engine.IO | Socket.IO parser | Polling framing | Heartbeat | HTTP status |
+| Role | Engine.IO | Socket.IO parser | Polling framing | Heartbeat | Runtime status |
 | --- | ---: | ---: | --- | --- | --- |
-| Locked official Nightscout v15.0.7 path | 4 | 5 | raw RS (`0x1e`) between packets | server ping, client pong | Routed read-only subset |
-| Legacy compatibility (`allowEIO3`) | 3 | 4 | `<UTF-16 length>:<packet>` | client ping, server pong | Codec only; rejected |
+| Locked official Nightscout v15.0.7 path | 4 | 5 | XHR/JSONP; raw RS (`0x1e`) between packets | server ping, client pong | Polling, direct WebSocket and polling upgrade |
+| Legacy compatibility (`allowEIO3`) | 3 | 4 | XHR/JSONP; `<UTF-16 length>:<packet>` | client ping, server pong | Polling, direct WebSocket and polling upgrade |
 
 `negotiateProtocolStack()` accepts only an exact `EIO=3` or `EIO=4` value and
 binds it to the matching complete stack. Missing, coerced, and unknown versions
@@ -77,16 +86,18 @@ characters `\\u001e`, so it cannot become a polling delimiter. Raw RS in an
 arbitrary Engine.IO packet is rejected to preserve a one-to-one packet round
 trip and prevent separator injection.
 
-## Routed read-only polling slice
+## Tenant-routed transports and namespaces
 
-Exact `/socket.io` and `/socket.io/` requests with `EIO=4` and
-`transport=polling` resolve the explicit/default tenant and address the existing
-tenant `EntryStore` DO. The open packet advertises no upgrades and fixes
-`pingInterval=25000`, `pingTimeout=20000`, and `maxPayload=1000000`. GET returns
-`text/plain; charset=UTF-8`; successful POST returns locked `text/html` / `ok`.
-Unknown SID/query errors, overlapping GET/POST leases, oversized POST bodies,
-malformed protocol close behavior and tenant crossing have Workers-runtime
-HTTP tests.
+Exact `/socket.io` and `/socket.io/` requests resolve the explicit/default
+tenant and address the existing tenant `EntryStore` Durable Object. EIO3 and
+EIO4 both support XHR and JSONP polling, direct WebSocket connections and the
+locked polling-to-WebSocket upgrade. Polling handshakes advertise
+`upgrades:["websocket"]`; a direct WebSocket handshake advertises no further
+upgrade. The handshake fixes `pingInterval=25000`, `pingTimeout=20000`, and
+`maxPayload=1000000`. Polling GET returns `text/plain; charset=UTF-8`;
+successful polling POST returns locked `text/html` / `ok`. Unknown SID/query
+errors, overlapping GET/POST leases, oversized bodies, malformed protocol close
+behavior and tenant crossing have Workers-runtime tests.
 
 Only the exact `Content-Type: application/octet-stream` value selects the
 unsupported binary path. It closes the leased SID and returns the adapter's
@@ -98,25 +109,37 @@ parity between raw-body admission and replacement-expanded text accounting is a
 controlled P2 follow-up; the adapter always enforces the raw streamed byte cap
 before decoding.
 
-SQLite schema v5 stores the Engine.IO SID, current Socket.IO SID, root connect/
-authorization/read flags, heartbeat deadlines, GET/POST leases, queue counters
-and ordered outbound packets. The only memory-only item is the resolver for a
-currently waiting GET. Eviction tests prove a stored SID and queued output can
-resume in a reconstructed DO. Cleanup is opportunistic and bounded; this slice
-does not allocate an alarm.
+SQLite schema v5 introduced the Engine.IO SID, current Socket.IO SID, root
+connection and authorization flags, heartbeat deadlines, GET/POST leases,
+queue counters and ordered outbound packets. Later idempotent migrations add
+write authorization, WebSocket upgrade and hibernation state, `/storage`,
+`/alarm`, the persisted root delta baseline, JSONP state and background-task
+deadlines. The only memory-only polling item is the resolver for a currently
+waiting GET. Eviction tests prove that sessions, namespace subscriptions and
+queued output resume in a reconstructed Durable Object. One SQL-derived Durable
+Object alarm coordinates realtime, authorization-delay and task deadlines.
 
-The supported SIO5 root behavior is deliberately narrow:
+The root namespace preserves the locked Nightscout behavior:
 
 - root CONNECT reply precedes the locked `clients` event; disconnect and
   queue-overflow/transport closure correct the remaining client count;
 - `authorize` emits `connected`, optional initial `dataUpdate`, then an ACK;
-  valid anonymous or tenant credentials are reduced to a fixed read-only ACK;
+  the ACK preserves `read`, `write` and `write_treatment`;
 - invalid authorization emits root DISCONNECT without ACK while keeping the
   Engine.IO transport available for namespace reconnect;
+- `dbAdd`, `dbUpdate`, `dbUpdateUnset` and `dbRemove` validate collection,
+  authorization, identity and bounded payloads, return the locked ACK shape and
+  publish a resulting root `dataUpdate`;
 - `loadRetro` ACKs before `retroUpdate`, or emits only `retroUpdate` if there is
   no ACK id;
-- root `subscribe` and all writes have no listener/ACK; non-root namespace
-  CONNECT receives `CONNECT_ERROR` without terminating root.
+- root `subscribe` intentionally has no listener or ACK, matching the locked
+  upstream namespace.
+
+The API v3 `/storage` namespace persists authorized collection subscriptions
+and emits API3-shaped mutation events after successful v1, v2 or v3 writes. The
+`/alarm` namespace persists subscription and ACK/snooze authority and provides
+the trusted live notification outlet. Both namespaces work over polling and
+WebSocket and survive Durable Object eviction.
 
 Initial data matches locked `dataWithRecentStatuses()` field order and recent
 device-status filtering. The EntryStore cursor-walks the same one-day raw
@@ -126,10 +149,10 @@ avoids the former blind 100-row SQL limit, which could omit an entire device
 group even when the response budget had room. This is not an all-groups
 guarantee: the shared resource ceiling below can still deterministically stop
 the time-descending cursor before older groups. The websocket status object has
-the locked field set/order; fixed API/careportal enabled, boluscalc disabled,
-and absent active profile are named platform assumptions. Requiring exactly one
-object argument for `authorize` and `loadRetro` is a deliberate safety/resource
-tightening.
+the locked field set/order; fixed API/careportal enabled and boluscalc disabled
+remain named platform assumptions. When present, the latest eligible Profile
+Switch supplies `status.activeProfile`. Requiring exactly one object argument
+for `authorize` and `loadRetro` is a deliberate safety/resource tightening.
 
 Initial and retro loaders share deterministic resource accounting while their
 SQLite cursors are consumed; they do not materialize the 1,000-entry,
@@ -216,36 +239,16 @@ packets per session, a 1,000,000-byte whole framed queue, the snapshot limits
 above, and cleanup batches of 32. Cloudflare's current Workers memory limit
 remains 128 MB per isolate.
 
-## Remaining tenant Durable Object integration
+## Deliberate limits
 
-The tenant is now the coordination atom for polling, and authoritative session/
-queue state is persisted in explicit tables within its existing DO. Remaining
-work is not permission to infer broader support: the static homepage client
-still uses the REST shim; safe non-default tenant propagation, `/alarm`,
-`/storage`, mutation handlers, persisted-change broadcasts, EIO3 HTTP and
-WebSocket upgrade are absent.
-
-For WebSockets, use the Durable Objects WebSocket Hibernation API:
-
-1. create a `WebSocketPair` and call `this.ctx.acceptWebSocket(server)`;
-2. put only a small connection locator in `serializeAttachment()` (for
-   example sid, protocol version, and a SQLite storage key);
-3. rebuild live indexes from `this.ctx.getWebSockets()` and
-   `deserializeAttachment()` after constructor re-entry;
-4. keep authoritative session, queue, namespace, and authorization state in
-   Durable Object SQLite storage. Cloudflare's current documented maximum for
-   a serialized attachment is **16,384 bytes**, and the attachment disappears
-   when its WebSocket closes;
-5. keep Engine.IO text-frame heartbeat separate from WebSocket control
-   ping/pong and prove hibernation through eviction tests before enabling an
-   upgrade path.
-
-Cloudflare numerical facts above were rechecked on 2026-07-18 against:
-
-- <https://developers.cloudflare.com/durable-objects/best-practices/websockets/#websocketserializeattachment>
-- <https://developers.cloudflare.com/workers/platform/limits/#memory>
-
-The WebSocket steps remain a handoff design, not a completion claim. Current
-routing/body/session/queue/polling-concurrency/read-authorization behavior is
-implemented only for the named EIO4 HTTP/root slice; Hibernation, upgrades,
-other namespaces, writes and real-time database broadcasts remain unimplemented.
+- Binary Engine.IO packets and Socket.IO binary event/ACK attachment sequences
+  are rejected.
+- Root `subscribe` intentionally has no handler or ACK, matching locked
+  Nightscout v15.0.7 behavior.
+- Session, queue, payload, JSON-depth and snapshot limits are bounded for the
+  Cloudflare Workers runtime.
+- Disconnected `/alarm` clients receive no replay; durable alarm state is ACK
+  and snooze authority rather than a notification-history queue.
+- Compatibility claims apply to the locked Nightscout v15.0.7 contracts and
+  named tests. They do not imply support for arbitrary third-party Socket.IO
+  extensions.

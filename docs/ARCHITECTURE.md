@@ -36,14 +36,16 @@ workflow, then rendered injected test glucose and two SVG charts. This is
 fresh-platform evidence, not a claim that Cloudflare's public repository
 button has run while the source remains private.
 
-The project package version is `1.0.0-beta.1`; the upstream application and all
-public Nightscout version responses remain `15.0.7`. The beta number describes
-NSCF release readiness and must not replace or decorate the official UI. A
-clean Git export has independently rebuilt byte-identical assets, passed the
-complete local gate and started with an empty SQLite Durable Object. On first
-visit the official client redirects an instance with no Profile from `/` to
-`/profile`. Authorization is page-client state: read-default users see the
-editor, but only an authenticated client can save. Selecting the upstream
+The project package version is `1.0.0-beta`, displayed to users as
+`Nightscout for Cloudflare 1.0 Beta`; the upstream application and all public
+Nightscout version responses remain `15.0.7`. The Settings/About panel preserves
+the upstream Nightscout attribution and links, then identifies Nightscout for
+Cloudflare separately with its downstream version, project-home link and issue
+link. A clean Git export has independently rebuilt byte-identical assets,
+passed the complete local gate and started with an empty SQLite Durable Object.
+On first visit the official client redirects an instance with no Profile from
+`/` to `/profile`. Authorization is page-client state: read-default users see
+the editor, but only an authenticated client can save. Selecting the upstream
 **Remember this device** option carries that authorization to Food/Admin pages;
 NSCF adds no onboarding UI or custom Profile defaults.
 
@@ -206,6 +208,12 @@ face names are inserted into the upstream clock template at request time. NSCF
 contains no alternative page, chart, component, CSS theme, translation or
 downstream-invented medical calculation. The request-scoped summary processor
 described below is ported from the locked upstream source.
+
+The deployed Admin page keeps all six upstream tools, including Subjects,
+Roles and the four data-maintenance plugins. The build step changes only the
+four legacy Mongo-oriented panel labels. The official bundle remains
+byte-identical, and the label changes do not alter actions, authorization
+requirements, API routes or deletion behavior.
 
 The cross-cutting Settings adapter is also request-local. It retains the
 official default object, camel/environment accessors, enable/disable and alarm

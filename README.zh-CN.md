@@ -4,19 +4,38 @@
 
 昵称：**Nightscout 泡面版**（The Instant Noodle Edition）
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sid-Law/nightscout-for-cloudflare)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sid-luo/nightscout-for-cloudflare)
 
 这个仓库提供一种快速、免费的方式，把
 [Nightscout](https://github.com/nightscout/cgm-remote-monitor) 部署到
 Cloudflare。它在 Cloudflare 免费套餐额度内运行，不需要付费服务器或
 MongoDB 服务。它是独立的非官方移植版，不是 Nightscout 官方发布。
 
-当前版本：**v1.0.0-beta.1**
+当前 Nightscout for Cloudflare 版本：**1.0 Beta**
 
-锁定上游：**Nightscout v15.0.7**
+Nightscout 上游版本：**15.0.7**
 
 本项目保留官方 Nightscout 的页面、布局、图表、插件、翻译和计算逻辑，只增加
 Cloudflare 平台适配层。
+
+## Nightscout 与 Nightscout for Cloudflare
+
+Nightscout for Cloudflare 是 Nightscout 的独立、非官方 Cloudflare
+移植版本。Nightscout 上游版本和移植版本使用各自独立的版本号：
+
+- Nightscout 上游版本：**15.0.7**
+- Nightscout for Cloudflare 版本：**1.0 Beta**
+
+原版 Admin Tools 的对应功能仍然保留，但本项目使用 SQLite Durable Objects
+存储数据，而不是 MongoDB。因此，页面中的部分名称会调整为与实际存储方式无关
+的名称，避免用户误以为部署中仍然存在 MongoDB。
+
+| 原版 Nightscout 名称 | Nightscout for Cloudflare 名称 |
+| --- | --- |
+| Clean Mongo status database | Device status maintenance（设备状态维护） |
+| Clean Mongo treatments database | Treatment records maintenance（治疗记录维护） |
+| Clean Mongo entries (glucose entries) database | Glucose entries maintenance（血糖记录维护） |
+| Remove future items from mongo database | Future-dated records maintenance（未来时间记录维护） |
 
 ## 为什么做这个项目
 

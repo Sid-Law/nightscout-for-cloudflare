@@ -58,7 +58,7 @@ async function writeApi(
 }
 
 describe("official Nightscout UI assets", () => {
-  it("serves the upstream homepage and provenance instead of an NSCF UI", async () => {
+  it("serves the upstream homepage with a separate Nightscout for Cloudflare identity", async () => {
     const page = await SELF.fetch("https://example.test/");
     expect(page.status).toBe(200);
     expect(page.headers.get("Content-Type")).toMatch(/charset=utf-8/i);
@@ -66,6 +66,16 @@ describe("official Nightscout UI assets", () => {
     expect(html).toContain("<title>Nightscout</title>");
     expect(html).toContain('id="chartContainer"');
     expect(html).toContain('/bundle/js/bundle.app.js');
+    expect(html).toContain('id="nscf-about"');
+    expect(html).toContain('Upstream version <span class="version"></span>');
+    expect(html).toContain("<strong>Nightscout for Cloudflare</strong>");
+    expect(html).toContain("Version <strong>1.0 Beta</strong>");
+    expect(html).toContain(
+      'href="https://github.com/sid-luo/nightscout-for-cloudflare"',
+    );
+    expect(html).toContain(
+      'href="https://github.com/sid-luo/nightscout-for-cloudflare/issues"',
+    );
     const bundle = await SELF.fetch("https://example.test/bundle/js/bundle.app.js");
     expect(bundle.status).toBe(200);
     expect(bundle.headers.get("Content-Type")).toMatch(/charset=utf-8/i);
@@ -151,6 +161,34 @@ describe("official Nightscout UI assets", () => {
       expect(response.headers.get("Content-Type"), path).toBe("text/html; charset=utf-8");
       expect(await response.text(), path).toContain(marker);
     }
+  });
+
+  it("keeps every Admin tool while relabeling legacy Mongo panels", async () => {
+    const page = await SELF.fetch("https://example.test/admin/");
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).not.toContain('id="nscf-storage-notice"');
+    expect(html).toContain(
+      'Nightscout.admin_plugins("cleanstatusdb").label = "Device status maintenance"',
+    );
+    expect(html).toContain(
+      'Nightscout.admin_plugins("cleantreatmentsdb").label = "Treatment records maintenance"',
+    );
+    expect(html).toContain(
+      'Nightscout.admin_plugins("cleanentriesdb").label = "Glucose entries maintenance"',
+    );
+    expect(html).toContain(
+      'Nightscout.admin_plugins("futureitems").label = "Future-dated records maintenance"',
+    );
+
+    const bundleIndex = html.indexOf('<script src="/bundle/js/bundle.app.js"></script>');
+    const labelsIndex = html.indexOf(
+      'Nightscout.admin_plugins("cleanstatusdb").label',
+    );
+    const adminIndex = html.indexOf('<script src="/admin/js/admin.js"></script>');
+    expect(bundleIndex).toBeGreaterThanOrEqual(0);
+    expect(labelsIndex).toBeGreaterThan(bundleIndex);
+    expect(adminIndex).toBeGreaterThan(labelsIndex);
   });
 
   it("forces HTML metadata for secondary-page assets and conditional cache hits", async () => {

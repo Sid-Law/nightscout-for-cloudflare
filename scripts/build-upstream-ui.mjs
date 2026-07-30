@@ -19,6 +19,9 @@ const upstreamBundleRoot = path.join(
 const manifest = JSON.parse(
   await readFile(path.join(projectRoot, "upstream", "manifest.json"), "utf8"),
 );
+const projectPackage = JSON.parse(
+  await readFile(path.join(projectRoot, "package.json"), "utf8"),
+);
 const socketClientPath = path.join(
   vendorRoot,
   "node_modules",
@@ -49,6 +52,26 @@ const transportCachebuster = createHash("sha256")
 const cachebuster = `${manifest.release}-${manifest.commit.slice(0, 12)}-${transportCachebuster}`;
 const locals = { bundle: "/bundle", cachebuster };
 
+function displayProjectVersion(version) {
+  return version
+    .replace(/^(\d+\.\d+)\.0-beta(?:\.\d+)?$/i, "$1 Beta")
+    .replace(/^(\d+\.\d+)\.0$/, "$1");
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+}
+
+const projectVersion = escapeHtml(displayProjectVersion(projectPackage.version));
+const projectHomepage = escapeHtml(projectPackage.homepage.replace(/#readme$/, ""));
+const projectIssues = escapeHtml(projectPackage.bugs.url);
+
 const transportScripts = [
   `<script src="/socket.io/socket.io.js?${socketClientCachebuster}"></script>`,
   `<script src="/platform/socket-tenant-adapter.js?${socketTenantCachebuster}"></script>`,
@@ -68,6 +91,46 @@ function applyPlatformAssetVersions(html) {
       "navigator.serviceWorker.register('/sw.js', { scope: '/' })",
       `navigator.serviceWorker.register('/sw.js?${cachebuster}', { scope: '/', updateViaCache: 'none' })`,
     );
+}
+
+function applyPageAdapters(html, type) {
+  if (type === "index") {
+    const projectAbout = `
+        <div id="nscf-about">
+          <hr>
+          <div><strong>Nightscout for Cloudflare</strong></div>
+          <div>Version <strong>${projectVersion}</strong></div>
+          <div>Independent, unofficial Cloudflare port</div>
+          <p class="links">
+            <a href="${projectHomepage}" target="_blank" rel="noopener">Project Home</a><br>
+            <a href="${projectIssues}" target="_blank" rel="noopener">Report an Issue</a>
+          </p>
+        </div>`;
+    return html
+      .replace(
+        '<div>version <span class="version"></span></div>',
+        '<div>Upstream version <span class="version"></span></div>',
+      )
+      .replace(
+        '<div>head <span class="head"></span></div>',
+        `<div>head <span class="head"></span></div>${projectAbout}`,
+      );
+  }
+
+  if (type === "admin") {
+    return html.replace(
+      '<script src="/admin/js/admin.js"></script>',
+      `<script>
+      Nightscout.admin_plugins("cleanstatusdb").label = "Device status maintenance";
+      Nightscout.admin_plugins("cleantreatmentsdb").label = "Treatment records maintenance";
+      Nightscout.admin_plugins("cleanentriesdb").label = "Glucose entries maintenance";
+      Nightscout.admin_plugins("futureitems").label = "Future-dated records maintenance";
+    </script>
+    <script src="/admin/js/admin.js"></script>`,
+    );
+  }
+
+  return html;
 }
 
 await rm(publicRoot, { recursive: true, force: true });
@@ -115,13 +178,16 @@ const officialPages = [
 
 for (const page of officialPages) {
   const viewPath = path.join(vendorRoot, "views", page.view);
-  const html = applyPlatformAssetVersions(
-    await ejs.renderFile(viewPath, {
-      locals,
-      settings: {},
-      title: page.title,
-      type: page.type,
-    }),
+  const html = applyPageAdapters(
+    applyPlatformAssetVersions(
+      await ejs.renderFile(viewPath, {
+        locals,
+        settings: {},
+        title: page.title,
+        type: page.type,
+      }),
+    ),
+    page.type,
   );
   const outputPath = path.join(publicRoot, page.output);
   await mkdir(path.dirname(outputPath), { recursive: true });
