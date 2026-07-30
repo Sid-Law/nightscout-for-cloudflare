@@ -6,6 +6,8 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sid-luo/nightscout-for-cloudflare)
 
+[首次部署与使用教程](docs/getting-started/README.zh-CN.md)
+
 这个仓库提供一种快速、免费的方式，把
 [Nightscout](https://github.com/nightscout/cgm-remote-monitor) 部署到
 Cloudflare。它在 Cloudflare 免费套餐额度内运行，不需要付费服务器或

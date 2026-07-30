@@ -6,6 +6,8 @@ Nickname: **The Instant Noodle Edition**
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sid-luo/nightscout-for-cloudflare)
 
+[First-time deployment and setup guide](docs/getting-started/README.md)
+
 This repository provides a fast and free way to deploy
 [Nightscout](https://github.com/nightscout/cgm-remote-monitor) on Cloudflare.
 It runs within Cloudflare's free-plan limits without a paid server or MongoDB
