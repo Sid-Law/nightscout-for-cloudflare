@@ -1,0 +1,75 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nscf-phase1",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "keep_vars": true,
+  "vars": {
+    "API_SECRET": ""
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none",
+    "run_worker_first": [
+      "/",
+      "/*.html",
+      "/*.js",
+      "/*.css",
+      "/*.json",
+      "/*.xml",
+      "/admin*",
+      "/profile*",
+      "/food*",
+      "/report*",
+      "/split*",
+      "/clock/*",
+      "/api-docs*",
+      "/api3-docs*",
+      "/swagger-ui-dist/*",
+      "/swagger.json",
+      "/swagger.yaml",
+      "/api3-swagger.json",
+      "/socket.io",
+      "/socket.io/*",
+      "/_nscf/*",
+      "/pebble*",
+      "/api/*",
+      "/healthz"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ENTRY_STORE",
+        "class_name": "EntryStore"
+      },
+      {
+        "name": "DEXCOM_SHARE_CONNECTOR",
+        "class_name": "DexcomShareConnector"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["EntryStore"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["DexcomShareConnector"]
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "head_sampling_rate": 0.05
+    }
+  }
+}

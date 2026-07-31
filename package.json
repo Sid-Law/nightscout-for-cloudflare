@@ -1,0 +1,65 @@
+{
+  "name": "nscf",
+  "version": "1.1.1-beta",
+  "private": true,
+  "description": "NSCF — an independent, unofficial Nightscout v15.0.7 port candidate for Cloudflare Workers",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sid-luo/nightscout-for-cloudflare.git"
+  },
+  "homepage": "https://github.com/sid-luo/nightscout-for-cloudflare#readme",
+  "bugs": {
+    "url": "https://github.com/sid-luo/nightscout-for-cloudflare/issues"
+  },
+  "type": "module",
+  "cloudflare": {
+    "bindings": {
+      "API_SECRET": {
+        "description": "This string will be used for authorization later. Please remember it."
+      }
+    }
+  },
+  "scripts": {
+    "upstream:audit": "node scripts/audit-upstream-contracts.mjs",
+    "upstream:audit:check": "node scripts/audit-upstream-contracts.mjs --check",
+    "test:upstream-audit": "node --test scripts/audit-upstream-contracts.test.mjs",
+    "test:upstream-client": "node scripts/run-upstream-client-contracts.mjs",
+    "test:upstream-server-plugins": "node scripts/run-upstream-server-plugin-contracts.mjs",
+    "test:auth-audit": "node --test scripts/audit-auth-contracts.test.mjs",
+    "test:cloudflare-config": "node --test scripts/audit-cloudflare-config.test.mjs",
+    "test:auto-update": "node --test scripts/cloudflare-auto-update.test.mjs",
+    "test:language-audit": "node --test scripts/audit-language-contracts.test.mjs",
+    "upstream:install": "npm --prefix vendor/nightscout ci --ignore-scripts",
+    "upstream:bundle": "npm --prefix vendor/nightscout run bundle",
+    "build:ui": "node scripts/build-upstream-ui.mjs",
+    "build:source": "npm run upstream:install && npm run upstream:bundle && npm run build:ui",
+    "build": "node scripts/build-cloudflare.mjs",
+    "cf-typegen": "wrangler types",
+    "check": "npm run cf-typegen && tsc --noEmit",
+    "test": "npm run upstream:audit:check && npm run test:upstream-audit && npm run test:upstream-client && npm run test:upstream-server-plugins && npm run test:auth-audit && npm run test:cloudflare-config && npm run test:auto-update && npm run test:language-audit && vitest run",
+    "test:watch": "vitest",
+    "dev": "wrangler dev --local",
+    "deploy:dry": "wrangler deploy --dry-run --outdir dist",
+    "deploy": "wrangler deploy",
+    "smoke:public": "node scripts/smoke-public.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "latest",
+    "@cloudflare/workers-types": "^5.20260722.1",
+    "@types/node": "^24.0.0",
+    "@types/qs": "6.14.0",
+    "ejs": "^3.1.10",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.113.0"
+  },
+  "dependencies": {
+    "accepts": "1.3.8",
+    "csv-stringify": "5.6.5",
+    "easyxml": "2.0.1",
+    "mime": "2.6.0",
+    "qs": "6.15.3",
+    "shiro-trie": "0.4.10"
+  }
+}

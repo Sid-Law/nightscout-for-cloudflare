@@ -1,0 +1,269 @@
+import type {
+  EntryStore,
+  RealtimeRpcResult,
+} from "../entry-store";
+import {
+  REALTIME_MAX_PAYLOAD_BYTES,
+  type RealtimeEngineProtocol,
+} from "./constants";
+import { durableObjectWriteQuotaRetryAfterSeconds } from "../platform-errors";
+
+const ENGINE_ERROR_MESSAGES = {
+  0: "Transport unknown",
+  1: "Session ID unknown",
+  2: "Bad handshake method",
+  3: "Bad request",
+  5: "Unsupported protocol version",
+} as const;
+
+type EngineErrorCode = keyof typeof ENGINE_ERROR_MESSAGES;
+type RealtimeRpcError = Extract<RealtimeRpcResult<unknown>, { ok: false }>["error"];
+
+function pollingHeaders(contentType?: string): Headers {
+  const headers = new Headers({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Cache-Control": "no-store",
+  });
+  if (contentType !== undefined) headers.set("Content-Type", contentType);
+  return headers;
+}
+
+function engineError(
+  code: EngineErrorCode,
+  status = 400,
+  retryAfterSeconds?: number,
+): Response {
+  const headers = pollingHeaders("application/json");
+  if (retryAfterSeconds !== undefined) {
+    headers.set("Retry-After", String(retryAfterSeconds));
+  }
+  return new Response(JSON.stringify({ code, message: ENGINE_ERROR_MESSAGES[code] }), {
+    status,
+    headers,
+  });
+}
+
+export function storageQuotaEngineError(now = Date.now()): Response {
+  return engineError(
+    3,
+    503,
+    durableObjectWriteQuotaRetryAfterSeconds(now),
+  );
+}
+
+function empty(status: number): Response {
+  return new Response(null, { status, headers: pollingHeaders() });
+}
+
+function postOk(): Response {
+  return new Response("ok", {
+    status: 200,
+    headers: pollingHeaders("text/html"),
+  });
+}
+
+const JSONP_DOUBLE_ESCAPED_NEWLINE = /\\\\n/g;
+const JSONP_ESCAPED_NEWLINE = /(\\)?\\n/g;
+
+function initialJsonpIndex(url: URL): string | null {
+  const values = url.searchParams.getAll("j");
+  // Node's querystring parser produces an array for repeated keys. Engine.IO
+  // selects JSONP only when the initial `j` value is a string.
+  if (values.length !== 1) return null;
+  return values[0]!.replace(/[^0-9]/g, "");
+}
+
+/** Locked polling-jsonp.js response envelope, including JavaScript separators. */
+export function encodeJsonpPollingPayload(payload: string, index: string): string {
+  const encoded = JSON.stringify(payload)
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return `___eio[${index}](${encoded});`;
+}
+
+/** Locked polling-jsonp.js `d=` form extraction and browser newline repair. */
+export function decodeJsonpPollingPost(body: string): string | null {
+  const values = new URLSearchParams(body).getAll("d");
+  if (values.length !== 1) return null;
+  return values[0]!
+    .replace(JSONP_ESCAPED_NEWLINE, (match, slash: string | undefined) =>
+      slash ? match : "\n"
+    )
+    .replace(JSONP_DOUBLE_ESCAPED_NEWLINE, "\\n");
+}
+
+function pollingPayloadResponse(payload: string, jsonpIndex: string | null): Response {
+  return new Response(
+    jsonpIndex === null ? payload : encodeJsonpPollingPayload(payload, jsonpIndex),
+    {
+      status: 200,
+      headers: pollingHeaders("text/plain; charset=UTF-8"),
+    },
+  );
+}
+
+function rpcFailure(error: RealtimeRpcError): Response {
+  if (error.code === "overlap") return empty(500);
+  if (error.code === "unknown_sid" || error.code === "invalid_post_lease") {
+    return engineError(1);
+  }
+  if (error.code === "storage_quota") return storageQuotaEngineError();
+  if (error.code === "capacity") return engineError(3, 503);
+  return engineError(3);
+}
+
+function pollingPostContentType(request: Request): boolean {
+  const raw = request.headers.get("Content-Type");
+  // Locked engine.io 6.2.1 treats only this exact media type as binary.
+  // Every other value is decoded through the text packet parser.
+  return raw !== "application/octet-stream";
+}
+
+async function readPollingBody(request: Request): Promise<string | null> {
+  const declared = request.headers.get("Content-Length");
+  if (declared !== null) {
+    const length = Number(declared);
+    if (!Number.isFinite(length) || length < 0) return null;
+    if (length > REALTIME_MAX_PAYLOAD_BYTES) throw new RangeError("payload too large");
+  }
+
+  if (request.body === null) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const result = await reader.read();
+    if (result.done) break;
+    total += result.value.byteLength;
+    if (total > REALTIME_MAX_PAYLOAD_BYTES) {
+      await reader.cancel();
+      throw new RangeError("payload too large");
+    }
+    chunks.push(result.value);
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  // Node's request text path replaces malformed UTF-8 before Engine.IO parses
+  // it. The parser then closes the SID while the polling POST is still ACKed.
+  return new TextDecoder().decode(body);
+}
+
+/**
+ * Routes EIO3/EIO4 polling, direct WebSocket and the locked
+ * polling-to-WebSocket upgrade handshake. EntryStore validates whether an
+ * optional WebSocket SID still owns a live polling session for the requested
+ * Engine.IO protocol.
+ */
+export async function handleSocketIo(
+  request: Request,
+  url: URL,
+  store: DurableObjectStub<EntryStore>,
+): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: pollingHeaders() });
+  }
+
+  const transport = url.searchParams.get("transport");
+  if (transport === "polling") return handleSocketIoPolling(request, url, store);
+  if (transport !== "websocket") return engineError(0);
+  const rawEngineProtocol = url.searchParams.get("EIO");
+  if (rawEngineProtocol !== "3" && rawEngineProtocol !== "4") return engineError(5);
+  if (url.searchParams.has("j")) return engineError(3);
+  if (request.method !== "GET") return engineError(2);
+  if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+    return engineError(3);
+  }
+  return store.fetch(request);
+}
+
+/**
+ * Engine.IO 3/4 HTTP long-polling adapter for the tenant EntryStore Durable
+ * Object. Both supported protocols advertise the separately routed WebSocket
+ * upgrade. XHR and JSONP share the same durable packet/session state; binary
+ * polling remains outside this slice.
+ */
+export async function handleSocketIoPolling(
+  request: Request,
+  url: URL,
+  store: DurableObjectStub<EntryStore>,
+): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: pollingHeaders() });
+  }
+
+  if (url.searchParams.get("transport") !== "polling") return engineError(0);
+  const rawEngineProtocol = url.searchParams.get("EIO");
+  if (rawEngineProtocol !== "3" && rawEngineProtocol !== "4") return engineError(5);
+  const engineProtocol: RealtimeEngineProtocol = rawEngineProtocol === "3" ? 3 : 4;
+  const rawSid = url.searchParams.get("sid");
+  const sid = rawSid === null || rawSid === "" ? null : rawSid;
+  if (sid === null) {
+    if (request.method !== "GET") return engineError(2);
+    const jsonpIndex = initialJsonpIndex(url);
+    const opened = await store.realtimeHandshake(engineProtocol, jsonpIndex);
+    if (!opened.ok) return rpcFailure(opened.error);
+    return pollingPayloadResponse(opened.value.payload, jsonpIndex);
+  }
+
+  if (request.method === "GET") {
+    const polled = await store.realtimePollEnvelope(sid, engineProtocol);
+    if (!polled.ok) return rpcFailure(polled.error);
+    return pollingPayloadResponse(polled.value.payload, polled.value.jsonpIndex);
+  }
+  if (request.method !== "POST") {
+    const validated = await store.realtimeValidateSession(sid, engineProtocol);
+    if (!validated.ok) return rpcFailure(validated.error);
+    return empty(500);
+  }
+
+  const lease = await store.realtimeBeginPostEnvelope(sid, engineProtocol);
+  if (!lease.ok) return rpcFailure(lease.error);
+  if (!pollingPostContentType(request)) {
+    const rejected = await store.realtimeRejectPost(sid, lease.value.token);
+    if (!rejected.ok) return rpcFailure(rejected.error);
+    return engineError(3);
+  }
+
+  let payload: string | null;
+  try {
+    payload = await readPollingBody(request);
+  } catch (error) {
+    await store.realtimeAbortPost(sid, lease.value.token);
+    if (error instanceof RangeError) return empty(413);
+    throw error;
+  }
+  if (payload === null) {
+    await store.realtimeAbortPost(sid, lease.value.token);
+    return engineError(3);
+  }
+
+  if (lease.value.jsonpIndex !== null) {
+    const decoded = decodeJsonpPollingPost(payload);
+    if (decoded === null) {
+      await store.realtimeAbortPost(sid, lease.value.token);
+      return postOk();
+    }
+    payload = decoded;
+  }
+
+  const submitted = await store.realtimeSubmitPost(
+    sid,
+    lease.value.token,
+    payload,
+    engineProtocol,
+  );
+  if (submitted.ok) return postOk();
+  // Locked engine.io 6.2.1 acknowledges the polling POST before its parser
+  // error closes the socket. Preserve that observable HTTP response.
+  if (submitted.error.code === "bad_packet" || submitted.error.code === "queue_overflow") {
+    return postOk();
+  }
+  return rpcFailure(submitted.error);
+}
